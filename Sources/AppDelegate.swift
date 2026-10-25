@@ -44,7 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         annotator: { [weak self] in self?.annotateLast() },
         intro: { [weak self] in self?.introLab.show() },
         pointer: { [weak self] in self?.pointerLab.show() },
-        check: { [weak self] in self?.checkLab.show() }))
+        check: { [weak self] in self?.checkLab.show() },
+        setupInk: { [weak self] in self?.showSetupInk(nil) }))
     private lazy var introLab = IntroLabController(
         play: { [weak self] window in
             self?.introduceMenuBar(from: window, close: { window.close() }, finished: {}) ?? false
@@ -158,15 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             // The login item and the plugin wait for the window to close, which applies the
             // switches it shows.
             setupWindow.show(protectedArea: watcherWaitsForSetup ? ScreenshotWatcher.protectedArea(of: watchFolder) : nil,
-                             callbacks: SetupWindowController.Callbacks(
-                                hasScreenshots: { [weak self] in self?.hasScreenshots ?? false },
-                                folderAccess: { [weak self] in self?.folderAccess ?? .ask },
-                                askFolder: { [weak self] in self?.askForFolder() },
-                                installAgentPlugin: { [weak self] roots in self?.installAgentPluginFromSetup(roots) },
-                                menuBarIconVisible: { [weak self] in self?.visibleStatusButton != nil },
-                                introduceMenuBar: { [weak self] window, close, finished in
-                                    self?.introduceMenuBar(from: window, close: close, finished: finished) ?? false
-                                }))
+                             callbacks: setupCallbacks)
         } else {
             // The setting is the user's wish; macOS may have lost the registration (the app moved) or kept one the file no longer asks for.
             // A removal in System Settings is a wish too, and turns the setting off instead.
@@ -716,6 +709,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             }
         case "tweaks": debugPanel.toggle(); Commands.ok("tweaks")
         case "intro-lab": introLab.show(); Commands.ok("intro-lab")
+        case "setup-ink":
+            guard let concept = request.concept == nil ? SetupInkConcept.chosen : request.concept.flatMap(SetupInkConcept.init(rawValue:)) else {
+                Commands.error(cmd, .unknownConcept, "concept=\(request.concept ?? "") is not one of \(SetupInkConcept.allCases.map(\.rawValue).joined(separator: ", "))")
+                return
+            }
+            showSetupInk(concept)
+            Commands.ok(cmd, concept.rawValue)
         case "check-lab": checkLab.show(); Commands.ok("check-lab")
         case "pointer-lab":
             if let preview = request.preview {
@@ -874,6 +874,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// Setup is closing: its window flies into the menu bar icon, and a popover under the icon says
     /// how to use Vignette, or, while something still needs the person's permission, that the menu
     /// has it. False with no icon to point at, and setup closes as any window does.
+    private var setupCallbacks: SetupWindowController.Callbacks {
+        SetupWindowController.Callbacks(
+            hasScreenshots: { [weak self] in self?.hasScreenshots ?? false },
+            folderAccess: { [weak self] in self?.folderAccess ?? .ask },
+            askFolder: { [weak self] in self?.askForFolder() },
+            installAgentPlugin: { [weak self] roots in self?.installAgentPluginFromSetup(roots) },
+            menuBarIconVisible: { [weak self] in self?.visibleStatusButton != nil },
+            introduceMenuBar: { [weak self] window, close, finished in
+                self?.introduceMenuBar(from: window, close: close, finished: finished) ?? false
+            },
+            liveInk: liveInk)
+    }
+
+    /// Setup's live ink page alone, in `concept`, or the one opened last.
+    private func showSetupInk(_ concept: SetupInkConcept?) {
+        let concept = concept ?? SetupInkConcept.chosen
+        SetupInkConcept.chosen = concept
+        setupWindow.show(protectedArea: nil, callbacks: setupCallbacks, preview: concept)
+    }
+
     private func introduceMenuBar(from window: NSWindow, close: @escaping () -> Void, finished: @escaping () -> Void) -> Bool {
         guard let button = visibleStatusButton else {
             Log.write("[setup] menu bar intro skipped: the icon is \(statusItem == nil ? "off" : "not showing")")

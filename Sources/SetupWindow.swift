@@ -45,6 +45,8 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         /// `finished` once the intro has gone. False when there is no intro, and the window closes
         /// as any window does.
         var introduceMenuBar: (NSWindow, _ close: @escaping () -> Void, _ finished: @escaping () -> Void) -> Bool = { _, _, _ in false }
+        /// The live ink page's try (`SetupInk.swift`), shown only with `debug`.
+        var liveInk: LiveInk?
     }
 
     private let settings = Settings.shared
@@ -73,16 +75,19 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     private let launchedHereBefore = FileManager.default.fileExists(atPath: Identity.applicationSupportURL.path)
 
     /// `protectedArea` names the folder macOS will ask about ("your Desktop"), or is nil when it
-    /// won't ask, which leaves the welcome page without a folder row.
-    func show(protectedArea: String?, callbacks: Callbacks) {
+    /// won't ask, which leaves the welcome page without a folder row. `preview` opens the live ink
+    /// page alone, in that concept, for trying it (`vignette://setup-ink`, needs `debug`); closing a
+    /// preview changes nothing setup would.
+    func show(protectedArea: String?, callbacks: Callbacks, preview: SetupInkConcept? = nil) {
         if let win = window {
+            if let preview, let model, model.isPreview { model.inkConcept = preview }
             win.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
         let model = SetupModel(protectedArea: protectedArea,
                                agents: AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser),
-                               callbacks: callbacks)
+                               callbacks: callbacks, preview: preview)
         model.granted = { [weak self] in self?.granted() }
         model.folderAnswered = { [weak self] access in self?.folderAnswered(access) }
         // Not `performClose`: it shows the close button pressed while it simulates the click, and
@@ -93,6 +98,9 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         }
         self.model = model
         let host = NSHostingController(rootView: SetupView(model: model))
+        // The window's size is the window's: the live ink page moves it aside and back while its
+        // content changes size.
+        host.sizingOptions = []
         let win = NSWindow(contentViewController: host)
         // A welcome window rather than a form: no title bar across the top, and the app's icon and
         // name inside instead. The title still names the window for VoiceOver and Mission Control.
@@ -106,8 +114,18 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         win.setContentSize(NSSize(width: SetupView.width, height: SetupView.height))
         win.center()
         window = win
-        Log.write("[setup] shown folder=\(protectedArea.map { "\"\($0)\"" } ?? "none") agents=\(model.agents.count)")
+        model.window = win
+        Log.write("[setup] shown\(preview.map { " preview=\($0.rawValue)" } ?? "") folder=\(protectedArea.map { "\"\($0)\"" } ?? "none") agents=\(model.agents.count)")
+        // A preview opens over whatever is on the screen, so it fades in rather than appearing.
+        let fades = preview != nil && settings.motionScale > 0
+        if fades { win.alphaValue = 0 }
         win.makeKeyAndOrderFront(nil)
+        if fades {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25 * settings.motionScale
+                win.animator().alphaValue = 1
+            }
+        }
         // A window asking for a permission has to be the frontmost thing, or the dialog it raises
         // arrives behind whatever the user was doing.
         NSApp.activate(ignoringOtherApps: true)
@@ -144,7 +162,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     /// Closing is where the menu bar icon is introduced: the window flies into it, and closes once
     /// its picture covers it (`MenuBarIntro`). A second close while that waits changes nothing.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard !quitting, let model else { return true }
+        guard !quitting, let model, !model.isPreview else { return true }
         if introducing { return false }
         introducing = model.callbacks.introduceMenuBar(sender, { sender.close() }) { [weak self] in
             self?.afterIntro?()
@@ -158,6 +176,16 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         guard let model else { return }
+        model.leaveLiveInk()
+        if model.isPreview {
+            Log.write("[setup] preview closed")
+            self.model = nil
+            DispatchQueue.main.async { [weak self] in
+                self?.window?.contentViewController = nil
+                self?.window = nil
+            }
+            return
+        }
         if quitting {
             Log.write("[setup] quit before it was done; asks again at the next launch")
             self.model = nil
@@ -202,7 +230,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
 /// The page shown, and what the window hands back when it closes.
 @MainActor
 final class SetupModel: ObservableObject {
-    enum Page { case welcome, shortcut, agents }
+    enum Page { case welcome, shortcut, liveInk, agents }
 
     let protectedArea: String?
     @Published private(set) var agents: [AgentPluginStatus]
@@ -210,6 +238,15 @@ final class SetupModel: ObservableObject {
     var granted: () -> Void = {}
     var folderAnswered: (FolderAccess) -> Void = { _ in }
     var done: () -> Void = {}
+    weak var window: NSWindow?
+    /// The live ink page alone, opened to try a concept. Nothing is written when it closes.
+    let isPreview: Bool
+    @Published var inkConcept: SetupInkConcept
+    /// The live ink page's try, kept here so it outlives the page's view while the window is aside.
+    let inkTry = SetupInkTry()
+    /// The page's switch was shown, so it starts on only the first time.
+    var inkSwitchShown = false
+    private var inkTryChanged: AnyCancellable?
 
     @Published var page = Page.welcome
     /// Whether the last move was forward, which decides the side the pages slide to.
@@ -219,11 +256,16 @@ final class SetupModel: ObservableObject {
     @Published var chosen: Set<URL>
     private(set) var sawAgents = false
 
-    init(protectedArea: String?, agents: [AgentPluginStatus], callbacks: SetupWindowController.Callbacks) {
+    init(protectedArea: String?, agents: [AgentPluginStatus], callbacks: SetupWindowController.Callbacks,
+         preview: SetupInkConcept? = nil) {
         self.protectedArea = protectedArea
         self.agents = agents
         self.callbacks = callbacks
+        isPreview = preview != nil
+        inkConcept = preview ?? SetupInkConcept.chosen
+        if preview != nil { page = .liveInk }
         chosen = Set(agents.filter(\.hasTool).map(\.root))
+        inkTryChanged = inkTry.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         tools = NotificationCenter.default.addObserver(forName: AgentTools.found, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.toolsFound() }
         }
@@ -250,7 +292,12 @@ final class SetupModel: ObservableObject {
     /// without the plugin until they reload.
     var installsIntoClaude: Bool { claude.map { !$0.installed && chosen.contains($0.root) } ?? false }
 
-    var pages: [Page] { agents.isEmpty ? [.welcome, .shortcut] : [.welcome, .shortcut, .agents] }
+    /// The live ink page is a prototype, so it shows only with `debug`.
+    var pages: [Page] {
+        if isPreview { return [.liveInk] }
+        let liveInk: [Page] = Settings.shared.data.debug && callbacks.liveInk != nil ? [.liveInk] : []
+        return [.welcome, .shortcut] + liveInk + (agents.isEmpty ? [] : [.agents])
+    }
     var index: Int { pages.firstIndex(of: page) ?? 0 }
     var isLast: Bool { index == pages.count - 1 }
 
@@ -261,9 +308,15 @@ final class SetupModel: ObservableObject {
         guard target != page else { return }
         forward = step > 0
         DispatchQueue.main.async {
+            if self.page == .liveInk { self.leaveLiveInk() }
             withAnimation(animation) { self.page = target }
             if target == .agents { self.sawAgents = true }
         }
+    }
+
+    /// Ends the live ink page's try, whose ink leaves with the page.
+    func leaveLiveInk() {
+        callbacks.liveInk?.practise(nil)
     }
 }
 
@@ -287,6 +340,24 @@ struct SetupView: View {
     private let poll = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     var body: some View {
+        ZStack {
+            // The live ink page's try on the desktop moves the window aside, and it shows only that.
+            if model.inkTry.steppedAside {
+                SteppedAside(model: model).transition(.opacity)
+            } else {
+                content.transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(Anim.spring(0.3 * settings.motionScale), value: model.inkTry.steppedAside)
+        .onAppear(perform: look)
+        .onReceive(poll) { _ in look() }
+        .onReceive(NotificationCenter.default.publisher(for: .hotKeyFired)) { _ in fires += 1 }
+        .onReceive(NotificationCenter.default.publisher(for: .hotKeyHeld)) { _ in held = true }
+        .onChange(of: settings.data.recentHotkey) { fires = 0; held = false }
+    }
+
+    private var content: some View {
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
                 page(model.page)
@@ -306,11 +377,6 @@ struct SetupView: View {
             buttons
         }
         .frame(width: SetupView.width, height: SetupView.height)
-        .onAppear(perform: look)
-        .onReceive(poll) { _ in look() }
-        .onReceive(NotificationCenter.default.publisher(for: .hotKeyFired)) { _ in fires += 1 }
-        .onReceive(NotificationCenter.default.publisher(for: .hotKeyHeld)) { _ in held = true }
-        .onChange(of: settings.data.recentHotkey) { fires = 0; held = false }
     }
 
     private func look() {
@@ -330,6 +396,7 @@ struct SetupView: View {
         switch page {
         case .welcome: welcome
         case .shortcut: shortcut
+        case .liveInk: LiveInkPage(model: model)
         case .agents: agents
         }
     }
@@ -496,6 +563,7 @@ struct SetupView: View {
         switch model.page {
         case .welcome: return model.protectedArea == nil || folder == .granted
         case .shortcut: return (!settings.data.usesDoubleTap || trusted) && folder == .granted && settings.appleTarget == "file"
+        case .liveInk: return !settings.data.liveInk || (trusted && ScreenRecording.granted)
         case .agents: return true
         }
     }
@@ -619,14 +687,26 @@ struct KeyPicture: View {
         .background(Capsule().fill(fires > 0 ? Color.installed : Color.accentColor))
     }
 
-    /// A keycap, raised on its shadow, or `down`: sunk onto the surface, a shade darker and a little
-    /// smaller. It goes down at once, as a key does, and springs back up.
-    private func keycap<Content: View>(width: CGFloat, down: Bool, @ViewBuilder _ content: () -> Content) -> some View {
+    private func keycap<Content: View>(width: CGFloat, down: Bool, @ViewBuilder _ content: @escaping () -> Content) -> some View {
+        KeyboardKey(width: width, down: down, motion: motion, content: content)
+    }
+}
+
+/// A keycap, raised on its shadow, or `down`: sunk onto the surface, a shade darker and a little
+/// smaller. It goes down at once, as a key does, and springs back up.
+struct KeyboardKey<Content: View>: View {
+    let width: CGFloat
+    var height: CGFloat = 56
+    let down: Bool
+    let motion: Double
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
         let moves = motion > 0
         return content()
             .foregroundStyle(.secondary)
             .padding(8)
-            .frame(width: width, height: 56)
+            .frame(width: width, height: height)
             .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color(nsColor: .controlColor))
                 .brightness(down ? -0.08 : 0)
                 .shadow(color: .black.opacity(down ? 0 : 0.25), radius: 1, y: down ? 0 : 1))

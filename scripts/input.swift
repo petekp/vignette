@@ -18,6 +18,8 @@ struct InputTool {
       tap <modifier keycode> [count]             tap a modifier key (60 is right shift), twice by default
       holdtap <modifier keycode> [seconds]       tap a modifier key once, then hold a second press (0.7 s)
       chord <modifier keycode>…                  press modifier keys together, then let go: 55 56 is ⌘⇧
+      ink loop CX CY RX RY [seconds]             hold ⌃⌥, draw a loop round CX CY by hand, then let go (1.1 s)
+      ink line X1 Y1 X2 Y2 [seconds]             hold ⌃⌥, draw a line by hand, then let go (0.6 s)
       move X Y                                   move the mouse
       click X Y                                  click the left button
       drag X1 Y1 X2 Y2 [seconds]                 drag with the left button, held at the end that long
@@ -57,6 +59,15 @@ struct InputTool {
             let codes = rest.compactMap { UInt16($0) }
             guard !codes.isEmpty, codes.count == rest.count else { fail(usage) }
             chord(codes)
+        case "ink":
+            guard let shape = rest.first, ["loop", "line"].contains(shape) else { fail(usage) }
+            let p = points(Array(rest.dropFirst()), 4)
+            let seconds = rest.count > 5 ? Double(rest[5]) : nil
+            if shape == "loop" {
+                ink(loop: p[0], radii: p[1], seconds: seconds ?? 1.1)
+            } else {
+                ink(line: p[0], to: p[1], seconds: seconds ?? 0.6)
+            }
         case "move":
             let p = points(rest, 2); move(p[0].0, p[0].1)
         case "click":
@@ -120,6 +131,67 @@ struct InputTool {
         for code in codes { flags.insert(modifierFlag(code)); post(code, down: true) }
         pause(0.1)
         for code in codes.reversed() { flags.remove(modifierFlag(code)); post(code, down: false) }
+    }
+
+    /// ⌃ then ⌥ pressed and held, for live ink, or let go in reverse.
+    static func holdInkChord(_ down: Bool) {
+        let keys: [(code: UInt16, flag: CGEventFlags)] = [(59, .maskControl), (58, .maskAlternate)]
+        var flags: CGEventFlags = down ? [] : [.maskControl, .maskAlternate]
+        for key in down ? keys : keys.reversed() {
+            if down { flags.insert(key.flag) } else { flags.remove(key.flag) }
+            let e = CGEvent(keyboardEventSource: nil, virtualKey: key.code, keyDown: down)
+            e?.type = .flagsChanged
+            e?.flags = flags
+            post(e); pause(0.09)
+        }
+    }
+
+    /// Holds the live ink chord, draws `path` with the button down over `seconds` as a hand does,
+    /// slower at the ends, and lets go of the button and then of the chord.
+    static func ink(along path: (Double) -> CGPoint, seconds: Double) {
+        let start = path(0)
+        glide(to: (start.x, start.y), seconds: 0.35)
+        holdInkChord(true)
+        pause(0.55)
+        // The chord is held through the stroke, so every event carries it, as a hand's do.
+        func held(_ type: CGEventType, _ point: CGPoint) {
+            let e = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .left)
+            e?.flags = [.maskControl, .maskAlternate]
+            post(e)
+        }
+        held(.leftMouseDown, start); pause(0.06)
+        let steps = max(2, Int(seconds * 120))
+        for i in 1...steps {
+            let u = Double(i) / Double(steps)
+            let t = u - sin(2 * .pi * u) / (2 * .pi) * 0.6
+            held(.leftMouseDragged, path(t))
+            pause(1.0 / 120)
+        }
+        let end = path(1)
+        pause(0.08)
+        held(.leftMouseUp, end)
+        pause(0.3)
+        holdInkChord(false)
+    }
+
+    /// A loop round `centre`, a little more than once round, its radius wavering as a hand's does.
+    static func ink(loop centre: (Double, Double), radii: (Double, Double), seconds: Double) {
+        ink(along: { t in
+            let angle = -2.2 + t * 2 * .pi * 1.08
+            let waver = 1 + 0.05 * sin(t * 2 * .pi * 2.3) + 0.04 * t
+            return CGPoint(x: centre.0 + cos(angle) * radii.0 * waver, y: centre.1 + sin(angle) * radii.1 * waver)
+        }, seconds: seconds)
+    }
+
+    /// A line bowed slightly to one side, as a hand draws one.
+    static func ink(line start: (Double, Double), to end: (Double, Double), seconds: Double) {
+        let dx = end.0 - start.0, dy = end.1 - start.1
+        let length = max((dx * dx + dy * dy).squareRoot(), 1)
+        let bow = min(length * 0.05, 18)
+        ink(along: { t in
+            let side = sin(t * .pi) * bow
+            return CGPoint(x: start.0 + dx * t - dy / length * side, y: start.1 + dy * t + dx / length * side)
+        }, seconds: seconds)
     }
 
     /// A modifier key pressed and released; the down event carries the modifier's flag like a real press.
