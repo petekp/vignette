@@ -27,7 +27,9 @@ A startable row is an `AgentDestination` with `start: SessionStart?` set
 
 - `.resume(folder:)`: the row's id and address are the past session's id. `claude --resume <id>`
   keeps that id. The Claude Code binary (2.1.310) documents `--fork-session` as the flag that makes
-  a new id when resuming, so a plain resume reuses the original.
+  a new id when resuming, so a plain resume reuses the original. Pete's transcripts agree: on
+  2026-10-26, 11 of his last 400 were written by several Claude Code versions over days, every entry
+  under the one session id that names the file.
 - `.new(folder:)`: the row's id is `new:<folder>`, stable across listings, so a pick survives a
   later answer. `AgentDestination.addressed()` mints the session's UUID when Send is pressed, and
   the session starts with `claude --session-id <uuid>`. From then on it is addressed like any other.
@@ -42,6 +44,8 @@ the log need no second path. `ClaudeCodeConnection.submit`:
 2. Otherwise runs `HerdrLauncher.start`: `herdr tab create --cwd <folder> --no-focus --label
    <project>`, then `herdr pane run <pane> "'claude' '--resume' '<id>'"`. Only a UUID reaches the
    command, and each word is single-quoted.
+   The tab opens in herdr's focused workspace, unfocused, labelled with the project. `pane run`
+   types the command before the new shell's prompt is up, and the shell runs it once it is.
 3. Polls the inboxes every 0.25 s for up to 45 s (`startTimeout`) until a live one holds the session.
 4. Writes the line into that inbox past the usual guard.
 
@@ -106,6 +110,12 @@ Rows are offered only when a launcher exists. The launcher is herdr through
 `AgentTools.forSessions("VIGNETTE_HERDR")`, so a test launch without `VIGNETTE_HERDR` offers none
 and starts nothing. Vignette never runs `claude` itself: the person's shell in the herdr tab does.
 A test launch with `CFFIXED_USER_HOME` reads only the scratch home's history and transcripts.
+
+On 2026-10-26 both rows were sent to in the `vignette-e2e` VM through herdr 0.9.5 itself, with a
+stand-in `claude` on the panes' PATH that keeps an inbox, as the plugin's monitor does. Each opened
+an unfocused tab in its folder, ran `claude` there once with the right arguments, and got one line.
+A stand-in that never came up gave "Not sent" after the 45 s wait. On Pete's history the listing
+took 219 ms on its first call and about 50 ms on later ones, which read only changed transcripts.
 
 The e2e runner has a fake herdr (`scripts/e2e/fake_herdr.py`, `App.fake_herdr`). For a `claude`
 typed into one of its panes it brings up a plugin inbox for that session. `send_offers_start`
