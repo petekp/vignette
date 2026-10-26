@@ -281,9 +281,13 @@ thread is listed by a fake codex that `VIGNETTE_CODEX` names (`App.fake_codex`,
 each `codex queue --thread <id> --message <line>`, which is how Send hands a Codex thread its line. Launched
 with `--env CFFIXED_USER_HOME=<folder>`, the app takes that folder for the home folder, so the Agents
 tab and setup read and write a scratch `.claude` rather than the user's; its log is then under that
-folder's `Library/Logs`, which must exist before the launch, or the log lines are dropped. Apple's
-screenshot location for such a launch is written with the same variable:
-`CFFIXED_USER_HOME=<folder> defaults write <bundle id>.screencapture location <watch folder>`.
+folder's `Library/Logs`, which must exist before the launch, or the log lines are dropped. A
+scratch home moves files, not preferences: `defaults` and `UserDefaults` ignore
+`CFFIXED_USER_HOME` and write the real `~/Library/Preferences` (measured 2026-10-26 on macOS 15). A
+test copy's preferences are kept apart from the person's by its bundle id, in `<bundle id>` and,
+as a test launch, `<bundle id>.screencapture`. So its screenshot location is
+`defaults write <bundle id>.screencapture location <watch folder>`. Those two domains outlive a
+scratch home, so the end-to-end runner clears both before each scenario (`App.reset_defaults`).
 
 ## Rules that are not obvious from the code
 

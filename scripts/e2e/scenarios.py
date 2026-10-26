@@ -432,9 +432,8 @@ def settings_repair(app):
 
 def apple_thumbnail(app):
     """Apple's show-thumbnail in the test copy's own screencapture domain, or None when unset."""
-    env = dict(os.environ, CFFIXED_USER_HOME=app.home)
     out = subprocess.run(['defaults', 'read', f"{app.copy['bundle']}.screencapture", 'show-thumbnail'],
-                         env=env, capture_output=True, text=True)
+                         capture_output=True, text=True)
     return None if out.returncode else out.stdout.strip() == '1'
 
 

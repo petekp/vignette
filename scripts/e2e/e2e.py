@@ -10,7 +10,8 @@
 
 The test copy (`scripts/e2e/build.sh`) has its own bundle id, name and URL scheme. Each scenario
 launches it on a fresh scratch home (`CFFIXED_USER_HOME`), settings file (`VIGNETTE_SETTINGS`) and
-watch folder, so it never reads or writes the person's own. A launch with no environment, such as
+watch folder, so it never reads or writes the person's own. Preferences ignore that home, so the
+copy's two domains are cleared before each scenario. A launch with no environment, such as
 macOS's Quit & Reopen, takes the home the copy's Info.plist names (build.sh), which the runner links
 to the scenario's. A test launch uses no codex and no herdr unless `VIGNETTE_CODEX` or
 `VIGNETTE_HERDR` names one, and every agent session is a fake.
@@ -143,8 +144,15 @@ class App:
             json.dump(data, f, indent=2)
 
     def defaults(self, domain, *args):
-        env = dict(os.environ, CFFIXED_USER_HOME=self.home)
-        subprocess.run(['defaults', 'write', domain, *args], env=env, check=True)
+        subprocess.run(['defaults', 'write', domain, *args], check=True)
+
+    def reset_defaults(self):
+        """Clears the copy's preference domains, which every scenario shares: macOS keeps them in
+        the real ~/Library/Preferences whatever the home."""
+        for domain in (self.copy['bundle'], f"{self.copy['bundle']}.screencapture"):
+            subprocess.run(['defaults', 'delete', domain], capture_output=True)
+            if subprocess.run(['defaults', 'read', domain], capture_output=True).returncode == 0:
+                raise Failed(f'{domain} still holds values after defaults delete')
 
     def prepare(self, **settings):
         if not os.path.exists(self.settings):
@@ -511,6 +519,7 @@ def run(names, with_input, build):
                 continue
             app = App(copy, os.path.join(folder, scenario.__name__), report)
             try:
+                app.reset_defaults()
                 scenario(app)
                 report.end('pass', app.log_since(0))
             except Failed as error:
