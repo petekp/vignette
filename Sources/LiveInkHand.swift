@@ -496,6 +496,10 @@ final class InkMarkLayer: CALayer {
     private var targets: (field: MTLTexture, depth: MTLTexture)?
     /// Something changed since the last drawing: draw at the next tick, whatever the clock's rate.
     private(set) var needsGel = false
+    /// The gel's frame changed inside the current `changingGel`.
+    private var resized = false
+    /// A drawing of the gel has been encoded, so the gel is showing one.
+    private var hasDrawn = false
     /// The centre line as drawn, for the thinking light and drawing on.
     var centreLine: CGPath? {
         guard let shape else { return nil }
@@ -525,6 +529,7 @@ final class InkMarkLayer: CALayer {
         anchorPoint = .zero
         contentsScale = scale
         gel.anchorPoint = .zero
+        gel.actions = ["position": NSNull(), "bounds": NSNull()]
         gel.contentsScale = scale
         gel.isOpaque = false
         gel.framebufferOnly = true
@@ -551,6 +556,10 @@ final class InkMarkLayer: CALayer {
     /// Lays `mark` out as `hand` drew it. A line still settling from that same hand goes on from where
     /// it is onto the new shape.
     private func layOut(_ mark: Mark, hand: InkHand?, markStyle: MarkStyle) {
+        changingGel { layOutNow(mark, hand: hand, markStyle: markStyle) }
+    }
+
+    private func layOutNow(_ mark: Mark, hand: InkHand?, markStyle: MarkStyle) {
         let inkStyle = Self.inkStyle(markStyle)
         guard let drawing = hand ?? InkHand.even(for: mark, markStyle: inkStyle, feel: Settings.shared.data.ui.inkHandFeel) else { return }
         let settling = settle != nil && shown?.given == hand ? shape?.stroke : nil
@@ -571,6 +580,10 @@ final class InkMarkLayer: CALayer {
     /// The stroke being drawn, its end at the pen, its first `settled` points where no later event
     /// moves them. It draws at once, in the pointer's own event.
     func showPen(_ stroke: InkHand.Stroke, settled: Int, longest: CGFloat, markStyle: MarkStyle) {
+        changingGel(drawing: true) { layPen(stroke, settled: settled, longest: longest, markStyle: markStyle) }
+    }
+
+    private func layPen(_ stroke: InkHand.Stroke, settled: Int, longest: CGFloat, markStyle: MarkStyle) {
         shown = nil
         settle = nil
         // A new stroke starts the layer afresh; one under way only grows it.
@@ -583,11 +596,21 @@ final class InkMarkLayer: CALayer {
         pen = (stroke, settled, kept, longest, markStyle)
         lay(stroke, head: [], width: Self.inkStyle(markStyle).strokeWidth, growOnly: growing, from: returning ? kept : covered)
         if kept > 0 { shrink(around: stroke.points[kept...]) }
-        if isVisible, let frame = encode(at: CACurrentMediaTime(), time: InkClock.shared.time) {
-            frame.commands.commit()
-            frame.commands.waitUntilScheduled()
-            frame.drawable.present()
-        }
+    }
+
+    /// Makes `change` to the gel, and draws it at once when `drawing`, or when the change resized a
+    /// gel already showing a drawing, so the new frame and its drawing reach the screen in the same
+    /// transaction. The old drawing over the new frame showed for one refresh, a flash of the whole
+    /// line (measured 2026-10-25). A resize must not commit a transaction of its own for the same
+    /// reason.
+    private func changingGel(drawing: Bool = false, _ change: () -> Void) {
+        resized = false
+        change()
+        guard drawing || (resized && hasDrawn), isVisible,
+              let frame = encode(at: CACurrentMediaTime(), time: InkClock.shared.time) else { return }
+        frame.commands.commit()
+        frame.commands.waitUntilScheduled()
+        frame.drawable.present()
     }
 
     /// A copy in `markStyle`'s person colour, as the done state's green.
@@ -607,7 +630,7 @@ final class InkMarkLayer: CALayer {
                                duration: ui.inkSettle, bounce: ui.inkSettleBounce, stagger: ui.inkSettleStagger)
         self.settle = settle
         // The layer covers everywhere the line goes while it settles, so it is not resized while it runs.
-        fit(covering: [settle.reach(over: shape.stroke)], growOnly: false)
+        changingGel { fit(covering: [settle.reach(over: shape.stroke)], growOnly: false) }
         built = nil
         needsGel = true
         InkClock.shared.wake()
@@ -735,12 +758,11 @@ final class InkMarkLayer: CALayer {
                       height: (box.maxY / step).rounded(.up) * step - minY)
     }
 
+    /// Only inside `changingGel`, which draws the gel in the same transaction.
     private func resize(to box: CGRect) {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
         gel.frame = box
         gel.drawableSize = CGSize(width: box.width * contentsScale, height: box.height * contentsScale)
-        CATransaction.commit()
+        resized = true
     }
 
     /// The backdrop was read again: the line chooses its colour again at its next drawing.
@@ -792,6 +814,7 @@ final class InkMarkLayer: CALayer {
             targets = InkGel.targets(width: width, height: height, device: metal.device)
         }
         guard let built, let targets, let drawable = gel.nextDrawable(), let commands = metal.queue.makeCommandBuffer() else { return nil }
+        hasDrawn = true
         var uniforms = InkGel.uniforms(ui, size: gel.drawableSize, scale: contentsScale, time: time, override: override, deepness: colour)
         uniforms.offset = SIMD4(Float((gel.frame.minX - built.origin.x) * contentsScale), Float((gel.frame.minY - built.origin.y) * contentsScale), 0, 0)
         InkGel.head(of: shape, origin: built.origin, scale: contentsScale, grown: headGrown, into: &uniforms)
