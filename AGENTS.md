@@ -401,12 +401,15 @@ screenshot location for such a launch is written with the same variable:
   Accessibility. Nothing else
   may raise that dialog: `ModifierTap` is constructed with `prompt: false`, so the only
   `trusted(prompt: true)` in the app is `Accessibility.request()`, which runs from a button the user
-  pressed: this window's, after choosing the double tap, and the Settings window's. A dialog raised
+  pressed: this window's, after choosing the double tap, the Settings window's, and the status
+  menu's Allow Accessibility for the Shortcut…. A dialog raised
   during launch, on a question nobody asked, is the one people dismiss. `request()` raises macOS's
   own alert and nothing else, and opens the pane itself only when no `universalAccessAuthWarn`
   window is up 1.5 s later (measured: the alert came up within half a second). Opening both at
-  once put the pane in front of the alert, which then waited behind it and outlived the grant, and
-  each further press queued one more alert to come up after it. The window learns the grant landed
+  once put the pane in front of the alert, which then waited behind it and outlived the grant. A
+  press while the alert is up brings the alert to the front, since any window can cover it:
+  Vignette yields its activation to the alert's app and activates it (`bringForward`). It does not
+  ask again, which would queue a second alert behind the first. The window learns the grant landed
   by polling (AXIsProcessTrusted announces nothing), comes back to the front then, since System
   Settings was covering it, and learns the shortcut works from the `.hotKeyFired`
   notification, which `registerHotKey`'s `fire` posts: the keys firing is what proves the setup

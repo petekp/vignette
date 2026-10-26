@@ -825,15 +825,20 @@ enum Accessibility {
     /// `alertWait`. Opening both at once put the pane in front of the alert, which then waited
     /// behind it and outlived the grant.
     ///
+    /// While the alert is up, a request brings it to the front instead of asking again, since any
+    /// window can cover it. Asking again would queue a second alert, which comes up after the first
+    /// is answered.
+    ///
     /// Deny on the alert, or quitting System Settings without the grant, hands the focus to the app
     /// the user had before Vignette. That app covers the window that asked, and Vignette has no Dock
     /// icon to bring it back by, so the window comes back then. A grant is left to the windows,
     /// which poll for it.
     @MainActor
     static func request() {
-        // macOS queues one alert per request, so a second press while one is up would leave another
-        // waiting behind it, which comes up after the first is answered.
-        guard !alertIsUp else { Log.write("[accessibility] macOS's alert is already up"); return }
+        if let alert = alertOwnerPID {
+            bringForward(alert)
+            return
+        }
         let asking = NSApp.keyWindow
         _ = ModifierTap.trusted(prompt: true)
         Task { @MainActor in
@@ -878,12 +883,23 @@ enum Accessibility {
         return true
     }
 
-    /// The alert belongs to macOS's `universalAccessAuthWarn` process. Window owner names need no
-    /// Screen Recording permission. If Apple renames the process, this reads false and the pane
+    /// The alert belongs to macOS's `universalAccessAuthWarn` process. Window owner names and pids
+    /// need no Screen Recording permission. If Apple renames the process, this reads nil and the pane
     /// opens as well, which is how this worked before.
-    private static var alertIsUp: Bool {
+    private static var alertOwnerPID: pid_t? {
         let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-        return windows.contains { $0[kCGWindowOwnerName as String] as? String == "universalAccessAuthWarn" }
+        let alert = windows.first { $0[kCGWindowOwnerName as String] as? String == "universalAccessAuthWarn" }
+        return alert?[kCGWindowOwnerPID as String] as? pid_t
+    }
+
+    private static var alertIsUp: Bool { alertOwnerPID != nil }
+
+    @MainActor
+    private static func bringForward(_ pid: pid_t) {
+        guard let alert = NSRunningApplication(processIdentifier: pid) else { return }
+        NSApp.yieldActivation(to: alert)
+        let raised = alert.activate()
+        Log.write("[accessibility] macOS's alert is already up; \(raised ? "brought it to the front" : "could not bring it to the front")")
     }
 }
 
