@@ -574,9 +574,10 @@ final class InkMarkLayer: CALayer {
     }
 
     /// The stroke being drawn, its end at the pen, its first `settled` points where no later event
-    /// moves them. It draws at once, in the pointer's own event.
-    func showPen(_ stroke: InkHand.Stroke, settled: Int, longest: CGFloat, markStyle: MarkStyle) {
-        changingGel(drawing: true) {
+    /// moves them. It draws at once, in the pointer's own event, or, `byClock`, in the clock's tick
+    /// that moved it, with the other gels.
+    func showPen(_ stroke: InkHand.Stroke, settled: Int, longest: CGFloat, markStyle: MarkStyle, byClock: Bool = false) {
+        changingGel(drawing: true, byClock: byClock) {
             shown = nil
             settle = nil
             // A new stroke starts the layer afresh; one under way only grows it.
@@ -596,12 +597,13 @@ final class InkMarkLayer: CALayer {
     /// gel already showing a drawing, so the new frame and its drawing reach the screen in the same
     /// transaction. The old drawing over the new frame showed for one refresh, a flash of the whole
     /// line (measured 2026-10-25). A resize must not commit a transaction of its own for the same
-    /// reason.
-    private func changingGel(drawing: Bool = false, _ change: () -> Void) {
+    /// reason. A change made `byClock`, inside the clock's tick, is left for that tick to draw, in
+    /// the same transaction.
+    private func changingGel(drawing: Bool = false, byClock: Bool = false, _ change: () -> Void) {
         let before = gel.frame
         change()
         let resized = gel.frame != before
-        guard drawing || (resized && hasDrawn), isVisible,
+        guard !byClock, drawing || (resized && hasDrawn), isVisible,
               let frame = encode(at: CACurrentMediaTime(), time: InkClock.shared.time) else { return }
         frame.commands.commit()
         frame.commands.waitUntilScheduled()
@@ -987,8 +989,19 @@ final class InkMarkLayer: CALayer {
         return style
     }
 
-    /// How far the glow reaches past the line, in points.
-    private static var reach: CGFloat { Settings.shared.data.ui.inkGelGlowRadius * 2 }
+    /// How far the glow and the shadow show past the line, in points: where the falloffs in
+    /// `gelLight` (`InkGel.metal`) drop below one step of an 8-bit colour at their strongest.
+    private static var reach: CGFloat {
+        let ui = Settings.shared.data.ui
+        let radius = ui.inkGelGlowRadius
+        // The glow is at most (glow + bloom) at the shimmer's peak, times 0.7, and falls as
+        // exp(-falloff (d / radius)²).
+        let glow = (ui.inkGelGlow + ui.inkGelBloom) * (1 + 0.25 * ui.inkGelShimmer) * 0.7
+        let glowReach = glow * 255 > 1 ? radius * sqrt(log(255 * glow) / max(ui.inkGelGlowFalloff, 0.01)) : 0
+        // The shadow starts 1.5 px past the edge and falls as exp(-2 (d / radius)²).
+        let shadowReach = ui.inkGelShadow * 255 > 1 ? 1.5 + radius * sqrt(log(255 * ui.inkGelShadow) / 2) : 0
+        return max(glowReach, shadowReach)
+    }
 
     /// The pen's layer grows in steps of this many points.
     private static let growStep: CGFloat = 64

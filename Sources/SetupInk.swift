@@ -33,7 +33,7 @@ enum SetupInkTitle {
     /// Room round the lines for the ink's width and glow, in points.
     private static let margin: CGFloat = 18
 
-    private static let extent = InkStroke.bounds(of: strokes.flatMap { HandStroke.curve(through: $0) })
+    private static let extent = InkStroke.bounds(of: strokes.flatMap { ArrowBody.Curve(through: $0).samples })
 
     /// The room the title takes on the page.
     static var size: CGSize { CGSize(width: extent.width + 2 * margin, height: extent.height + 2 * margin) }
@@ -58,14 +58,15 @@ struct HandStroke: Equatable {
 
     /// A hand taking `duration` to draw the curve through `controls`, sending `rate` events a second.
     init(through controls: [CGPoint], duration: TimeInterval, rate: Double = 120) {
-        let curve = Self.curve(through: controls)
+        let path = ArrowBody.Curve(through: controls)
+        let curve = path.samples
         guard curve.count > 1, duration > 0 else {
             times = curve.map { _ in 0 }
             points = curve
             return
         }
         // The time to each point of the curve, at a speed that drops where it turns and at its ends.
-        let lengths = InkHand.lengths(curve)
+        let lengths = path.lengths
         let total = max(lengths.last ?? 0, .ulpOfOne)
         var reached: [Double] = [0]
         for index in 1..<curve.count {
@@ -109,36 +110,13 @@ struct HandStroke: Equatable {
 
     /// How sharply the curve turns at `index`, from 0 for straight to 1 for a right angle or more.
     private static func turn(at index: Int, in curve: [CGPoint]) -> CGFloat {
-        let reach = 4
+        let reach = 2
         let a = curve[max(index - reach, 0)], b = curve[index], c = curve[min(index + reach, curve.count - 1)]
         let one = CGVector(dx: b.x - a.x, dy: b.y - a.y), two = CGVector(dx: c.x - b.x, dy: c.y - b.y)
         let lengths = hypot(one.dx, one.dy) * hypot(two.dx, two.dy)
         guard lengths > 0 else { return 0 }
         let cosine = (one.dx * two.dx + one.dy * two.dy) / lengths
         return min(acos(min(max(cosine, -1), 1)) / (.pi / 2), 1)
-    }
-
-    /// The centripetal Catmull–Rom curve through `controls`, a point about every `spacing` points.
-    static func curve(through controls: [CGPoint], spacing: CGFloat = 1) -> [CGPoint] {
-        guard controls.count > 1 else { return controls }
-        let padded = [controls[0]] + controls + [controls[controls.count - 1]]
-        var curve: [CGPoint] = []
-        for index in 1..<(padded.count - 2) {
-            let p0 = padded[index - 1], p1 = padded[index], p2 = padded[index + 1], p3 = padded[index + 2]
-            func knot(_ a: CGPoint, _ b: CGPoint) -> CGFloat { max(sqrt(hypot(b.x - a.x, b.y - a.y)), 1e-4) }
-            let t1 = knot(p0, p1), t2 = t1 + knot(p1, p2), t3 = t2 + knot(p2, p3)
-            func lerp(_ a: CGPoint, _ b: CGPoint, _ ta: CGFloat, _ tb: CGFloat, _ t: CGFloat) -> CGPoint {
-                CGPoint(x: (tb - t) / (tb - ta) * a.x + (t - ta) / (tb - ta) * b.x, y: (tb - t) / (tb - ta) * a.y + (t - ta) / (tb - ta) * b.y)
-            }
-            let steps = max(Int(hypot(p2.x - p1.x, p2.y - p1.y) / spacing), 1)
-            for step in 0..<steps {
-                let t = t1 + (t2 - t1) * CGFloat(step) / CGFloat(steps)
-                let a1 = lerp(p0, p1, 0, t1, t), a2 = lerp(p1, p2, t1, t2, t), a3 = lerp(p2, p3, t2, t3, t)
-                curve.append(lerp(lerp(a1, a2, 0, t2, t), lerp(a2, a3, t1, t3, t), t1, t2, t))
-            }
-        }
-        curve.append(controls[controls.count - 1])
-        return curve
     }
 }
 
@@ -486,7 +464,8 @@ final class SetupInkPlayer: ObservableObject {
                 stroke.widths.append(width)
             }
             let pen = writing[index].pen
-            pen.showPen(stroke, settled: writing[index].writer.settled.points.count, longest: .greatestFiniteMagnitude, markStyle: markStyle)
+            pen.showPen(stroke, settled: writing[index].writer.settled.points.count, longest: .greatestFiniteMagnitude, markStyle: markStyle,
+                        byClock: true)
             guard elapsed >= writing[index].hand.duration else { continue }
             let finished = writing.remove(at: index)
             if pen === loopPen { endLoop(finished.hand.points) }
@@ -831,6 +810,7 @@ struct LiveInkSetupPage: View {
                         Text(SetupInkCopy.costNote)
                     }
                     .font(.caption).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .screenSpot(SetupInkGuide.footer, in: guide.spots)
                     // Room under the rows for the label pointing at the next Allow button.
