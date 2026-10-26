@@ -3,8 +3,8 @@
 # scheme, so it never shares settings, drawings, logs, URLs or Accessibility trust with the real app.
 #   build.sh          Vignette E2E        com.petepetrash.vignette.e2e        vignette-e2e
 #   build.sh fresh    Vignette E2E Fresh  com.petepetrash.vignette.e2e-fresh  vignette-e2e-fresh
-# The first is granted Accessibility once by hand; the second is reset before a run, for the
-# untrusted paths. Signed like scripts/build.sh, so a rebuild keeps the grant.
+# The first is granted Accessibility and Screen Recording once by hand; the second is reset before a
+# run, for the untrusted paths. Signed like scripts/build.sh, so a rebuild keeps the grants.
 set -e
 cd "$(dirname "$0")/../.."
 name=$(sed -n 's/^name: *//p' project.yml)

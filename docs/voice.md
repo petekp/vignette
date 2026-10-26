@@ -40,6 +40,7 @@ anything works inside.
 | --- | --- | --- |
 | Waiting to send (the line has not gone yet) | Sending to *place* | Button: Don't send |
 | Sending | Sending to *place* | |
+| Starting the session, which was not running at Send | Starting in *place* | |
 | Sent | Sent to *place* | |
 | Queued: no Codex engine has the thread open | Queued for *place* | Codex reads it when you open this thread. |
 | Not confirmed in time | Check *place* | Codex didn't confirm it. It may still have arrived. |
@@ -61,6 +62,8 @@ it, and "Not sent" is the headline for a failure, not for a choice.
 | Codex has no such thread | Codex can't find this thread. You can send it to another one. |
 | Codex's engine can't be reached | Codex isn't running. You can send again once it's open. |
 | No Codex on this Mac | Sending to Codex needs the Codex app or its CLI. |
+| herdr did not open a tab for a session that was not running | Vignette couldn't open a herdr tab for Claude Code. The log has details. |
+| The started session had no inbox 45 s later | Claude Code didn't open in time. You can send again once it's running. |
 | Codex did not start | Codex couldn't start. The log has details. |
 | Codex refused it for a reason Vignette has no words for | Codex: *its own words* |
 | Anything else | Something went wrong in Vignette. The log has details. |
@@ -121,6 +124,9 @@ The menu bar menu names the switch as the General tab does.
 | The badge on a row | Needs you (the inbox mod has an open question for you), else Working (a turn is running) |
 | Two rows in one group with the same title | The title and, in parentheses, the first of the herdr tab, the worktree and the branch that tells them apart, else #1 and #2 by when they started |
 | The destination control in the bar | The row's title; its tooltip is the title, the second line and the repository |
+| The destination control when no session runs and some can be started (`ToolbarView.chooseSession`) | Choose a session; its tooltip: No session is running. You can continue a past one or start a new one. |
+| A project's rows when it has no running session (`SessionMenu.continueLast`, `newSession`) | Continue last session, under it the worktree, branch, the session's name and how long ago it was used / New session, under it the worktree and branch |
+| The destination control, and the note's target, once a row of a project with no running session is picked (`SessionMenu.lastSession(in:)`, `newSession(in:)`) | Last session in *project* / New session in *project*; the tooltip keeps the menu row's words |
 
 #### In the conversation's row, or on the ink
 

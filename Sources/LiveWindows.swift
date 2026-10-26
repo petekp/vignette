@@ -177,6 +177,14 @@ final class LiveWindows {
         windows.values.lazy.compactMap { $0.overlay.marks.popover(of: id) }.first
     }
 
+    /// Hangs the person's note from `place`'s anchor, in global top-left points, on the window that
+    /// mark is on, and lets go of it on every other.
+    func hang(_ note: LiveNotePopover?, place: PopoverPlace?) {
+        for window in windows.values {
+            window.overlay.marks.hang(note, place: place?.offsetBy(dx: -window.frame.minX, dy: -window.frame.minY))
+        }
+    }
+
     /// Takes these marks off their windows.
     func remove(_ ids: Set<Mark.ID>) {
         guard !ids.isEmpty else { return }
@@ -768,6 +776,7 @@ final class WindowOverlay: NSPanel {
         CATransaction.setDisableActions(true)
         marks.position = CGPoint(x: windowOffset.dx, y: windowOffset.dy)
         CATransaction.commit()
+        marks.placePopovers()
     }
 
     /// Moves with the window, keeping its size and the marks where they are in it.

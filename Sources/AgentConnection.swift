@@ -96,6 +96,12 @@ struct AgentDestination: Equatable, Identifiable {
     /// When a drawing was last handed to this session, from the request records. Stamped by
     /// `SessionListing`; it orders the session menu.
     var lastSent: Date? = nil
+    /// The folder a Claude Code session runs in, as its inbox says (`pwd -P`). Nil for a Codex thread.
+    var folder: String? = nil
+    /// How Vignette starts the session when a person sends to it: set on a Claude Code project's
+    /// Continue last session and New session rows, which are not running (`StartableSessions`).
+    /// Nil for a session that is running and can receive now.
+    var start: SessionStart? = nil
 
     enum Focus: String, Equatable {
         /// Its agent's own app was the app in front, showing this session (`DestinationChoice`).
@@ -188,6 +194,9 @@ protocol AgentConnection: Sendable {
     /// the ones it lists, such as a Codex thread used weeks ago that the Codex app shows.
     func destinations(including id: String) -> [AgentDestination]
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome
+    /// The same, answering `completion` off the main thread. The default runs `submit` on a pool
+    /// thread; a route that waits on something it can poll answers when that comes.
+    func submit(_ line: String, to destination: AgentDestination, completion: @escaping @Sendable (SubmissionOutcome) -> Void)
     /// Where the session is in its turns, or nil when the route cannot tell.
     func turn(of destination: AgentDestination) -> SessionTurn?
     /// Whether `turn(of:)` can tell a turn's start and end; a note card to a route that cannot is not watched.
@@ -207,6 +216,10 @@ extension AgentConnection {
     func destinations(including id: String) -> [AgentDestination] { destinations() }
     func turn(of destination: AgentDestination) -> SessionTurn? { nil }
     var reportsTurns: Bool { false }
+
+    func submit(_ line: String, to destination: AgentDestination, completion: @escaping @Sendable (SubmissionOutcome) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async { completion(submit(line, to: destination)) }
+    }
 }
 
 // MARK: Running a command
@@ -283,12 +296,27 @@ struct ClaudeCodeConnection: AgentConnection {
     var modStore: @Sendable () -> [String: InboxModStore.Entry] = { InboxModStore.read() }
     var isRunning: @Sendable (Int32) -> Bool = { kill($0, 0) == 0 }
     var now: @Sendable () -> Date = { Date() }
+    /// Starts a session that is not running. Injected so a test never runs herdr.
+    var launch: @Sendable (SessionStart, String) -> HerdrLauncher.Started = { HerdrLauncher().start($0, session: $1) }
+    /// Runs the next look for a started session's inbox after a pause, on a pool thread. Injected so
+    /// a test does not wait.
+    var later: @Sendable (TimeInterval, @escaping @Sendable () -> Void) -> Void = { delay, look in
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + delay, execute: look)
+    }
+
+    /// How long a started session has to come up with its inbox before the send gives up. `claude`
+    /// starts, reads the session's transcript when it resumes one, and starts the plugin's monitor,
+    /// which writes the inbox.
+    static let startTimeout: TimeInterval = 45
+    static let startPoll: TimeInterval = 0.25
 
     /// The monitor touches `alive` every 3 s. An inbox older than this has no monitor reading it.
     static let aliveWindow: TimeInterval = 10
 
     static let closed = "This session has ended. You can send it to another one."
     static let cleared = "This session was cleared. You can send it to another one."
+    static let notStarted = "Vignette couldn't open a herdr tab for Claude Code. The log has details."
+    static let notUpInTime = "Claude Code didn't open in time. You can send again once it's running."
 
     /// One inbox, as the plugin's scripts wrote it.
     struct Inbox: Equatable {
@@ -312,8 +340,12 @@ struct ClaudeCodeConnection: AgentConnection {
 
     /// Every inbox under `root`. Nothing is read beyond the few short files in each.
     static func inboxes(in root: URL) -> [Inbox] {
-        let folders = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
-        return folders.compactMap(inbox(at:))
+        folders(in: root).compactMap(inbox(at:))
+    }
+
+    /// The folders under `root`, each an inbox when it is named by a process id.
+    static func folders(in root: URL) -> [URL] {
+        (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
     }
 
     /// The inbox in `folder`, or nil when the folder is not named by a process id. A folder that has
@@ -350,6 +382,56 @@ struct ClaudeCodeConnection: AgentConnection {
               let inbox = Self.inbox(at: inboxes.appendingPathComponent(String(pid))),
               inbox.session == session, isLive(inbox) else { return nil }
         return inbox
+    }
+
+    /// The live inbox holding `session` now, whichever process it is in.
+    private func liveInbox(holding session: String) -> Inbox? {
+        liveInboxes().first { $0.session == session }
+    }
+
+    /// Whether a started session came up: the inbox that holds it, or what the send comes to.
+    private enum StartAnswer {
+        case up(Inbox)
+        case failed(SubmissionOutcome)
+    }
+
+    /// Starts session `session` in a new herdr tab and answers once a live inbox holds it, looking
+    /// every `startPoll` for up to `startTimeout`. Only the inbox folders made since the launch are
+    /// looked at, and only their `session` file until one names it. It blocks on herdr to launch.
+    private func startSession(_ start: SessionStart, session: String, answer: @escaping @Sendable (StartAnswer) -> Void) {
+        guard UUID(uuidString: session) != nil else {
+            return answer(.failed(.notSubmitted(code: .noAgent, detail: "not a session id: \(session)", reason: SubmissionOutcome.internalReason)))
+        }
+        // Resumed by hand since it was listed: it is running, and a second process would fork it.
+        if let inbox = liveInbox(holding: session) { return answer(.up(inbox)) }
+        let before = Set(Self.folders(in: inboxes).map(\.lastPathComponent))
+        let began = now()
+        switch launch(start, session) {
+        case .failed(let detail):
+            return answer(.failed(.notSubmitted(code: .sendFailed, detail: "could not start \(session) in \(start.folder): \(detail)",
+                                                reason: Self.notStarted)))
+        case .started(let tab, let pane):
+            Log.write("[send] started claude \(start.arguments(session: session).joined(separator: " ")) in \(start.folder) tab=\(tab) pane=\(pane)")
+        }
+        look(for: session, in: start, besides: before, since: began, answer: answer)
+    }
+
+    private func look(for session: String, in start: SessionStart, besides before: Set<String>, since began: Date,
+                      answer: @escaping @Sendable (StartAnswer) -> Void) {
+        let made = Self.folders(in: inboxes).filter { !before.contains($0.lastPathComponent) }
+        let holding = made.lazy.filter { folder in
+            (try? String(contentsOf: folder.appendingPathComponent("session"), encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines) == session
+        }.compactMap(Self.inbox(at:)).first(where: isLive)
+        if let holding {
+            Log.write("[send] session \(session) came up after=\(Int(now().timeIntervalSince(began) * 1000))ms")
+            return answer(.up(holding))
+        }
+        guard now().timeIntervalSince(began) < Self.startTimeout else {
+            return answer(.failed(.notSubmitted(code: .noAgent, detail: "session \(session) had no live inbox \(Int(Self.startTimeout)) s after it was started in \(start.folder)",
+                                                reason: Self.notUpInTime)))
+        }
+        later(Self.startPoll) { look(for: session, in: start, besides: before, since: began, answer: answer) }
     }
 
     /// The same, from an inbox already read.
@@ -445,24 +527,50 @@ struct ClaudeCodeConnection: AgentConnection {
             inbox: inbox?.pid,
             goal: mod?.goal,
             needsYou: mod?.needsYou ?? false,
-            hasOwnName: transcript.title != nil)
+            hasOwnName: transcript.title != nil,
+            folder: cwd)
     }
 
-    /// Writes the request into the session's inbox, aside and then renamed in, so the monitor never
-    /// prints half of one. It is accepted once it is there: a session in a turn reads it when the
-    /// turn ends, as a Codex thread does a queued message.
+    /// Writes the request into the session's inbox. A session that is not running is started first,
+    /// through `submit(_:to:completion:)`, which this does not wait for.
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome {
         guard case .claudeSession(let session) = destination.address else {
             return .notSubmitted(code: .noAgent, detail: "not a Claude Code destination", reason: SubmissionOutcome.internalReason)
         }
+        guard destination.start == nil else {
+            return .notSubmitted(code: .noAgent, detail: "\(session) is not running; it is started through submit(_:to:completion:)",
+                                 reason: SubmissionOutcome.internalReason)
+        }
         // The guard: the inbox has to hold this exact session now. A session in no inbox is an
         // error; it is never redirected to another one. The inbox it was listed from comes first,
         // since that is the one `turn(of:)` watches.
-        guard let inbox = listedInbox(of: destination) ?? liveInboxes().first(where: { $0.session == session }) else {
+        guard let inbox = listedInbox(of: destination) ?? liveInbox(holding: session) else {
             let cleared = Self.inboxes(in: inboxes).contains { $0.past.contains(session) && isRunning($0.pid) }
             return .destinationChanged(detail: "Claude Code session \(session) is in no live inbox under \(inboxes.path)",
                                        reason: cleared ? Self.cleared : Self.closed)
         }
+        return write(line, into: inbox, session: session)
+    }
+
+    /// A session that was not running is started, and the line goes into the inbox it came up in.
+    func submit(_ line: String, to destination: AgentDestination, completion: @escaping @Sendable (SubmissionOutcome) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let start = destination.start, case .claudeSession(let session) = destination.address else {
+                return completion(submit(line, to: destination))
+            }
+            startSession(start, session: session) { answer in
+                switch answer {
+                case .up(let inbox): completion(write(line, into: inbox, session: session))
+                case .failed(let outcome): completion(outcome)
+                }
+            }
+        }
+    }
+
+    /// Writes the request into `inbox`, aside and then renamed in, so the monitor never prints half
+    /// of one. It is accepted once it is there: a session in a turn reads it when the turn ends, as a
+    /// Codex thread does a queued message.
+    private func write(_ line: String, into inbox: Inbox, session: String) -> SubmissionOutcome {
         let name = "\(Int64(now().timeIntervalSince1970 * 1000))-\(UUID().uuidString).line"
         let aside = inbox.folder.appendingPathComponent(".\(name).tmp")
         do {

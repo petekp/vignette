@@ -142,6 +142,9 @@ final class LiveInkOverlay: NSPanel {
 
     func popover(of id: Mark.ID) -> ReplyPopover? { canvas.marksLayer.popover(of: id) }
 
+    /// The layer that draws the marks, in global top-left points.
+    var marks: LiveMarksLayer { canvas.marksLayer }
+
     /// The canvas: the pointer field, the marks and the stroke being drawn. Flipped, so its layers run
     /// from the screen's top-left corner, y down, as the marks' coordinates do.
     private final class Canvas: NSView {
@@ -190,6 +193,7 @@ final class LiveInkOverlay: NSPanel {
             }
             field.layer.frame = bounds
             CATransaction.commit()
+            marksLayer.placePopovers()
         }
 
         required init?(coder: NSCoder) { fatalError("not used") }
@@ -306,6 +310,9 @@ final class LiveMarksLayer: CALayer {
     weak var host: NSView?
     var sharing: NSWindow.SharingType = .none
     private var popovers: [Mark.ID: ReplyPopover] = [:]
+    /// The person's note, hung from one of these marks as a reply is: `place` is in the marks'
+    /// coordinates, and its `anchor` is the mark.
+    private var note: (panel: LiveNotePopover, place: PopoverPlace)?
 
     init(scale: CGFloat) {
         self.scale = scale
@@ -402,6 +409,22 @@ final class LiveMarksLayer: CALayer {
         for mark in marks where popovers[mark.id] != nil && finishing[mark.id] == nil {
             showPopover(of: mark.id, appearing: appearing.contains(mark.id))
         }
+        placeNote()
+    }
+
+    /// Hangs the person's note from `place`'s anchor when this layer draws that mark, and else lets go
+    /// of it. `place` is in the marks' coordinates.
+    func hang(_ panel: LiveNotePopover?, place: PopoverPlace?) {
+        guard let panel, let place, let anchor = place.anchor, drawn[anchor] != nil else { note = nil; return }
+        guard note?.panel !== panel || note?.place != place else { return }
+        note = (panel, place)
+        placeNote()
+    }
+
+    /// Puts every reply and the note where their marks are now, after the layer moved in its window.
+    func placePopovers() {
+        for (id, record) in drawn where popovers[id] != nil && !record.finished { showPopover(of: id) }
+        placeNote()
     }
 
     /// Puts a reply's popover where its mark is now, faded as its mark is, over `fade` seconds.
@@ -409,8 +432,18 @@ final class LiveMarksLayer: CALayer {
         guard let popover = popovers[id], let record = drawn[id], let mark = record.mark, let place = mark.popover,
               let hostLayer = host?.layer else { return }
         popover.show(mark, place: place, at: record.holder.convert(place.at, to: hostLayer), appearing: appearing)
-        popover.fade(to: CGFloat(record.holder.opacity * record.previewed.opacity), duration: fade)
+        popover.fade(to: Self.opacity(of: record), duration: fade)
     }
+
+    /// Puts the note where the mark it hangs from is now, faded as that mark is, over `fade` seconds.
+    private func placeNote(fade: CFTimeInterval = 0) {
+        guard let note, let anchor = note.place.anchor, let record = drawn[anchor], let host, let hostLayer = host.layer else { return }
+        note.panel.hang(from: host, at: record.holder.convert(note.place.at, to: hostLayer), place: note.place)
+        note.panel.follow(Self.opacity(of: record), duration: fade)
+    }
+
+    /// How strongly a mark shows, and a popover hung from it with it.
+    private static func opacity(of record: Drawn) -> CGFloat { CGFloat(record.holder.opacity * record.previewed.opacity) }
 
     func popover(of id: Mark.ID) -> ReplyPopover? { popovers[id] }
 
@@ -432,6 +465,7 @@ final class LiveMarksLayer: CALayer {
         case .erase:
             record.previewed.opacity = on ? 0.35 : 1
             showPopover(of: preview.id, fade: CATransaction.animationDuration())
+            if preview.id == note?.place.anchor { placeNote(fade: CATransaction.animationDuration()) }
         case .pick:
             guard let mark = record.mark, let markStyle, let light = record.light else { return }
             // The light gives way to the person's ink, which is what a tap would make it.
@@ -511,6 +545,7 @@ final class LiveMarksLayer: CALayer {
         holder.opacity = target
         CATransaction.commit()
         showPopover(of: id, fade: duration * Double(abs(target - from)))
+        if id == note?.place.anchor { placeNote(fade: duration * Double(abs(target - from))) }
         guard duration > 0, from != target else { holder.removeAnimation(forKey: "fade"); return }
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = from

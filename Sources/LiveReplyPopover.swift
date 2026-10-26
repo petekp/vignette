@@ -292,19 +292,12 @@ extension Notification.Name {
 /// macOS 15 (docs/live-ink-look-2026-10-07.md, plan step 6).
 @MainActor
 final class ReplyPopover {
-    private let popover = NSPopover()
+    private let hanging = HangingPopover(reshow: .atOnce)
+    private var popover: NSPopover { hanging.popover }
     private let view = ReplyView(frame: .zero)
     private weak var host: NSView?
     private let sharing: NSWindow.SharingType
     private var shown: (text: String, quote: String?, notice: String?, agent: String?, answerer: String, foot: CGSize)?
-    /// The edge it hangs from now, and the mark.
-    private var edge: PopoverPlace.Edge?
-    private var anchor: Mark.ID?
-    /// Where it is sliding to, in the host's coordinates, while it moves to hang from another mark.
-    private var slidingTo: CGRect?
-    private lazy var slideX = Tween(initial: 0) { [weak self] _ in self?.applySlide() }
-    private lazy var slideY = Tween(initial: 0) { [weak self] _ in self?.applySlide() }
-    private var alpha: CGFloat = 1
     private var closing = false
     private var watching: [NSObjectProtocol] = []
 
@@ -314,7 +307,6 @@ final class ReplyPopover {
         let controller = NSViewController()
         controller.view = view
         popover.contentViewController = controller
-        popover.behavior = .applicationDefined
     }
 
     /// The popover's window, once it has been shown.
@@ -322,7 +314,7 @@ final class ReplyPopover {
 
     /// The body, in global top-left points, or nil while it is not up or faded out.
     var globalFrame: CGRect? {
-        guard popover.isShown, !closing, alpha > 0.5, let window else { return nil }
+        guard popover.isShown, !closing, hanging.alpha > 0.5, let window else { return nil }
         return StateReport.flipped(window.convertToScreen(view.convert(view.bounds, to: nil)))
     }
 
@@ -351,17 +343,7 @@ final class ReplyPopover {
         if popover.isShown {
             popover.animates = motion > 0
             if popover.contentSize != size { popover.contentSize = size }
-            // AppKit keeps the edge it was shown on, so hanging from another one means showing it again.
-            if place.edge != edge {
-                stopSliding()
-                edge = place.edge
-                popover.show(relativeTo: rect, of: host, preferredEdge: place.edge.rectEdge(flipped: host.isFlipped))
-            } else if motion > 0, place.anchor != anchor || slidingTo != nil {
-                slide(to: rect, duration: Self.slideDuration * motion)
-            } else if popover.positioningRect != rect {
-                popover.positioningRect = rect
-            }
-            anchor = place.anchor
+            hanging.hang(from: host, at: rect, place: place, animated: true)
             placeLight()
             return
         }
@@ -369,14 +351,19 @@ final class ReplyPopover {
         popover.animates = appearing && motion > 0
         popover.contentSize = size
         view.frame = CGRect(origin: .zero, size: size)
-        popover.show(relativeTo: rect, of: host, preferredEdge: place.edge.rectEdge(flipped: host.isFlipped))
-        edge = place.edge
-        anchor = place.anchor
+        hanging.hang(from: host, at: rect, place: place, animated: false)
         placeLight()
+        watchWindow()
+        NotificationCenter.default.post(name: .liveReplyChanged, object: nil)
+    }
+
+    /// Its window, each time AppKit shows it: it lets every click through, shares with captures as the
+    /// overlay does, and tells the answer's panels when it moves.
+    private func watchWindow() {
         if let window {
             window.ignoresMouseEvents = true
             window.sharingType = sharing
-            window.alphaValue = alpha
+            watching.forEach(NotificationCenter.default.removeObserver)
             watching = [NSWindow.didMoveNotification, NSWindow.didResizeNotification].map { name in
                 NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
                     NotificationCenter.default.post(name: .liveReplyChanged, object: nil)
@@ -388,7 +375,6 @@ final class ReplyPopover {
                 MainActor.assumeIsolated { window.map(Self.letGoOfKeys) }
             })
         }
-        NotificationCenter.default.post(name: .liveReplyChanged, object: nil)
     }
 
     /// A popover's window can be key, and macOS makes it key when a panel of Vignette's that held the
@@ -401,34 +387,6 @@ final class ReplyPopover {
         window.resignKey()
     }
 
-    /// Moves it along a spring to hang at `rect`, from wherever it is, as a tour moves the reply from
-    /// one stop to the next: AppKit moves a popover whose positioning rect changes in one frame.
-    private func slide(to rect: CGRect, duration: CFTimeInterval) {
-        guard rect != slidingTo else { return }
-        if slidingTo == nil {
-            slideX.set(popover.positioningRect.minX)
-            slideY.set(popover.positioningRect.minY)
-        }
-        slidingTo = rect
-        let settled = { [weak self] in
-            guard let self, let target = self.slidingTo, self.slideX.value == target.minX, self.slideY.value == target.minY else { return }
-            self.slidingTo = nil
-        }
-        slideX.animate(to: rect.minX, duration: duration, completion: settled)
-        slideY.animate(to: rect.minY, duration: duration, completion: settled)
-    }
-
-    private func applySlide() {
-        guard let target = slidingTo else { return }
-        popover.positioningRect = CGRect(origin: CGPoint(x: slideX.value, y: slideY.value), size: target.size)
-    }
-
-    private func stopSliding() {
-        slideX.stop()
-        slideY.stop()
-        slidingTo = nil
-    }
-
     /// Whether the reply carries the thinking light, as the marks it answers do while the agent works.
     func think(_ on: Bool) {
         placeLight()
@@ -438,32 +396,24 @@ final class ReplyPopover {
 
     /// Lays the thinking light round the body as it is now, starting under the arrow.
     private func placeLight() {
-        guard let window, let edge, let host, let hostWindow = host.window else { return }
+        guard let window, let edge = hanging.edge, let at = hanging.hungFrom else { return }
         let body = StateReport.flipped(window.convertToScreen(view.convert(view.bounds, to: nil)))
-        let at = StateReport.flipped(hostWindow.convertToScreen(host.convert(popover.positioningRect, to: nil)))
         let dark = view.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         view.light.place(view.bounds, start: RimLight.start(of: body, hungFrom: at, edge: edge), dark: dark)
     }
 
     /// Fades the popover to `target` over `duration`, as its mark fades.
     func fade(to target: CGFloat, duration: CFTimeInterval) {
-        guard target != alpha else { return }
-        alpha = target
+        guard target != hanging.alpha else { return }
+        if hanging.fade(to: target, duration: duration) { watchWindow() }
         NotificationCenter.default.post(name: .liveReplyChanged, object: nil)
-        guard let window else { return }
-        guard duration > 0 else { window.alphaValue = target; return }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            context.timingFunction = CAMediaTimingFunction(name: target > window.alphaValue ? .easeOut : .easeIn)
-            window.animator().alphaValue = target
-        }
     }
 
     /// Fades it out over `fade`, after `delay`, and closes it.
     func close(after delay: CFTimeInterval = 0, fade: CFTimeInterval) {
         guard !closing else { return }
         closing = true
-        stopSliding()
+        hanging.stop()
         watching.forEach(NotificationCenter.default.removeObserver)
         watching = []
         NotificationCenter.default.post(name: .liveReplyChanged, object: nil)
@@ -485,7 +435,179 @@ final class ReplyPopover {
 
     /// How long the words take to cross-fade when they change, at full motion.
     static let wordsFade: CFTimeInterval = 0.2
+}
+
+/// A popover hung from a view of a live ink overlay, at a rect that moves with one of the overlay's
+/// marks: an answer's reply, or the person's note. It keeps where it hangs, and slides on a spring to
+/// hang from another mark or another rect on the same one, since AppKit moves a popover whose
+/// positioning rect changes in one frame. It fades as its mark fades, and shows again where it hung
+/// when its host's window comes back, since AppKit closes a popover whose host window went.
+@MainActor
+final class HangingPopover {
+    /// What it does to hang from another host view, or another edge, which AppKit takes only by
+    /// showing the popover again, in one frame.
+    enum Reshow {
+        case atOnce
+        /// Fades out, shows again there, and fades back in.
+        case fadingThrough
+    }
+
+    /// What `hang` did.
+    enum Hung {
+        /// The popover came up, for the first time or after AppKit closed it.
+        case shown
+        case moved
+        /// Its host's window is not on the screen; it shows once it is (`fade`).
+        case waiting
+    }
+
+    let popover = NSPopover()
+    private(set) weak var host: NSView?
+    private(set) var edge: PopoverPlace.Edge?
+    /// The mark it hangs from, and the rect in the marks' coordinates.
+    private var from: (anchor: Mark.ID?, at: CGRect)?
+    /// Where it hangs, in the host's coordinates.
+    private var rect: CGRect = .zero
+    /// The alpha its window shows at, once it is up.
+    private(set) var alpha: CGFloat
+    private let reshow: Reshow
+    private var stopped = false
+    /// Where it is sliding to, in the host's coordinates.
+    private var target: CGRect?
+    private lazy var x = Tween(initial: 0) { [weak self] _ in self?.applySlide() }
+    private lazy var y = Tween(initial: 0) { [weak self] _ in self?.applySlide() }
+
+    init(reshow: Reshow, alpha: CGFloat = 1) {
+        self.reshow = reshow
+        self.alpha = alpha
+        popover.behavior = .applicationDefined
+    }
+
+    /// The popover's window, once it has been shown.
+    var window: NSWindow? { popover.contentViewController?.view.window }
+
+    var isSliding: Bool { target != nil }
+
+    /// The rect it hangs from now, in global top-left points: it moves with its mark's window.
+    var hungFrom: CGRect? {
+        guard let host, let hostWindow = host.window else { return nil }
+        return StateReport.flipped(hostWindow.convertToScreen(host.convert(popover.positioningRect, to: nil)))
+    }
+
+    /// Hangs it from `rect` in `host`, which is `place` in the marks' coordinates. Up already, it
+    /// slides there when `animated` and its mark or the rect on it changed, and else goes there at
+    /// once, as when the layer moved in its window.
+    @discardableResult
+    func hang(from host: NSView, at rect: CGRect, place: PopoverPlace, animated: Bool) -> Hung {
+        guard !stopped else { return .waiting }
+        let moved = from.map { $0.anchor != place.anchor || $0.at != place.at } ?? false
+        let shownHost = self.host
+        from = (place.anchor, place.at)
+        self.rect = rect
+        let reshown = shownHost !== host || place.edge != edge
+        self.host = host
+        edge = place.edge
+        guard popover.isShown, shownHost != nil else { return show() ? .shown : .waiting }
+        let motion = animated ? Settings.shared.motionScale : 0
+        if reshown {
+            stopSlide()
+            switch reshow {
+            case .atOnce: showAgain()
+            case .fadingThrough: fadeThrough(motion: motion)
+            }
+        } else if motion > 0, moved || isSliding {
+            slide(to: rect, duration: Self.slideDuration * motion)
+        } else if !isSliding, popover.positioningRect != rect {
+            popover.positioningRect = rect
+        }
+        return .moved
+    }
+
+    /// Fades it to `target` over `duration`, as its mark fades. Answers true when it came back, shown
+    /// again where it hung after AppKit closed it.
+    @discardableResult
+    func fade(to target: CGFloat, duration: CFTimeInterval) -> Bool {
+        guard !stopped else { return false }
+        let changed = target != alpha
+        alpha = target
+        let back = target > 0 && !popover.isShown && show(from: 0)
+        guard changed || back, let window else { return back }
+        guard duration > 0 else { window.alphaValue = target; return back }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: target > window.alphaValue ? .easeOut : .easeIn)
+            window.animator().alphaValue = target
+        }
+        return back
+    }
+
+    /// It is closing: it moves and shows again no more.
+    func stop() {
+        stopped = true
+        stopSlide()
+    }
+
+    /// Shows it where it hangs, at `start`, or at its alpha, when its host's window is on the screen.
+    private func show(from start: CGFloat? = nil) -> Bool {
+        guard let host, let edge, host.window?.isVisible == true else { return false }
+        popover.show(relativeTo: rect, of: host, preferredEdge: edge.rectEdge(flipped: host.isFlipped))
+        window?.alphaValue = start ?? alpha
+        return true
+    }
+
+    /// Shows it again where it hangs now, keeping its window's alpha and the keys.
+    private func showAgain() {
+        guard let host, let edge else { return }
+        popover.show(relativeTo: rect, of: host, preferredEdge: edge.rectEdge(flipped: host.isFlipped))
+    }
+
+    private func fadeThrough(motion: CGFloat) {
+        guard motion > 0, let window, window.alphaValue > 0 else { return showAgain() }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.fadeOut * motion
+            window.animator().alphaValue = 0
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, !self.stopped else { return }
+                self.showAgain()
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = Self.fadeIn * motion
+                    context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    window.animator().alphaValue = self.alpha
+                }
+            }
+        }
+    }
+
+    private func slide(to rect: CGRect, duration: CFTimeInterval) {
+        guard rect != target else { return }
+        if target == nil {
+            x.set(popover.positioningRect.minX)
+            y.set(popover.positioningRect.minY)
+        }
+        target = rect
+        let settled = { [weak self] in
+            guard let self, let target = self.target, self.x.value == target.minX, self.y.value == target.minY else { return }
+            self.target = nil
+        }
+        x.animate(to: rect.minX, duration: duration, completion: settled)
+        y.animate(to: rect.minY, duration: duration, completion: settled)
+    }
+
+    private func stopSlide() {
+        x.stop()
+        y.stop()
+        target = nil
+    }
+
+    private func applySlide() {
+        guard let target else { return }
+        popover.positioningRect = CGRect(origin: CGPoint(x: x.value, y: y.value), size: target.size)
+    }
+
     /// How long it takes to move to another mark, at full motion: as long as a focus takes to come
     /// in, so a tour's reply arrives as its next target sharpens.
     static let slideDuration: CFTimeInterval = Focus.fade
+    static let fadeIn: TimeInterval = 0.18
+    static let fadeOut: TimeInterval = 0.16
 }

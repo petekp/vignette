@@ -210,6 +210,7 @@ final class SetupInkStage: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.addSublayer(marks)
+        marks.host = self
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -361,6 +362,7 @@ final class SetupInkPlayer: ObservableObject {
     /// The page went: the demo stops, and its ink and note leave with the page.
     func stop() {
         stage.isRunning = false
+        stage.marks.hang(nil, place: nil)
         note?.fadeAway()
         note = nil
         guard next < SetupInkDemo.steps.count || loop != nil else { return }
@@ -432,11 +434,13 @@ final class SetupInkPlayer: ObservableObject {
         case .openNote:
             openNote()
         case .type(let words):
-            note?.type(words)
+            note?.put(words)
         case .nextTarget:
-            note?.nextTarget()
+            note?.step(backward: false)
         case .send:
             note?.send()
+            // Asked, it stays where it hangs until the turn ends, as live ink's does.
+            stage.marks.hang(nil, place: nil)
             let effects = wait.handle(.sent, at: Date())
             if effects.contains(.watchTurn), let loop { show([loop.mark], pulsing: [loop.mark.id]) }
         case .reading(let turn):
@@ -501,14 +505,16 @@ final class SetupInkPlayer: ObservableObject {
         // The note hangs inside the window, where the page is: with no screen, the rule keeps it in the room.
         let content = StateReport.flipped(window.convertToScreen(window.contentLayoutRect))
         let scene = LiveAnswerLayout.Scene(room: content.insetBy(dx: 8, dy: 8), ink: [global], text: text)
-        guard let place = LiveAnswerLayout.noteHang(LiveNotePopover.placementSize, for: global, scene: scene) else { return }
-        let note = LiveNotePopover(at: place, target: .responder, takesKeys: false)
-        note.offer(Self.sessions)
+        guard var place = LiveAnswerLayout.noteHang(LiveNotePopover.placementSize, for: global, scene: scene) else { return }
+        place.anchor = loop.mark.id
+        let note = LiveNotePopover(at: place, target: .responder, scripted: true)
+        note.setSessions(DestinationChoice.Candidates(destinations: Self.sessions, complete: true, fresh: true))
         self.note = note
-        let body = place.body.offsetBy(dx: -origin.x, dy: -origin.y)
-        guard let lineTwo = lines.dropFirst().first, body.intersects(lineTwo) else { return note.reveal() }
+        let staged = place.offsetBy(dx: -origin.x, dy: -origin.y)
+        stage.marks.hang(note, place: staged)
+        guard let lineTwo = lines.dropFirst().first, staged.body.intersects(lineTwo) else { return note.reveal() }
         // The line makes room first, and the note comes in once it has moved.
-        lineTwoDrop = body.maxY + Self.lineTwoGap - lineTwo.minY
+        lineTwoDrop = staged.body.maxY + Self.lineTwoGap - lineTwo.minY
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.makingRoom * Settings.shared.motionScale) { [weak self, weak note] in
             guard let note, self?.note === note else { return }
             note.reveal()

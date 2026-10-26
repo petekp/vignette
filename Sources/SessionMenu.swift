@@ -12,6 +12,10 @@ enum SessionMenu {
     static let sendWindow: TimeInterval = 4 * 60 * 60
 
     static let otherFolders = "Other folders"
+    static let continueLast = "Continue last session"
+    static let newSession = "New session"
+    static func lastSession(in project: String) -> String { "Last session in \(project)" }
+    static func newSession(in project: String) -> String { "New session in \(project)" }
     static let needsYou = "Needs you"
     static let working = "Working"
 
@@ -75,13 +79,29 @@ enum SessionMenu {
 
     // MARK: Order
 
+    /// A project's Continue before its New.
+    private static func startOrder(_ start: SessionStart) -> Int {
+        if case .resume = start { return 0 }
+        return 1
+    }
+
     /// Active sessions in rank order: sent to in the last `sendWindow` first, newest send first,
-    /// then by `DestinationChoice.newestFirst`.
+    /// then by `DestinationChoice.newestFirst`. Sessions that are not running come after every
+    /// running one, a project's Continue before its New: sending to one starts a process, so it
+    /// never takes a row from a session that can receive now.
     static func ranked(_ listed: [AgentDestination], now: Date) -> [AgentDestination] {
         func recentSend(_ session: AgentDestination) -> Date? {
             session.lastSent.flatMap { now.timeIntervalSince($0) < sendWindow ? $0 : nil }
         }
         return listed.filter { $0.isActive(now: now) }.sorted { a, b in
+            if a.startsProcess != b.startsProcess { return !a.startsProcess }
+            if a.startsProcess {
+                let (x, y) = (a.lastUsed ?? .distantPast, b.lastUsed ?? .distantPast)
+                if x != y { return x > y }
+                let (f, g) = (a.start?.folder ?? "", b.start?.folder ?? "")
+                if f != g { return f < g }
+                return a.start.map(Self.startOrder) ?? 0 < b.start.map(Self.startOrder) ?? 0
+            }
             switch (recentSend(a), recentSend(b)) {
             case let (x?, y?) where x != y: return x > y
             case (_?, nil): return true
@@ -112,10 +132,18 @@ enum SessionMenu {
     }
 
     /// `destination`'s row among `listed`, as the destination control and live ink's target button
-    /// show it.
+    /// show it. A session that is not running is titled by its project, which its menu row leaves to
+    /// the header above it; the tooltip keeps the menu row's words.
     static func row(of destination: AgentDestination, among listed: [AgentDestination], now: Date = Date()) -> Row {
         let everyone = including(destination, in: ranked(listed, now: now))
-        return Filer(everyone).rows(now: now)[destination.id]!
+        let row = Filer(everyone).rows(now: now)[destination.id]!
+        let title: String
+        switch destination.start {
+        case .resume: title = lastSession(in: destination.project)
+        case .new: title = newSession(in: destination.project)
+        case nil: return row
+        }
+        return Row(destination: row.destination, title: title, subtitle: row.subtitle, badge: row.badge, tooltip: row.tooltip)
     }
 
     /// The sessions every row is worded over: the active ones, and `destination` when it is not among them.
@@ -238,8 +266,14 @@ enum SessionMenu {
         // MARK: Words
 
         /// The herdr tab's label without a leading "<repository>:" and the title it makes, which is
-        /// that label, else the session's name.
+        /// that label, else the session's name. A session that is not running is titled by what
+        /// sending to it does.
         static func titleParts(of session: AgentDestination) -> (tab: String?, title: String) {
+            switch session.start {
+            case .resume: return (nil, SessionMenu.continueLast)
+            case .new: return (nil, SessionMenu.newSession)
+            case nil: break
+            }
             let tab = shortTab(of: session)
             return (tab, tab ?? session.name)
         }
@@ -259,7 +293,14 @@ enum SessionMenu {
             let named = session.hasOwnName && session.name.lowercased() != baseTitle.lowercased() ? session.name : nil
             let purpose = session.goal ?? named
             var parts: [String?]
-            if tab == nil && purpose == nil {
+            if let start = session.start {
+                // Where it would run, then which session it continues and when that was last used.
+                parts = placeParts(session, now: now, withSubfolder: true, withAge: false)
+                if case .resume = start {
+                    parts.append(session.hasOwnName ? session.name : nil)
+                    parts.append(session.lastUsed.map { age(since: $0, now: now) })
+                }
+            } else if tab == nil && purpose == nil {
                 // No herdr tab and nothing from the inbox mod: the session's name leads, and its place and age follow.
                 parts = placeParts(session, now: now, withSubfolder: true)
             } else {
@@ -274,7 +315,7 @@ enum SessionMenu {
 
         /// Worktree and branch, or the path from home; with the subfolder and the age when no
         /// herdr tab or goal says more.
-        private static func placeParts(_ session: AgentDestination, now: Date, withSubfolder: Bool) -> [String?] {
+        private static func placeParts(_ session: AgentDestination, now: Date, withSubfolder: Bool, withAge: Bool = true) -> [String?] {
             var parts: [String?]
             switch session.place {
             case .repository(_, _, let worktree, let subfolder):
@@ -282,7 +323,7 @@ enum SessionMenu {
             case .folder(let path): parts = [path]
             case .none: parts = []
             }
-            if withSubfolder, let used = session.lastUsed { parts.append(age(since: used, now: now)) }
+            if withSubfolder, withAge, let used = session.lastUsed { parts.append(age(since: used, now: now)) }
             return parts
         }
 
