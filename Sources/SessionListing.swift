@@ -12,12 +12,17 @@ final class SessionListing {
 
     /// When a drawing was last handed to each session, from the request records.
     private let sends: @MainActor () -> [String: Date]
+    /// The sessions Vignette can start, for projects with none running (`StartableSessions`). Asked
+    /// in a job of its own, since it reads a transcript per project, so the running sessions'
+    /// answer never waits for it. Injected so a test never reads the person's history.
+    private let startable: (@Sendable () -> [AgentDestination])?
 
     init(connections: [AgentClient: any AgentConnection], readHerdr: @escaping @Sendable () -> HerdrFocus? = { HerdrFocus.read() },
-         sends: @escaping @MainActor () -> [String: Date] = { [:] }) {
+         sends: @escaping @MainActor () -> [String: Date] = { [:] }, startable: (@Sendable () -> [AgentDestination])? = nil) {
         self.connections = connections
         self.readHerdr = readHerdr
         self.sends = sends
+        self.startable = startable
     }
 
     /// Every session that can be addressed right now, the one used last first, and herdr's focus. A
@@ -33,7 +38,8 @@ final class SessionListing {
         let answers = Answers()
         let history = sends()
         func deliver() {
-            let found = answers.lists.values.flatMap { $0 }.map { destination -> AgentDestination in
+            let running = answers.lists.values.flatMap { $0 }
+            let found = (running + Self.startable(answers.startable, beside: running)).map { destination -> AgentDestination in
                 var stamped = destination
                 stamped.lastSent = history[destination.id]
                 stamped.hostLabel = answers.herdr?.label(ofSession: destination.id)
@@ -45,7 +51,12 @@ final class SessionListing {
         for client in clients {
             if let list = kept[client] { answers.lists[client] = list }
         }
+        answers.startable = keptStartable
         if !answers.lists.isEmpty { deliver() }
+        askStartable { found in
+            answers.startable = found
+            deliver()
+        }
         for client in clients {
             ask(client, including: shown?.client == client ? shown?.id : nil) { listed in
                 answers.lists[client] = listed.destinations
@@ -67,6 +78,36 @@ final class SessionListing {
         var lists: [AgentClient: [AgentDestination]] = [:]
         var fresh: Set<AgentClient> = []
         var herdr: HerdrFocus?
+        var startable: [AgentDestination] = []
+    }
+
+    /// The sessions Vignette can start, less any whose session is among the running ones: one
+    /// resumed since its list was read.
+    static func startable(_ startable: [AgentDestination], beside running: [AgentDestination]) -> [AgentDestination] {
+        let ids = Set(running.map(\.id))
+        return startable.filter { !ids.contains($0.id) }
+    }
+
+    /// The last list of sessions Vignette can start, shown until a fresh one comes.
+    private var keptStartable: [AgentDestination] = []
+    private var askingStartable: [@MainActor ([AgentDestination]) -> Void]?
+
+    private func askStartable(_ answer: @escaping @MainActor ([AgentDestination]) -> Void) {
+        guard let startable else { return }
+        if askingStartable != nil { askingStartable?.append(answer); return }
+        askingStartable = [answer]
+        DispatchQueue.global(qos: .userInitiated).async {
+            let found = startable()
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.keptStartable = found
+                    let waiting = self.askingStartable ?? []
+                    self.askingStartable = nil
+                    waiting.forEach { $0(found) }
+                }
+            }
+        }
     }
 
     /// One client's answer: its destinations, and herdr's focus when it was read with them.

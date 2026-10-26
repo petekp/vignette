@@ -643,6 +643,7 @@ final class AnnotationController {
         var json: [String: Any] = ["listed": toolbar.model.listed]
         switch offer {
         case .copy: json["kind"] = "copy"
+        case .choose: json["kind"] = "choose"
         case .send: json["kind"] = "send"
         case .reply: json["kind"] = "reply"
         }

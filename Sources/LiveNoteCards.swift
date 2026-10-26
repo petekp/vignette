@@ -75,8 +75,9 @@ final class LiveNoteCards {
     /// watch folder with the ink and the words as its drawing, the request names that file, and its
     /// card shows the send as a send from the editor does. A send refused before it is stored takes
     /// the file and its drawing back, and the ink stays on the window, saying why.
-    func send(_ note: LiveInk.NoteCard, to destination: AgentDestination, message: String,
+    func send(_ note: LiveInk.NoteCard, to picked: AgentDestination, message: String,
               done: @escaping (Result<String, ScreenshotRequests.Refusal>) -> Void) {
+        let destination = picked.addressed()
         let refused = ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason)
         let (capture, scale) = (note.capture, note.pointScale)
         folder.writeCard(named: "Live ink note", png: { LivePacket.screenshotPNG(capture, pointScale: scale) }, from: nil) { [weak self] shot in

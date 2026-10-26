@@ -83,7 +83,8 @@ enum DestinationChoice {
     }
 
     /// Where a live ink note starts. A hand pick stays while the list has its id; the session
-    /// remembered from the note before is found again, even after `/clear`.
+    /// remembered from the note before is found again, even after `/clear`, among the running ones
+    /// only, since only a person's pick starts a process.
     private static func start(_ pick: LiveNotePick, in list: [AgentDestination]) -> AgentDestination? {
         switch pick {
         case .byHand(let session?): return list.first { $0.id == session.id }
@@ -95,8 +96,9 @@ enum DestinationChoice {
     /// `session` again in `list`: by its id, or, after `/clear` gave it a new id, as the one session
     /// of its agent in its project. Never by `project`, which falls back to the agent's name.
     private static func again(_ session: AgentDestination, in list: [AgentDestination]) -> AgentDestination? {
-        if let same = list.first(where: { $0.id == session.id }) { return same }
-        let alike = list.filter { $0.client == session.client && !$0.detail.isEmpty && $0.detail == session.detail }
+        let running = list.filter { !$0.startsProcess }
+        if let same = running.first(where: { $0.id == session.id }) { return same }
+        let alike = running.filter { $0.client == session.client && !$0.detail.isEmpty && $0.detail == session.detail }
         return alike.count == 1 ? alike[0] : nil
     }
 
@@ -121,10 +123,10 @@ enum DestinationChoice {
     /// Where Send goes when nobody has chosen: the session you came from, which is where a paste
     /// would have gone. The session an agent's app showed first, then herdr's focused pane, then the
     /// one session beside it, then the session used last. `list` is in Send's order, the session used
-    /// last first.
+    /// last first. Never a session that is not running: only a person's pick starts a process.
     private static func pick(in list: [AgentDestination]) -> AgentDestination? {
         list.first { $0.focus == .app } ?? list.first { $0.focus == .pane } ?? list.first { $0.focus == .tab }
-            ?? list.first
+            ?? list.first { !$0.startsProcess }
     }
 
     /// The sessions as they stand when you came from `client`'s own app, such as the Codex app.
@@ -134,7 +136,7 @@ enum DestinationChoice {
     /// started since the list was kept, and the fresh list will say. `list` is in Send's order.
     private static func marked(_ client: AgentClient, shown: String?, in list: [AgentDestination], fresh: Bool) -> [AgentDestination] {
         var marked = list
-        let ofClient = marked.indices.filter { marked[$0].client == client }
+        let ofClient = marked.indices.filter { marked[$0].client == client && !marked[$0].startsProcess }
         let match = shown.flatMap { id in ofClient.first { marked[$0].id == id } }
         guard match != nil || shown == nil || fresh else { return marked }
         if let index = match ?? ofClient.first { marked[index].focus = .app }

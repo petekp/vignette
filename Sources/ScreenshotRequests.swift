@@ -117,6 +117,8 @@ final class ScreenshotRequests {
         /// When the request's line was handed to the client. Nil while it has not been, and for a
         /// request cancelled in its grace period, which a clear also ends as `cleared`.
         var handedOver: Date? = nil
+        /// How the session is started before the line goes in, when it was not running at Send.
+        var start: SessionStart? = nil
 
         enum Status: String, Codable {
             /// Stored and not yet handed to the client: in its grace, or about to be.
@@ -371,7 +373,7 @@ final class ScreenshotRequests {
         let record = Record(id: id, created: Date(), destinationID: destination.id,
                             destinationName: destination.name, address: destination.address,
                             addressGuard: destination.address.guardTier, source: source.url.lastPathComponent,
-                            sourceKey: source.path, status: .prepared, detail: "")
+                            sourceKey: source.path, status: .prepared, detail: "", start: destination.start)
         let ticket = ReplyProtocol.Ticket(requestID: id, secret: ReplyProtocol.newSecret(),
                                           requestDirectory: directory.path, app: Bundle.main.bundlePath)
         do {
@@ -472,7 +474,9 @@ final class ScreenshotRequests {
         requests[record.id] = going
         do { try write(going) }
         catch { Log.write("[send] error \(CommandError.writeFailed.rawValue) could not store \(record.id): \(error.localizedDescription)") }
-        let destination = AgentDestination(id: record.destinationID, name: record.destinationName, address: record.address)
+        let destination = AgentDestination(id: record.destinationID, name: record.destinationName,
+                                           detail: record.start.map { ($0.folder as NSString).lastPathComponent } ?? "",
+                                           address: record.address, start: record.start)
         DispatchQueue.global(qos: .userInitiated).async { completion(connection.submit(line, to: destination)) }
         return nil
     }

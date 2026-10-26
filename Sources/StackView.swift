@@ -590,7 +590,8 @@ struct SendOverlay: View {
 
     private var words: String {
         switch state {
-        case .inGrace, .sending: return "Sending to \(notice.project)"
+        case .inGrace: return "Sending to \(notice.project)"
+        case .sending: return notice.starts ? "Starting in \(notice.project)" : "Sending to \(notice.project)"
         case .sent: return "Sent to \(notice.project)"
         case .queued: return "Queued for \(notice.project)"
         case .uncertain: return "Check \(notice.project)"

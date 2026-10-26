@@ -12,6 +12,8 @@ enum SessionMenu {
     static let sendWindow: TimeInterval = 4 * 60 * 60
 
     static let otherFolders = "Other folders"
+    static let continueLast = "Continue last session"
+    static let newSession = "New session"
     static let needsYou = "Needs you"
     static let working = "Working"
 
@@ -76,12 +78,20 @@ enum SessionMenu {
     // MARK: Order
 
     /// Active sessions in rank order: sent to in the last `sendWindow` first, newest send first,
-    /// then by `DestinationChoice.newestFirst`.
+    /// then by `DestinationChoice.newestFirst`. Sessions that are not running come after every
+    /// running one, a project's Continue before its New: sending to one starts a process, so it
+    /// never takes a row from a session that can receive now.
     static func ranked(_ listed: [AgentDestination], now: Date) -> [AgentDestination] {
         func recentSend(_ session: AgentDestination) -> Date? {
             session.lastSent.flatMap { now.timeIntervalSince($0) < sendWindow ? $0 : nil }
         }
         return listed.filter { $0.isActive(now: now) }.sorted { a, b in
+            if a.startsProcess != b.startsProcess { return !a.startsProcess }
+            if a.startsProcess {
+                if a.lastUsed != b.lastUsed || a.start?.folder != b.start?.folder { return DestinationChoice.newestFirst(a, b) }
+                if case .resume = a.start { return true }
+                return false
+            }
             switch (recentSend(a), recentSend(b)) {
             case let (x?, y?) where x != y: return x > y
             case (_?, nil): return true
@@ -238,8 +248,14 @@ enum SessionMenu {
         // MARK: Words
 
         /// The herdr tab's label without a leading "<repository>:" and the title it makes, which is
-        /// that label, else the session's name.
+        /// that label, else the session's name. A session that is not running is titled by what
+        /// sending to it does.
         static func titleParts(of session: AgentDestination) -> (tab: String?, title: String) {
+            switch session.start {
+            case .resume: return (nil, SessionMenu.continueLast)
+            case .new: return (nil, SessionMenu.newSession)
+            case nil: break
+            }
             let tab = shortTab(of: session)
             return (tab, tab ?? session.name)
         }
@@ -259,7 +275,14 @@ enum SessionMenu {
             let named = session.hasOwnName && session.name.lowercased() != baseTitle.lowercased() ? session.name : nil
             let purpose = session.goal ?? named
             var parts: [String?]
-            if tab == nil && purpose == nil {
+            if let start = session.start {
+                // Where it would run, then which session it continues and when that was last used.
+                parts = placeParts(session, now: now, withSubfolder: true, withAge: false)
+                if case .resume = start {
+                    parts.append(session.hasOwnName ? session.name : nil)
+                    parts.append(session.lastUsed.map { age(since: $0, now: now) })
+                }
+            } else if tab == nil && purpose == nil {
                 // No herdr tab and nothing from the inbox mod: the session's name leads, and its place and age follow.
                 parts = placeParts(session, now: now, withSubfolder: true)
             } else {
@@ -274,7 +297,7 @@ enum SessionMenu {
 
         /// Worktree and branch, or the path from home; with the subfolder and the age when no
         /// herdr tab or goal says more.
-        private static func placeParts(_ session: AgentDestination, now: Date, withSubfolder: Bool) -> [String?] {
+        private static func placeParts(_ session: AgentDestination, now: Date, withSubfolder: Bool, withAge: Bool = true) -> [String?] {
             var parts: [String?]
             switch session.place {
             case .repository(_, _, let worktree, let subfolder):
@@ -282,7 +305,7 @@ enum SessionMenu {
             case .folder(let path): parts = [path]
             case .none: parts = []
             }
-            if withSubfolder, let used = session.lastUsed { parts.append(age(since: used, now: now)) }
+            if withSubfolder, withAge, let used = session.lastUsed { parts.append(age(since: used, now: now)) }
             return parts
         }
 

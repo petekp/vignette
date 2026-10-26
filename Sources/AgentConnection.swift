@@ -62,11 +62,11 @@ struct AgentDestination: Equatable, Identifiable {
     /// Vignette's stable handle for it: the thread UUID for Codex, the session id for Claude
     /// Code. It is what a request records, so a reply's card can offer the conversation it came
     /// from.
-    let id: String
+    var id: String
     let name: String
     /// The project folder the session works in, shown beside its name.
     var detail: String = ""
-    let address: AgentAddress
+    var address: AgentAddress
     /// When the session was last used, which is the order Send lists sessions in. Nil when its
     /// client could not say.
     var lastUsed: Date? = nil
@@ -96,6 +96,10 @@ struct AgentDestination: Equatable, Identifiable {
     /// When a drawing was last handed to this session, from the request records. Stamped by
     /// `SessionListing`; it orders the session menu.
     var lastSent: Date? = nil
+    /// How Vignette starts the session when a person sends to it: set on a Claude Code project's
+    /// Continue last session and New session rows, which are not running (`StartableSessions`).
+    /// Nil for a session that is running and can receive now.
+    var start: SessionStart? = nil
 
     enum Focus: String, Equatable {
         /// Its agent's own app was the app in front, showing this session (`DestinationChoice`).
@@ -283,12 +287,24 @@ struct ClaudeCodeConnection: AgentConnection {
     var modStore: @Sendable () -> [String: InboxModStore.Entry] = { InboxModStore.read() }
     var isRunning: @Sendable (Int32) -> Bool = { kill($0, 0) == 0 }
     var now: @Sendable () -> Date = { Date() }
+    /// Starts a session that is not running. Injected so a test never runs herdr.
+    var launch: @Sendable (SessionStart, String, String) -> HerdrLauncher.Started = { HerdrLauncher().start($0, session: $1, label: $2) }
+    /// Waits between two looks for a started session's inbox. Injected so a test does not sleep.
+    var pause: @Sendable (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }
+
+    /// How long a started session has to come up with its inbox before the send gives up. `claude`
+    /// starts, reads the session's transcript when it resumes one, and starts the plugin's monitor,
+    /// which writes the inbox.
+    static let startTimeout: TimeInterval = 45
+    static let startPoll: TimeInterval = 0.25
 
     /// The monitor touches `alive` every 3 s. An inbox older than this has no monitor reading it.
     static let aliveWindow: TimeInterval = 10
 
     static let closed = "This session has ended. You can send it to another one."
     static let cleared = "This session was cleared. You can send it to another one."
+    static let notStarted = "Vignette couldn't open a herdr tab for Claude Code. The log has details."
+    static let notUpInTime = "Claude Code didn't open in time. You can send again once it's running."
 
     /// One inbox, as the plugin's scripts wrote it.
     struct Inbox: Equatable {
@@ -344,12 +360,42 @@ struct ClaudeCodeConnection: AgentConnection {
         listedInbox(of: destination).flatMap(Self.turn(of:))
     }
 
-    /// The inbox `destination` was listed from, while it is live and still holds that session.
+    /// The inbox `destination` was listed from, while it is live and still holds that session. A
+    /// session Vignette started was listed from no inbox, so it is the live one holding it.
     private func listedInbox(of destination: AgentDestination) -> Inbox? {
-        guard case .claudeSession(let session) = destination.address, let pid = destination.inbox,
-              let inbox = Self.inbox(at: inboxes.appendingPathComponent(String(pid))),
+        guard case .claudeSession(let session) = destination.address else { return nil }
+        guard let pid = destination.inbox else {
+            return destination.startsProcess ? liveInboxes().first { $0.session == session } : nil
+        }
+        guard let inbox = Self.inbox(at: inboxes.appendingPathComponent(String(pid))),
               inbox.session == session, isLive(inbox) else { return nil }
         return inbox
+    }
+
+    /// Starts `destination`'s session in a new herdr tab and waits until a live inbox holds it.
+    /// Nil once it does; otherwise what the send comes to. It blocks for up to `startTimeout`.
+    private func started(_ start: SessionStart, session: String, label: String) -> SubmissionOutcome? {
+        guard UUID(uuidString: session) != nil else {
+            return .notSubmitted(code: .noAgent, detail: "not a session id: \(session)", reason: SubmissionOutcome.internalReason)
+        }
+        // Resumed by hand since it was listed: it is running, and a second process would fork it.
+        if liveInboxes().contains(where: { $0.session == session }) { return nil }
+        let began = now()
+        switch launch(start, session, label) {
+        case .failed(let detail):
+            return .notSubmitted(code: .sendFailed, detail: "could not start \(session) in \(start.folder): \(detail)", reason: Self.notStarted)
+        case .started(let tab, let pane):
+            Log.write("[send] started claude \(start.arguments(session: session).joined(separator: " ")) in \(start.folder) tab=\(tab) pane=\(pane)")
+        }
+        while now().timeIntervalSince(began) < Self.startTimeout {
+            if liveInboxes().contains(where: { $0.session == session }) {
+                Log.write("[send] session \(session) came up after=\(Int(now().timeIntervalSince(began) * 1000))ms")
+                return nil
+            }
+            pause(Self.startPoll)
+        }
+        return .notSubmitted(code: .noAgent, detail: "session \(session) had no live inbox \(Int(Self.startTimeout)) s after it was started in \(start.folder)",
+                             reason: Self.notUpInTime)
     }
 
     /// The same, from an inbox already read.
@@ -455,7 +501,12 @@ struct ClaudeCodeConnection: AgentConnection {
         guard case .claudeSession(let session) = destination.address else {
             return .notSubmitted(code: .noAgent, detail: "not a Claude Code destination", reason: SubmissionOutcome.internalReason)
         }
-        // The guard: the inbox has to hold this exact session now. A session in no inbox is an
+        // A session that was not running is started first, and the line then goes into its inbox
+        // as into any other, past the same guard.
+        if let start = destination.start, let outcome = started(start, session: session, label: destination.startLabel) {
+            return outcome
+        }
+        // The guard:the inbox has to hold this exact session now. A session in no inbox is an
         // error; it is never redirected to another one. The inbox it was listed from comes first,
         // since that is the one `turn(of:)` watches.
         guard let inbox = listedInbox(of: destination) ?? liveInboxes().first(where: { $0.session == session }) else {
