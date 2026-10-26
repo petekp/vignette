@@ -87,18 +87,12 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// what it was placed clear of.
     static var placementSize: CGSize { NoteLayout.size(lines: 3) }
 
-    /// Played by a script, as setup's live ink page plays one: it never takes the keys, so the window
-    /// in front keeps them.
-    private let scripted: Bool
-
     /// A note for `place`, in global top-left points, which shows once hung (`hang`): out of sight until
-    /// `reveal`, but with the keys, so what the person types meanwhile is in it when it shows. A `scripted`
-    /// one is typed in by its script (`put`, `step`, `send`).
-    init(at place: PopoverPlace, target: Target, scripted: Bool = false) {
+    /// `reveal`, but with the keys, so what the person types meanwhile is in it when it shows.
+    init(at place: PopoverPlace, target: Target) {
         openedAt = CACurrentMediaTime()
         self.place = place
         self.target = target
-        self.scripted = scripted
         ownPick = .remembered(target.session)
         super.init()
         let controller = NSViewController()
@@ -107,31 +101,25 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         popover.animates = false
         content.field.delegate = self
         content.session.onClick = { [weak self] in self?.showTargets() }
-        if scripted {
-            content.field.isEditable = false
-            content.field.isSelectable = false
-        }
         showTarget()
         content.layOut()
         popover.contentSize = content.frame.size
     }
 
     /// Hangs it from `rect` in `host`, which is `place` on the screen. The first time, it opens there
-    /// with the keys, unless it stands aside. After that, a new place slides it there on a spring, and
-    /// the same place with its layer moved in the window puts it there at once. Into another window, or
-    /// onto another edge, it fades out and back in, since AppKit moves a popover shown again in one frame.
-    func hang(from host: NSView, at rect: CGRect, place: PopoverPlace) {
+    /// with the keys when `takingKeys`, unless it stands aside; without them, the window that had the
+    /// keys keeps them. After that, a new place slides it there on a spring, and the same place with its
+    /// layer moved in the window puts it there at once. Into another window, or onto another edge, it
+    /// fades out and back in, since AppKit moves a popover shown again in one frame.
+    func hang(from host: NSView, at rect: CGRect, place: PopoverPlace, takingKeys: Bool = true) {
         guard !closing else { return }
         self.place = place
         let key = NSApp.keyWindow
         guard hanging.hang(from: host, at: rect, place: place, animated: revealed) == .shown else { return }
         // A popover's window takes the keys as it shows, so they go back to the window that had them.
-        guard !scripted else {
-            key?.makeKey()
-            return
-        }
+        if !takingKeys, key !== content.window { key?.makeKey() }
         // Shown again after AppKit closed it with its ink's window, it waits for a click or the chord.
-        watchWindow(takingKeys: !opened && !standsAside)
+        watchWindow(takingKeys: takingKeys && !opened && !standsAside)
         opened = true
     }
 
@@ -140,7 +128,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// Watches its window, each time AppKit shows it, for the keys coming and going, and takes them when
     /// `takingKeys`.
     private func watchWindow(takingKeys: Bool) {
-        guard !scripted, let window = content.window else { return }
+        guard let window = content.window else { return }
         if takingKeys {
             takesKeys(window)
             window.makeFirstResponder(content.field)
@@ -196,7 +184,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     /// Takes the keys back, with the caret where it was, as a click on it does.
     func takeKeys() {
-        guard !scripted, !closing, !sent, !standsAside, popover.isShown, let window = content.window else { return }
+        guard !closing, !sent, !standsAside, popover.isShown, let window = content.window else { return }
         takesKeys(window)
         if window.firstResponder !== content.field.currentEditor() {
             window.makeFirstResponder(content.field)
@@ -279,7 +267,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// The list of targets, under the target, or beside the note when the screen has no room below it,
     /// so it never covers the words being typed.
     private func showTargets() {
-        guard !scripted, let window = content.window else { return }
+        guard let window = content.window else { return }
         let menu = NSMenu()
         let responder = NSMenuItem(title: "Claude, on the screen", action: #selector(pickTarget(_:)), keyEquivalent: "")
         responder.image = SessionMenu.logo(for: .claude)
@@ -447,7 +435,10 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// over its own short fade. A handover still waiting for the note to settle is called off. `gone`
     /// runs once it is off the screen.
     func fadeAway(after delay: CFTimeInterval = 0, over duration: CFTimeInterval? = nil, then gone: (() -> Void)? = nil) {
-        guard !closing || handingOver else { return gone?() ?? () }
+        guard !closing || handingOver else {
+            gone?()
+            return
+        }
         closing = true
         handingOver = false
         stopWatching()

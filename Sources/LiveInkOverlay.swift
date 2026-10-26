@@ -312,7 +312,7 @@ final class LiveMarksLayer: CALayer {
     private var popovers: [Mark.ID: ReplyPopover] = [:]
     /// The person's note, hung from one of these marks as a reply is: `place` is in the marks'
     /// coordinates, and its `anchor` is the mark.
-    private var note: (panel: LiveNotePopover, place: PopoverPlace)?
+    private var note: (panel: LiveNotePopover, place: PopoverPlace, takingKeys: Bool)?
 
     init(scale: CGFloat) {
         self.scale = scale
@@ -413,11 +413,11 @@ final class LiveMarksLayer: CALayer {
     }
 
     /// Hangs the person's note from `place`'s anchor when this layer draws that mark, and else lets go
-    /// of it. `place` is in the marks' coordinates.
-    func hang(_ panel: LiveNotePopover?, place: PopoverPlace?) {
+    /// of it. `place` is in the marks' coordinates. Without `takingKeys`, it opens without the keys.
+    func hang(_ panel: LiveNotePopover?, place: PopoverPlace?, takingKeys: Bool = true) {
         guard let panel, let place, let anchor = place.anchor, drawn[anchor] != nil else { note = nil; return }
         guard note?.panel !== panel || note?.place != place else { return }
-        note = (panel, place)
+        note = (panel, place, takingKeys)
         placeNote()
     }
 
@@ -438,7 +438,8 @@ final class LiveMarksLayer: CALayer {
     /// Puts the note where the mark it hangs from is now, faded as that mark is, over `fade` seconds.
     private func placeNote(fade: CFTimeInterval = 0) {
         guard let note, let anchor = note.place.anchor, let record = drawn[anchor], let host, let hostLayer = host.layer else { return }
-        note.panel.hang(from: host, at: record.holder.convert(note.place.at, to: hostLayer), place: note.place)
+        note.panel.hang(from: host, at: record.holder.convert(note.place.at, to: hostLayer), place: note.place,
+                        takingKeys: note.takingKeys)
         note.panel.follow(Self.opacity(of: record), duration: fade)
     }
 

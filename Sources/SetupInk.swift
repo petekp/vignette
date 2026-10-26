@@ -507,11 +507,13 @@ final class SetupInkPlayer: ObservableObject {
         let scene = LiveAnswerLayout.Scene(room: content.insetBy(dx: 8, dy: 8), ink: [global], text: text)
         guard var place = LiveAnswerLayout.noteHang(LiveNotePopover.placementSize, for: global, scene: scene) else { return }
         place.anchor = loop.mark.id
-        let note = LiveNotePopover(at: place, target: .responder, scripted: true)
+        let note = LiveNotePopover(at: place, target: .responder)
         note.setSessions(DestinationChoice.Candidates(destinations: Self.sessions, complete: true, fresh: true))
         self.note = note
         let staged = place.offsetBy(dx: -origin.x, dy: -origin.y)
-        stage.marks.hang(note, place: staged)
+        // A press on the note takes the keys, and letting go of them goes back to the setup window.
+        FocusReturn.shared.sessionStarting()
+        stage.marks.hang(note, place: staged, takingKeys: false)
         guard let lineTwo = lines.dropFirst().first, staged.body.intersects(lineTwo) else { return note.reveal() }
         // The line makes room first, and the note comes in once it has moved.
         lineTwoDrop = staged.body.maxY + Self.lineTwoGap - lineTwo.minY

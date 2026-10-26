@@ -31,8 +31,8 @@ final class FocusReturn {
         }
     }
 
-    /// The stack or the annotator is coming up. Called before either takes the keys, while the
-    /// window the person was in is still key.
+    /// The stack, the annotator or setup's demo note is coming up. Called before it can take the keys,
+    /// while the window the person was in is still key.
     func sessionStarting() {
         guard NSApp.isActive, let window = NSApp.keyWindow, window.styleMask.contains(.titled) else { return }
         ownWindow = window

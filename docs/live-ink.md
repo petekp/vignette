@@ -287,10 +287,10 @@ The names in brackets are `// MARK:` sections.
   (measured on macOS 15). `PopoverPlace.body` slides it the same way, so the layout knows where the
   body lands. A scene with no screen keeps the note inside its room, and there AppKit would not
   slide it, so the arrow moves along the ink's side to where the body fits (`PopoverPlace.hung`).
-  Setup's live ink page uses this, and it plays a real note with no hand: a `scripted` note never
-  takes the keys or makes the setup window lose them. The page hangs it through its stage's
-  `LiveMarksLayer.hang`, as live ink's overlays do, gives it targets through `setSessions`, and
-  `put`, `step(backward:)` and `send` fill in its words, step its target and ask. The note opens out
+  Setup's live ink page uses this, and it plays a real note with no hand. The page hangs it through
+  its stage's `LiveMarksLayer.hang` with `takingKeys: false`, so the setup window keeps the keys,
+  gives it targets through `setSessions`, and `put`, `step(backward:)` and `send` fill in its words,
+  step its target and ask. The note opens out
   of sight, placed from the ink alone. It moves, before it shows or as it slides to newer ink, once
   `LivePacket.Glance` gives the window's frame and text, about 20 ms after the capture (Vision's fast
   level, for where the lines are, not what they say), and shows after 0.8 s without it. The list of
