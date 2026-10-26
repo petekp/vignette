@@ -564,7 +564,8 @@ The names in brackets are `// MARK:` sections.
   sends a drawing, with the words and where the ink is in the line. The client's answer goes to the
   note's card, as a send's does.
 - `live-ink-ask?message=` (debug) asks as Return does, and `&session=<id>` sends to that session.
-  `[state] liveInk` adds `new` (ink not yet asked about), `note`, `actions` (each button's words,
+  `[state] liveInk` adds `new` (ink not yet asked about), `note`, `reply` (the newest ask's reply
+  popover's frame while it is up), `actions` (each button's words,
   frame, and whether it is enabled and picked, for the newest answer with buttons), `replyField` and `replyCancel` (that
   answer's field's and Cancel's frames while they are up),
   `responder`, `asks` (each ask, oldest first: its id, phase, how many marks it is about, whether

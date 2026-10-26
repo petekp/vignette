@@ -126,7 +126,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private func watchWindow(takingKeys: Bool) {
         guard let window = content.window else { return }
         if takingKeys {
-            window.makeKey()
+            takesKeys(window)
             window.makeFirstResponder(content.field)
             restoreCaret()
         }
@@ -134,7 +134,8 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         watching.append(NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.resigned() }
         })
-        watching.append(NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main) { [weak self] _ in
+        // Run as the window becomes key, so the press that made it key is still the current event.
+        watching.append(NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window, queue: nil) { [weak self] _ in
             MainActor.assumeIsolated { self?.becameKey() }
         })
     }
@@ -180,7 +181,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// Takes the keys back, with the caret where it was, as a click on it does.
     func takeKeys() {
         guard !closing, !sent, !standsAside, popover.isShown, let window = content.window else { return }
-        window.makeKey()
+        takesKeys(window)
         if window.firstResponder !== content.field.currentEditor() {
             window.makeFirstResponder(content.field)
             restoreCaret()
@@ -288,7 +289,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         }
         menuOpen = false
         guard !closing else { return }
-        window.makeKey()
+        takesKeys(window)
         window.makeFirstResponder(content.field)
         // Making the field first responder selects its words; the caret goes back to their end.
         content.field.currentEditor()?.selectedRange = NSRange(location: (content.field.stringValue as NSString).length, length: 0)
@@ -503,8 +504,26 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         Log.write("[live-ink] note let go of the keys")
     }
 
+    /// Makes its window key, as the note asking for the keys.
+    private func takesKeys(_ window: NSWindow) {
+        askedForKeys = true
+        window.makeKey()
+        askedForKeys = false
+    }
+
+    private var askedForKeys = false
+
+    /// The note asked for the keys, or the person pressed on it. macOS also makes it key on its own when
+    /// another window of Vignette's that had the keys closes, as the annotator's does, while the person
+    /// is back in their app: it gives those keys back at once.
     private func becameKey() {
         guard !closing, !sent, !menuOpen else { return }
+        let pressed = NSApp.currentEvent.map { [.leftMouseDown, .rightMouseDown].contains($0.type) && $0.window === content.window } == true
+        guard askedForKeys || pressed else {
+            Log.write("[live-ink] note gave back keys macOS handed it")
+            letGoOfKeys()
+            return
+        }
         content.showsKeys(true, duration: Self.focusFade * Settings.shared.motionScale)
         Log.write("[live-ink] note has the keys")
         onKeysBack?()

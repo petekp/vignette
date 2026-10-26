@@ -408,6 +408,7 @@ final class LiveInk {
             "noteSessions": note?.sessionCount ?? NSNull(),
             "noteTargetSession": note?.target.session?.id ?? NSNull(),
             "noteShown": note?.isShown ?? false,
+            "reply": asks.newest.flatMap(shownReply(of:)).map { [$0.note.minX, $0.note.minY, $0.note.width, $0.note.height].map { Int($0.rounded()) } } ?? NSNull(),
             "actions": newestPanel.map { panel -> Any in
                 panel.buttons.map { ["title": $0.title, "frame": [$0.frame.minX, $0.frame.minY, $0.frame.width, $0.frame.height].map { Int($0.rounded()) },
                                      "enabled": $0.enabled, "picked": $0.picked] }
@@ -2148,7 +2149,6 @@ final class LiveInk {
         windows.show(markStyle: ui.markStyle, textStyle: ui.textStyle, drawingOn: drawingOn, pulsing: pulsing, finishing: finishing,
                      overDark: overDark, hands: hands)
         drawingOn = []
-        hangNote()
         keepNoteWithItsInk()
         // Watched while the reply is out of sight too, as when its window is minimized, so its × and
         // buttons come back when it fades back in.
