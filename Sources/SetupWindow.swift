@@ -523,13 +523,15 @@ struct SetupView: View {
     /// however wide the buttons are.
     private var buttons: some View {
         ZStack {
-            HStack(spacing: 7) {
-                ForEach(model.steps.indices, id: \.self) { i in
-                    Circle().fill(Color.primary.opacity(i == model.stepIndex ? 0.7 : 0.2)).frame(width: 7, height: 7)
+            if model.steps.count > 1 {
+                HStack(spacing: 7) {
+                    ForEach(model.steps.indices, id: \.self) { i in
+                        Circle().fill(Color.primary.opacity(i == model.stepIndex ? 0.7 : 0.2)).frame(width: 7, height: 7)
+                    }
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Page \(model.stepIndex + 1) of \(model.steps.count)")
             }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Page \(model.stepIndex + 1) of \(model.steps.count)")
             HStack {
                 if model.index > 0 { Button("Back") { model.go(by: -1, animation: slide) } }
                 Spacer()
