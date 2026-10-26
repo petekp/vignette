@@ -14,7 +14,13 @@ struct HeldChord {
         self.flags = flags.intersection(Self.modifiers)
     }
 
-    enum Change: Equatable { case began, ended }
+    enum Change: Equatable {
+        case began
+        /// One of its modifiers was let go.
+        case ended
+        /// A key went down, or another modifier joined: the chord was the start of a shortcut.
+        case interrupted
+    }
 
     /// The modifiers a chord is made of.
     static let modifiers: NSEvent.ModifierFlags = [.shift, .control, .option, .command]
@@ -24,8 +30,9 @@ struct HeldChord {
         if isHeld {
             guard held != flags else { return nil }
             isHeld = false
-            if held.isSuperset(of: flags) { waitingForRelease = true }
-            return .ended
+            guard held.isSuperset(of: flags) else { return .ended }
+            waitingForRelease = true
+            return .interrupted
         }
         if held.isStrictSuperset(of: flags) { waitingForRelease = true }
         if waitingForRelease {
@@ -41,7 +48,7 @@ struct HeldChord {
         guard isHeld else { return nil }
         isHeld = false
         waitingForRelease = true
-        return .ended
+        return .interrupted
     }
 }
 

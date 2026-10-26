@@ -93,15 +93,13 @@ final class LiveAsksTests: XCTestCase {
     func testCirclesDrawnAcrossSeveralHoldsAreAllInTheNextAsk() {
         var a = A()
         let first = ink(), second = ink(50), third = ink(100)
-        _ = reduce(&a, .inkingBegan(noteOpen: false))
         _ = reduce(&a, .drew(first.id))
-        _ = reduce(&a, .inkingBegan(noteOpen: false))
         _ = reduce(&a, .drew(second.id))
-        _ = reduce(&a, .inkingBegan(noteOpen: true))
         _ = reduce(&a, .drew(third.id))
         guard case .began(_, let about, _, _) = a.begin(among: [first, second, third], following: nil)
         else { return XCTFail("the ask begins") }
         XCTAssertEqual(about.map(\.id), [first.id, second.id, third.id], "every hold's ink no ask has been about")
+        XCTAssertEqual(a.noteInk, [], "ink asked about is the note's no more")
     }
 
     func testAnAskSentWhileAnotherIsUnderWayWaitsItsTurn() {
@@ -601,8 +599,7 @@ final class LiveAsksTests: XCTestCase {
         XCTAssertEqual(a.newInk(among: [drawn, other]), [drawn, other], "the ink is new again")
         XCTAssertEqual(a.answerMarks, [])
         XCTAssertEqual(a.finishing, [:])
-        XCTAssertEqual(a.noteInk, [drawn.id])
-        XCTAssertEqual(reduce(&a, .noteDiscarded), [.remove([drawn.id])], "Esc still takes back the open note's ink")
+        XCTAssertEqual(a.noteInk, [], "a clear takes every mark, so the note has no ink left")
     }
 
     func testAWindowGoingForgetsOnlyItsMarksAskedAndAnswerRoles() {
@@ -614,7 +611,7 @@ final class LiveAsksTests: XCTestCase {
         _ = reduce(&a, .windowGone([gone.id, reply.id]))
         XCTAssertEqual(a.newInk(among: [gone, stays]), [gone], "only the marks that went are new again")
         XCTAssertFalse(a.isAnswer(reply.id))
-        XCTAssertEqual(a.noteInk, [gone.id], "the note's ink is kept")
+        XCTAssertEqual(a.noteInk, [], "ink gone with its window is the note's no more")
         XCTAssertEqual(a.finishing[gone.id], .dismissed, "and so is its finish")
 
         var other = A()
@@ -658,17 +655,38 @@ final class LiveAsksTests: XCTestCase {
         XCTAssertTrue(leaving.isFinishing(mark.id))
     }
 
-    func testTheNotesInkStartsOverWhenTheChordGoesDownWithNoNoteOpen() {
+    func testTheNotesInkIsAllTheInkNoAskHasBeenAbout() {
         var a = A()
-        let kept = ink(), first = ink(50), second = ink(100)
-        _ = reduce(&a, .drew(kept.id))
-        _ = reduce(&a, .inkingBegan(noteOpen: false))
+        let asked = ink(), first = ink(50), second = ink(100)
+        _ = reduce(&a, .drew(asked.id))
+        begin(&a, on: [asked])
         _ = reduce(&a, .drew(first.id))
-        _ = reduce(&a, .inkingBegan(noteOpen: true))
         _ = reduce(&a, .drew(second.id))
-        XCTAssertEqual(a.noteInk, [first.id, second.id], "a press with the note open adds to its ink")
-        XCTAssertEqual(reduce(&a, .noteDiscarded), [.remove([first.id, second.id])], "ink an earlier note kept stays")
+        XCTAssertEqual(a.noteInk, [first.id, second.id], "one note for all the new ink, however many holds drew it")
+        XCTAssertEqual(reduce(&a, .noteDiscarded), [.remove([first.id, second.id])], "ink an earlier ask was about stays")
         XCTAssertEqual(a.noteInk, [])
+    }
+
+    func testStoppingAnAskGivesItsNewInkBackToTheNote() {
+        var a = A()
+        let asked = ink(), fresh = ink(50), erased = ink(100)
+        _ = reduce(&a, .drew(asked.id))
+        begin(&a, on: [asked])
+        _ = reduce(&a, .drew(fresh.id))
+        _ = reduce(&a, .drew(erased.id))
+        let id = begin(&a, on: [asked, fresh, erased])
+        XCTAssertEqual(a.noteInk, [])
+        _ = reduce(&a, .removed([erased.id]))
+        _ = reduce(&a, .cancelled(id, shown: [asked.id, fresh.id]))
+        XCTAssertEqual(a.noteInk, [fresh.id], "the ink that was new is the note's again, but not ink erased meanwhile")
+
+        var two = A()
+        _ = reduce(&two, .drew(fresh.id))
+        let first = begin(&two, on: [fresh])
+        begin(&two, on: [fresh], toSession: true)
+        _ = reduce(&two, .cancelled(first, shown: [fresh.id]))
+        XCTAssertEqual(two.noteInk, [], "ink another ask is about stays out of the note")
+        XCTAssertEqual(two.newInk(among: [fresh]), [], "and stays asked")
     }
 
     func testADraftIsKeptOnlyForTheReplyThePanelWasMadeFor() {
@@ -1238,7 +1256,7 @@ final class LiveAsksTests: XCTestCase {
                     XCTAssertTrue(keepsNoRole(ids), fail("it keeps no role and no finish"))
                     XCTAssertTrue(after.noteInk.isDisjoint(with: ids), fail("and is not the note's ink"))
                 case .windowGone(let ids):
-                    XCTAssertEqual(after.noteInk, before.noteInk, fail("a window going keeps the note's ink"))
+                    XCTAssertEqual(after.noteInk, before.noteInk.subtracting(ids), fail("a window going takes its marks from the note's ink"))
                     XCTAssertEqual(after.finishing, before.finishing, fail("and every finish"))
                     XCTAssertTrue(after.answerMarks.isDisjoint(with: ids), fail("its marks are not the answer's"))
                 case .drafted(let words, let reply):
@@ -1262,7 +1280,7 @@ final class LiveAsksTests: XCTestCase {
                 case .cleared:
                     XCTAssertEqual(after.asks, [], fail("a clear ends every ask"))
                     XCTAssertTrue(keepsNoRole(all), fail("a clear forgets every role and finish"))
-                    XCTAssertEqual(after.noteInk, before.noteInk, fail("a clear keeps the note's ink"))
+                    XCTAssertEqual(after.noteInk, [], fail("a clear leaves the note no ink"))
                 default:
                     break
                 }
@@ -1272,6 +1290,7 @@ final class LiveAsksTests: XCTestCase {
                 XCTAssertNotEqual(toResponder.first?.phase, .waiting, fail("an ask whose turn has come is sent"))
                 XCTAssertTrue(toResponder.dropFirst().allSatisfy { $0.phase != .asking }, fail("only the oldest is with the responder"))
                 XCTAssertEqual(Set(after.asks.map(\.id)).count, after.asks.count, fail("each ask once"))
+                for ask in after.asks { XCTAssertTrue(after.noteInk.isDisjoint(with: ask.about), fail("no ask's ink is the note's")) }
                 for ask in after.asks where ask.phase == .answered { XCTAssertNil(ask.picked, fail("an answer's buttons are enabled")) }
                 let underWay = after.asks.filter(\.isUnderWay)
                 XCTAssertEqual(after.pulsing, underWay.reduce(into: Set<Mark.ID>()) { $0.formUnion($1.about); if let say = $1.say { $0.insert(say.id) } },
@@ -1390,7 +1409,7 @@ private final class LiveAsksEnvironment {
         case 12: erase()
         case 13: windowGone()
         case 14: pick()
-        case 15: chordBegan()
+        case 15: draw()
         case 16: discardNote()
         case 17: letGoOfFocus()
         case 18: clear()
@@ -1499,11 +1518,6 @@ private final class LiveAsksEnvironment {
         _ = send(.drew(own.id))
         put([own])
         remove([hit.id])
-    }
-
-    private func chordBegan() {
-        _ = send(.inkingBegan(noteOpen: chance(2)))
-        letGoOfFocus()
     }
 
     private func discardNote() {
@@ -1793,7 +1807,6 @@ private final class LiveAsksEnvironment {
     private func describe(_ event: LiveAsks.Event) -> String {
         switch event {
         case .drew(let id): "drew \(name(id))"
-        case .inkingBegan(let open): "inkingBegan open=\(open)"
         case .noteDiscarded: "noteDiscarded"
         case .removed(let ids): "removed \(list(ids))"
         case .windowGone(let ids): "windowGone \(list(ids))"

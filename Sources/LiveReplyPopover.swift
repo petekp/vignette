@@ -283,10 +283,7 @@ final class ReplyPopover {
     /// The edge it hangs from now, and the mark.
     private var edge: PopoverPlace.Edge?
     private var anchor: Mark.ID?
-    /// Where it is sliding to, in the host's coordinates, while it moves to hang from another mark.
-    private var slidingTo: CGRect?
-    private lazy var slideX = Tween(initial: 0) { [weak self] _ in self?.applySlide() }
-    private lazy var slideY = Tween(initial: 0) { [weak self] _ in self?.applySlide() }
+    private lazy var slide = PopoverSlide(popover)
     private var alpha: CGFloat = 1
     private var closing = false
     private var watching: [NSObjectProtocol] = []
@@ -336,11 +333,11 @@ final class ReplyPopover {
             if popover.contentSize != size { popover.contentSize = size }
             // AppKit keeps the edge it was shown on, so hanging from another one means showing it again.
             if place.edge != edge {
-                stopSliding()
+                slide.stop()
                 edge = place.edge
                 popover.show(relativeTo: rect, of: host, preferredEdge: place.edge.rectEdge(flipped: host.isFlipped))
-            } else if motion > 0, place.anchor != anchor || slidingTo != nil {
-                slide(to: rect, duration: Self.slideDuration * motion)
+            } else if motion > 0, place.anchor != anchor || slide.isSliding {
+                slide.slide(to: rect, duration: Self.slideDuration * motion)
             } else if popover.positioningRect != rect {
                 popover.positioningRect = rect
             }
@@ -384,34 +381,6 @@ final class ReplyPopover {
         window.resignKey()
     }
 
-    /// Moves it along a spring to hang at `rect`, from wherever it is, as a tour moves the reply from
-    /// one stop to the next: AppKit moves a popover whose positioning rect changes in one frame.
-    private func slide(to rect: CGRect, duration: CFTimeInterval) {
-        guard rect != slidingTo else { return }
-        if slidingTo == nil {
-            slideX.set(popover.positioningRect.minX)
-            slideY.set(popover.positioningRect.minY)
-        }
-        slidingTo = rect
-        let settled = { [weak self] in
-            guard let self, let target = self.slidingTo, self.slideX.value == target.minX, self.slideY.value == target.minY else { return }
-            self.slidingTo = nil
-        }
-        slideX.animate(to: rect.minX, duration: duration, completion: settled)
-        slideY.animate(to: rect.minY, duration: duration, completion: settled)
-    }
-
-    private func applySlide() {
-        guard let target = slidingTo else { return }
-        popover.positioningRect = CGRect(origin: CGPoint(x: slideX.value, y: slideY.value), size: target.size)
-    }
-
-    private func stopSliding() {
-        slideX.stop()
-        slideY.stop()
-        slidingTo = nil
-    }
-
     /// Whether the reply carries the thinking light, as the marks it answers do while the agent works.
     func think(_ on: Bool) {
         placeLight()
@@ -446,7 +415,7 @@ final class ReplyPopover {
     func close(after delay: CFTimeInterval = 0, fade: CFTimeInterval) {
         guard !closing else { return }
         closing = true
-        stopSliding()
+        slide.stop()
         watching.forEach(NotificationCenter.default.removeObserver)
         watching = []
         NotificationCenter.default.post(name: .liveReplyChanged, object: nil)
@@ -471,4 +440,46 @@ final class ReplyPopover {
     /// How long it takes to move to another mark, at full motion: as long as a focus takes to come
     /// in, so a tour's reply arrives as its next target sharpens.
     static let slideDuration: CFTimeInterval = Focus.fade
+}
+
+/// Moves a popover along a spring to hang at another rect, from wherever it is, as a tour moves the
+/// reply from one stop to the next and more ink moves the note: AppKit moves a popover whose
+/// positioning rect changes in one frame.
+@MainActor
+final class PopoverSlide {
+    private let popover: NSPopover
+    /// Where it is sliding to, in the positioning view's coordinates.
+    private var target: CGRect?
+    private lazy var x = Tween(initial: 0) { [weak self] _ in self?.apply() }
+    private lazy var y = Tween(initial: 0) { [weak self] _ in self?.apply() }
+
+    init(_ popover: NSPopover) { self.popover = popover }
+
+    var isSliding: Bool { target != nil }
+
+    func slide(to rect: CGRect, duration: CFTimeInterval) {
+        guard rect != target else { return }
+        if target == nil {
+            x.set(popover.positioningRect.minX)
+            y.set(popover.positioningRect.minY)
+        }
+        target = rect
+        let settled = { [weak self] in
+            guard let self, let target = self.target, self.x.value == target.minX, self.y.value == target.minY else { return }
+            self.target = nil
+        }
+        x.animate(to: rect.minX, duration: duration, completion: settled)
+        y.animate(to: rect.minY, duration: duration, completion: settled)
+    }
+
+    func stop() {
+        x.stop()
+        y.stop()
+        target = nil
+    }
+
+    private func apply() {
+        guard let target else { return }
+        popover.positioningRect = CGRect(origin: CGPoint(x: x.value, y: y.value), size: target.size)
+    }
 }

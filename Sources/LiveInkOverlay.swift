@@ -142,6 +142,9 @@ final class LiveInkOverlay: NSPanel {
 
     func popover(of id: Mark.ID) -> ReplyPopover? { canvas.marksLayer.popover(of: id) }
 
+    /// The layer that draws the marks, in global top-left points.
+    var marks: LiveMarksLayer { canvas.marksLayer }
+
     /// The canvas: the pointer field, the marks and the stroke being drawn. Flipped, so its layers run
     /// from the screen's top-left corner, y down, as the marks' coordinates do.
     private final class Canvas: NSView {
@@ -190,6 +193,7 @@ final class LiveInkOverlay: NSPanel {
             }
             field.layer.frame = bounds
             CATransaction.commit()
+            marksLayer.placeNote()
         }
 
         required init?(coder: NSCoder) { fatalError("not used") }
@@ -306,6 +310,9 @@ final class LiveMarksLayer: CALayer {
     weak var host: NSView?
     var sharing: NSWindow.SharingType = .none
     private var popovers: [Mark.ID: ReplyPopover] = [:]
+    /// The person's note, hung from one of these marks, `anchor`, at `at` in the marks' coordinates and
+    /// at `place` on the screen. It moves with this layer's window and fades as its mark does.
+    private var note: (panel: LiveNotePopover, anchor: Mark.ID, at: CGRect, place: PopoverPlace)?
 
     init(scale: CGFloat) {
         self.scale = scale
@@ -402,6 +409,26 @@ final class LiveMarksLayer: CALayer {
         for mark in marks where popovers[mark.id] != nil && finishing[mark.id] == nil {
             showPopover(of: mark.id, appearing: appearing.contains(mark.id))
         }
+        placeNote()
+    }
+
+    /// Hangs the person's note from `anchor`, one of these marks: from `at`, in the marks' coordinates,
+    /// which is `place` on the screen.
+    func hang(_ panel: LiveNotePopover, from anchor: Mark.ID, at: CGRect, place: PopoverPlace) {
+        note = (panel, anchor, at, place)
+        placeNote()
+    }
+
+    func unhang(_ panel: LiveNotePopover) {
+        if note?.panel === panel { note = nil }
+    }
+
+    /// Puts the note where its mark is now, after the layer moved in its window, faded as its mark is,
+    /// over `fade` seconds.
+    func placeNote(fade: CFTimeInterval = 0) {
+        guard let note, let holder = drawn[note.anchor]?.holder, let host, let hostLayer = host.layer else { return }
+        note.panel.hang(from: host, at: holder.convert(note.at, to: hostLayer), place: note.place)
+        note.panel.follow(CGFloat(holder.opacity), duration: fade)
     }
 
     /// Puts a reply's popover where its mark is now, faded as its mark is, over `fade` seconds.
@@ -511,6 +538,7 @@ final class LiveMarksLayer: CALayer {
         holder.opacity = target
         CATransaction.commit()
         showPopover(of: id, fade: duration * Double(abs(target - from)))
+        if id == note?.anchor { placeNote(fade: duration * Double(abs(target - from))) }
         guard duration > 0, from != target else { holder.removeAnimation(forKey: "fade"); return }
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = from

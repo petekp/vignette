@@ -93,8 +93,9 @@ The names in brackets are `// MARK:` sections.
   flag off and takes every press, over clear pixels too, as the matte rule in `AGENTS.md` says.
 - Esc backs out of live ink one step per press, the first of these that applies (`LiveEscape.next`,
   a pure function of a snapshot of what is up; `Tests/LiveInkTests.swift`):
-  1. Discard the open note: listening stops and the ink drawn for it goes. Ink an earlier
-     note kept stays. Or close Reply's field, which keeps its draft.
+  1. Discard the note, while it has the keys or shows: listening stops and its ink, all the ink no
+     ask has been about, goes. Ink an ask was about stays. Or close Reply's field, which keeps its
+     draft.
   2. Stop the newest ask under way or waiting its turn (`LiveInk.cancelAsk`, `LiveAsks.cancellable`),
      one per press. Its sent note and any reply leave, and its ink is as it was before the ask
      (`LiveAsks.Event.cancelled`): ink that was new when the ask began is new again. A follow-up from a button puts the earlier answer back as it was, with no failure sentence, even
@@ -218,9 +219,25 @@ The names in brackets are `// MARK:` sections.
   input; it answers what the stroke did. `[state]` has a `liveInk` section: `on`, `inking`, `chord`,
   the surfaces with their frames, whether each is on the active Space and how many marks it has, and
   every mark once with its frame.
-- Letting go of the chord after drawing opens `LiveNotePopover`, a macOS popover hung from the new
-  ink. It follows the system's appearance. Its window is a non-activating panel, so its field takes
-  the keys while the app the person was in stays in front. Closing it gives the keys back at once
+- Ink no ask has been about always has its note, `LiveNotePopover`, a macOS popover. There is one
+  note for all of that ink, since what is typed applies to all of it (`LiveAsks.noteInk`: drawn or
+  picked, and taken out of the note by an ask about it). Letting go of the chord after drawing opens
+  it, hung from the newest ink. Drawing more while it is up keeps the same note, with its words, its
+  target and its caret, and slides it on a spring to hang from the newest ink (`PopoverSlide`), as a
+  reply slides between stops. The note leaves only when its ink does: Return asks about it, Esc takes
+  it back, or it is erased, cleared, gone with its window, or live ink is turned off. The stack or the
+  annotator coming up also closes it (`standAside`). A click elsewhere takes the keys and leaves the
+  note where it hangs, inactive: its glass draws as macOS draws a window that is not key, the caret
+  goes, the words dim to 55% and the ↩ fades, since Return does nothing until the note has the keys
+  again. A click on it, or the chord let go, gives them back with the caret where it was, and the
+  list of targets is read again, so a session started meanwhile is there; a target picked by hand
+  stays (`DestinationChoice`). A chord cut short by a key, as a window manager's ⌃⌥-arrow is
+  (`HeldChord.Change.interrupted`), gives the note the keys only when ink was drawn. The note hangs
+  from a view of the overlay that draws its newest ink (`LiveMarksLayer.hang`), as a reply does, so it
+  moves with that ink's window, the windows in front of it cover it, it stays on its Space, and it
+  fades as the ink fades with a minimised window (`LiveNotePopover.follow`). It follows the system's
+  appearance. Its window is a non-activating panel, so its field takes the keys while the app the
+  person was in stays in front. Closing it while it has them gives the keys back at once
   (`letGoOfKeys`), because AppKit counts Vignette as active while the field has them. A press with
   Control held makes Vignette the frontmost app even on a non-activating panel (measured on macOS 15:
   the chord's press activated it, and the same press without modifiers did not), so every press of the
@@ -228,14 +245,11 @@ The names in brackets are `// MARK:` sections.
   that was key when the chord went down (`sessionStarting`), or else to the app the person was in:
   activated when Vignette is frontmost, and by Vignette letting go when that app still is, since
   activating a frontmost app leaves the keys where they are.
-  The note does it when it closes, and inking that opens no note does it when the chord is let go
-  (`[focus] live ink …: returned to …`). Under the words
+  The note does it when it closes or loses the keys, and inking that leaves the note without them
+  does it when the chord is let go (`[focus] live ink …: returned to …`). Under the words
   is its target: the agent's logo and the project, on a button that opens the list of targets, as
-  Down does. Return asks about the ink drawn since the last ask, or, with none, about the
-  ink asked about last. Esc cancels the note: it closes, and the ink drawn for it goes
-  (`LiveAsks.noteInk`). That ink is the ink since the chord went down with no note open, so a press
-  while the note is open adds to that note's ink. Ink an earlier note kept stays. A click elsewhere
-  closes the note and keeps the ink. ⌘⌫ deletes the typed line, as in any text field. Its target starts on the one picked last, else the
+  Down does. Return asks about the ink no ask has been about, or, with none, about the
+  ink asked about last. Esc cancels the note: it closes, and its ink goes. ⌘⌫ deletes the typed line, as in any text field. Its target starts on the one picked last, else the
   responder, and lists the sessions Send lists after it. Tab picks the next target in that list and
   Shift+Tab the one before, round from either end, without opening it. Down opens it. Return settles the note into the look of
   the conversation over 0.18 s (`NoteContent.settle`): the target's button loses its background and
@@ -257,7 +271,7 @@ The names in brackets are `// MARK:` sections.
   side before the popover shows. Below or above its anchor, AppKit also slides the body sideways to
   keep the popover's window inside the visible frame. The window reaches 13 pt past the body
   (measured on macOS 15). `PopoverPlace.body` slides it the same way, so the layout knows where the
-  body lands. The note opens out of sight, placed from the ink alone. It moves once
+  body lands. The note opens out of sight, placed from the ink alone. It moves, before it shows or as it slides to newer ink, once
   `LivePacket.Glance` gives the window's frame and text, about 20 ms after the capture (Vision's fast
   level, for where the lines are, not what they say), and shows after 0.8 s without it. The list of
   targets opens under the target, or beside the note when the screen has no room below, so it never

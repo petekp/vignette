@@ -70,7 +70,8 @@ enum DestinationChoice {
             return choose(forSend: candidates, cameFrom: cameFrom)
         case .liveNote(let pick):
             let list = unmarked(candidates)
-            return Answer(list: list, complete: candidates.complete, decided: true, pick: start(pick, in: list))
+            return Answer(list: list, complete: candidates.complete, decided: true,
+                          pick: start(pick, in: list, complete: candidates.complete))
         }
     }
 
@@ -82,11 +83,12 @@ enum DestinationChoice {
         }
     }
 
-    /// Where a live ink note starts. A hand pick stays while the list has its id; the session
-    /// remembered from the note before is found again, even after `/clear`.
-    private static func start(_ pick: LiveNotePick, in list: [AgentDestination]) -> AgentDestination? {
+    /// Where a live ink note starts. A hand pick stays while the list has its id, or may still list it,
+    /// before every client has answered; the session remembered from the note before is found again,
+    /// even after `/clear`.
+    private static func start(_ pick: LiveNotePick, in list: [AgentDestination], complete: Bool) -> AgentDestination? {
         switch pick {
-        case .byHand(let session?): return list.first { $0.id == session.id }
+        case .byHand(let session?): return list.first { $0.id == session.id } ?? (complete ? nil : session)
         case .remembered(let session?): return again(session, in: list)
         case .byHand(nil), .remembered(nil): return nil
         }

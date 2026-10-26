@@ -277,7 +277,7 @@ final class AgentConnectionTests: XCTestCase {
     }
 
     /// A session the person picked on the note stays while it is listed, as the list's own record of
-    /// it, and drops to the responder when it is not. It is matched by id alone.
+    /// it, or may still be, and drops to the responder when a whole list leaves it out. It is matched by id alone.
     func testALiveNoteKeepsAHandPickWhileItIsListed() {
         let a = Self.claude("a"), b = Self.claude("b"), c = Self.claude("c")
         let stale = Self.claude("a", name: "Named before")
@@ -285,6 +285,8 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertEqual(note([fresh, b], .byHand(stale)).pick, fresh, "a listed hand pick is the list's record, not the stored copy")
         XCTAssertEqual(note([a], .byHand(a), complete: false, fresh: false).pick?.id, "a",
                        "a kept partial list keeps a listed hand pick at once")
+        XCTAssertEqual(note([b], .byHand(a), complete: false, fresh: false).pick?.id, "a",
+                       "a partial list without the hand pick keeps it, since the rest may list it")
         XCTAssertNil(note([b, c], .byHand(a)).pick, "a hand pick gone from the list drops to the responder")
         XCTAssertNil(note([], .byHand(a)).pick, "an empty list drops a hand pick too")
         XCTAssertNil(note([b], .byHand(a)).pick, "a hand pick is not found again after /clear")

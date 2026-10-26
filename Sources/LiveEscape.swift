@@ -8,8 +8,7 @@ enum LiveEscape {
     static let keyCode: UInt32 = 53
 
     enum Step: String, Equatable {
-        /// The note closes, listening stops, and the ink drawn for it goes. Ink an earlier
-        /// note kept stays.
+        /// The note closes, listening stops, and its ink, all the ink no ask has been about, goes.
         case discardNote = "discard-note"
         /// Reply's field closes and keeps what was typed.
         case closeReplyField = "close-reply-field"
@@ -30,6 +29,7 @@ enum LiveEscape {
         var screenIsFree = true
         /// The note's target menu is up. It closes on Esc, which the held key would take from it.
         var menuOpen = false
+        /// The note has the keys, or shows. Not while it is hidden with its ink.
         var noteOpen = false
         var replyFieldOpen = false
         /// An ask is under way that Esc can stop: any ask to the responder, waiting its turn or not, and

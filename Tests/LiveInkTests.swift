@@ -156,7 +156,7 @@ final class LiveInkTests: XCTestCase {
     func testAKeyEndsItUntilTheModifiersAreLetGo() {
         var chord = HeldChord(chordFlags)
         XCTAssertEqual(chord.flagsChanged([.control, .option]), .began)
-        XCTAssertEqual(chord.keyDown(), .ended, "Control-Option-arrow is a window manager's shortcut")
+        XCTAssertEqual(chord.keyDown(), .interrupted, "Control-Option-arrow is a window manager's shortcut")
         XCTAssertNil(chord.keyDown())
         XCTAssertNil(chord.flagsChanged([.control, .option]))
         XCTAssertNil(chord.flagsChanged(.option), "one of its modifiers is still down")
@@ -176,10 +176,10 @@ final class LiveInkTests: XCTestCase {
         XCTAssertEqual(chord.flagsChanged([.control, .option]), .began)
     }
 
-    func testAnotherModifierJoiningEndsItUntilTheModifiersAreLetGo() {
+    func testAnotherModifierJoiningInterruptsItUntilTheModifiersAreLetGo() {
         var chord = HeldChord(chordFlags)
         XCTAssertEqual(chord.flagsChanged([.control, .option]), .began)
-        XCTAssertEqual(chord.flagsChanged([.control, .option, .command]), .ended)
+        XCTAssertEqual(chord.flagsChanged([.control, .option, .command]), .interrupted)
         XCTAssertNil(chord.flagsChanged([.control, .option]))
         XCTAssertNil(chord.flagsChanged([]))
         XCTAssertEqual(chord.flagsChanged([.control, .option]), .began)
