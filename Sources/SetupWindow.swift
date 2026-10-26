@@ -350,14 +350,14 @@ struct SetupView: View {
     @ObservedObject var model: SetupModel
     @ObservedObject private var settings = Settings.shared
     @State private var trusted = ModifierTap.trusted(prompt: false)
+    @State private var screenRecording = ScreenRecording.granted
     /// How many times the shortcut has fired on this page; each one presses the keycap again.
     @State private var fires = 0
     @State private var held = false
     @State private var hasShots = true
     @State private var folder = FolderAccess.ask
     @State private var iconVisible = true
-    /// Neither the Accessibility grant nor macOS's folder prompt announces its answer, so the
-    /// window looks.
+    /// Neither the grants nor macOS's folder prompt announce their answers, so the window looks.
     private let poll = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -391,6 +391,10 @@ struct SetupView: View {
         let now = ModifierTap.trusted(prompt: false)
         if now, !trusted { model.granted() }
         trusted = now
+        screenRecording = ScreenRecording.granted
+        if model.page == .liveInkSetup {
+            model.inkGuide.point(at: SetupInkGuide.Pointing(trusted: trusted, screenRecording: screenRecording))
+        }
         hasShots = model.callbacks.hasScreenshots()
         iconVisible = model.callbacks.menuBarIconVisible()
         let before = folder
@@ -405,7 +409,8 @@ struct SetupView: View {
         case .welcome: welcome
         case .shortcut: shortcut
         case .liveInk: LiveInkPage(player: model.inkPlayer)
-        case .liveInkSetup: LiveInkSetupPage(guide: model.inkGuide) { model.askedForScreenRecording() }
+        case .liveInkSetup:
+            LiveInkSetupPage(guide: model.inkGuide, trusted: trusted, screenRecording: screenRecording) { model.askedForScreenRecording() }
         case .agents: agents
         }
     }
@@ -581,7 +586,7 @@ struct SetupView: View {
         case .welcome: return model.protectedArea == nil || folder == .granted
         case .shortcut: return (!settings.data.usesDoubleTap || trusted) && folder == .granted && settings.appleTarget == "file"
         case .liveInk: return true
-        case .liveInkSetup: return trusted && ScreenRecording.granted
+        case .liveInkSetup: return trusted && screenRecording
         case .agents: return true
         }
     }

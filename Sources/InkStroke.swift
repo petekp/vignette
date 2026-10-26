@@ -36,7 +36,7 @@ enum InkStroke: Equatable {
         self = arrow.map(InkStroke.arrow) ?? .nothing
     }
 
-    private static func bounds(of points: [CGPoint]) -> CGRect {
+    static func bounds(of points: [CGPoint]) -> CGRect {
         let xs = points.map(\.x), ys = points.map(\.y)
         return CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
     }

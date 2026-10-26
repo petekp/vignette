@@ -182,6 +182,7 @@ final class LiveInk {
         guard on != isOn else { return }
         if on {
             LivePacket.warmUp()
+            InkMarkLayer.warmUp(scale: NSScreen.main?.backingScaleFactor ?? 2)
             chord = ModifierChord([.control, .option], tag: "live-ink", name: "the chord") { [weak self] change in
                 self?.chordChanged(change)
             }
@@ -577,10 +578,7 @@ final class LiveInk {
 
     var responderState: LiveResponder.State { responder.state }
 
-    private var answerSizes: LiveAnswerLayout.Sizes {
-        let ui = Settings.shared.data.ui
-        return LiveAnswerLayout.Sizes(textSize: ui.liveInkTextSize, textWidth: ui.liveInkTextWidth, style: ui.textStyle)
-    }
+    private var answerSizes: LiveAnswerLayout.Sizes { LiveAnswerLayout.Sizes(ui: Settings.shared.data.ui) }
 
     private func openNote() {
         guard let mark = newInk.last(where: { $0.shapeExtent != nil }), let newest = mark.shapeExtent,
@@ -879,18 +877,11 @@ final class LiveInk {
                                      byPerson: true)
     }
 
-    /// How long marks take to leave before they are removed.
-    private func finishDuration(_ how: LiveMarksLayer.Finish) -> TimeInterval {
-        let motion = Settings.shared.motionScale
-        guard motion > 0 else { return LiveMarksLayer.doneFade + 0.05 }
-        return ((how == .done ? LiveMarksLayer.doneHold : 0) + LiveMarksLayer.doneAway) * motion + 0.15
-    }
-
     /// Shows marks the ask has set leaving (`LiveAsks.finishing`) going, and removes them once they have.
     private func finish(_ ids: Set<Mark.ID>, _ how: LiveMarksLayer.Finish) {
         Log.write("[live-ink] \(how) marks=\(ids.count)")
         showMarks()
-        DispatchQueue.main.asyncAfter(deadline: .now() + finishDuration(how)) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + LiveMarksLayer.finishDuration(how)) { [weak self] in
             guard let self else { return }
             let effects = self.asks.reduce(.finished(ids))
             guard !effects.isEmpty else { return }

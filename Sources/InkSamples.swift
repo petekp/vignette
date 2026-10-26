@@ -165,7 +165,7 @@ final class InkSamples: ObservableObject {
 
     /// A loop round `frame` from its upper left and a little past, its points one pointer event apart,
     /// so they spread out where the hand is quick.
-    private static func handLoop(in frame: CGRect) -> [CGPoint] {
+    static func handLoop(in frame: CGRect) -> [CGPoint] {
         let first: CGFloat = -0.75 * .pi, turn: CGFloat = 2 * .pi + 0.4
         let step = turn / 70
         var points: [CGPoint] = []

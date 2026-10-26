@@ -563,8 +563,8 @@ struct PermissionRow: View {
     /// macOS's own prompt is up and has not been answered.
     var busy = false
     var button = "Allow…"
-    /// Names the button and the row's words for the ink drawn over setup's page.
-    var spot: (button: String, words: String, spots: SetupInkSpots)?
+    /// Names the button and the row's words in `spots`, for what is drawn over the row.
+    var spot: (spots: ScreenSpots, button: String, words: String)?
     let allow: () -> Void
 
     var body: some View {
@@ -574,7 +574,7 @@ struct PermissionRow: View {
                     .accessibilityLabel("Allowed")
             } else {
                 Button(button, action: allow).keyboardShortcut(isDefault && !busy ? .defaultAction : nil).disabled(busy)
-                    .inkSpot(spot?.button ?? "", in: spot?.spots)
+                    .screenSpot(spot?.button ?? "", in: spot?.spots)
             }
         } label: {
             Label {
@@ -585,7 +585,7 @@ struct PermissionRow: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .inkSpot(spot?.words ?? "", in: spot?.spots)
+                .screenSpot(spot?.words ?? "", in: spot?.spots)
             } icon: {
                 if status == .refused {
                     Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)

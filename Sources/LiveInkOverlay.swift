@@ -571,7 +571,7 @@ final class LiveMarksLayer: CALayer {
 
     /// Done: the mark turns green, the note of the ask, or its last shape when it has none, raises a
     /// small green check, and then the mark leaves. Dismissed: it leaves at once. The layers stay at
-    /// the end state, invisible, until the mark is removed (`LiveInk.finishDuration`).
+    /// the end state, invisible, until the mark is removed (`finishDuration`).
     private func finish(_ record: Drawn, _ how: Finish, check: Bool, markStyle: MarkStyle, textStyle: TextStyle) {
         let motion = Settings.shared.motionScale
         let now = record.previewed.convertTime(CACurrentMediaTime(), from: nil)
@@ -749,7 +749,7 @@ final class LiveMarksLayer: CALayer {
     }
 
     /// The done animation's times at full motion: how long the check shows, and how long the marks
-    /// take to leave after it. `LiveInk.doneDuration` is their sum, plus a margin.
+    /// take to leave after it. `finishDuration` is their sum, plus a margin.
     static let doneHold: CFTimeInterval = 0.9
     static let doneAway: CFTimeInterval = 0.45
     static let doneFade: CFTimeInterval = 0.3
@@ -758,6 +758,13 @@ final class LiveMarksLayer: CALayer {
     static func popoverLeave(_ how: Finish) -> (after: CFTimeInterval, fade: CFTimeInterval) {
         let motion = Settings.shared.motionScale
         return (how == .done ? doneHold * motion : 0, motion > 0 ? doneAway * motion : doneFade)
+    }
+
+    /// How long marks finishing `how` take to leave, before they may be removed.
+    static func finishDuration(_ how: Finish) -> TimeInterval {
+        let motion = Settings.shared.motionScale
+        guard motion > 0 else { return doneFade + 0.05 }
+        return ((how == .done ? doneHold : 0) + doneAway) * motion + 0.15
     }
     /// How long an agent's light takes to settle once it has drawn itself on, at full motion.
     static let lightSettle: CFTimeInterval = 0.9

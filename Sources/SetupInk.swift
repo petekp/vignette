@@ -33,11 +33,7 @@ enum SetupInkTitle {
     /// Room round the lines for the ink's width and glow, in points.
     private static let margin: CGFloat = 18
 
-    private static let extent: CGRect = {
-        let points = strokes.flatMap { HandStroke.curve(through: $0) }
-        let xs = points.map(\.x), ys = points.map(\.y)
-        return CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
-    }()
+    private static let extent = InkStroke.bounds(of: strokes.flatMap { HandStroke.curve(through: $0) })
 
     /// The room the title takes on the page.
     static var size: CGSize { CGSize(width: extent.width + 2 * margin, height: extent.height + 2 * margin) }
@@ -74,7 +70,7 @@ struct HandStroke: Equatable {
         var reached: [Double] = [0]
         for index in 1..<curve.count {
             let along = lengths[index] / total
-            let ends = min(Self.ease(along / 0.12), Self.ease((1 - along) / 0.12))
+            let ends = min(InkHand.ease(along / 0.12), InkHand.ease((1 - along) / 0.12))
             let speed = (0.35 + 0.65 * (1 - Self.turn(at: index, in: curve))) * (0.3 + 0.7 * ends)
             reached.append(reached[index - 1] + Double(lengths[index] - lengths[index - 1]) / Double(speed))
         }
@@ -122,8 +118,6 @@ struct HandStroke: Equatable {
         return min(acos(min(max(cosine, -1), 1)) / (.pi / 2), 1)
     }
 
-    private static func ease(_ x: CGFloat) -> CGFloat { let t = min(max(x, 0), 1); return t * t * (3 - 2 * t) }
-
     /// The centripetal Catmull–Rom curve through `controls`, a point about every `spacing` points.
     static func curve(through controls: [CGPoint], spacing: CGFloat = 1) -> [CGPoint] {
         guard controls.count > 1 else { return controls }
@@ -145,16 +139,6 @@ struct HandStroke: Equatable {
         }
         curve.append(controls[controls.count - 1])
         return curve
-    }
-
-    /// A hand's loop round `rect`, from its upper left and a little past where it began.
-    static func loop(round rect: CGRect) -> [CGPoint] {
-        let first: CGFloat = -0.8 * .pi, turn: CGFloat = 2 * .pi + 0.45
-        return (0...16).map { step in
-            let angle = first + turn * CGFloat(step) / 16
-            let wobble = 1 + 0.04 * sin(3 * angle + 1)
-            return CGPoint(x: rect.midX + rect.width / 2 * wobble * cos(angle), y: rect.midY + rect.height / 2 * wobble * sin(angle))
-        }
     }
 }
 
@@ -304,6 +288,11 @@ extension View {
         transformAnchorPreference(key: SetupInkAnchors.self, value: .bounds) { $0[name] = $1 }
     }
 
+    /// Lays `stage` over this page.
+    func inkStage(_ stage: SetupInkStage) -> some View {
+        overlay { SetupInkCanvas(stage: stage).allowsHitTesting(false) }
+    }
+
     /// Lays `stage` over this page, and hands `place` the page's named parts, in the stage's points,
     /// whenever they move.
     func inkStage(_ stage: SetupInkStage, place: @escaping ([String: CGRect]) -> Void) -> some View {
@@ -316,48 +305,6 @@ extension View {
                     .onChange(of: rects) { place(rects) }
             }
         }
-    }
-}
-
-/// Views a page's ink is drawn round, by name, asked where they are on the screen when the ink is
-/// laid out. Unlike an anchor, it reaches out of a `Form`'s rows, which are hosted views of their own.
-@MainActor
-final class SetupInkSpots {
-    private var views: [String: () -> NSView?] = [:]
-
-    func register(_ name: String, _ view: NSView) { views[name] = { [weak view] in view } }
-
-    /// Where `name` is, in global top-left points, while it is on the screen.
-    func global(_ name: String) -> CGRect? {
-        guard let view = views[name]?(), let window = view.window, view.bounds.width > 0 else { return nil }
-        return StateReport.flipped(window.convertToScreen(view.convert(view.bounds, to: nil)))
-    }
-}
-
-private struct SetupInkSpot: NSViewRepresentable {
-    let name: String
-    let spots: SetupInkSpots
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        spots.register(name, view)
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
-extension View {
-    /// Names this view for `spots`.
-    func inkSpot(_ name: String, in spots: SetupInkSpots?) -> some View {
-        background { if let spots { SetupInkSpot(name: name, spots: spots) } }
-    }
-}
-
-private extension Settings {
-    var answerSizes: LiveAnswerLayout.Sizes {
-        let ui = data.ui
-        return LiveAnswerLayout.Sizes(textSize: ui.liveInkTextSize, textWidth: ui.liveInkTextWidth, style: ui.textStyle)
     }
 }
 
@@ -501,7 +448,7 @@ final class SetupInkPlayer: ObservableObject {
             // Round the room the keys take once grown, so they grow inside the loop.
             let grown = SetupInkKeys.row(height: SetupInkKeys.grown)
             let room = CGRect(x: keys.midX - grown.width / 2, y: keys.midY - grown.height / 2, width: grown.width, height: grown.height)
-            writing.append(Writing(pen: pen, hand: HandStroke(through: HandStroke.loop(round: room.insetBy(dx: -26, dy: -11)),
+            writing.append(Writing(pen: pen, hand: HandStroke(through: InkSamples.handLoop(in: room.insetBy(dx: -26, dy: -11)),
                                                               duration: SetupInkDemo.circling),
                                    began: now, writer: InkHand.Pen(feel: feel)))
         case .openNote:
@@ -606,8 +553,7 @@ final class SetupInkPlayer: ObservableObject {
         }
         note = nil
         Log.write("[setup] live ink demo turn ended")
-        let gone = (LiveMarksLayer.doneHold + LiveMarksLayer.doneAway) * Settings.shared.motionScale + 0.15
-        DispatchQueue.main.asyncAfter(deadline: .now() + gone) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + LiveMarksLayer.finishDuration(.done)) { [weak self] in
             guard let self, self.loop?.mark.id == loop.mark.id else { return }
             self.loop = nil
             self.show([])
@@ -630,17 +576,42 @@ final class SetupInkPlayer: ObservableObject {
 /// out as an answer's marks are (`LiveAnswerLayout`) and drawn by `LiveMarksLayer`.
 @MainActor
 final class SetupInkGuide {
-    enum Pointing: Equatable { case accessibility, screenRecording, ready }
+    /// The next permission to allow, or, with both allowed, the page.
+    enum Pointing: Equatable {
+        case accessibility, screenRecording, ready
+
+        init(trusted: Bool, screenRecording: Bool) {
+            self = !trusted ? .accessibility : !screenRecording ? .screenRecording : .ready
+        }
+
+        /// The permission pointed at, and the other one.
+        var permissions: (next: Permission, other: Permission)? {
+            switch self {
+            case .accessibility: (.accessibility, .screenRecording)
+            case .screenRecording: (.screenRecording, .accessibility)
+            case .ready: nil
+            }
+        }
+    }
+
+    /// The names a permission's row, the row's words and its Allow button are found by, and the label
+    /// written beside the button.
+    struct Permission {
+        let row: String
+        let words: String
+        let button: String
+        let label: String
+
+        static let accessibility = Permission(row: "accessibilityRow", words: "accessibilityWords",
+                                              button: "accessibilityButton", label: "Start here")
+        static let screenRecording = Permission(row: "screenRecordingRow", words: "screenRecordingWords",
+                                                button: "screenRecordingButton", label: "Then this")
+    }
 
     let stage = SetupInkStage()
-    let spots = SetupInkSpots()
-    static let accessibilityButton = "accessibilityButton"
-    static let screenRecordingButton = "screenRecordingButton"
-    static let accessibilityRow = "accessibilityRow"
-    static let screenRecordingRow = "screenRecordingRow"
-    static let accessibilityWords = "accessibilityWords"
-    static let screenRecordingWords = "screenRecordingWords"
+    let spots = ScreenSpots()
     static let footer = "footer"
+    private static let rows = [Permission.accessibility.row, Permission.screenRecording.row]
 
     /// What the marks shown point at, and where it was then, in global top-left points.
     private var pointing: Pointing?
@@ -666,7 +637,7 @@ final class SetupInkGuide {
         draw(drawingOn: Set(new.map(\.id)))
         Log.write("[setup] live ink pointing at \(target) marks=\(new.count)")
         guard !old.isEmpty else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + LiveMarksLayer.doneAway * Settings.shared.motionScale + 0.15) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + LiveMarksLayer.finishDuration(.dismissed)) { [weak self] in
             guard let self else { return }
             let gone = Set(old.map(\.id))
             self.shown.removeAll { gone.contains($0.id) }
@@ -685,11 +656,8 @@ final class SetupInkGuide {
 
     /// What `target`'s marks are laid out round, in global top-left points.
     private func aim(of target: Pointing) -> CGRect? {
-        switch target {
-        case .accessibility: spots.global(Self.accessibilityButton)
-        case .screenRecording: spots.global(Self.screenRecordingButton)
-        case .ready: [Self.accessibilityRow, Self.screenRecordingRow].compactMap(spots.global).reduce(CGRect.null) { $0.union($1) }
-        }
+        if let next = target.permissions?.next { return spots.global(next.button) }
+        return Self.rows.compactMap(spots.global).reduce(CGRect.null) { $0.union($1) }
     }
 
     private func draw(drawingOn: Set<Mark.ID> = []) {
@@ -704,23 +672,20 @@ final class SetupInkGuide {
         let room = StateReport.flipped(window.frame).insetBy(dx: 12, dy: 12)
         // The labels keep off the other row and the words of their own, as an answer keeps off the
         // person's notes, and cover the line under the rows as little as they can.
-        let rows = [Self.accessibilityRow, Self.screenRecordingRow].compactMap(spots.global)
-        let ownWords = target == .accessibility ? Self.accessibilityWords : Self.screenRecordingWords
-        let other = target == .accessibility ? Self.screenRecordingRow : Self.accessibilityRow
+        let rows = Self.rows.compactMap(spots.global)
         let footer = [Self.footer].compactMap(spots.global)
-        let keptOff = target == .ready ? [] : [other, ownWords].compactMap(spots.global)
+        let permissions = target.permissions
+        let keptOff = permissions.map { [$0.other.row, $0.next.words].compactMap(spots.global) } ?? []
         let scene = LiveAnswerLayout.Scene(room: room, ink: [], text: footer, notes: keptOff, screen: nil)
-        let sizes = Settings.shared.answerSizes
+        let sizes = LiveAnswerLayout.Sizes(ui: Settings.shared.data.ui)
         let placed: [Mark]
-        switch target {
-        case .accessibility, .screenRecording:
-            let name = target == .accessibility ? Self.accessibilityButton : Self.screenRecordingButton
-            guard let button = spots.global(name) else { return [] }
-            let answer = LiveAnswer(say: "", marks: [AnswerMark(kind: .circle, label: target == .accessibility ? "Start here" : "Then this")])
+        if let permissions {
+            guard let button = spots.global(permissions.next.button) else { return [] }
+            let answer = LiveAnswer(say: "", marks: [AnswerMark(kind: .circle, label: permissions.next.label)])
             // The first mark is the reply, which no agent wrote here.
             placed = Array(LiveAnswerLayout.placed(for: answer, targets: [button], asked: button, scene: scene, sizes: sizes,
                                                    focusable: false).marks.dropFirst())
-        case .ready:
+        } else {
             // Under the line below the rows, the room nothing else on the page takes.
             let page = (rows + footer).reduce(CGRect.null) { $0.union($1) }
             guard !page.isNull else { return [] }
@@ -826,12 +791,13 @@ struct LiveInkPage: View {
 /// Allow button, and the agent's light points at the next one.
 struct LiveInkSetupPage: View {
     let guide: SetupInkGuide
+    let trusted: Bool
+    let screenRecording: Bool
     /// Screen Recording was asked for, which macOS answers by asking to quit and reopen the app.
     let askedForScreenRecording: () -> Void
-    @State private var trusted = ModifierTap.trusted(prompt: false)
-    @State private var screenRecording = ScreenRecording.granted
     @State private var askedScreenRecording = false
-    private let poll = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+    private let accessibility = SetupInkGuide.Permission.accessibility
+    private let recording = SetupInkGuide.Permission.screenRecording
 
     var body: some View {
         VStack(spacing: 14) {
@@ -844,20 +810,20 @@ struct LiveInkSetupPage: View {
                 Section {
                     PermissionRow(symbol: "hand.draw", title: "Accessibility", reason: "So you can draw while holding ⌃⌥.",
                                   status: trusted ? .granted : .ask, isDefault: !trusted,
-                                  spot: (SetupInkGuide.accessibilityButton, SetupInkGuide.accessibilityWords, guide.spots)) {
+                                  spot: (guide.spots, accessibility.button, accessibility.words)) {
                         Accessibility.request()
                     }
-                    .inkSpot(SetupInkGuide.accessibilityRow, in: guide.spots)
+                    .screenSpot(accessibility.row, in: guide.spots)
                     PermissionRow(symbol: "rectangle.dashed.badge.record", title: "Screen Recording",
                                   reason: "So Claude can see the window you drew on.",
                                   status: screenRecording ? .granted : .ask,
                                   isDefault: trusted && !screenRecording, button: askedScreenRecording ? "Open Settings…" : "Allow…",
-                                  spot: (SetupInkGuide.screenRecordingButton, SetupInkGuide.screenRecordingWords, guide.spots)) {
+                                  spot: (guide.spots, recording.button, recording.words)) {
                         if askedScreenRecording { ScreenRecording.openSystemSettings() } else { ScreenRecording.request() }
                         askedScreenRecording = true
                         askedForScreenRecording()
                     }
-                    .inkSpot(SetupInkGuide.screenRecordingRow, in: guide.spots)
+                    .screenSpot(recording.row, in: guide.spots)
                 }
                 Section {} footer: {
                     VStack(alignment: .leading, spacing: 6) {
@@ -866,7 +832,7 @@ struct LiveInkSetupPage: View {
                     }
                     .font(.caption).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .inkSpot(SetupInkGuide.footer, in: guide.spots)
+                    .screenSpot(SetupInkGuide.footer, in: guide.spots)
                     // Room under the rows for the label pointing at the next Allow button.
                     .padding(.top, 30)
                 }
@@ -874,16 +840,7 @@ struct LiveInkSetupPage: View {
             .formStyle(.grouped).scrollDisabled(true).fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .inkStage(guide.stage) { _ in }
-        .onReceive(poll) { _ in
-            trusted = ModifierTap.trusted(prompt: false)
-            screenRecording = ScreenRecording.granted
-            guide.point(at: pointing)
-        }
+        .inkStage(guide.stage)
         .onDisappear { guide.leave() }
-    }
-
-    private var pointing: SetupInkGuide.Pointing {
-        !trusted ? .accessibility : !screenRecording ? .screenRecording : .ready
     }
 }

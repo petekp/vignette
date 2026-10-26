@@ -638,3 +638,10 @@ enum LiveAnswerLayout {
         return outside * 4 + covered
     }
 }
+
+extension LiveAnswerLayout.Sizes {
+    /// Live ink's sizes in `ui`.
+    init(ui: UITweaks) {
+        self.init(textSize: ui.liveInkTextSize, textWidth: ui.liveInkTextWidth, style: ui.textStyle)
+    }
+}

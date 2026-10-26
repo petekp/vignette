@@ -290,7 +290,7 @@ struct InkHand: Equatable {
         feel.startWidth + (1 - feel.startWidth) * ease(length / max(feel.startTaper, .ulpOfOne))
     }
 
-    private static func ease(_ x: CGFloat) -> CGFloat { let t = min(max(x, 0), 1); return t * t * (3 - 2 * t) }
+    static func ease(_ x: CGFloat) -> CGFloat { let t = min(max(x, 0), 1); return t * t * (3 - 2 * t) }
 
     /// The length of the path from the first point to each.
     static func lengths(_ points: [CGPoint]) -> [CGFloat] {
@@ -496,8 +496,6 @@ final class InkMarkLayer: CALayer {
     private var targets: (field: MTLTexture, depth: MTLTexture)?
     /// Something changed since the last drawing: draw at the next tick, whatever the clock's rate.
     private(set) var needsGel = false
-    /// The gel's frame changed inside the current `changingGel`.
-    private var resized = false
     /// A drawing of the gel has been encoded, so the gel is showing one.
     private var hasDrawn = false
     /// The centre line as drawn, for the thinking light and drawing on.
@@ -556,46 +554,42 @@ final class InkMarkLayer: CALayer {
     /// Lays `mark` out as `hand` drew it. A line still settling from that same hand goes on from where
     /// it is onto the new shape.
     private func layOut(_ mark: Mark, hand: InkHand?, markStyle: MarkStyle) {
-        changingGel { layOutNow(mark, hand: hand, markStyle: markStyle) }
-    }
-
-    private func layOutNow(_ mark: Mark, hand: InkHand?, markStyle: MarkStyle) {
-        let inkStyle = Self.inkStyle(markStyle)
-        guard let drawing = hand ?? InkHand.even(for: mark, markStyle: inkStyle, feel: Settings.shared.data.ui.inkHandFeel) else { return }
-        let settling = settle != nil && shown?.given == hand ? shape?.stroke : nil
-        shown = (mark, hand, drawing, markStyle, inkStyle)
-        pen = nil
-        settledLine = nil
-        lay(InkHand.Stroke(points: drawing.points(of: mark, markStyle: inkStyle), widths: drawing.widths),
-            head: InkGel.corners(of: mark.shape(pointScale: 1, markStyle: inkStyle)?.filled), width: inkStyle.strokeWidth, growOnly: false)
-        guard let settling, let shape, var settle, settling.points.count == shape.stroke.points.count else {
-            settle = nil
-            return
+        changingGel {
+            let inkStyle = Self.inkStyle(markStyle)
+            guard let drawing = hand ?? InkHand.even(for: mark, markStyle: inkStyle, feel: Settings.shared.data.ui.inkHandFeel) else { return }
+            let settling = settle != nil && shown?.given == hand ? shape?.stroke : nil
+            shown = (mark, hand, drawing, markStyle, inkStyle)
+            pen = nil
+            settledLine = nil
+            lay(InkHand.Stroke(points: drawing.points(of: mark, markStyle: inkStyle), widths: drawing.widths),
+                head: InkGel.corners(of: mark.shape(pointScale: 1, markStyle: inkStyle)?.filled), width: inkStyle.strokeWidth, growOnly: false)
+            guard let settling, let shape, var settle, settling.points.count == shape.stroke.points.count else {
+                settle = nil
+                return
+            }
+            settle.reshape(from: settling, to: shape.stroke, at: CACurrentMediaTime())
+            self.settle = settle
+            fit(covering: [settle.reach(over: shape.stroke)], growOnly: false)
         }
-        settle.reshape(from: settling, to: shape.stroke, at: CACurrentMediaTime())
-        self.settle = settle
-        fit(covering: [settle.reach(over: shape.stroke)], growOnly: false)
     }
 
     /// The stroke being drawn, its end at the pen, its first `settled` points where no later event
     /// moves them. It draws at once, in the pointer's own event.
     func showPen(_ stroke: InkHand.Stroke, settled: Int, longest: CGFloat, markStyle: MarkStyle) {
-        changingGel(drawing: true) { layPen(stroke, settled: settled, longest: longest, markStyle: markStyle) }
-    }
-
-    private func layPen(_ stroke: InkHand.Stroke, settled: Int, longest: CGFloat, markStyle: MarkStyle) {
-        shown = nil
-        settle = nil
-        // A new stroke starts the layer afresh; one under way only grows it.
-        let growing = stroke.points.count > 3 && pen.map { $0.stroke.points.first == stroke.points.first && settled >= $0.settled } ?? false
-        if !growing { settledLine = nil }
-        let covered = growing ? max(0, (pen?.settled ?? 0) - 8) : 0
-        let kept = InkHand.trailingStart(of: stroke.points, length: longest)
-        // A longer line, from the tweaks, brings back points the layer may have shrunk away from.
-        let returning = growing && (pen?.kept ?? 0) > kept
-        pen = (stroke, settled, kept, longest, markStyle)
-        lay(stroke, head: [], width: Self.inkStyle(markStyle).strokeWidth, growOnly: growing, from: returning ? kept : covered)
-        if kept > 0 { shrink(around: stroke.points[kept...]) }
+        changingGel(drawing: true) {
+            shown = nil
+            settle = nil
+            // A new stroke starts the layer afresh; one under way only grows it.
+            let growing = stroke.points.count > 3 && pen.map { $0.stroke.points.first == stroke.points.first && settled >= $0.settled } ?? false
+            if !growing { settledLine = nil }
+            let covered = growing ? max(0, (pen?.settled ?? 0) - 8) : 0
+            let kept = InkHand.trailingStart(of: stroke.points, length: longest)
+            // A longer line, from the tweaks, brings back points the layer may have shrunk away from.
+            let returning = growing && (pen?.kept ?? 0) > kept
+            pen = (stroke, settled, kept, longest, markStyle)
+            lay(stroke, head: [], width: Self.inkStyle(markStyle).strokeWidth, growOnly: growing, from: returning ? kept : covered)
+            if kept > 0 { shrink(around: stroke.points[kept...]) }
+        }
     }
 
     /// Makes `change` to the gel, and draws it at once when `drawing`, or when the change resized a
@@ -604,8 +598,9 @@ final class InkMarkLayer: CALayer {
     /// line (measured 2026-10-25). A resize must not commit a transaction of its own for the same
     /// reason.
     private func changingGel(drawing: Bool = false, _ change: () -> Void) {
-        resized = false
+        let before = gel.frame
         change()
+        let resized = gel.frame != before
         guard drawing || (resized && hasDrawn), isVisible,
               let frame = encode(at: CACurrentMediaTime(), time: InkClock.shared.time) else { return }
         frame.commands.commit()
@@ -774,7 +769,6 @@ final class InkMarkLayer: CALayer {
     private func resize(to box: CGRect) {
         gel.frame = box
         gel.drawableSize = CGSize(width: box.width * contentsScale, height: box.height * contentsScale)
-        resized = true
     }
 
     /// The backdrop was read again: the line chooses its colour again at its next drawing.
