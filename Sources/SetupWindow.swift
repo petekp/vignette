@@ -30,7 +30,9 @@ enum FolderAccess {
 /// nobody asked. Here each dialog answers a row that says why it is needed.
 @MainActor
 final class SetupWindowController: NSObject, NSWindowDelegate {
-    /// What the window asks AppDelegate for rather than doing itself.
+    /// What the window asks for rather than doing itself: AppDelegate's parts, and the records
+    /// setup makes, which `show` supplies. A preview leaves the records out, so trying its pages
+    /// changes nothing.
     struct Callbacks {
         /// Asked again on every look rather than read once: a folder filled while the window is
         /// open is the case the window is asking the user to create.
@@ -45,6 +47,12 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         /// `finished` once the intro has gone. False when there is no intro, and the window closes
         /// as any window does.
         var introduceMenuBar: (NSWindow, _ close: @escaping () -> Void, _ finished: @escaping () -> Void) -> Bool = { _, _, _ in false }
+        /// The answer on the live ink page: live ink on or off.
+        var choseLiveInk: (Bool) -> Void = { _ in }
+        /// Screen Recording was asked for, which macOS answers by asking to quit and reopen the app.
+        var askedForScreenRecording: () -> Void = {}
+        /// The window closed.
+        var closed: (SetupModel) -> Void = { _ in }
     }
 
     private let settings = Settings.shared
@@ -73,9 +81,25 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     private let launchedHereBefore = FileManager.default.fileExists(atPath: Identity.applicationSupportURL.path)
 
     /// `protectedArea` names the folder macOS will ask about ("your Desktop"), or is nil when it
-    /// won't ask, which leaves the welcome page without a folder row. `preview` opens the live ink
-    /// pages alone (`vignette://setup-ink`, needs `debug`); closing a preview changes nothing setup would.
-    func show(protectedArea: String?, callbacks: Callbacks, preview: Bool = false) {
+    /// won't ask, which leaves the welcome page without a folder row.
+    func show(protectedArea: String?, callbacks: Callbacks) {
+        var callbacks = callbacks
+        callbacks.choseLiveInk = { use in Settings.shared.update { $0.liveInk = use } }
+        // macOS asks to quit and reopen, and the next launch's setup opens on live ink's permissions.
+        callbacks.askedForScreenRecording = { SetupModel.returnsToLiveInkSetup = true }
+        callbacks.closed = { [weak self] model in self?.record(model) }
+        open(protectedArea: protectedArea, callbacks: callbacks, preview: false)
+    }
+
+    /// The live ink pages alone, to try them (`vignette://setup-ink`, needs `debug`). They record
+    /// nothing, and closing them changes nothing setup would.
+    func showPreview() {
+        var callbacks = Callbacks()
+        callbacks.closed = { _ in Log.write("[setup] preview closed") }
+        open(protectedArea: nil, callbacks: callbacks, preview: true)
+    }
+
+    private func open(protectedArea: String?, callbacks: Callbacks, preview: Bool) {
         if let win = window {
             win.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -155,7 +179,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     /// Closing is where the menu bar icon is introduced: the window flies into it, and closes once
     /// its picture covers it (`MenuBarIntro`). A second close while that waits changes nothing.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard !quitting, let model, !model.isPreview else { return true }
+        guard !quitting, let model else { return true }
         if introducing { return false }
         introducing = model.callbacks.introduceMenuBar(sender, { sender.close() }) { [weak self] in
             self?.afterIntro?()
@@ -170,18 +194,20 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         guard let model else { return }
         model.inkPlayer.stop()
-        if model.isPreview {
-            Log.write("[setup] preview closed")
-            self.model = nil
-            DispatchQueue.main.async { [weak self] in
-                self?.window?.contentViewController = nil
-                self?.window = nil
-            }
-            return
+        model.callbacks.closed(model)
+        self.model = nil
+        // The view's poll would otherwise keep running in the closed window. Let go after this
+        // turn, since AppKit is still closing the window.
+        DispatchQueue.main.async { [weak self] in
+            self?.window?.contentViewController = nil
+            self?.window = nil
         }
+    }
+
+    /// Records setup as done and applies the switches the window shows, unless the app is quitting.
+    private func record(_ model: SetupModel) {
         if quitting {
             Log.write("[setup] quit before it was done; asks again at the next launch")
-            self.model = nil
             return
         }
         // Vignette can't work without the folder, so a window closed before it asked asks now.
@@ -211,13 +237,6 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             LoginItem.apply(settings.data.launchAtLogin)
         }
         DispatchQueue.main.async { FocusReturn.shared.restore(reason: "setup closed") }
-        self.model = nil
-        // The view's poll would otherwise keep running in the closed window. Let go after this
-        // turn, since AppKit is still closing the window.
-        DispatchQueue.main.async { [weak self] in
-            self?.window?.contentViewController = nil
-            self?.window = nil
-        }
     }
 }
 
@@ -304,10 +323,10 @@ final class SetupModel: ObservableObject {
     var stepIndex: Int { steps.firstIndex(of: page == .liveInkSetup ? .liveInk : page) ?? 0 }
 
     /// The live ink page's answer. Use Live Ink turns it on and goes on to its permissions; Not Now
-    /// leaves it off and skips them. A preview writes neither, and Not Now closes it.
+    /// leaves it off and skips them, and closes a preview.
     func useLiveInk(_ use: Bool, animation: Animation) {
         usesLiveInk = use
-        if !isPreview { Settings.shared.update { $0.liveInk = use } }
+        callbacks.choseLiveInk(use)
         Log.write("[setup] live ink \(use ? "used" : "not now")")
         if !use, isPreview || isLast { return done() }
         go(by: 1, animation: animation)
@@ -324,13 +343,6 @@ final class SetupModel: ObservableObject {
             withAnimation(animation) { self.page = target }
             if target == .agents { self.sawAgents = true }
         }
-    }
-
-    /// Screen Recording was asked for on live ink's permissions page. macOS then asks to quit and
-    /// reopen the app, and the next launch's setup opens on that page.
-    func askedForScreenRecording() {
-        guard !isPreview else { return }
-        Self.returnsToLiveInkSetup = true
     }
 
     /// Set until setup is done, so a quit and reopen part way through comes back to live ink's permissions.
@@ -410,7 +422,8 @@ struct SetupView: View {
         case .shortcut: shortcut
         case .liveInk: LiveInkPage(player: model.inkPlayer)
         case .liveInkSetup:
-            LiveInkSetupPage(guide: model.inkGuide, trusted: trusted, screenRecording: screenRecording) { model.askedForScreenRecording() }
+            LiveInkSetupPage(guide: model.inkGuide, trusted: trusted, screenRecording: screenRecording,
+                             askedForScreenRecording: model.callbacks.askedForScreenRecording)
         case .agents: agents
         }
     }

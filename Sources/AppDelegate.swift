@@ -882,7 +882,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// Setup's live ink pages alone, to try them.
     private func showSetupInk() {
-        setupWindow.show(protectedArea: nil, callbacks: setupCallbacks, preview: true)
+        setupWindow.showPreview()
     }
 
     private func introduceMenuBar(from window: NSWindow, close: @escaping () -> Void, finished: @escaping () -> Void) -> Bool {
