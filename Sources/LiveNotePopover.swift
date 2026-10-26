@@ -10,7 +10,8 @@ import AppKit
 ///
 /// It hangs from a view of the overlay its ink is drawn on (`LiveMarksLayer.hang`), as a reply does, so
 /// it moves with its ink's window, the windows in front of that window cover it, and it fades as its
-/// ink fades (`follow`).
+/// ink fades (`follow`). While the stack or the annotator holds the screen it hides, and it comes back
+/// as it was once they are gone (`standAside`).
 ///
 /// Under the words, the target: the one picked last, else the responder (`DestinationChoice`
 /// decides), which answers on the screen, with the working sessions listed after it
@@ -58,6 +59,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private var place: PopoverPlace
     /// How strongly its ink shows: 0 while the ink is hidden with its window.
     private var inkOpacity: CGFloat = 1
+    /// Hidden while the stack or the annotator holds the screen.
+    private(set) var standsAside = false
+    private var opacity: CGFloat { standsAside ? 0 : inkOpacity }
     /// Where the caret was when the note lost the keys, which it takes back with them.
     private var caret: NSRange?
     private var sessions: [AgentDestination] = []
@@ -115,7 +119,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         let edge = place.edge != self.place.edge
         self.place = place
         hungAt = rect
-        guard let shown = self.host, popover.isShown else { return open(from: host) }
+        guard let shown = self.host, popover.isShown else { return open(from: host, takingKeys: !standsAside) }
         let motion = Settings.shared.motionScale
         if shown !== host || edge {
             slide.stop()
@@ -169,6 +173,18 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     func follow(_ opacity: CGFloat, duration: CFTimeInterval) {
         guard !closing, opacity != inkOpacity else { return }
         inkOpacity = opacity
+        showOpacity(over: duration)
+    }
+
+    /// Hides it while the stack or the annotator holds the screen, letting go of the keys, or shows it
+    /// again, without them, once they are gone.
+    func standAside(_ aside: Bool) {
+        guard !closing, aside != standsAside else { return }
+        standsAside = aside
+        showOpacity(over: (aside ? Self.fadeOut : Self.fadeIn) * Settings.shared.motionScale)
+    }
+
+    private func showOpacity(over duration: CFTimeInterval) {
         if opacity > 0, revealed, !popover.isShown, let host { open(from: host, takingKeys: false) }
         if opacity == 0, hasKeys { letGoOfKeys() }
         fade(over: duration)
@@ -177,7 +193,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// Fades the window to what it should show, over `duration`.
     private func fade(over duration: CFTimeInterval) {
         guard let window = content.window else { return }
-        let alpha = revealed ? inkOpacity : 0
+        let alpha = revealed ? opacity : 0
         guard duration > 0 else { window.alphaValue = alpha; return }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
@@ -192,15 +208,15 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// The field has the keys.
     var hasKeys: Bool { content.window?.isKeyWindow == true }
 
-    /// Up for Esc to discard: it has the keys, or shows. Not while hidden with its ink.
-    var isUp: Bool { !closing && !sent && (hasKeys || revealed && inkOpacity > 0 && popover.isShown) }
-
     /// Shows where it hangs, with its ink.
-    var isShown: Bool { !closing && revealed && inkOpacity > 0 && popover.isShown }
+    var isShown: Bool { !closing && revealed && opacity > 0 && popover.isShown }
+
+    /// No words typed or heard.
+    var isEmpty: Bool { content.field.stringValue.isEmpty }
 
     /// Takes the keys back, with the caret where it was, as a click on it does.
     func takeKeys() {
-        guard !closing, !sent, popover.isShown, let window = content.window else { return }
+        guard !closing, !sent, !standsAside, popover.isShown, let window = content.window else { return }
         window.makeKey()
         if window.firstResponder !== content.field.currentEditor() {
             window.makeFirstResponder(content.field)
@@ -378,7 +394,10 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     }
 
     /// Shows what the person is saying, until they type: a word typed is theirs to keep.
-    func hear(_ words: String) {
+    func hear(_ words: String) { put(words) }
+
+    /// Puts `words` in the field, the caret after them.
+    func put(_ words: String) {
         guard !sent, !closing else { return }
         content.field.stringValue = words
         // The caret follows the words, so typing after them adds to the end.

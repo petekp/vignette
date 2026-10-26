@@ -8,7 +8,8 @@ enum LiveEscape {
     static let keyCode: UInt32 = 53
 
     enum Step: String, Equatable {
-        /// The note closes, listening stops, and its ink, all the ink no ask has been about, goes.
+        /// The note closes, listening stops, and its ink, all the ink no ask has been about, goes. Only
+        /// while the note has the keys.
         case discardNote = "discard-note"
         /// Reply's field closes and keeps what was typed.
         case closeReplyField = "close-reply-field"
@@ -29,8 +30,7 @@ enum LiveEscape {
         var screenIsFree = true
         /// The note's target menu is up. It closes on Esc, which the held key would take from it.
         var menuOpen = false
-        /// The note has the keys, or shows. Not while it is hidden with its ink.
-        var noteOpen = false
+        var note: Note = .none
         var replyFieldOpen = false
         /// An ask is under way that Esc can stop: any ask to the responder, waiting its turn or not, and
         /// an ask to a session until its send has been stored, since only a send still in its grace can
@@ -44,9 +44,17 @@ enum LiveEscape {
         var marksShown = false
     }
 
+    enum Note: Equatable {
+        case none
+        case hasKeys
+        /// Up, shown or hidden with its ink, while the person is in another app. Esc is that app's, so
+        /// a press meant there never takes the note's words, nor anything else live ink shows.
+        case withoutKeys
+    }
+
     static func next(_ state: Snapshot) -> Step? {
-        guard state.isOn, state.screenIsFree, !state.menuOpen else { return nil }
-        if state.noteOpen { return .discardNote }
+        guard state.isOn, state.screenIsFree, !state.menuOpen, state.note != .withoutKeys else { return nil }
+        if state.note == .hasKeys { return .discardNote }
         if state.replyFieldOpen { return .closeReplyField }
         if state.askCanBeCancelled { return .cancelAsk }
         if state.tourRunning { return .endTour }

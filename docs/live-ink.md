@@ -93,12 +93,13 @@ The names in brackets are `// MARK:` sections.
   flag off and takes every press, over clear pixels too, as the matte rule in `AGENTS.md` says.
 - Esc backs out of live ink one step per press, the first of these that applies (`LiveEscape.next`,
   a pure function of a snapshot of what is up; `Tests/LiveInkTests.swift`):
-  1. Discard the note, while it has the keys or shows: listening stops and its ink, all the ink no
-     ask has been about, goes. Ink an ask was about stays. Or close Reply's field, which keeps its
-     draft.
+  1. Discard the note, while it has the keys: listening stops and its ink, all the ink no ask has
+     been about, goes. Ink an ask was about stays. Or close Reply's field, which keeps its draft.
   2. Stop the newest ask under way or waiting its turn (`LiveInk.cancelAsk`, `LiveAsks.cancellable`),
      one per press. Its sent note and any reply leave, and its ink is as it was before the ask
-     (`LiveAsks.Event.cancelled`): ink that was new when the ask began is new again. A follow-up from a button puts the earlier answer back as it was, with no failure sentence, even
+     (`LiveAsks.Event.cancelled`): ink that was new when the ask began is new again. The note opens
+     on that ink with the keys and the words the ask was sent with (`LiveAsks.Effect.reopenNote`). A
+     note that is up already takes the keys and keeps its own words. A follow-up from a button puts the earlier answer back as it was, with no failure sentence, even
      once its reply has started to stream. Nothing
      says the ask failed, since the person stopped it. Stopping the ask the responder is answering
      interrupts its turn (`LiveResponder.cancel`), and the next ask waiting goes; one still waiting was
@@ -111,6 +112,10 @@ The names in brackets are `// MARK:` sections.
      (`LiveAsks.Event.answerClosed`). A failure's reply counts as an answer. The person's ink stays,
      unlike the ×, which takes the ink it answered too.
   5. Clear what is left, as `clear()` does, which also ends the conversation.
+
+  While the note is up without the keys, shown or hidden with its ink, none of these steps applies.
+  The person is in another app, and Esc there is that app's. So a press meant for a terminal never
+  takes the note's words, and never stops, closes or clears anything else.
 
   `LiveInk` holds Esc as a Carbon hotkey on plain Esc (`HotKey`, no permission needed) only while
   `LiveEscape.next` has a step, and lets it go at once when it has none, so Esc is the frontmost
@@ -225,8 +230,10 @@ The names in brackets are `// MARK:` sections.
   it, hung from the newest ink. Drawing more while it is up keeps the same note, with its words, its
   target and its caret, and slides it on a spring to hang from the newest ink (`PopoverSlide`), as a
   reply slides between stops. The note leaves only when its ink does: Return asks about it, Esc takes
-  it back, or it is erased, cleared, gone with its window, or live ink is turned off. The stack or the
-  annotator coming up also closes it (`standAside`). A click elsewhere takes the keys and leaves the
+  it back, or it is erased, cleared, gone with its window, or live ink is turned off. While the stack or
+  the annotator holds the screen, the note hides and lets go of the keys (`LiveNotePopover.standAside`).
+  It comes back as it was, without the keys, once they are gone (`LiveInk.bringNoteBack`). That is
+  checked before each wait of the main run loop, as Esc's hotkey is. A click elsewhere takes the keys and leaves the
   note where it hangs, inactive: its glass draws as macOS draws a window that is not key, the caret
   goes, the words dim to 55% and the ↩ fades, since Return does nothing until the note has the keys
   again. A click on it, or the chord let go, gives them back with the caret where it was, and the
@@ -249,7 +256,9 @@ The names in brackets are `// MARK:` sections.
   does it when the chord is let go (`[focus] live ink …: returned to …`). Under the words
   is its target: the agent's logo and the project, on a button that opens the list of targets, as
   Down does. Return asks about the ink no ask has been about, or, with none, about the
-  ink asked about last. Esc cancels the note: it closes, and its ink goes. ⌘⌫ deletes the typed line, as in any text field. Its target starts on the one picked last, else the
+  ink asked about last. A follow-up from an answer's button or its Reply field is about the ink asked
+  about, never the note's ink, and the note stays with its words. Esc, while the note has the keys,
+  discards it: it closes, and its ink goes. ⌘⌫ deletes the typed line, as in any text field. Its target starts on the one picked last, else the
   responder, and lists the sessions Send lists after it. Tab picks the next target in that list and
   Shift+Tab the one before, round from either end, without opening it. Down opens it. Return settles the note into the look of
   the conversation over 0.18 s (`NoteContent.settle`): the target's button loses its background and
@@ -281,7 +290,9 @@ The names in brackets are `// MARK:` sections.
   its way to a shortcut never turns the microphone on, and a press of the chord while it listens goes
   on with the same listening, so "this" and "that" drawn in two strokes are one note. The note opens
   on release with what was said so far and fills as the person talks. A key typed in it ends
-  listening and keeps the words; Esc, an ask, standing aside and clearing drop them. `ListeningEnd`
+  listening and keeps the words; Esc, an ask and clearing drop them. Standing aside stops listening,
+  and the note keeps what it heard. Words already in the note when listening starts stay, and what is
+  said then does not replace them. `ListeningEnd`
   decides the end: `liveInkListenUntil` is `release` (0.3 s after the chord is let go) or `pause`
   (the input under `ui.liveInkSpeechQuiet` for `ui.liveInkSpeechPause` after release), and never
   past 60 s. With `liveInkSendWhenQuiet`, the final words are sent as Return sends them. Speech is

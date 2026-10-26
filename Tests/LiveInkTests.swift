@@ -368,14 +368,16 @@ final class LiveInkTests: XCTestCase {
     // MARK: Esc
 
     private func everything() -> LiveEscape.Snapshot {
-        LiveEscape.Snapshot(isOn: true, noteOpen: true, replyFieldOpen: true, askCanBeCancelled: true, tourRunning: true,
+        LiveEscape.Snapshot(isOn: true, note: .hasKeys, replyFieldOpen: true, askCanBeCancelled: true, tourRunning: true,
                             answerShown: true, marksShown: true)
     }
 
     func testEscBacksOutOneStepAtATimeInOrder() {
         var state = everything()
+        XCTAssertEqual(LiveEscape.next(state), .discardNote)
+        state.note = .none
         let steps: [(LiveEscape.Step, WritableKeyPath<LiveEscape.Snapshot, Bool>)] = [
-            (.discardNote, \.noteOpen), (.closeReplyField, \.replyFieldOpen), (.cancelAsk, \.askCanBeCancelled),
+            (.closeReplyField, \.replyFieldOpen), (.cancelAsk, \.askCanBeCancelled),
             (.endTour, \.tourRunning), (.closeAnswer, \.answerShown), (.clearInk, \.marksShown),
         ]
         for (step, field) in steps {
@@ -383,6 +385,12 @@ final class LiveInkTests: XCTestCase {
             state[keyPath: field] = false
         }
         XCTAssertNil(LiveEscape.next(state), "with nothing left, Esc is the app's again")
+    }
+
+    func testEscIsTheAppsWhileTheNoteIsUpWithoutTheKeys() {
+        var state = everything()
+        state.note = .withoutKeys
+        XCTAssertNil(LiveEscape.next(state))
     }
 
     func testEscClearsInkAloneAndNothingElse() {

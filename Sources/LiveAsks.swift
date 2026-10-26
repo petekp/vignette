@@ -31,6 +31,8 @@ struct LiveAsks: Equatable {
         var fresh: Set<Mark.ID> = []
         /// It goes to a session as a note, not to the responder.
         var toSession = false
+        /// The words asked with, which the note opens with again when Esc stops the ask.
+        var words = ""
         var reason: String?
         var picture = false
         /// The reply as it streams in, and once it is whole. An ask from one of an answer's buttons
@@ -162,8 +164,10 @@ struct LiveAsks: Equatable {
     /// What the next ask is about: the new ink among `shown`, or with none, the ink asked about.
     func about(among shown: [Mark]) -> [Mark] {
         let fresh = newInk(among: shown)
-        return fresh.isEmpty ? ink(among: shown).filter { isAsked($0.id) } : fresh
+        return fresh.isEmpty ? askedInk(among: shown) : fresh
     }
+
+    private func askedInk(among shown: [Mark]) -> [Mark] { ink(among: shown).filter { isAsked($0.id) } }
 
     /// The ink leads, not the person's note: the answer goes on the window the ink is on.
     static func leader(of about: [Mark]) -> Mark.ID? { about.last { $0.kind != .text }?.id ?? about.last?.id }
@@ -209,10 +213,11 @@ struct LiveAsks: Equatable {
 
     /// Begins an ask about the new ink among `shown`, or, with none, about the ink asked about,
     /// looking for its packet. `following` is the reply whose button the person picked: the ask takes
-    /// that answer's place, and is about its marks too.
-    mutating func begin(among shown: [Mark], following: Following?, toSession: Bool = false) -> Begun {
+    /// that answer's place, and is about its marks and the ink asked about, never the new ink, which
+    /// stays the note's.
+    mutating func begin(among shown: [Mark], following: Following?, words: String = "", toSession: Bool = false) -> Begun {
         let before = asks.map(\.id)
-        let about = about(among: shown)
+        let about = following == nil ? about(among: shown) : askedInk(among: shown)
         guard let shape = about.last?.shapeExtent else { return refuse(.noInk, following: following) }
         let ids = Set(about.map(\.id))
         let fresh = ids.filter { !isAsked($0) }
@@ -220,7 +225,7 @@ struct LiveAsks: Equatable {
         take(.noteInk, from: ids)
         lastID += 1
         let leader = Self.leader(of: about)
-        var new = Ask(id: lastID, phase: .looking, about: ids, fresh: fresh, toSession: toSession, leader: leader)
+        var new = Ask(id: lastID, phase: .looking, about: ids, fresh: fresh, toSession: toSession, words: words, leader: leader)
         if let following {
             new.say = following.reply
             new.picked = following.pick
@@ -290,8 +295,9 @@ struct LiveAsks: Equatable {
         /// this ask's.
         case dismissed(Ask.ID)
         /// Esc on ask `id`, under way: it stops, and its ink is as it was before it began: ink that was
-        /// new is the note's again. A reply to put back must be among `shown`. Nothing is said, since the person stopped it. A session's
-        /// note stored after this is withdrawn.
+        /// new is the note's again, and the note opens on it with the ask's words. A reply to put back
+        /// must be among `shown`. Nothing is said, since the person stopped it. A session's note stored
+        /// after this is withdrawn.
         case cancelled(Ask.ID, shown: Set<Mark.ID>)
         /// Esc with no ask to stop: the newest answer's marks leave, and the person's ink stays.
         case answerClosed
@@ -338,6 +344,9 @@ struct LiveAsks: Equatable {
         case notice(reply: Mark.ID, reason: String)
         /// Take these marks off the screen.
         case remove(Set<Mark.ID>)
+        /// Ink is the note's again: open the note on it, with the keys and with `words`, or give the keys
+        /// to the note up already, which keeps its own words.
+        case reopenNote(words: String)
         /// The note of an ask Esc stopped was stored after all: take the send back.
         case withdraw
         /// Let go of ask `id`'s steps, focus and buttons, then take these marks off. The ask has already
@@ -455,7 +464,7 @@ struct LiveAsks: Equatable {
             if let restored = restore(id, saying: nil, shown: shown) { return interrupt + [restored] }
             let removal = removeAnswer(of: id)
             end(id)
-            return interrupt + [removal]
+            return interrupt + [removal] + (present.isEmpty ? [] : [.reopenNote(words: current.words)])
         case .answerClosed:
             guard let ask = asks.last(where: { !$0.isUnderWay && answerMarks(of: $0.id).contains { !isFinishing($0) } }) else { break }
             let ids = answerMarks(of: ask.id)

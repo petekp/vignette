@@ -68,7 +68,8 @@ final class LiveInk {
     /// Listening to the person while they draw, with speech on. It can span several presses of the
     /// chord, so "this" and "that" drawn in two strokes are one note.
     private var listening: LiveListening?
-    /// The person typed in the note, so what they say no longer replaces its words.
+    /// The note's words are the person's to keep: typed, or in the note before this listening began, so
+    /// what they say no longer replaces them.
     private var typedOver = false
     /// The final words of the last listening, while the note holds them as they were said, and when
     /// that listening began, which their times count from.
@@ -179,7 +180,10 @@ final class LiveInk {
         windows.onGone = { [weak self] ids in self?.forget(ids) }
         windows.drawnExtent = { [weak self] mark in self.flatMap { Self.drawnExtent(of: mark, sizes: $0.answerSizes) } }
         let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, 0) { [weak self] _, _ in
-            MainActor.assumeIsolated { self?.holdEscape() }
+            MainActor.assumeIsolated {
+                self?.bringNoteBack()
+                self?.holdEscape()
+            }
         }
         CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
     }
@@ -266,9 +270,13 @@ final class LiveInk {
     }
 
     /// The stack or the annotator is coming up under the raised overlays: inking stops, the stroke
-    /// under way is dropped, and the chord must be pressed again to ink.
+    /// under way is dropped, and the chord must be pressed again to ink. The note hides, with its words,
+    /// until they are gone (`bringNoteBack`).
     func standAside() {
-        closeNote()
+        if let note, !note.standsAside {
+            note.standAside(true)
+            Log.write("[live-ink] note hidden: the stack or the annotator is up")
+        }
         stopListening()
         guard isInking else { return }
         stopInking(because: "the stack or the annotator is up")
@@ -290,6 +298,15 @@ final class LiveInk {
         pickerWatch = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkWindowPicker() }
         }
+    }
+
+    /// The note hidden by `standAside` shows again, without the keys, once the stack and the annotator
+    /// are gone. The main run loop asks before each wait, as it does `holdEscape`, so the note follows
+    /// whatever closed them.
+    private func bringNoteBack() {
+        guard let note, note.standsAside, mayInk() else { return }
+        note.standAside(false)
+        Log.write("[live-ink] note back: the screen is free")
     }
 
     private func checkWindowPicker() {
@@ -707,6 +724,20 @@ final class LiveInk {
         closing?.dismiss()
     }
 
+    /// Esc stopped an ask, and its ink is the note's again (`LiveAsks.Effect.reopenNote`): the note
+    /// opens on it with the keys and the words the ask carried, or the note up already takes the keys
+    /// and keeps its own words.
+    private func reopenNote(_ words: String) {
+        let opening = note == nil
+        showNote()
+        guard let note else { return }
+        if opening || note.isEmpty {
+            note.put(words)
+            typedOver = true
+        }
+        Log.write("[live-ink] note reopened words=\(words.split(whereSeparator: \.isWhitespace).count)")
+    }
+
     /// Esc in the note: the note goes, with what was said for it and its ink, all the ink no ask has
     /// been about. Ink an ask was about stays.
     private func discardNote() {
@@ -753,23 +784,26 @@ final class LiveInk {
     /// in, where it hangs and where its words are: the conversation takes its place, and a card draws
     /// the words there. `following` is the reply the person answered with `picked`: it stays, with
     /// their words as its question, and it and the answer's marks carry the thinking light until the
-    /// next answer replaces them. Answers whether an ask started, and why not.
+    /// next answer replaces them. A follow-up is about the ink asked about, and the note, with its new
+    /// ink and its words, stays. Answers whether an ask started, and why not.
     @discardableResult
     func ask(_ words: String, sendingTo session: AgentDestination? = nil,
              from note: (panel: LiveNotePopover, place: PopoverPlace, tag: CGRect?)? = nil,
              following reply: Mark? = nil, picked: LiveAnswerActions.Pick? = nil) -> Result<Void, LiveResponder.Failure> {
-        closeNote()
-        // The words as they were said, unless the person changed them in the note.
         let trimmed = words.trimmingCharacters(in: .whitespacesAndNewlines)
-        let said = spoken.flatMap { LiveListening.text(of: $0.words).trimmingCharacters(in: .whitespacesAndNewlines) == trimmed ? $0 : nil }
-        spoken = nil
-        let person = ink
-        let fresh = newInk
+        // A follow-up is not about the note's ink, and leaves the note, its words and what was said for it.
+        let noteIDs = reply == nil ? [] : asks.noteInk
+        if reply == nil { closeNote() }
+        // The words as they were said, unless the person changed them in the note.
+        let said = reply != nil ? nil : spoken.flatMap { LiveListening.text(of: $0.words).trimmingCharacters(in: .whitespacesAndNewlines) == trimmed ? $0 : nil }
+        if reply == nil { spoken = nil }
+        let person = ink.filter { !noteIDs.contains($0.id) }
+        let fresh = reply == nil ? newInk : []
         let following = reply.map { LiveAsks.Following(reply: $0, pick: picked ?? .reply, words: words) }
         let id: LiveAsks.Ask.ID
         let about: [Mark]
         let point: CGPoint
-        switch asks.begin(among: shownMarks, following: following, toSession: session != nil) {
+        switch asks.begin(among: shownMarks, following: following, words: trimmed, toSession: session != nil) {
         case .refused(let refusal, let effects):
             run(effects)
             return .failure(LiveResponder.Failure(reason: refusal.rawValue, detail: refusal.detail))
@@ -797,7 +831,7 @@ final class LiveInk {
         let plan = picturePlan(for: about)
         Log.write("[live-ink] asking id=\(id) new=\(fresh.count) about=\(about.count) words=\(trimmed.split(whereSeparator: \.isWhitespace).count) queued=\(asks.queued.count) picture=\(Self.describe(plan))")
         let early = prepared.flatMap { $0.ink == Set(person.map(\.id)) && $0.plan == plan ? $0.packet : nil }
-        prepared = nil
+        if reply == nil { prepared = nil }
         let inkWindows = inkWindows(of: person)
         Task { @MainActor [weak self] in
             do {
@@ -1623,6 +1657,7 @@ final class LiveInk {
             case .say(let id, let reason): say(reason, for: id)
             case .notice(let reply, let reason): notice(reason, in: reply)
             case .remove(let ids): remove(ids)
+            case .reopenNote(let words): reopenNote(words)
             case .finish(let ids, let how): finish(ids, how)
             case .showReply, .drawAnswer, .share, .withdraw: break
             }
@@ -1793,7 +1828,7 @@ final class LiveInk {
             isOn: isOn,
             screenIsFree: mayInk(),
             menuOpen: note?.menuOpen == true,
-            noteOpen: note?.isUp == true,
+            note: note.map { $0.hasKeys ? .hasKeys : .withoutKeys } ?? LiveEscape.Note.none,
             replyFieldOpen: actionsPanels.values.contains(where: \.isTyping),
             askCanBeCancelled: asks.cancellable(sendsWait: sendsWait) != nil,
             tourRunning: focusRun != nil || stepClicks != nil,
@@ -2027,7 +2062,7 @@ final class LiveInk {
             self.listening = nil
         }
         self.listening = listening
-        typedOver = false
+        typedOver = note.map { !$0.isEmpty } ?? false
     }
 
     private func heard(_ words: [SpokenWord]) {
