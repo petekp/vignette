@@ -713,7 +713,8 @@ final class ThumbnailController: NSObject {
     /// The request for `shot` is stored and its card is going home: the card shows where it is going
     /// from the moment it lands.
     func showSending(_ shot: Screenshot, request: String, to destination: AgentDestination, grace: SendNotice.Grace? = nil) {
-        post(.sending(request: request, client: destination.client, project: SessionMenu.sentLabel(of: destination), grace: grace), on: shot)
+        post(.sending(request: request, client: destination.client, project: SessionMenu.sentLabel(of: destination), grace: grace,
+                      starts: destination.startsProcess), on: shot)
     }
 
     /// The grace of the send `request` ended and its line is going to the client.

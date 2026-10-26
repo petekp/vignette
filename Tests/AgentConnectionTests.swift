@@ -935,6 +935,33 @@ final class AgentConnectionTests: XCTestCase {
         withExtendedLifetime(listing) {}
     }
 
+    @MainActor
+    func testTheSessionsVignetteCanStartNeverHoldTheListBackAndLeaveOutARunningProject() async throws {
+        var busy = claudeSession("mew", used: 100)
+        busy.folder = "/busy"
+        let claude = ListedSessions(.claude, keepsList: false, sessions: [busy])
+        let found = Date()
+        let rows = StartableSessions.rows(folder: "/busy", last: nil, lastUsed: found, found: .init(place: .none, branch: nil))
+            + StartableSessions.rows(folder: "/site", last: nil, lastUsed: found, found: .init(place: .none, branch: nil))
+        let gate = DispatchSemaphore(value: 0)
+        let listing = SessionListing(connections: [.claude: claude], readHerdr: { nil }, startable: { gate.wait(); return rows })
+        let fresh = expectation(description: "fresh without the sessions to start")
+        let offered = expectation(description: "the sessions to start arrive")
+        fresh.assertForOverFulfill = false
+        offered.assertForOverFulfill = false
+        listing.list { candidates in
+            if candidates.complete && candidates.fresh && candidates.startable.isEmpty { fresh.fulfill() }
+            if !candidates.startable.isEmpty {
+                XCTAssertEqual(candidates.startable.map(\.id), [SessionStart.newRowID(folder: "/site")])
+                offered.fulfill()
+            }
+        }
+        await fulfillment(of: [fresh], timeout: 5)
+        gate.signal()
+        await fulfillment(of: [offered], timeout: 5)
+        withExtendedLifetime(listing) {}
+    }
+
     /// An editor opening while a refresh is on its way waits for that answer rather than starting a
     /// second `codex app-server`, and the answer is kept before the waiters hear it.
     @MainActor

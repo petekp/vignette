@@ -197,7 +197,8 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// kept one and fresh ones; `DestinationChoice` says which target each one starts the note on.
     func setSessions(_ candidates: DestinationChoice.Candidates) {
         let answer = DestinationChoice.choose(candidates, for: .liveNote(ownPick))
-        sessions = answer.list
+        // The menu lists the sessions Vignette can start after the running ones (`SessionMenu.ranked`).
+        sessions = answer.list + answer.startable
         let found: Target = answer.pick.map(Target.session) ?? .responder
         guard found != target else { return }
         show(found)

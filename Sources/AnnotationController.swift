@@ -72,6 +72,7 @@ final class AnnotationController {
         toolbar.onTool = { [weak self] tool in self?.editor.setTool(tool) }
         toolbar.onDone = { [weak self] in self?.editor.done() }
         toolbar.onMessageEnd = { [weak self] in self?.window?.makeKey() }
+        toolbar.model.onOfferChanged = { [weak self] offer in self?.offerChanged(offer) }
         toolbar.onSend = { [weak self] destination in
             guard let self else { return }
             sendingTo = destination
@@ -553,7 +554,6 @@ final class AnnotationController {
         toolbar.model.begin(replyTo: replyTo, carryingTarget: toolbar.model.shown)
         offered = nil
         logOffer(was: nil)
-        offerChanged()
     }
 
     /// Another client answered with its sessions, and the pick made from them.
@@ -561,7 +561,6 @@ final class AnnotationController {
         let before = toolbar.model.offer.destination?.id
         toolbar.model.answered(answer)
         logOffer(was: before)
-        offerChanged()
     }
 
     /// Where the bar's filled button sent before the person picked another target, and whether it
@@ -579,8 +578,8 @@ final class AnnotationController {
 
     /// Return and Cmd+Return do what the bar offers, and a message field that arrived with the
     /// session list may take the keys.
-    private func offerChanged() {
-        editor.finishes = toolbar.model.offer.finishes
+    private func offerChanged(_ offer: ToolbarOffer) {
+        editor.finishes = offer.finishes
         offerTyping()
     }
 
@@ -643,6 +642,7 @@ final class AnnotationController {
         var json: [String: Any] = ["listed": toolbar.model.listed]
         switch offer {
         case .copy: json["kind"] = "copy"
+        case .choose: json["kind"] = "choose"
         case .send: json["kind"] = "send"
         case .reply: json["kind"] = "reply"
         }

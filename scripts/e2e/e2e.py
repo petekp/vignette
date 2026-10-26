@@ -172,6 +172,9 @@ class App:
 
     def close(self):
         self.stop()
+        pids = os.path.join(self.folder, 'herdr', 'pids')
+        if os.path.exists(pids):
+            self.fakes += [int(line) for line in open(pids).read().split()]
         for pid in self.fakes:
             try:
                 os.kill(pid, signal.SIGTERM)
@@ -311,6 +314,55 @@ class App:
             os.makedirs(locks, exist_ok=True)
             open(os.path.join(locks, f'{thread}.lock'), 'w').close()
         return thread, {'VIGNETTE_CODEX': codex}
+
+    def fake_herdr(self):
+        """A herdr that opens tabs and, for `claude` typed into one, brings up a plugin inbox for that
+        session (`fake_herdr.py`). Returns the env that points the launch at it."""
+        folder = os.path.join(self.folder, 'herdr')
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, 'inboxes'), 'w') as f:
+            f.write(os.path.join(self.support, 'claude-sessions'))
+        herdr = os.path.join(folder, 'herdr')
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fake_herdr.py')
+        with open(herdr, 'w') as f:
+            f.write(f"#!/bin/sh\nexec '{sys.executable}' '{script}' '{folder}' \"$@\"\n")
+        os.chmod(herdr, 0o755)
+        return {'VIGNETTE_HERDR': herdr}
+
+    def herdr_calls(self):
+        path = os.path.join(self.folder, 'herdr', 'calls.jsonl')
+        return [json.loads(line)['args'] for line in open(path)] if os.path.exists(path) else []
+
+    def past_project(self, name='e2e-site', title='Fix the nav spacing'):
+        """A project with one past Claude Code session and none running: its folder, a prompt in the
+        scratch home's Claude Code history, and the session's transcript where Claude Code keeps it.
+        Returns the folder and the session id."""
+        folder = os.path.join(self.folder, 'projects', name)
+        os.makedirs(folder, exist_ok=True)
+        session = str(uuid.uuid4())
+        now = time.time()
+        claude = os.path.join(self.home, '.claude')
+        os.makedirs(claude, exist_ok=True)
+        with open(os.path.join(claude, 'history.jsonl'), 'a') as f:
+            f.write(json.dumps({'display': 'hi', 'pastedContents': {}, 'timestamp': int(now * 1000),
+                                'project': folder, 'sessionId': session}) + '\n')
+        transcripts = os.path.join(claude, 'projects', re.sub(r'[^A-Za-z0-9]', '-', folder))
+        os.makedirs(transcripts, exist_ok=True)
+        stamp = time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime(now))
+        with open(os.path.join(transcripts, f'{session}.jsonl'), 'w') as f:
+            f.write(json.dumps({'type': 'ai-title', 'aiTitle': title, 'sessionId': session}) + '\n')
+            f.write(json.dumps({'type': 'user', 'timestamp': stamp, 'cwd': folder,
+                                'message': {'role': 'user', 'content': 'hi'}}) + '\n')
+        return folder, session
+
+    def inbox_of(self, session):
+        """The inbox folder that holds `session`, or None."""
+        root = os.path.join(self.support, 'claude-sessions')
+        for pid in os.listdir(root) if os.path.isdir(root) else []:
+            path = os.path.join(root, pid, 'session')
+            if os.path.exists(path) and open(path).read().strip() == session:
+                return os.path.join(root, pid)
+        return None
 
     def codex_calls(self, verb=None):
         """The fake codex's calls and the requests it answered, oldest first (`fake_codex.py`); with

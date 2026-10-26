@@ -37,6 +37,9 @@ enum DestinationChoice {
         /// The session the asker starts on when `decided`. Nil is no session: Send has none to
         /// send to, and a live ink note starts on the responder.
         let pick: AgentDestination?
+        /// The sessions Vignette can start, as the listing found them. Only a person's pick starts a
+        /// process, so they are never picked and only the menus show them.
+        var startable: [AgentDestination] = []
     }
 
     /// What a listing has found so far: the candidate destinations and the facts that came with them.
@@ -50,6 +53,9 @@ enum DestinationChoice {
         /// herdr's focus, read with `markedByHerdr`'s answer. Nil before it, without herdr, or when
         /// that client listed no destination (`readsHerdr`).
         var herdr: HerdrFocus? = nil
+        /// The sessions Vignette can start, for projects with none running (`StartableSessions`). They
+        /// are apart from `destinations`, so no rule here can pick one.
+        var startable: [AgentDestination] = []
     }
 
     /// The one client whose sessions herdr's focus marks. A focused Codex pane marks nothing, even
@@ -71,7 +77,8 @@ enum DestinationChoice {
         case .liveNote(let pick):
             let list = unmarked(candidates)
             return Answer(list: list, complete: candidates.complete, decided: true,
-                          pick: start(pick, in: list, complete: candidates.complete))
+                          pick: start(pick, in: list, startable: candidates.startable, complete: candidates.complete),
+                          startable: candidates.startable)
         }
     }
 
@@ -83,12 +90,13 @@ enum DestinationChoice {
         }
     }
 
-    /// Where a live ink note starts. A hand pick stays while the list has its id, or may still list it,
-    /// before every client has answered; the session remembered from the note before is found again,
-    /// even after `/clear`.
-    private static func start(_ pick: LiveNotePick, in list: [AgentDestination], complete: Bool) -> AgentDestination? {
+    /// Where a live ink note starts. A hand pick stays while the list, or the sessions Vignette can
+    /// start, has its id, or may still list it, before every client has answered; the session
+    /// remembered from the note before is found again, even after `/clear`, among the running ones.
+    private static func start(_ pick: LiveNotePick, in list: [AgentDestination], startable: [AgentDestination],
+                              complete: Bool) -> AgentDestination? {
         switch pick {
-        case .byHand(let session?): return list.first { $0.id == session.id } ?? (complete ? nil : session)
+        case .byHand(let session?): return (list + startable).first { $0.id == session.id } ?? (complete ? nil : session)
         case .remembered(let session?): return again(session, in: list)
         case .byHand(nil), .remembered(nil): return nil
         }
@@ -117,7 +125,8 @@ enum DestinationChoice {
             list = marked(unmarked, herdr: candidates.herdr)
         }
         let decided = complete || list.contains { $0.focus != nil }
-        return Answer(list: list, complete: complete, decided: decided, pick: decided ? pick(in: list) : nil)
+        return Answer(list: list, complete: complete, decided: decided, pick: decided ? pick(in: list) : nil,
+                      startable: candidates.startable)
     }
 
     /// Where Send goes when nobody has chosen: the session you came from, which is where a paste

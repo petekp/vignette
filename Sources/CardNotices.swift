@@ -16,6 +16,8 @@ struct SendNotice: Equatable {
     var reason: String? = nil
     /// Set while `inGrace`.
     var grace: Grace? = nil
+    /// The send starts its session before the line goes in: the session was not running at Send.
+    var starts = false
 
     /// A send's grace period, in `ProcessInfo.systemUptime` seconds: the clock of the deadline the
     /// request will be handed over at, so a card shown late still counts down to the same moment.
@@ -65,7 +67,7 @@ struct CardNotices {
         case notCopied(reason: String)
         /// A send is stored and its card is going home; it waits for `answered`. With a `grace` the
         /// line has not gone yet: the card counts it down until `released` or `cancelled`.
-        case sending(request: String, client: AgentClient, project: String, grace: SendNotice.Grace? = nil)
+        case sending(request: String, client: AgentClient, project: String, grace: SendNotice.Grace? = nil, starts: Bool = false)
         /// The grace of `request` ended and its line is going to the client.
         case released(request: String)
         /// `request` was cancelled before its line went: its notice goes and no answer is waited for.
@@ -101,8 +103,9 @@ struct CardNotices {
             notice = .copied(label: label)
         case .notCopied(let reason):
             notice = .notCopied(reason: reason)
-        case .sending(let request, let client, let project, let grace):
-            let send = SendNotice(request: request, client: client, project: project, state: grace == nil ? .sending : .inGrace, grace: grace)
+        case .sending(let request, let client, let project, let grace, let starts):
+            let send = SendNotice(request: request, client: client, project: project, state: grace == nil ? .sending : .inGrace, grace: grace,
+                                  starts: starts)
             awaitingAnswer[file] = send
             return show(.send(send), on: file, hold: nil)
         case .released(let request):

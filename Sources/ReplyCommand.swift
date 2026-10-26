@@ -398,7 +398,7 @@ enum ReplyCommand {
     private static let queryValue = CharacterSet(charactersIn:
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~/")
 
-    private static func quoted(_ argument: String) -> String {
+    static func quoted(_ argument: String) -> String {
         "'" + argument.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
     }
 
