@@ -116,8 +116,12 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         self.place = place
         let key = NSApp.keyWindow
         guard hanging.hang(from: host, at: rect, place: place, animated: revealed) == .shown else { return }
-        // A popover's window takes the keys as it shows, so they go back to the window that had them.
-        if !takingKeys, key !== content.window { key?.makeKey() }
+        // A popover's window takes the keys as it shows, so they go back to the window that had them,
+        // and its field gives up the caret, which it draws while its parent window is key.
+        if !takingKeys, key !== content.window {
+            content.window?.makeFirstResponder(nil)
+            key?.makeKey()
+        }
         // Shown again after AppKit closed it with its ink's window, it waits for a click or the chord.
         watchWindow(takingKeys: takingKeys && !opened && !standsAside)
         opened = true
@@ -472,9 +476,10 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     }
 
     /// Gives the keys back to where the person was, now rather than when the window goes, when it has
-    /// them. Without them, the person's app has them, and nothing is taken from it.
+    /// them. Without them, the person's app has them, and nothing is taken from it. A popover's window
+    /// also reads as key while its parent window is, so only the app's key window counts.
     private func letGoOfKeys() {
-        guard let window = content.window, window.isKeyWindow else { return }
+        guard let window = content.window, NSApp.keyWindow === window else { return }
         FocusReturn.shared.restore(reason: "live ink note")
         window.resignKey()
     }
