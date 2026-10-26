@@ -114,8 +114,10 @@ A test launch with `CFFIXED_USER_HOME` reads only the scratch home's history and
 On 2026-10-26 both rows were sent to in the `vignette-e2e` VM through herdr 0.9.5 itself, with a
 stand-in `claude` on the panes' PATH that keeps an inbox, as the plugin's monitor does. Each opened
 an unfocused tab in its folder, ran `claude` there once with the right arguments, and got one line.
-A stand-in that never came up gave "Not sent" after the 45 s wait. On Pete's history the listing
-took 219 ms on its first call and about 50 ms on later ones, which read only changed transcripts.
+A stand-in that never came up gave "Not sent" after the 45 s wait. On Pete's history a unit test's
+listing took 219 ms on its first call and about 50 ms on later ones, which read only changed
+transcripts. It listed 68 rows, more than the app would: the test host most likely reads another
+app's inboxes, so projects with a running session were not left out.
 
 The e2e runner has a fake herdr (`scripts/e2e/fake_herdr.py`, `App.fake_herdr`). For a `claude`
 typed into one of its panes it brings up a plugin inbox for that session. `send_offers_start`
