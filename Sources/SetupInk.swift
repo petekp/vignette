@@ -7,7 +7,7 @@ enum SetupInkCopy {
     static let costNote = "When you ask, Claude sees a picture of the window, its title and its URL, through your own Claude Code. An ask costs about one to four cents."
     /// macOS asks to quit and reopen an app it has just let record the screen, since the grant
     /// reaches only a new process.
-    static let reopenNote = "macOS then asks to quit and reopen \(Identity.name). Setup opens again on this page."
+    static let reopenNote = "Once you allow Screen Recording, macOS asks to quit and reopen \(Identity.name). Setup opens again on this page."
 }
 
 // MARK: The title
@@ -849,7 +849,7 @@ struct LiveInkSetupPage: View {
                     }
                     .inkSpot(SetupInkGuide.accessibilityRow, in: guide.spots)
                     PermissionRow(symbol: "rectangle.dashed.badge.record", title: "Screen Recording",
-                                  reason: screenRecording ? screenRecordingReason : "\(screenRecordingReason) \(SetupInkCopy.reopenNote)",
+                                  reason: "So Claude can see the window you drew on.",
                                   status: screenRecording ? .granted : .ask,
                                   isDefault: trusted && !screenRecording, button: askedScreenRecording ? "Open Settings…" : "Allow…",
                                   spot: (SetupInkGuide.screenRecordingButton, SetupInkGuide.screenRecordingWords, guide.spots)) {
@@ -860,11 +860,15 @@ struct LiveInkSetupPage: View {
                     .inkSpot(SetupInkGuide.screenRecordingRow, in: guide.spots)
                 }
                 Section {} footer: {
-                    Text(SetupInkCopy.costNote).font(.caption).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .inkSpot(SetupInkGuide.footer, in: guide.spots)
-                        // Room under the rows for the label pointing at the next Allow button.
-                        .padding(.top, 30)
+                    VStack(alignment: .leading, spacing: 6) {
+                        if !screenRecording { Text(SetupInkCopy.reopenNote) }
+                        Text(SetupInkCopy.costNote)
+                    }
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .inkSpot(SetupInkGuide.footer, in: guide.spots)
+                    // Room under the rows for the label pointing at the next Allow button.
+                    .padding(.top, 30)
                 }
             }
             .formStyle(.grouped).scrollDisabled(true).fixedSize(horizontal: false, vertical: true)
@@ -878,8 +882,6 @@ struct LiveInkSetupPage: View {
         }
         .onDisappear { guide.leave() }
     }
-
-    private let screenRecordingReason = "So Claude can see the window you drew on."
 
     private var pointing: SetupInkGuide.Pointing {
         !trusted ? .accessibility : !screenRecording ? .screenRecording : .ready

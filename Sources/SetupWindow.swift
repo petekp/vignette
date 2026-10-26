@@ -86,6 +86,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
                                callbacks: callbacks, preview: preview)
         model.granted = { [weak self] in self?.granted() }
         model.folderAnswered = { [weak self] access in self?.folderAnswered(access) }
+        model.dropFocus = { [weak self] in self?.window?.makeFirstResponder(nil) }
         // Not `performClose`: it shows the close button pressed while it simulates the click, and
         // the intro's picture of the window would carry that pressed button into the menu bar.
         model.done = { [weak self] in
@@ -239,9 +240,9 @@ final class SetupModel: ObservableObject {
     let inkGuide = SetupInkGuide()
     /// Use Live Ink was pressed, which brings in the page for its permissions.
     @Published private(set) var usesLiveInk = false
-    /// A page is about to change. The buttons along the bottom draw no focus ring meanwhile: one round
-    /// a button that leaves with its page stayed on the screen after it, fading.
-    @Published private(set) var turning = false
+    /// Takes the keyboard focus off the window's controls. A focused button that leaves with its page
+    /// keeps its focus ring on the screen, at full strength, until it has faded out.
+    var dropFocus: () -> Void = {}
 
     @Published var page = Page.welcome
     /// Whether the last move was forward, which decides the side the pages slide to.
@@ -318,11 +319,10 @@ final class SetupModel: ObservableObject {
         let target = pages[min(max(index + step, 0), pages.count - 1)]
         guard target != page else { return }
         forward = step > 0
-        turning = true
+        dropFocus()
         DispatchQueue.main.async {
             withAnimation(animation) { self.page = target }
             if target == .agents { self.sawAgents = true }
-            DispatchQueue.main.async { self.turning = false }
         }
     }
 
@@ -570,7 +570,6 @@ struct SetupView: View {
                 }
             }
         }
-        .focusEffectDisabled(model.turning)
         .frame(height: 28)
         .padding(.horizontal, 20).padding(.bottom, 20)
     }
