@@ -69,10 +69,12 @@ final class SessionListing {
         }
     }
 
-    /// Asks again every client whose list is kept, so the next editor opens on a current one. Run
-    /// when an editor is likely to open soon: at launch, on a capture, and when the stack opens.
+    /// Asks again every client whose list is kept, and the sessions Vignette can start, so the next
+    /// editor opens on a current list and a read transcript. Run when an editor is likely to open
+    /// soon: at launch, on a capture, and when the stack opens.
     func refreshKeptLists() {
         for (client, connection) in connections where connection.keepsList { ask(client) { _ in } }
+        askStartable { _ in }
     }
 
     /// The answers one listing has so far, by client.

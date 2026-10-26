@@ -77,6 +77,12 @@ enum SessionMenu {
 
     // MARK: Order
 
+    /// A project's Continue before its New.
+    private static func startOrder(_ start: SessionStart) -> Int {
+        if case .resume = start { return 0 }
+        return 1
+    }
+
     /// Active sessions in rank order: sent to in the last `sendWindow` first, newest send first,
     /// then by `DestinationChoice.newestFirst`. Sessions that are not running come after every
     /// running one, a project's Continue before its New: sending to one starts a process, so it
@@ -88,9 +94,11 @@ enum SessionMenu {
         return listed.filter { $0.isActive(now: now) }.sorted { a, b in
             if a.startsProcess != b.startsProcess { return !a.startsProcess }
             if a.startsProcess {
-                if a.lastUsed != b.lastUsed || a.start?.folder != b.start?.folder { return DestinationChoice.newestFirst(a, b) }
-                if case .resume = a.start { return true }
-                return false
+                let (x, y) = (a.lastUsed ?? .distantPast, b.lastUsed ?? .distantPast)
+                if x != y { return x > y }
+                let (f, g) = (a.start?.folder ?? "", b.start?.folder ?? "")
+                if f != g { return f < g }
+                return a.start.map(Self.startOrder) ?? 0 < b.start.map(Self.startOrder) ?? 0
             }
             switch (recentSend(a), recentSend(b)) {
             case let (x?, y?) where x != y: return x > y

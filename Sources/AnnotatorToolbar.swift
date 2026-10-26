@@ -184,6 +184,8 @@ final class AnnotatorToolbar {
     var onTool: ((EditorCore.Tool) -> Void)?
     var onDone: (() -> Void)?
     var onSend: ((AgentDestination) -> Void)?
+    /// A target was picked in the menu, which can change the offer: from an empty target to Send.
+    var onPicked: (() -> Void)?
     /// Esc in the message field: the keys go back to the editor.
     var onMessageEnd: (() -> Void)?
     /// Esc in a message field that took the keys on its own and is still empty: the editor closes.
@@ -249,6 +251,7 @@ final class AnnotatorToolbar {
             DispatchQueue.main.async {
                 guard let self else { return }
                 withAnimation(Anim.spring(0.35 * Settings.shared.motionScale)) { self.model.pick(destination) }
+                self.onPicked?()
             }
         }
         panel.onTab = { [weak self] backward in self?.move(backward: backward) }

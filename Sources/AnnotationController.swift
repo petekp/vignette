@@ -72,6 +72,7 @@ final class AnnotationController {
         toolbar.onTool = { [weak self] tool in self?.editor.setTool(tool) }
         toolbar.onDone = { [weak self] in self?.editor.done() }
         toolbar.onMessageEnd = { [weak self] in self?.window?.makeKey() }
+        toolbar.onPicked = { [weak self] in self?.offerChanged() }
         toolbar.onSend = { [weak self] destination in
             guard let self else { return }
             sendingTo = destination
