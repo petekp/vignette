@@ -45,8 +45,9 @@ final class SessionListing {
                 stamped.hostLabel = answers.herdr?.label(ofSession: destination.id)
                 return stamped
             }.sorted(by: DestinationChoice.newestFirst)
+            let fresh = answers.fresh.count == clients.count && (startable == nil || answers.startableFresh)
             completion(DestinationChoice.Candidates(destinations: found, complete: answers.lists.count == clients.count,
-                                                    fresh: answers.fresh.count == clients.count, herdr: answers.herdr))
+                                                    fresh: fresh, herdr: answers.herdr))
         }
         for client in clients {
             if let list = kept[client] { answers.lists[client] = list }
@@ -55,6 +56,7 @@ final class SessionListing {
         if !answers.lists.isEmpty { deliver() }
         askStartable { found in
             answers.startable = found
+            answers.startableFresh = true
             deliver()
         }
         for client in clients {
@@ -79,6 +81,7 @@ final class SessionListing {
         var fresh: Set<AgentClient> = []
         var herdr: HerdrFocus?
         var startable: [AgentDestination] = []
+        var startableFresh = false
     }
 
     /// The sessions Vignette can start, less any whose session is among the running ones: one

@@ -1239,6 +1239,12 @@ screenshot location for such a launch is written with the same variable:
   instead. The two tiers
   are recorded on every request and reported in `[state] requests`; `docs/closed-agent-loop-implementation-2026-09-20.md` says why the weaker one
   is still allowed to submit.
+- A project with past Claude Code sessions and none running offers Continue last session and New
+  session in both session menus (`StartableSessions`, `SessionStart`). Sending to one opens a herdr
+  tab in its folder, starts `claude --resume <id>` or `claude --session-id <id>` there, waits up to
+  45 s for its inbox, then writes the line as any send does. Only a person's pick starts a process:
+  `DestinationChoice` never picks such a row. Without herdr no row is offered.
+  `docs/session-starts-2026-10-25.md` has the design.
 - A `vignette://` URL has no authenticated sender, so a reply is authorized by a per-request bearer
   secret in the request's own directory. The request line names only the image
   (`ScreenshotRequests.requestLine`, "From Vignette: …", then `sendInstructions` from settings.json),

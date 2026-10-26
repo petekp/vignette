@@ -45,7 +45,7 @@ enum DestinationChoice {
         let destinations: [AgentDestination]
         /// Every client has answered, from a kept list or a fresh one.
         let complete: Bool
-        /// Every answer is fresh.
+        /// Every answer is fresh, the sessions Vignette can start included.
         let fresh: Bool
         /// herdr's focus, read with `markedByHerdr`'s answer. Nil before it, without herdr, or when
         /// that client listed no destination (`readsHerdr`).
