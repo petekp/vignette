@@ -692,17 +692,23 @@ struct KeyboardKey<Content: View>: View {
     let motion: Double
     /// Between the cap's edge and what is printed on it.
     var inset: CGFloat = 8
+    /// The colour the cap's edge lights in while it is down, if any.
+    var light: Color? = nil
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         let moves = motion > 0
+        let cap = RoundedRectangle(cornerRadius: min(9, height / 4), style: .continuous)
+        let lit = down && light != nil
         return content()
             .foregroundStyle(.secondary)
             .padding(inset)
             .frame(width: width, height: height)
-            .background(RoundedRectangle(cornerRadius: min(9, height / 4), style: .continuous).fill(Color(nsColor: .controlColor))
+            .background(cap.fill(Color(nsColor: .controlColor))
                 .brightness(down ? -0.08 : 0)
                 .shadow(color: .black.opacity(down ? 0 : 0.25), radius: 1, y: down ? 0 : 1))
+            .overlay(cap.strokeBorder(light ?? .clear, lineWidth: 1.5).opacity(lit ? 1 : 0))
+            .shadow(color: (light ?? .clear).opacity(lit ? 0.8 : 0), radius: lit ? 7 : 0)
             .scaleEffect(down && moves ? 0.95 : 1)
             .offset(y: down && moves ? 1 : 0)
             .animation(down ? Anim.spring(0.06 * motion) : Anim.spring(0.3 * motion, bounce: 0.4), value: down)

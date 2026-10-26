@@ -98,6 +98,16 @@ struct HandStroke: Equatable {
         return Array(points.prefix(count))
     }
 
+    /// Where the hand is `elapsed` seconds after the pen landed, between the events either side.
+    func position(at elapsed: TimeInterval) -> CGPoint? {
+        guard let first = points.first else { return nil }
+        guard let after = times.firstIndex(where: { $0 > elapsed }) else { return points.last }
+        guard after > 0 else { return first }
+        let t = CGFloat((elapsed - times[after - 1]) / (times[after] - times[after - 1]))
+        let a = points[after - 1], b = points[after]
+        return CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
+    }
+
     /// How sharply the curve turns at `index`, from 0 for straight to 1 for a right angle or more.
     private static func turn(at index: Int, in curve: [CGPoint]) -> CGFloat {
         let reach = 4
@@ -223,8 +233,8 @@ enum SetupInkDemo {
 /// pen layers and the marks layer live ink draws with. It takes no presses.
 final class SetupInkStage: NSView {
     let marks: LiveMarksLayer
-    /// Runs each display refresh while `isRunning`.
-    var onFrame: (() -> Void)?
+    /// Runs each display refresh while `isRunning`, with the time that refresh will show.
+    var onFrame: ((CFTimeInterval) -> Void)?
     var isRunning = false { didSet { if isRunning != oldValue { runLink() } } }
     private var link: CADisplayLink?
     private let scale: CGFloat
@@ -267,12 +277,12 @@ final class SetupInkStage: NSView {
         link?.invalidate()
         link = nil
         guard isRunning, window != nil else { return }
-        let link = displayLink(target: self, selector: #selector(refreshed))
+        let link = displayLink(target: self, selector: #selector(refreshed(_:)))
         link.add(to: .main, forMode: .common)
         self.link = link
     }
 
-    @objc private func refreshed() { onFrame?() }
+    @objc private func refreshed(_ link: CADisplayLink) { onFrame?(link.targetTimestamp) }
 }
 
 /// The stage, laid over a page.
@@ -417,7 +427,7 @@ final class SetupInkPlayer: ObservableObject {
         began = CACurrentMediaTime()
         next = 0
         wait = NoteCardWait(reportsTurns: true, hasWindow: true, canLookAgain: false)
-        stage.onFrame = { [weak self] in self?.refreshed() }
+        stage.onFrame = { [weak self] in self?.refreshed(showing: $0) }
         stage.isRunning = true
         Log.write("[setup] live ink demo began")
     }
@@ -457,8 +467,9 @@ final class SetupInkPlayer: ObservableObject {
         keysGrown = true
     }
 
-    private func refreshed() {
-        let now = CACurrentMediaTime()
+    /// Each refresh, the demo as it stands at `now`, when that refresh shows: timed by the callback,
+    /// the hand moved by one, two or three of its events a frame.
+    private func refreshed(showing now: CFTimeInterval) {
         if !loggedWindow, let frame = stage.window.map({ StateReport.flipped($0.frame) }) {
             loggedWindow = true
             Log.write("[setup] live ink demo window=\([frame.minX, frame.minY, frame.width, frame.height].map { String(Int($0)) }.joined(separator: ","))")
@@ -485,7 +496,7 @@ final class SetupInkPlayer: ObservableObject {
         case .circleKeys:
             let pen = stage.pen()
             loopPen = pen
-            writing.append(Writing(pen: pen, hand: HandStroke(through: HandStroke.loop(round: keys.insetBy(dx: -22, dy: -15)),
+            writing.append(Writing(pen: pen, hand: HandStroke(through: HandStroke.loop(round: keys.insetBy(dx: -30, dy: -17)),
                                                               duration: SetupInkDemo.circling),
                                    began: now, writer: InkHand.Pen(feel: feel)))
         case .openNote:
@@ -512,9 +523,16 @@ final class SetupInkPlayer: ObservableObject {
         let markStyle = Settings.shared.data.ui.markStyle
         for index in writing.indices.reversed() {
             let elapsed = now - writing[index].began
-            let points = writing[index].hand.events(by: elapsed)
+            let hand = writing[index].hand
+            let points = hand.events(by: elapsed)
             guard points.count > 1 else { continue }
-            let stroke = writing[index].writer.stroke(through: points)
+            var stroke = writing[index].writer.stroke(through: points)
+            // The pen takes whole events; its end goes on to where the hand is at this refresh.
+            if let tip = hand.position(at: elapsed), let end = stroke.points.last, let width = stroke.widths.last,
+               hypot(tip.x - end.x, tip.y - end.y) > 0.25 {
+                stroke.points.append(tip)
+                stroke.widths.append(width)
+            }
             let pen = writing[index].pen
             pen.showPen(stroke, settled: writing[index].writer.settled.points.count, longest: .greatestFiniteMagnitude, markStyle: markStyle)
             guard elapsed >= writing[index].hand.duration else { continue }
@@ -548,9 +566,12 @@ final class SetupInkPlayer: ObservableObject {
         let global = LiveWindows.translated(loop.mark, by: CGVector(dx: origin.x, dy: origin.y))
         // The page's words, the title among them, as the glance at a window gives live ink its text.
         let text = (lines + [title]).map { $0.offsetBy(dx: origin.x, dy: origin.y) }
-        let scene = LiveAnswerLayout.Scene(room: StateReport.flipped(window.frame).insetBy(dx: 8, dy: 8), ink: [global], text: text,
-                                           screen: window.screen.map { StateReport.flipped($0.visibleFrame) })
+        // The note hangs inside the window, where the page is: with no screen, the rule keeps it in the room.
+        let content = StateReport.flipped(window.convertToScreen(window.contentLayoutRect))
+        let scene = LiveAnswerLayout.Scene(room: content.insetBy(dx: 8, dy: 8), ink: [global], text: text)
         guard let place = LiveAnswerLayout.noteHang(LiveNotePopover.placementSize, for: global, scene: scene) else { return }
+        let covered = text.reduce(0) { $0 + max(0, $1.intersection(place.body).width * $1.intersection(place.body).height) }
+        Log.write("[setup] live ink demo note edge=\(place.edge) inside=\(content.contains(place.body)) covers=\(Int(covered))pt²")
         let note = LiveNotePopover(at: place, target: .responder, takesKeys: false)
         note.offer(Self.sessions)
         note.reveal()
@@ -714,6 +735,8 @@ struct LiveInkPage: View {
                     Text(" and draw on anything on your screen.").opacity(words)
                 }
                 .font(.system(size: 15))
+                // As tall as the grown keys from the start, so only the line's words move as they grow.
+                .frame(height: Self.grownKeys)
                 .inkAnchor(SetupInkPlayer.lineAnchors[0])
                 Text("Then ask Claude about it, or send it to a Claude Code or Codex session.")
                     .foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -722,6 +745,7 @@ struct LiveInkPage: View {
                     .inkAnchor(SetupInkPlayer.lineAnchors[1])
             }
             .animation(Anim.spring(0.5 * settings.motionScale), value: player.wordsShown)
+            .animation(Anim.spring(SetupInkDemo.growing * settings.motionScale, bounce: 0.2), value: player.keysGrown)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .inkStage(player.stage) { player.place($0) }
@@ -737,20 +761,24 @@ struct LiveInkPage: View {
 
     private var words: Double { player.wordsShown ? 1 : 0 }
 
+    private static let keys: CGFloat = 24
+    private static let grownKeys: CGFloat = 40
+
     private var keys: some View {
-        let size: CGFloat = player.keysGrown ? 34 : 24
+        let size = player.keysGrown ? Self.grownKeys : Self.keys
         return HStack(spacing: size * 0.16) {
             key("⌃", down: player.keysDown || held.flags.contains(.control), size: size)
             key("⌥", down: player.keysDown || held.flags.contains(.option), size: size)
         }
         .padding(.horizontal, 5)
-        .animation(Anim.spring(SetupInkDemo.growing * settings.motionScale, bounce: 0.2), value: player.keysGrown)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Control and Option")
     }
 
+    /// A key, lit in the ink's colour while it is held, since holding it is what lets the ink draw.
     private func key(_ glyph: String, down: Bool, size: CGFloat) -> some View {
-        KeyboardKey(width: size * 1.12, height: size, down: down, motion: settings.motionScale, inset: 0) {
+        let ink = (SRGB(hex: settings.data.ui.inkGelLight) ?? SRGB(hex: UITweaks().inkGelLight)!).cgColor
+        return KeyboardKey(width: size * 1.12, height: size, down: down, motion: settings.motionScale, inset: 0, light: Color(cgColor: ink)) {
             Text(glyph).font(.system(size: size * 0.5, weight: .medium))
         }
     }
