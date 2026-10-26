@@ -106,6 +106,14 @@ Before you drive the app:
 - Stop a test copy by its PID before you launch another copy of the same bundle id. On 2026-09-26,
   `open -a <a Release copy> <url>`, sent after a Debug copy of the same bundle id had run, launched a
   second Release instance without `VIGNETTE_SETTINGS`, on the user's real settings file.
+- A launch through LaunchServices with no environment is not a test launch. macOS's Quit & Reopen
+  after a permission grant, Sparkle's relaunch and a bare `open` are all such launches.
+  `Launch.isTest` then reads false. The copy reads `~/.config/<its URL scheme>/settings.json`,
+  writes Apple's own screenshot settings, can register a login item, runs the updater and reaches
+  the person's `~/.claude` and `~/.codex`. The end-to-end copies name a scratch home and settings
+  file under `LSEnvironment` in their Info.plist, `/tmp/<bundle id>/home` (`scripts/e2e/build.sh`),
+  so one launched that way is still a test launch. `open --env` overrides those values key by key.
+  For a test by hand, launch the copy on that home, or link it to your scratch home.
 
 The steps below have the details.
 
@@ -252,9 +260,11 @@ images opening measured no narrowing at all, and `stack.widthScale` in `[state]`
 
 The end-to-end tests: `scripts/e2e/e2e.py run` builds the test copy (`scripts/e2e/build.sh`: its
 own bundle id, name and URL scheme, given on the `xcodebuild` line) and runs the scenarios in
-`scripts/e2e/scenarios.py`, each on a fresh scratch home, settings file and watch folder. It saves
-the pasteboard and puts it back, even when stopped (`e2e.py restore` after a crash), and writes a
-report under `scripts/e2e/out/runs/`. `--input` adds the scenarios that post keys and clicks, each
+`scripts/e2e/scenarios.py`, each on a fresh scratch home, settings file and watch folder. Before
+each launch the runner links the home the copy's Info.plist names to the scenario's, so a launch
+with no environment comes back on the scenario's files. It removes the link when the scenario
+ends. It saves the pasteboard and puts it back, even when stopped (`e2e.py restore` after a
+crash), and writes a report under `scripts/e2e/out/runs/`. `--input` adds the scenarios that post keys and clicks, each
 gated on the test copy's own state; they need `Vignette E2E` granted Accessibility once, by hand.
 The terminal that runs them needs Accessibility and Screen Recording. On macOS 15, the run's first
 screen capture can raise a prompt asking whether the terminal may "bypass the system private window
@@ -1139,6 +1149,7 @@ screenshot location for such a launch is written with the same variable:
   launch runs no updater unless `VIGNETTE_FEED` names a feed. Sparkle relaunches an updated app
   through LaunchServices, with no environment, so a test copy that must stay on scratch files sets
   `VIGNETTE_SETTINGS`, `CFFIXED_USER_HOME` and `VIGNETTE_FEED` under `LSEnvironment` in its Info.plist.
+  The end-to-end copies set the first two (`scripts/e2e/build.sh`).
   `docs/updater-2026-09-27.md` has the tests.
 
 ### Agents

@@ -5,6 +5,12 @@
 #   build.sh fresh    Vignette E2E Fresh  com.petepetrash.vignette.e2e-fresh  vignette-e2e-fresh
 # The first is granted Accessibility once by hand; the second is reset before a run, for the
 # untrusted paths. Signed like scripts/build.sh, so a rebuild keeps the grant.
+# A launch through LaunchServices with no environment (macOS's Quit & Reopen, Sparkle, a bare
+# `open`) would not be a test launch, so each copy's Info.plist names a scratch home and settings
+# file under LSEnvironment: /tmp/<bundle id>/home. `open --env` overrides them key by key. e2e.py
+# links that home to each scenario's own; by hand, use it as the scratch home or link it to yours.
+# Writing it breaks Xcode's signature, so the copy is signed again with the same identity, which
+# keeps the designated requirement and the grant.
 set -e
 cd "$(dirname "$0")/../.."
 name=$(sed -n 's/^name: *//p' project.yml)
@@ -35,6 +41,14 @@ got_bundle=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app/Conten
 got_scheme=$(/usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLSchemes:0" "$app/Contents/Info.plist")
 if [[ "$got_bundle" != "$bundle.$suffix" || "$got_scheme" != "$scheme-$suffix" ]]; then
   echo "the test copy came out as $got_bundle with scheme $got_scheme" >&2
+  exit 1
+fi
+home="/tmp/$bundle.$suffix/home"
+plutil -replace LSEnvironment -json "{\"VIGNETTE_SETTINGS\": \"$home/settings.json\", \"CFFIXED_USER_HOME\": \"$home\"}" \
+  "$app/Contents/Info.plist"
+if ! codesign --force --sign "${CODE_SIGN_IDENTITY:--}" --timestamp=none \
+    --preserve-metadata=entitlements,requirements,flags,runtime "$app" >>"$log" 2>&1; then
+  echo "signing after writing LSEnvironment failed; see $log" >&2
   exit 1
 fi
 if [[ $(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$app/Contents/Info.plist") == 0 ]]; then

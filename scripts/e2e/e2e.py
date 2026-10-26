@@ -10,8 +10,10 @@
 
 The test copy (`scripts/e2e/build.sh`) has its own bundle id, name and URL scheme. Each scenario
 launches it on a fresh scratch home (`CFFIXED_USER_HOME`), settings file (`VIGNETTE_SETTINGS`) and
-watch folder, so it never reads or writes the person's own. A test launch uses no codex and no
-herdr unless `VIGNETTE_CODEX` or `VIGNETTE_HERDR` names one, and every agent session is a fake.
+watch folder, so it never reads or writes the person's own. A launch with no environment, such as
+macOS's Quit & Reopen, takes the home the copy's Info.plist names (build.sh), which the runner links
+to the scenario's. A test launch uses no codex and no herdr unless `VIGNETTE_CODEX` or
+`VIGNETTE_HERDR` names one, and every agent session is a fake.
 A Claude Code session is an inbox folder held by a `sleep` process, which is all Send looks for. A
 Codex thread is listed by a fake codex (`fake_codex.py`) that `VIGNETTE_CODEX` names.
 
@@ -23,6 +25,7 @@ import datetime
 import html
 import json
 import os
+import plistlib
 import random
 import re
 import shutil
@@ -62,7 +65,16 @@ def test_copy():
     app_name = f'{name} E2E'
     path = os.path.join(OUT, 'dd-e2e', 'Build', 'Products', 'Release', f'{app_name}.app')
     return {'name': app_name, 'bundle': f'{bundle}.e2e', 'scheme': f'{scheme}-e2e', 'path': path,
-            'executable': os.path.join(path, 'Contents', 'MacOS', app_name)}
+            'executable': os.path.join(path, 'Contents', 'MacOS', app_name), 'relaunchHome': relaunch_home(path)}
+
+
+def relaunch_home(app):
+    """The home the copy's Info.plist names for a launch with no environment (build.sh), or None."""
+    try:
+        with open(os.path.join(app, 'Contents', 'Info.plist'), 'rb') as f:
+            return plistlib.load(f).get('LSEnvironment', {}).get('CFFIXED_USER_HOME')
+    except FileNotFoundError:
+        return None
 
 
 def running_pids(executable):
@@ -144,10 +156,28 @@ class App:
 
     # -- Launch and stop
 
+    def link_relaunch_home(self):
+        """Points the home the copy's Info.plist names at this scenario's, so a launch with no
+        environment comes back on this scenario's files. A folder there was made by such a launch
+        while nothing was linked."""
+        link = self.copy['relaunchHome']
+        os.makedirs(os.path.dirname(link), exist_ok=True)
+        if os.path.isdir(link) and not os.path.islink(link):
+            shutil.rmtree(link)
+        temp = f'{link}.{os.getpid()}'
+        os.symlink(self.home, temp)
+        os.replace(temp, link)
+
+    def unlink_relaunch_home(self):
+        link = self.copy['relaunchHome']
+        if os.path.islink(link) and os.readlink(link) == self.home:
+            os.remove(link)
+
     def launch(self, **env):
         for pid in running_pids(self.copy['executable']):
             raise Failed(f'another test copy is running (pid {pid}); stop it first')
         self.env = env
+        self.link_relaunch_home()
         offset = self.log_size()
         args = ['open', '-g', '--env', f'VIGNETTE_SETTINGS={self.settings}', '--env', f'CFFIXED_USER_HOME={self.home}']
         for key, value in env.items():
@@ -172,6 +202,7 @@ class App:
 
     def close(self):
         self.stop()
+        self.unlink_relaunch_home()
         for pid in self.fakes:
             try:
                 os.kill(pid, signal.SIGTERM)
@@ -201,8 +232,7 @@ class App:
         raise Failed(f'no {needle!r}{f" with {also!r}" if also else ""} in the log within {timeout} s')
 
     def url(self, command):
-        # With the copy gone, `open` would launch it again without VIGNETTE_SETTINGS, on the
-        # person's own settings and screenshots.
+        # With the copy gone, `open` would launch it again without this scenario's environment.
         if not self.pid:
             raise Failed(f'the test copy is not running; not sending {command.split("?")[0]}')
         try:
@@ -459,6 +489,8 @@ def run(names, with_input, build):
     copy = test_copy()
     if not os.path.exists(copy['executable']):
         sys.exit('no test copy; run without --no-build')
+    if not copy['relaunchHome']:
+        sys.exit('the test copy names no home for a launch with no environment; run without --no-build')
     for pid in running_pids(copy['executable']):
         sys.exit(f'a test copy is already running (pid {pid})')
 
