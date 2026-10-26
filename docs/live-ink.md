@@ -228,7 +228,7 @@ The names in brackets are `// MARK:` sections.
   note for all of that ink, since what is typed applies to all of it (`LiveAsks.noteInk`: drawn or
   picked, and taken out of the note by an ask about it). Letting go of the chord after drawing opens
   it, hung from the newest ink. Drawing more while it is up keeps the same note, with its words, its
-  target and its caret, and slides it on a spring to hang from the newest ink (`PopoverSlide`), as a
+  target and its caret, and slides it on a spring to hang from the newest ink, as a
   reply slides between stops. The note leaves only when its ink does: Return asks about it, Esc takes
   it back, or it is erased, cleared, gone with its window, or live ink is turned off. While the stack or
   the annotator holds the screen, the note hides and lets go of the keys (`LiveNotePopover.standAside`).
@@ -242,7 +242,9 @@ The names in brackets are `// MARK:` sections.
   (`HeldChord.Change.interrupted`), gives the note the keys only when ink was drawn. The note hangs
   from a view of the overlay that draws its newest ink (`LiveMarksLayer.hang`), as a reply does, so it
   moves with that ink's window, the windows in front of it cover it, it stays on its Space, and it
-  fades as the ink fades with a minimised window (`LiveNotePopover.follow`). It follows the system's
+  fades as the ink fades with a minimised window (`LiveNotePopover.follow`). The note and the reply
+  are both a `HangingPopover`, which owns where a popover hangs: its host view, edge and mark, the
+  slide, the fade with its mark, and showing it again when its window comes back. It follows the system's
   appearance. Its window is a non-activating panel, so its field takes the keys while the app the
   person was in stays in front. Closing it while it has them gives the keys back at once
   (`letGoOfKeys`), because AppKit counts Vignette as active while the field has them. A press with

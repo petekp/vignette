@@ -62,9 +62,8 @@ final class LiveInk {
     private var chordInterrupted = false
     /// The note on the ink no ask has been about, while there is some (`keepNoteWithItsInk`).
     private var note: LiveNotePopover?
-    /// The mark the note hangs from, and the layer that draws it.
-    private var noteAnchor: Mark.ID?
-    private weak var noteLayer: LiveMarksLayer?
+    /// Where the note hangs, in global top-left points, from the mark its `anchor` names.
+    private var notePlace: PopoverPlace?
     /// Listening to the person while they draw, with speech on. It can span several presses of the
     /// chord, so "this" and "that" drawn in two strokes are one note.
     private var listening: LiveListening?
@@ -161,11 +160,16 @@ final class LiveInk {
     /// The marks on screen now, the person's in the order they were drawn: a mark on a window is left
     /// out while its window is away, minimised or set aside.
     private var shownMarks: [Mark] {
-        let shown = windows.marks.filter(\.shown).map(\.mark) + screenMarks
-        // The windows' marks come window by window, in no order, so ink across windows is put back in
-        // the order drawn, which numbers it and makes the newest the one an ask's answer stays beside.
-        let drawn = { (index: Int) in self.strokeTimes[shown[index].id]?.began ?? .distantFuture }
-        return shown.indices.sorted { (drawn($0), $0) < (drawn($1), $1) }.map { shown[$0] }
+        inDrawnOrder(windows.marks.filter(\.shown).map(\.mark) + screenMarks)
+    }
+
+    /// `marks` with the person's in the order they were drawn, and the rest after them in the order
+    /// given. The windows' marks come window by window, in no order, so ink across windows is put back
+    /// in the order drawn, which numbers it and makes the newest the one an ask's answer and the note
+    /// stay beside.
+    private func inDrawnOrder(_ marks: [Mark]) -> [Mark] {
+        let drawn = { (index: Int) in self.strokeTimes[marks[index].id]?.began ?? .distantFuture }
+        return marks.indices.sorted { (drawn($0), $0) < (drawn($1), $1) }.map { marks[$0] }
     }
 
     /// Set-aside marks that were on no window (`setAside`), which come back from here.
@@ -613,9 +617,7 @@ final class LiveInk {
     /// been about.
     private var noteInk: [Mark] {
         let ids = asks.noteInk
-        let ink = marks.filter { ids.contains($0.id) }
-        let drawn = { (index: Int) in self.strokeTimes[ink[index].id]?.began ?? .distantFuture }
-        return ink.indices.sorted { (drawn($0), $0) < (drawn($1), $1) }.map { ink[$0] }
+        return inDrawnOrder(marks.filter { ids.contains($0.id) })
     }
 
     /// Where a note hangs from `mark` before the window's text is known.
@@ -630,13 +632,13 @@ final class LiveInk {
     private func showNote() -> Bool {
         guard let mark = newInk.last(where: { $0.shapeExtent != nil }), let first = firstPlace(beside: mark) else { return false }
         if let note {
-            if noteAnchor != mark.id {
+            if notePlace?.anchor != mark.id {
                 hang(note, from: mark, at: first)
                 prepare(beside: mark, panel: note)
                 Log.write("[live-ink] note moved to the newest ink")
             }
+            // Taking the keys back lists the targets again (`onKeysBack`).
             note.takeKeys()
-            refreshTargets(of: note)
             return true
         }
         let panel = LiveNotePopover(at: first, target: lastTarget)
@@ -674,23 +676,23 @@ final class LiveInk {
         listSessions? { [weak panel] candidates in panel?.setSessions(candidates) }
     }
 
-    /// Hangs the note from `mark`, at `place`, on the overlay that draws the mark: its window's, or the
-    /// screen's when it is on no window.
+    /// Hangs the note from `mark`, at `place`.
     private func hang(_ panel: LiveNotePopover, from mark: Mark, at place: PopoverPlace) {
-        let held: (layer: LiveMarksLayer, origin: CGPoint)?
-        if let onWindow = windows.layer(of: mark.id) {
-            held = onWindow
-        } else {
-            let extent = mark.shapeExtent ?? .zero
-            let centre = CGPoint(x: extent.midX, y: extent.midY)
-            let drawing = surfaces.filter { $0.marks.contains { $0.id == mark.id } }
-            held = (drawing.first { $0.overlay.globalFrame.contains(centre) } ?? drawing.first).map { ($0.overlay.marks, .zero) }
-        }
-        guard let held else { return }
-        if noteLayer !== held.layer { noteLayer?.unhang(panel) }
-        noteLayer = held.layer
-        noteAnchor = mark.id
-        held.layer.hang(panel, from: mark.id, at: place.at.offsetBy(dx: -held.origin.x, dy: -held.origin.y), place: place)
+        var place = place
+        place.anchor = mark.id
+        notePlace = place
+        hangNote()
+    }
+
+    /// Hands the note to the overlays: the one that draws the mark it hangs from, its window's or its
+    /// home screen's, hangs it, and every other lets go of it.
+    private func hangNote() {
+        let anchor = notePlace?.anchor
+        let drawing = surfaces.filter { $0.marks.contains { $0.id == anchor } }
+        let mark = drawing.first?.marks.first { $0.id == anchor }
+        let holder = mark.flatMap { home(of: $0, among: drawing) }
+        for surface in surfaces { surface.overlay.marks.hang(surface === holder ? note : nil, place: notePlace) }
+        windows.hang(note, place: notePlace)
     }
 
     /// The note goes when its ink does: asked about, taken back, erased, or gone with its window. When
@@ -704,7 +706,7 @@ final class LiveInk {
             Log.write("[live-ink] note closed: its ink is gone")
             return
         }
-        guard !isInking, newest.id != noteAnchor, !ink.contains(where: { $0.id == noteAnchor }), let place = firstPlace(beside: newest)
+        guard !isInking, !ink.contains(where: { $0.id == notePlace?.anchor }), let place = firstPlace(beside: newest)
         else { return }
         hang(note, from: newest, at: place)
         Log.write("[live-ink] note moved: the ink it hung from went")
@@ -712,10 +714,9 @@ final class LiveInk {
 
     /// The note is no longer this one's to place: it was asked in, and hands over or fades where it is.
     private func letGoOfNotePanel() {
-        if let note { noteLayer?.unhang(note) }
         note = nil
-        noteAnchor = nil
-        noteLayer = nil
+        notePlace = nil
+        hangNote()
     }
 
     private func closeNote() {
@@ -1095,7 +1096,7 @@ final class LiveInk {
 
     private func place(_ panel: LiveNotePopover, beside newest: Mark, from glance: Task<LivePacket.Glance?, Never>) {
         Task { @MainActor [weak self, weak panel] in
-            guard let glance = await glance.value, let self, let panel, self.note === panel, self.noteAnchor == newest.id else {
+            guard let glance = await glance.value, let self, let panel, self.note === panel, self.notePlace?.anchor == newest.id else {
                 panel?.reveal()
                 return
             }
@@ -1750,9 +1751,13 @@ final class LiveInk {
 
     /// Adds a mark on no window to the surface under its centre, and to the others it draws on.
     private func addToScreen(_ mark: Mark, among active: [Surface], markStyle: MarkStyle) {
-        let centre = mark.shapeExtent ?? LiveAnswerLayout.noteBox(mark, sizes: answerSizes) ?? .zero
-        let home = active.first { $0.overlay.globalFrame.contains(CGPoint(x: centre.midX, y: centre.midY)) } ?? active.first
-        if let home { add(mark, on: home, among: active, markStyle: markStyle) }
+        if let home = home(of: mark, among: active) { add(mark, on: home, among: active, markStyle: markStyle) }
+    }
+
+    /// The surface among `surfaces` a mark belongs to: the one under its centre, else the first.
+    private func home(of mark: Mark, among surfaces: [Surface]) -> Surface? {
+        let extent = mark.shapeExtent ?? LiveAnswerLayout.noteBox(mark, sizes: answerSizes) ?? .zero
+        return surfaces.first { $0.overlay.globalFrame.contains(CGPoint(x: extent.midX, y: extent.midY)) } ?? surfaces.first
     }
 
     /// Takes marks of ask `id`'s answer, or its failure's note, off the screen
@@ -2143,6 +2148,7 @@ final class LiveInk {
         windows.show(markStyle: ui.markStyle, textStyle: ui.textStyle, drawingOn: drawingOn, pulsing: pulsing, finishing: finishing,
                      overDark: overDark, hands: hands)
         drawingOn = []
+        hangNote()
         keepNoteWithItsInk()
         // Watched while the reply is out of sight too, as when its window is minimized, so its × and
         // buttons come back when it fades back in.

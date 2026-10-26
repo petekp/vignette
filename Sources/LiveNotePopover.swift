@@ -50,11 +50,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// from a list shows the responder, and comes back when a later list has it.
     private var ownPick: DestinationChoice.LiveNotePick
 
-    private let popover = NSPopover()
-    /// The overlay's view it hangs from, and where in it, once hung.
-    private weak var host: NSView?
-    private var hungAt: CGRect = .zero
-    private lazy var slide = PopoverSlide(popover)
+    /// Out of sight until `reveal`.
+    private let hanging = HangingPopover(reshow: .fadingThrough, alpha: 0)
+    private var popover: NSPopover { hanging.popover }
     private let content = NoteContent()
     private var place: PopoverPlace
     /// How strongly its ink shows: 0 while the ink is hidden with its window.
@@ -100,7 +98,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         let controller = NSViewController()
         controller.view = content
         popover.contentViewController = controller
-        popover.behavior = .applicationDefined
         popover.animates = false
         content.field.delegate = self
         content.session.onClick = { [weak self] in self?.showTargets() }
@@ -110,49 +107,24 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     }
 
     /// Hangs it from `rect` in `host`, which is `place` on the screen. The first time, it opens there
-    /// with the keys. After that, a new place slides it there on a spring, and the same place with its
-    /// layer moved in the window puts it there at once. Into another window, or onto another edge, it
-    /// fades out and back in, since AppKit moves a popover shown again in one frame.
+    /// with the keys, unless it stands aside. After that, a new place slides it there on a spring, and
+    /// the same place with its layer moved in the window puts it there at once. Into another window, or
+    /// onto another edge, it fades out and back in, since AppKit moves a popover shown again in one frame.
     func hang(from host: NSView, at rect: CGRect, place: PopoverPlace) {
         guard !closing else { return }
-        let moved = place != self.place
-        let edge = place.edge != self.place.edge
         self.place = place
-        hungAt = rect
-        guard let shown = self.host, popover.isShown else { return open(from: host, takingKeys: !standsAside) }
-        let motion = Settings.shared.motionScale
-        if shown !== host || edge {
-            slide.stop()
-            guard revealed, motion > 0, let window = content.window else { return show(from: host) }
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = Self.fadeOut * motion
-                window.animator().alphaValue = 0
-            } completionHandler: { [weak self] in
-                MainActor.assumeIsolated {
-                    guard let self, !self.closing else { return }
-                    self.show(from: self.host ?? host)
-                    self.fade(over: Self.fadeIn * motion)
-                }
-            }
-            self.host = host
-        } else if moved, revealed, motion > 0 {
-            slide.slide(to: rect, duration: Self.slideDuration * motion)
-        } else if !slide.isSliding, popover.positioningRect != rect {
-            popover.positioningRect = rect
-        }
+        guard hanging.hang(from: host, at: rect, place: place, animated: revealed) == .shown else { return }
+        // Shown again after AppKit closed it with its ink's window, it waits for a click or the chord.
+        watchWindow(takingKeys: !opened && !standsAside)
+        opened = true
     }
 
-    /// Shows it at `hungAt` in `host`, keeping the keys and the caret when it is up already.
-    private func show(from host: NSView) {
-        self.host = host
-        popover.show(relativeTo: hungAt, of: host, preferredEdge: place.edge.rectEdge(flipped: host.isFlipped))
-    }
+    private var opened = false
 
-    /// Opens it out of sight, with the keys, or without them when it comes back with its ink.
-    private func open(from host: NSView, takingKeys: Bool = true) {
-        show(from: host)
+    /// Watches its window, each time AppKit shows it, for the keys coming and going, and takes them when
+    /// `takingKeys`.
+    private func watchWindow(takingKeys: Bool) {
         guard let window = content.window else { return }
-        window.alphaValue = 0
         if takingKeys {
             window.makeKey()
             window.makeFirstResponder(content.field)
@@ -168,8 +140,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     }
 
     /// Fades to how strongly its ink shows, `opacity`, over `duration`, as the ink fades with its window.
-    /// Hidden, it lets go of the keys. AppKit closes a popover whose window went with its own, so one
-    /// that shows again is shown again where it hung.
+    /// Hidden, it lets go of the keys.
     func follow(_ opacity: CGFloat, duration: CFTimeInterval) {
         guard !closing, opacity != inkOpacity else { return }
         inkOpacity = opacity
@@ -181,25 +152,17 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     func standAside(_ aside: Bool) {
         guard !closing, aside != standsAside else { return }
         standsAside = aside
-        showOpacity(over: (aside ? Self.fadeOut : Self.fadeIn) * Settings.shared.motionScale)
+        showOpacity(over: (aside ? HangingPopover.fadeOut : HangingPopover.fadeIn) * Settings.shared.motionScale)
     }
 
     private func showOpacity(over duration: CFTimeInterval) {
-        if opacity > 0, revealed, !popover.isShown, let host { open(from: host, takingKeys: false) }
-        if opacity == 0, hasKeys { letGoOfKeys() }
+        if opacity == 0 { letGoOfKeys() }
         fade(over: duration)
     }
 
     /// Fades the window to what it should show, over `duration`.
     private func fade(over duration: CFTimeInterval) {
-        guard let window = content.window else { return }
-        let alpha = revealed ? opacity : 0
-        guard duration > 0 else { window.alphaValue = alpha; return }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            context.timingFunction = CAMediaTimingFunction(name: alpha > window.alphaValue ? .easeOut : .easeIn)
-            window.animator().alphaValue = alpha
-        }
+        if hanging.fade(to: revealed ? opacity : 0, duration: duration) { watchWindow(takingKeys: false) }
     }
 
     /// How many working sessions it lists after the responder.
@@ -239,13 +202,11 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         show(found)
     }
 
-    /// Fades out without a word to the callbacks. The keys go back only when it had them: inactive, the
-    /// person is in another app by now.
+    /// Fades out without a word to the callbacks, giving the keys back when it has them.
     func dismiss() {
         guard !closing else { return }
-        let keyed = hasKeys
         fadeAway()
-        if keyed { letGoOfKeys() }
+        letGoOfKeys()
     }
 
     // MARK: Placing
@@ -262,17 +223,11 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         return StateReport.flipped(window.convertToScreen(content.convert(content.wordsFrame, to: nil)))
     }
 
-    /// The rect it hangs from now, in global top-left points: it moves with its ink's window.
-    private var hungFrom: CGRect? {
-        guard let host, let window = host.window else { return nil }
-        return StateReport.flipped(window.convertToScreen(host.convert(popover.positioningRect, to: nil)))
-    }
-
     /// Shows the note where it hangs, fading in.
     func reveal() {
         guard !revealed, !closing, content.window != nil else { return }
         revealed = true
-        fade(over: Self.fadeIn * Settings.shared.motionScale)
+        fade(over: HangingPopover.fadeIn * Settings.shared.motionScale)
         Log.write("[live-ink] note shown edge=\(place.edge)")
     }
 
@@ -441,7 +396,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     var shownPlace: PopoverPlace? {
         guard let body = globalFrame else { return nil }
         var shown = place
-        shown.at = hungFrom ?? place.at
+        shown.at = hanging.hungFrom ?? place.at
         shown.body = body
         return shown
     }
@@ -454,7 +409,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         closing = true
         handingOver = true
         stopWatching()
-        slide.stop()
+        hanging.stop()
         let wait = max(settledAt - CACurrentMediaTime(), 0)
         // Held until it is gone, whoever lets go of it meanwhile.
         DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [self] in
@@ -477,9 +432,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         closing = true
         handingOver = false
         stopWatching()
-        slide.stop()
+        hanging.stop()
         let popover = popover
-        let duration = duration ?? Self.fadeOut * Settings.shared.motionScale
+        let duration = duration ?? HangingPopover.fadeOut * Settings.shared.motionScale
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [content] in
             guard let window = content.window, duration > 0, window.alphaValue > 0 else {
                 popover.close()
@@ -499,13 +454,15 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private func placeLight() {
         guard let body = globalFrame else { return }
         let dark = content.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        content.light.place(content.bounds, start: RimLight.start(of: body, hungFrom: hungFrom ?? place.at, edge: place.edge), dark: dark)
+        content.light.place(content.bounds, start: RimLight.start(of: body, hungFrom: hanging.hungFrom ?? place.at, edge: place.edge), dark: dark)
     }
 
-    /// Gives the keys back to where the person was, now rather than when the window goes.
+    /// Gives the keys back to where the person was, now rather than when the window goes, when it has
+    /// them. Without them, the person's app has them, and nothing is taken from it.
     private func letGoOfKeys() {
+        guard let window = content.window, window.isKeyWindow else { return }
         FocusReturn.shared.restore(reason: "live ink note")
-        if let window = content.window, window.isKeyWindow { window.resignKey() }
+        window.resignKey()
     }
 
     private func stopWatching() {
@@ -541,35 +498,20 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private func resigned() {
         guard !closing, !menuOpen, !sent else { return }
         caret = content.field.currentEditor()?.selectedRange
-        showsKeys(false)
+        content.showsKeys(false, duration: Self.focusFade * Settings.shared.motionScale)
         FocusReturn.shared.restore(reason: "live ink note")
         Log.write("[live-ink] note let go of the keys")
     }
 
     private func becameKey() {
         guard !closing, !sent, !menuOpen else { return }
-        showsKeys(true)
+        content.showsKeys(true, duration: Self.focusFade * Settings.shared.motionScale)
         Log.write("[live-ink] note has the keys")
         onKeysBack?()
     }
 
-    private var keyed = true
-
-    /// Inactive, the popover's glass draws as macOS draws a window that is not key, the caret goes, the
-    /// words dim and the ↩ fades, since Return does nothing until the note has the keys again.
-    private func showsKeys(_ keys: Bool) {
-        guard keys != keyed else { return }
-        keyed = keys
-        content.showsKeys(keys, duration: Self.focusFade * Settings.shared.motionScale)
-    }
-
-    private static let fadeIn: TimeInterval = 0.18
-    private static let fadeOut: TimeInterval = 0.16
     /// How long the words and the ↩ take to dim or come back as the note loses or takes the keys.
     private static let focusFade: TimeInterval = 0.18
-    /// How long it takes to move to hang from newer ink, at full motion: as long as a reply moving to
-    /// its next stop.
-    private static let slideDuration: CFTimeInterval = ReplyPopover.slideDuration
     /// How long the target takes to settle into a name once sent, at full motion.
     private static let settleDuration: TimeInterval = 0.18
     private let removal = WindowRemoval()
