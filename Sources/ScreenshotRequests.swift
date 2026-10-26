@@ -370,9 +370,16 @@ final class ScreenshotRequests {
         }
         let id = ReplyProtocol.newID()
         let directory = ReplyProtocol.requestDirectory(root: root, requestID: id)
-        let record = Record(id: id, created: Date(), destinationID: destination.id,
-                            destinationName: destination.name, address: destination.address,
-                            addressGuard: destination.address.guardTier, source: source.url.lastPathComponent,
+        // A New session row names no session yet. The one Vignette starts gets its id now, so the
+        // start, the inbox check and a reply's card all name that session.
+        var (destinationID, address) = (destination.id, destination.address)
+        if case .new = destination.start {
+            destinationID = UUID().uuidString.lowercased()
+            address = .claudeSession(destinationID)
+        }
+        let record = Record(id: id, created: Date(), destinationID: destinationID,
+                            destinationName: destination.name, address: address,
+                            addressGuard: address.guardTier, source: source.url.lastPathComponent,
                             sourceKey: source.path, status: .prepared, detail: "", start: destination.start)
         let ticket = ReplyProtocol.Ticket(requestID: id, secret: ReplyProtocol.newSecret(),
                                           requestDirectory: directory.path, app: Bundle.main.bundlePath)
@@ -411,7 +418,7 @@ final class ScreenshotRequests {
             }
         }
         prune()
-        Log.write("[send] prepared \(id) to \(destination.name) (\(destination.address.description)) \(png.count) bytes")
+        Log.write("[send] prepared \(id) to \(destination.name) (\(address.description)) \(png.count) bytes")
         if grace > 0 { Log.write("[send] waiting \(Int(grace * 1000))ms request=\(id)") }
         // The message travels in the line only: it is the person's words, so neither the record
         // nor the log keeps it.
@@ -474,10 +481,8 @@ final class ScreenshotRequests {
         requests[record.id] = going
         do { try write(going) }
         catch { Log.write("[send] error \(CommandError.writeFailed.rawValue) could not store \(record.id): \(error.localizedDescription)") }
-        let destination = AgentDestination(id: record.destinationID, name: record.destinationName,
-                                           detail: record.start.map { ($0.folder as NSString).lastPathComponent } ?? "",
-                                           address: record.address, start: record.start)
-        DispatchQueue.global(qos: .userInitiated).async { completion(connection.submit(line, to: destination)) }
+        let destination = AgentDestination(id: record.destinationID, name: record.destinationName, address: record.address, start: record.start)
+        connection.submit(line, to: destination, completion: completion)
         return nil
     }
 

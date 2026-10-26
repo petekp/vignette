@@ -126,6 +126,7 @@ The menu bar menu names the switch as the General tab does.
 | The destination control in the bar | The row's title; its tooltip is the title, the second line and the repository |
 | The destination control when no session runs and some can be started (`ToolbarView.chooseSession`) | Choose a session; its tooltip: No session is running. You can continue a past one or start a new one. |
 | A project's rows when it has no running session (`SessionMenu.continueLast`, `newSession`) | Continue last session, under it the worktree, branch, the session's name and how long ago it was used / New session, under it the worktree and branch |
+| The destination control, and the note's target, once a row of a project with no running session is picked (`SessionMenu.lastSession(in:)`, `newSession(in:)`) | Last session in *project* / New session in *project*; the tooltip keeps the menu row's words |
 
 #### In the conversation's row, or on the ink
 

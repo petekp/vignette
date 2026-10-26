@@ -68,6 +68,16 @@ final class ScreenshotRequestsTests: XCTestCase {
                                  to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")))
     }
 
+    func testASendToANewSessionRowNamesTheSessionItStarts() throws {
+        requests.reconcile(try inventory(in: folder))
+        let row = AgentDestination(id: SessionStart.newRowID(folder: "/site"), name: "New session in site", address: .claudeSession(""),
+                                   start: .new(folder: "/site"))
+        let record = try requests.send(png: png(), source: folder.appendingPathComponent("Screenshot.png").screenshotKey, to: row)
+        XCTAssertNotNil(UUID(uuidString: record.destinationID))
+        XCTAssertEqual(record.address, .claudeSession(record.destinationID))
+        XCTAssertEqual(record.start, .new(folder: "/site"))
+    }
+
     private func ticket(for record: ScreenshotRequests.Record) throws -> ReplyProtocol.Ticket {
         let url = ReplyProtocol.requestDirectory(root: root, requestID: record.id).appendingPathComponent("ticket.json")
         return try JSONDecoder().decode(ReplyProtocol.Ticket.self, from: Data(contentsOf: url))

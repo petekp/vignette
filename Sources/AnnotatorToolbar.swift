@@ -11,18 +11,20 @@ final class AnnotatorToolbar {
         @Published var shown = false     // drives the entrance and exit
         /// The agent sessions Send can go to, the one used last first, as far as the listing has
         /// answered for the image that is open.
-        @Published private(set) var destinations: [AgentDestination] = [] { didSet { refreshTargetRow() } }
+        @Published private(set) var destinations: [AgentDestination] = [] { didSet { refreshTargetRow(); reportOffer() } }
+        /// The sessions Vignette can start, which only the target's menu shows.
+        @Published private(set) var startable: [AgentDestination] = [] { didSet { reportOffer() } }
         /// Every client has answered. Until then a session missing from the list may only be late.
         @Published private(set) var listed = false
         /// The last list every client answered: this image's, or while the bar stays up for a swap,
         /// the image before's. Whether a reply's Claude Code session has closed is read from it, so
         /// the bar does not show Reply for a closed session until this image's list says so again.
-        @Published private(set) var whole: [AgentDestination]?
+        @Published private(set) var whole: [AgentDestination]? { didSet { reportOffer() } }
         /// The session the open image came from, when it names one: an agent's reply, or a push
         /// that said which session it was. The bar is Reply alone, so the target is never guessed at.
-        @Published private(set) var replyTo: AgentDestination?
+        @Published private(set) var replyTo: AgentDestination? { didSet { reportOffer() } }
         /// Where Send goes: the default until someone picks another in the menu.
-        @Published private(set) var target: AgentDestination? { didSet { refreshTargetRow() } }
+        @Published private(set) var target: AgentDestination? { didSet { refreshTargetRow(); reportOffer() } }
         private var cachedTargetRow: SessionMenu.Row?
 
         /// The target's row among the listed sessions, worded once when either changes: ranking and
@@ -127,7 +129,18 @@ final class AnnotatorToolbar {
         }
 
         var offer: ToolbarOffer {
-            ToolbarOffer(replyTo: replyTo, destinations: whole ?? destinations, listed: whole != nil, target: target)
+            ToolbarOffer(replyTo: replyTo, destinations: whole ?? destinations, listed: whole != nil, target: target, startable: startable)
+        }
+
+        /// Called with the offer each time it changes, whatever changed it: an answer, a new image or a pick.
+        var onOfferChanged: ((ToolbarOffer) -> Void)?
+        private var reportedOffer = ToolbarOffer.copy
+
+        private func reportOffer() {
+            let offer = self.offer
+            guard offer != reportedOffer else { return }
+            reportedOffer = offer
+            onOfferChanged?(offer)
         }
 
         /// When the bar last began on an image, for `SendContext.menu`.
@@ -147,6 +160,7 @@ final class AnnotatorToolbar {
             carried = carryingTarget && target != nil
             guard !carried else { return }
             destinations = []
+            startable = []
             target = nil
             whole = nil
         }
@@ -157,6 +171,7 @@ final class AnnotatorToolbar {
         func answered(_ answer: DestinationChoice.Answer) {
             let list = answer.list
             destinations = list
+            startable = answer.startable
             listed = answer.complete
             if answer.complete { whole = list }
             if let current = target, let fresh = list.first(where: { $0.id == current.id }) { target = fresh }
@@ -184,8 +199,6 @@ final class AnnotatorToolbar {
     var onTool: ((EditorCore.Tool) -> Void)?
     var onDone: (() -> Void)?
     var onSend: ((AgentDestination) -> Void)?
-    /// A target was picked in the menu, which can change the offer: from an empty target to Send.
-    var onPicked: (() -> Void)?
     /// Esc in the message field: the keys go back to the editor.
     var onMessageEnd: (() -> Void)?
     /// Esc in a message field that took the keys on its own and is still empty: the editor closes.
@@ -251,7 +264,6 @@ final class AnnotatorToolbar {
             DispatchQueue.main.async {
                 guard let self else { return }
                 withAnimation(Anim.spring(0.35 * Settings.shared.motionScale)) { self.model.pick(destination) }
-                self.onPicked?()
             }
         }
         panel.onTab = { [weak self] backward in self?.move(backward: backward) }
@@ -403,7 +415,7 @@ final class AnnotatorToolbar {
         let target = model.offer.destination
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let search = SessionMenu.add(SessionMenu.menu(model.destinations, destination: target), to: menu) { row in
+        let search = SessionMenu.add(SessionMenu.menu(model.destinations + model.startable, destination: target), to: menu) { row in
             let item = SessionMenu.item(for: row, selected: row.id == target?.id)
             item.target = self.targetMenuActions
             item.action = #selector(TargetMenuActions.pick(_:))
@@ -677,15 +689,19 @@ enum ToolbarOffer: Equatable {
     /// A reply goes back where the image came from, unless the whole list has answered without that
     /// Claude Code session: the inboxes list every session running the plugin, so it has closed. Codex's listing holds only the
     /// threads used last, so a Codex thread missing from it may still be there.
-    init(replyTo: AgentDestination?, destinations: [AgentDestination], listed: Bool, target: AgentDestination?) {
+    init(replyTo: AgentDestination?, destinations: [AgentDestination], listed: Bool, target: AgentDestination?,
+         startable: [AgentDestination] = []) {
         if let replyTo {
-            let closed = listed && replyTo.client == .claude && !destinations.contains { $0.id == replyTo.id && !$0.startsProcess }
+            let closed = listed && replyTo.client == .claude && !destinations.contains { $0.id == replyTo.id }
             if !closed {
-                self = .reply(destinations.first { $0.id == replyTo.id && !$0.startsProcess } ?? replyTo)
+                self = .reply(destinations.first { $0.id == replyTo.id } ?? replyTo)
                 return
             }
         }
-        self = target.map(ToolbarOffer.send) ?? (destinations.contains { $0.startsProcess } ? .choose : .copy)
+        // Only once every client has answered: a session running may be listed a moment after the
+        // ones Vignette can start.
+        let chooses = listed && !startable.isEmpty
+        self = target.map(ToolbarOffer.send) ?? (chooses ? .choose : .copy)
     }
 
     var isSend: Bool {

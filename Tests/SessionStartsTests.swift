@@ -16,12 +16,8 @@ final class SessionStartsTests: XCTestCase {
         #"{"display":"hi","pastedContents":{},"timestamp":\#(Int(time.timeIntervalSince1970 * 1000)),"project":"\#(folder)","sessionId":"\#(session)"}"#
     }
 
-    private func transcriptName(_ folder: String) -> String {
-        String(folder.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) && $0.isASCII ? Character($0) : "-" })
-    }
-
     private func writeTranscript(_ root: URL, folder: String, session: String, title: String, used: Date) throws {
-        let dir = root.appendingPathComponent(transcriptName(folder))
+        let dir = root.appendingPathComponent(StartableSessions.transcriptFolder(of: folder))
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let stamp = Date.ISO8601FormatStyle(includingFractionalSeconds: true).format(used)
         let text = """
@@ -32,26 +28,25 @@ final class SessionStartsTests: XCTestCase {
         try Data(text.utf8).write(to: dir.appendingPathComponent("\(session).jsonl"))
     }
 
-    private func sessions(home: URL, running: [String] = [], now: Date, canStart: Bool = true) -> StartableSessions {
+    private func sessions(home: URL, now: Date, canStart: Bool = true) -> StartableSessions {
         var sessions = StartableSessions()
         sessions.history = home.appendingPathComponent("history.jsonl")
         sessions.transcripts = home.appendingPathComponent("projects")
-        sessions.running = { running }
         sessions.canStart = { canStart }
         sessions.now = { now }
         sessions.home = home.path
         return sessions
     }
 
-    func testAProjectWithNoRunningSessionOffersItsLastSessionAndANewOne() throws {
+    func testAProjectUsedLatelyOffersItsLastSessionAndANewOne() throws {
         let home = temporaryFolder()
-        let site = temporaryFolder("pete-2025").path, busy = temporaryFolder("vignette").path
+        let site = temporaryFolder("pete-2025").path, other = temporaryFolder("vignette").path
         let gone = home.appendingPathComponent("deleted-worktree").path
         let now = Date()
         let lines = [
             historyLine(site, older, now.addingTimeInterval(-3 * 86400)),
             historyLine(site, past, now.addingTimeInterval(-2 * 86400)),
-            historyLine(busy, older, now.addingTimeInterval(-3600)),
+            historyLine(other, older, now.addingTimeInterval(-3600)),
             historyLine(gone, older, now.addingTimeInterval(-60)),
         ]
         try Data(lines.joined(separator: "\n").utf8).write(to: home.appendingPathComponent("history.jsonl"))
@@ -59,15 +54,15 @@ final class SessionStartsTests: XCTestCase {
         try writeTranscript(projects, folder: site, session: past, title: "Nav spacing", used: now.addingTimeInterval(-2 * 86400))
         try writeTranscript(projects, folder: site, session: older, title: "Carousel", used: now.addingTimeInterval(-1 * 86400))
 
-        let found = sessions(home: home, running: [StartableSessions.canonical(busy)], now: now).destinations()
+        let found = sessions(home: home, now: now).destinations()
 
-        XCTAssertEqual(found.map(\.id), [older, SessionStart.newRowID(folder: site)])
-        XCTAssertEqual(found[0].start, .resume(folder: site))
-        XCTAssertEqual(found[0].name, "Carousel")
-        XCTAssertEqual(found[0].address, .claudeSession(older))
-        XCTAssertEqual(found[1].start, .new(folder: site))
-        XCTAssertEqual(found[1].lastUsed, found[0].lastUsed)
-        XCTAssertTrue(found.allSatisfy { $0.isActive() && $0.startsProcess })
+        XCTAssertEqual(found.map(\.id), [SessionStart.newRowID(folder: other), older, SessionStart.newRowID(folder: site)])
+        XCTAssertEqual(found[1].start, .resume(folder: site))
+        XCTAssertEqual(found[1].name, "Carousel")
+        XCTAssertEqual(found[1].address, .claudeSession(older))
+        XCTAssertEqual(found[1].folder, site)
+        XCTAssertEqual(found[2].start, .new(folder: site))
+        XCTAssertEqual(found[2].lastUsed, found[1].lastUsed)
     }
 
     func testNothingIsOfferedWithoutALauncherOrPastTheWindow() throws {
@@ -76,58 +71,45 @@ final class SessionStartsTests: XCTestCase {
         let now = Date()
         try Data(historyLine(site, past, now.addingTimeInterval(-15 * 86400)).utf8).write(to: home.appendingPathComponent("history.jsonl"))
         XCTAssertEqual(sessions(home: home, now: now).destinations(), [])
-        try Data(historyLine(site, past, now).utf8).write(to: home.appendingPathComponent("history.jsonl"))
+        try Data((historyLine(site, past, now) + "\n").utf8).write(to: home.appendingPathComponent("history.jsonl"))
         XCTAssertEqual(sessions(home: home, now: now, canStart: false).destinations(), [])
         XCTAssertEqual(sessions(home: home, now: now).destinations().map(\.start), [.new(folder: site)])
-    }
-
-    func testANewSessionIsAddressedByAnIdChosenAtSend() {
-        let row = StartableSessions.rows(folder: "/Users/p/Code/site", last: nil, lastUsed: Date(), found: .init(place: .none, branch: nil))[0]
-        let sent = row.addressed(id: past)
-        XCTAssertEqual(sent.id, past)
-        XCTAssertEqual(sent.address, .claudeSession(past))
-        XCTAssertEqual(sent.start, .new(folder: "/Users/p/Code/site"))
-        XCTAssertEqual(sent.start?.arguments(session: past), ["--session-id", past])
-        let resume = AgentDestination(id: older, name: "x", address: .claudeSession(older), start: .resume(folder: "/f"))
-        XCTAssertEqual(resume.addressed(id: past), resume)
-        XCTAssertEqual(resume.start?.arguments(session: older), ["--resume", older])
     }
 
     private func claude(_ id: String, used: TimeInterval = 0, start: SessionStart? = nil) -> AgentDestination {
         AgentDestination(id: id, name: id, detail: "site", address: .claudeSession(id), lastUsed: Date(timeIntervalSince1970: used), start: start)
     }
 
-    func testNothingStartsASessionOnItsOwn() {
+    func testOnlyAPersonsPickStartsASession() {
         let resume = claude(past, used: 200, start: .resume(folder: "/site"))
         let new = claude("new:/site", used: 200, start: .new(folder: "/site"))
         let running = claude("r", used: 100)
-        func send(_ list: [AgentDestination]) -> DestinationChoice.Answer {
-            DestinationChoice.choose(.init(destinations: list, complete: true, fresh: true), for: .send(cameFrom: nil))
+        func choose(_ list: [AgentDestination], for asker: DestinationChoice.Asker) -> DestinationChoice.Answer {
+            DestinationChoice.choose(.init(destinations: list, complete: true, fresh: true, startable: [resume, new]), for: asker)
         }
-        XCTAssertNil(send([resume, new]).pick)
-        XCTAssertEqual(send([resume, new, running]).pick?.id, "r")
-        func note(_ list: [AgentDestination], _ pick: DestinationChoice.LiveNotePick) -> AgentDestination? {
-            DestinationChoice.choose(.init(destinations: list, complete: true, fresh: true), for: .liveNote(pick)).pick
-        }
-        XCTAssertNil(note([resume, new], .remembered(claude(past))))
-        XCTAssertNil(note([resume, new], .remembered(claude("cleared"))))
-        XCTAssertEqual(note([resume, new], .byHand(resume)), resume)
-        XCTAssertEqual(ToolbarOffer(replyTo: nil, destinations: [resume, new], listed: true, target: nil), .choose)
+        XCTAssertNil(choose([], for: .send(cameFrom: nil)).pick)
+        XCTAssertEqual(choose([running], for: .send(cameFrom: nil)).pick?.id, "r")
+        XCTAssertEqual(choose([], for: .send(cameFrom: nil)).startable, [resume, new])
+        XCTAssertNil(choose([], for: .liveNote(.remembered(claude(past)))).pick)
+        XCTAssertEqual(choose([], for: .liveNote(.byHand(resume))).pick, resume)
+        XCTAssertEqual(ToolbarOffer(replyTo: nil, destinations: [], listed: true, target: nil, startable: [resume, new]), .choose)
+        XCTAssertEqual(ToolbarOffer(replyTo: nil, destinations: [], listed: false, target: nil, startable: [resume, new]), .copy)
         XCTAssertEqual(ToolbarOffer.choose.finishes, ToolbarOffer.copy.finishes)
-        XCTAssertEqual(ToolbarOffer(replyTo: claude(past), destinations: [resume, new], listed: true, target: nil), .choose)
+        XCTAssertEqual(ToolbarOffer(replyTo: claude(past), destinations: [], listed: true, target: nil, startable: [resume, new]), .choose)
     }
 
-    func testRowsThatStartASessionComeAfterEveryRunningOne() {
+    func testRowsThatStartASessionComeAfterEveryRunningOneAndNameTheirProjectOncePicked() {
         let now = Date()
         let resume = claude(past, used: now.timeIntervalSince1970, start: .resume(folder: "/site"))
         let new = claude("new:/site", used: now.timeIntervalSince1970, start: .new(folder: "/site"))
-        var running = claude("r", used: now.timeIntervalSince1970 - 86000)
-        running.lastSent = nil
-        let ranked = SessionMenu.ranked([new, running, resume], now: now)
-        XCTAssertEqual(ranked.map(\.id), ["r", past, "new:/site"])
+        let running = claude("r", used: now.timeIntervalSince1970 - 86000)
+        XCTAssertEqual(SessionMenu.ranked([new, running, resume], now: now).map(\.id), ["r", past, "new:/site"])
         let rows = SessionMenu.menu([new, running, resume], destination: nil, now: now).topRows
         XCTAssertEqual(rows.map(\.title), ["r", SessionMenu.continueLast, SessionMenu.newSession])
         XCTAssertTrue(rows[1].subtitle.contains(past), rows[1].subtitle)
+        XCTAssertEqual(SessionMenu.row(of: resume, among: [running], now: now).title, SessionMenu.lastSession(in: "site"))
+        XCTAssertEqual(SessionMenu.row(of: new, among: [running], now: now).title, SessionMenu.newSession(in: "site"))
+        XCTAssertTrue(SessionMenu.row(of: resume, among: [running], now: now).tooltip.hasPrefix(SessionMenu.continueLast))
     }
 
     private nonisolated static func inbox(_ root: URL, pid: Int32, session: String) throws {
@@ -140,61 +122,68 @@ final class SessionStartsTests: XCTestCase {
     private final class Clock: @unchecked Sendable {
         private let lock = NSLock()
         private var time = Date()
-        private(set) var launches: [(SessionStart, String, String)] = []
+        private(set) var launches: [(SessionStart, String)] = []
         var now: Date { lock.withLock { time } }
         func advance(_ seconds: TimeInterval) { lock.withLock { time = time.addingTimeInterval(seconds) } }
-        func launched(_ start: SessionStart, _ session: String, _ label: String) { lock.withLock { launches.append((start, session, label)) } }
+        func launched(_ start: SessionStart, _ session: String) { lock.withLock { launches.append((start, session)) } }
     }
 
-    private func connection(_ root: URL, clock: Clock, launch: @escaping @Sendable (SessionStart, String, String) -> HerdrLauncher.Started) -> ClaudeCodeConnection {
+    private func connection(_ root: URL, clock: Clock, launch: @escaping @Sendable (SessionStart, String) -> HerdrLauncher.Started) -> ClaudeCodeConnection {
         var connection = ClaudeCodeConnection()
         connection.inboxes = root
         connection.transcripts = URL(fileURLWithPath: "/nonexistent/projects")
         connection.isRunning = { _ in true }
         connection.now = { clock.now }
-        connection.pause = { clock.advance($0) }
-        connection.launch = { clock.launched($0, $1, $2); return launch($0, $1, $2) }
+        connection.later = { delay, look in clock.advance(delay); look() }
+        connection.launch = { clock.launched($0, $1); return launch($0, $1) }
         return connection
+    }
+
+    private func submit(_ line: String, to destination: AgentDestination, through connection: ClaudeCodeConnection) async -> SubmissionOutcome {
+        await withCheckedContinuation { done in connection.submit(line, to: destination) { done.resume(returning: $0) } }
     }
 
     private func lines(in folder: URL) -> [String] {
         ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).filter { $0.hasSuffix(".line") }
     }
 
-    func testASendToASessionThatIsNotRunningStartsItThenWritesTheLineIntoItsInbox() throws {
+    func testASendToASessionThatIsNotRunningStartsItThenWritesTheLineIntoItsInbox() async throws {
         let root = temporaryFolder()
+        try Self.inbox(root, pid: 300, session: older)
         let clock = Clock()
-        let up = connection(root, clock: clock) { _, session, _ in
+        let up = connection(root, clock: clock) { _, session in
             try? Self.inbox(root, pid: 301, session: session)
             return .started(tab: "w1:t9", pane: "w1:p9")
         }
-        let destination = AgentDestination(id: past, name: "x", detail: "site", address: .claudeSession(past), start: .resume(folder: "/site"))
-        guard case .accepted(let detail) = up.submit("From Vignette: look", to: destination) else { return XCTFail("started and delivered") }
+        let destination = AgentDestination(id: past, name: "x", address: .claudeSession(past), start: .resume(folder: "/site"))
+        guard case .accepted(let detail) = await submit("From Vignette: look", to: destination, through: up) else { return XCTFail("started and delivered") }
         XCTAssertTrue(detail.contains("inbox=301"), detail)
-        XCTAssertEqual(clock.launches.map { $0.1 }, [past])
-        XCTAssertEqual(clock.launches.map { $0.2 }, ["site"])
+        XCTAssertEqual(clock.launches.map(\.1), [past])
         XCTAssertEqual(lines(in: root.appendingPathComponent("301")).count, 1)
 
-        XCTAssertTrue(up.submit("again", to: destination).isAccepted)
+        let again = await submit("again", to: destination, through: up)
+        XCTAssertTrue(again.isAccepted)
         XCTAssertEqual(clock.launches.count, 1)
+        XCTAssertFalse(up.submit("x", to: destination).isAccepted)
     }
 
-    func testAStartThatFailsOrNeverComesUpSendsNothing() throws {
+    func testAStartThatFailsOrNeverComesUpSendsNothing() async throws {
         let root = temporaryFolder()
         let clock = Clock()
         let destination = AgentDestination(id: past, name: "x", address: .claudeSession(past), start: .new(folder: "/site"))
-        let refused = connection(root, clock: clock) { _, _, _ in .failed(detail: "no tab") }
-        guard case .notSubmitted(_, _, let reason) = refused.submit("x", to: destination) else { return XCTFail("a failed start sends nothing") }
+        let refused = connection(root, clock: clock) { _, _ in .failed(detail: "no tab") }
+        guard case .notSubmitted(_, _, let reason) = await submit("x", to: destination, through: refused) else { return XCTFail("a failed start sends nothing") }
         XCTAssertEqual(reason, ClaudeCodeConnection.notStarted)
 
-        let silent = connection(root, clock: clock) { _, _, _ in .started(tab: "t", pane: "p") }
+        let silent = connection(root, clock: clock) { _, _ in .started(tab: "t", pane: "p") }
         let began = clock.now
-        guard case .notSubmitted(_, _, let late) = silent.submit("x", to: destination) else { return XCTFail("a session that never came up got nothing") }
+        guard case .notSubmitted(_, _, let late) = await submit("x", to: destination, through: silent) else { return XCTFail("a session that never came up got nothing") }
         XCTAssertEqual(late, ClaudeCodeConnection.notUpInTime)
         XCTAssertGreaterThanOrEqual(clock.now.timeIntervalSince(began), ClaudeCodeConnection.startTimeout)
 
         let notASession = AgentDestination(id: "new:/site", name: "x", address: .claudeSession("new:/site"), start: .new(folder: "/site"))
-        XCTAssertFalse(silent.submit("x", to: notASession).isAccepted)
+        let unstarted = await submit("x", to: notASession, through: silent)
+        XCTAssertFalse(unstarted.isAccepted)
         XCTAssertEqual(clock.launches.count, 2)
     }
 
@@ -210,14 +199,13 @@ final class SessionStartsTests: XCTestCase {
             }
             return (0, "", false)
         }
-        XCTAssertEqual(launcher.start(.resume(folder: "/Users/p/it's here"), session: past, label: "site"), .started(tab: "w1:t4", pane: "w1:p7"))
+        XCTAssertEqual(launcher.start(.resume(folder: "/Users/p/it's here"), session: past), .started(tab: "w1:t4", pane: "w1:p7"))
         XCTAssertEqual(calls.all, [
-            ["tab", "create", "--cwd", "/Users/p/it's here", "--no-focus", "--label", "site"],
+            ["tab", "create", "--cwd", "/Users/p/it's here", "--no-focus", "--label", "it's here"],
             ["pane", "run", "w1:p7", "'claude' '--resume' '\(past)'"],
         ])
-        XCTAssertEqual(HerdrLauncher.shellCommand(["it's"]), #"'it'\''s'"#)
         launcher.run = { _, _, _ in (1, #"{"error":"no server"}"#, false) }
-        guard case .failed(let detail) = launcher.start(.new(folder: "/f"), session: past, label: "") else { return XCTFail("herdr refused") }
+        guard case .failed(let detail) = launcher.start(.new(folder: "/f"), session: past) else { return XCTFail("herdr refused") }
         XCTAssertTrue(detail.contains("no server"), detail)
     }
 }

@@ -37,6 +37,9 @@ enum DestinationChoice {
         /// The session the asker starts on when `decided`. Nil is no session: Send has none to
         /// send to, and a live ink note starts on the responder.
         let pick: AgentDestination?
+        /// The sessions Vignette can start, as the listing found them. Only a person's pick starts a
+        /// process, so they are never picked and only the menus show them.
+        var startable: [AgentDestination] = []
     }
 
     /// What a listing has found so far: the candidate destinations and the facts that came with them.
@@ -45,11 +48,14 @@ enum DestinationChoice {
         let destinations: [AgentDestination]
         /// Every client has answered, from a kept list or a fresh one.
         let complete: Bool
-        /// Every answer is fresh, the sessions Vignette can start included.
+        /// Every answer is fresh.
         let fresh: Bool
         /// herdr's focus, read with `markedByHerdr`'s answer. Nil before it, without herdr, or when
         /// that client listed no destination (`readsHerdr`).
         var herdr: HerdrFocus? = nil
+        /// The sessions Vignette can start, for projects with none running (`StartableSessions`). They
+        /// are apart from `destinations`, so no rule here can pick one.
+        var startable: [AgentDestination] = []
     }
 
     /// The one client whose sessions herdr's focus marks. A focused Codex pane marks nothing, even
@@ -70,7 +76,8 @@ enum DestinationChoice {
             return choose(forSend: candidates, cameFrom: cameFrom)
         case .liveNote(let pick):
             let list = unmarked(candidates)
-            return Answer(list: list, complete: candidates.complete, decided: true, pick: start(pick, in: list))
+            return Answer(list: list, complete: candidates.complete, decided: true,
+                          pick: start(pick, in: list, startable: candidates.startable), startable: candidates.startable)
         }
     }
 
@@ -82,12 +89,12 @@ enum DestinationChoice {
         }
     }
 
-    /// Where a live ink note starts. A hand pick stays while the list has its id; the session
-    /// remembered from the note before is found again, even after `/clear`, among the running ones
-    /// only, since only a person's pick starts a process.
-    private static func start(_ pick: LiveNotePick, in list: [AgentDestination]) -> AgentDestination? {
+    /// Where a live ink note starts. A hand pick stays while the list, or the sessions Vignette can
+    /// start, has its id; the session remembered from the note before is found again, even after
+    /// `/clear`, among the running ones.
+    private static func start(_ pick: LiveNotePick, in list: [AgentDestination], startable: [AgentDestination]) -> AgentDestination? {
         switch pick {
-        case .byHand(let session?): return list.first { $0.id == session.id }
+        case .byHand(let session?): return (list + startable).first { $0.id == session.id }
         case .remembered(let session?): return again(session, in: list)
         case .byHand(nil), .remembered(nil): return nil
         }
@@ -96,9 +103,8 @@ enum DestinationChoice {
     /// `session` again in `list`: by its id, or, after `/clear` gave it a new id, as the one session
     /// of its agent in its project. Never by `project`, which falls back to the agent's name.
     private static func again(_ session: AgentDestination, in list: [AgentDestination]) -> AgentDestination? {
-        let running = list.filter { !$0.startsProcess }
-        if let same = running.first(where: { $0.id == session.id }) { return same }
-        let alike = running.filter { $0.client == session.client && !$0.detail.isEmpty && $0.detail == session.detail }
+        if let same = list.first(where: { $0.id == session.id }) { return same }
+        let alike = list.filter { $0.client == session.client && !$0.detail.isEmpty && $0.detail == session.detail }
         return alike.count == 1 ? alike[0] : nil
     }
 
@@ -117,16 +123,17 @@ enum DestinationChoice {
             list = marked(unmarked, herdr: candidates.herdr)
         }
         let decided = complete || list.contains { $0.focus != nil }
-        return Answer(list: list, complete: complete, decided: decided, pick: decided ? pick(in: list) : nil)
+        return Answer(list: list, complete: complete, decided: decided, pick: decided ? pick(in: list) : nil,
+                      startable: candidates.startable)
     }
 
     /// Where Send goes when nobody has chosen: the session you came from, which is where a paste
     /// would have gone. The session an agent's app showed first, then herdr's focused pane, then the
     /// one session beside it, then the session used last. `list` is in Send's order, the session used
-    /// last first. Never a session that is not running: only a person's pick starts a process.
+    /// last first.
     private static func pick(in list: [AgentDestination]) -> AgentDestination? {
         list.first { $0.focus == .app } ?? list.first { $0.focus == .pane } ?? list.first { $0.focus == .tab }
-            ?? list.first { !$0.startsProcess }
+            ?? list.first
     }
 
     /// The sessions as they stand when you came from `client`'s own app, such as the Codex app.
@@ -136,7 +143,7 @@ enum DestinationChoice {
     /// started since the list was kept, and the fresh list will say. `list` is in Send's order.
     private static func marked(_ client: AgentClient, shown: String?, in list: [AgentDestination], fresh: Bool) -> [AgentDestination] {
         var marked = list
-        let ofClient = marked.indices.filter { marked[$0].client == client && !marked[$0].startsProcess }
+        let ofClient = marked.indices.filter { marked[$0].client == client }
         let match = shown.flatMap { id in ofClient.first { marked[$0].id == id } }
         guard match != nil || shown == nil || fresh else { return marked }
         if let index = match ?? ofClient.first { marked[index].focus = .app }

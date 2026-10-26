@@ -1377,8 +1377,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         "Vignette can't read \(name). It may have been moved or deleted."
     }
 
-    private func submit(_ png: Data, of shot: Screenshot, to picked: AgentDestination, message: String?) {
-        let destination = picked.addressed()
+    private func submit(_ png: Data, of shot: Screenshot, to destination: AgentDestination, message: String?) {
         let record: ScreenshotRequests.Record
         do {
             record = try requests.send(png: png, source: shot.key, to: destination, message: message,

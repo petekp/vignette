@@ -1243,7 +1243,8 @@ screenshot location for such a launch is written with the same variable:
   session in both session menus (`StartableSessions`, `SessionStart`). Sending to one opens a herdr
   tab in its folder, starts `claude --resume <id>` or `claude --session-id <id>` there, waits up to
   45 s for its inbox, then writes the line as any send does. Only a person's pick starts a process:
-  `DestinationChoice` never picks such a row. Without herdr no row is offered.
+  the rows travel apart from the running sessions (`Candidates.startable`), so `DestinationChoice`
+  never sees them, and only the menus join the two. Without herdr no row is offered.
   `docs/session-starts-2026-10-25.md` has the design.
 - A `vignette://` URL has no authenticated sender, so a reply is authorized by a per-request bearer
   secret in the request's own directory. The request line names only the image

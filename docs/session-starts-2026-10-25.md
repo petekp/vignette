@@ -31,14 +31,15 @@ A startable row is an `AgentDestination` with `start: SessionStart?` set
   2026-10-26, 11 of his last 400 were written by several Claude Code versions over days, every entry
   under the one session id that names the file.
 - `.new(folder:)`: the row's id is `new:<folder>`, stable across listings, so a pick survives a
-  later answer. `AgentDestination.addressed()` mints the session's UUID when Send is pressed, and
-  the session starts with `claude --session-id <uuid>`. From then on it is addressed like any other.
+  later answer. `ScreenshotRequests.send`, where the editor's Send and live ink's note meet, chooses
+  the session's UUID and records it as the request's destination. The session starts with
+  `claude --session-id <uuid>`, and from then on it is addressed like any other.
 
 The request record keeps `start` (`ScreenshotRequests.Record.start`), so the process starts when
 the line is handed over, after the grace period. Don't send during the grace leaves no stray tab.
 
-Starting returns a `SubmissionOutcome`, the same as any send, so the card, the request record and
-the log need no second path. `ClaudeCodeConnection.submit`:
+Starting answers a `SubmissionOutcome`, the same as any send, so the card, the request record and
+the log need no second path. `ClaudeCodeConnection.submit(_:to:completion:)`:
 
 1. If a live inbox already holds the session (resumed by hand since it was listed), skips the start.
 2. Otherwise runs `HerdrLauncher.start`: `herdr tab create --cwd <folder> --no-focus --label
@@ -46,8 +47,10 @@ the log need no second path. `ClaudeCodeConnection.submit`:
    command, and each word is single-quoted.
    The tab opens in herdr's focused workspace, unfocused, labelled with the project. `pane run`
    types the command before the new shell's prompt is up, and the shell runs it once it is.
-3. Polls the inboxes every 0.25 s for up to 45 s (`startTimeout`) until a live one holds the session.
-4. Writes the line into that inbox past the usual guard.
+3. Looks every 0.25 s for up to 45 s (`startTimeout`) for a live inbox holding the session. Each
+   look reads only the inbox folders made since the launch, and only their `session` file until one
+   names it. The looks are scheduled with `asyncAfter`, so no thread waits through the 45 s.
+4. Writes the line into that inbox.
 
 The line goes through the inbox rather than as `claude`'s first prompt. That keeps one delivery
 path, with today's guarantee: "sent" means the line is in the session's inbox. It also keeps the
@@ -63,19 +66,27 @@ folder is stale (last written in April for a project used in October).
 
 For each folder typed in within the last 14 days (`StartableSessions.window`):
 
-- Skip it when a running session's inbox `cwd` is the same folder after resolving links.
 - Skip it when the folder is gone. Half the recent projects on Pete's Mac were deleted worktrees.
 - Read the transcripts of its last 3 sessions typed in, by the rule a running session's are read
   (`ClaudeCodeConnection.transcript(tail:)`). The one with the latest user or assistant entry is
-  Continue's session, and that time is the project's last use. A transcript is read once while its
-  size and modification date stay the same (`TranscriptMemo`).
+  Continue's session, and that time is the project's last use. Its row is made as a running
+  session's is (`ClaudeCodeConnection.destination`), with `start` set.
+
+The history and each transcript are read again only when their size or modification date changed
+(`FileMemo`).
+
+A project that has a running session is left out when the listing joins this list to the running
+sessions (`SessionListing.startable(_:beside:)`): one whose inbox `cwd` is the same folder, or whose
+last session is now running. The two spell a folder alike: an inbox writes `pwd -P`, and all 123
+folders in Pete's history on 2026-10-26 were already physical paths.
 
 On Pete's Mac on 2026-10-25 that gave 16 projects with no session running, 32 rows. The site
 project was 14th by last use, so a count cap would have hidden the project that prompted this.
 
 The rows come from their own listing job (`SessionListing`'s `startable`), so the running sessions'
 answer, which settles Send's target with herdr's focus, never waits for transcripts to be read. A
-listing counts as fresh only once this job has answered too.
+listing is complete and fresh by the agent clients alone, since nothing picks one of these rows. Its
+last answer is kept and shown until a fresh one comes.
 
 ## Where the rows go
 
@@ -85,14 +96,18 @@ listing counts as fresh only once this job has answered too.
   one of the five top rows from a session that can receive now (`SessionMenu.ranked`). With five or
   more sessions running, they appear in the project submenus and in search. Continue comes before
   New in each project.
-- **Nothing picks one on its own.** `DestinationChoice` skips startable rows for Send's pick, for
-  the session a note remembers, and for the Codex app's mark. A Reply to a session that has ended is
-  not revived through its Continue row (`ToolbarOffer`).
-- **The bar with nothing running.** When no session runs and some can be started, the bar shows
-  Copy and an empty target, "Choose a session", with the same menu (`ToolbarOffer.choose`). Return
-  copies.
-- **Live ink's note** needs no change of its own: its list comes from the same listing, and a pick
-  goes through `LiveNoteCards.send`, which addresses the destination before sending.
+- **Nothing picks one on its own.** The rows travel apart from the running sessions
+  (`DestinationChoice.Candidates.startable`, `Answer.startable`), so no pick rule sees them. Only the
+  menus join the two lists, and a person's pick in one may land on a row. A Reply to a session that
+  has ended is not revived through its Continue row.
+- **The bar with nothing running.** Once every client has answered and none has a session, while
+  some can be started, the bar shows Copy and an empty target, "Choose a session", with the same
+  menu (`ToolbarOffer.choose`). Return copies.
+- **A picked row names its project** in the bar's target and the note's target button: "Last
+  session in *project*" or "New session in *project*" (`SessionMenu.row(of:among:)`). The menu row
+  itself leaves the project to the header above it.
+- **Live ink's note** joins the rows to its list where it stores the listing's answer
+  (`LiveNotePopover.setSessions`), and a pick goes through `LiveNoteCards.send` as any other.
 
 ## What the card says
 

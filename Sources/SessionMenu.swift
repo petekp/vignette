@@ -14,6 +14,8 @@ enum SessionMenu {
     static let otherFolders = "Other folders"
     static let continueLast = "Continue last session"
     static let newSession = "New session"
+    static func lastSession(in project: String) -> String { "Last session in \(project)" }
+    static func newSession(in project: String) -> String { "New session in \(project)" }
     static let needsYou = "Needs you"
     static let working = "Working"
 
@@ -130,10 +132,18 @@ enum SessionMenu {
     }
 
     /// `destination`'s row among `listed`, as the destination control and live ink's target button
-    /// show it.
+    /// show it. A session that is not running is titled by its project, which its menu row leaves to
+    /// the header above it; the tooltip keeps the menu row's words.
     static func row(of destination: AgentDestination, among listed: [AgentDestination], now: Date = Date()) -> Row {
         let everyone = including(destination, in: ranked(listed, now: now))
-        return Filer(everyone).rows(now: now)[destination.id]!
+        let row = Filer(everyone).rows(now: now)[destination.id]!
+        let title: String
+        switch destination.start {
+        case .resume: title = lastSession(in: destination.project)
+        case .new: title = newSession(in: destination.project)
+        case nil: return row
+        }
+        return Row(destination: row.destination, title: title, subtitle: row.subtitle, badge: row.badge, tooltip: row.tooltip)
     }
 
     /// The sessions every row is worded over: the active ones, and `destination` when it is not among them.

@@ -18,7 +18,7 @@ struct HerdrFocus: Equatable, Sendable {
         var tab: String = ""
     }
 
-    private static let timeout: TimeInterval = 10
+    static let timeout: TimeInterval = 10
 
     /// Where herdr may be. The app is launched by LaunchServices, so it inherits no shell PATH.
     private static let paths = ["\(NSHomeDirectory())/.local/bin/herdr", "/opt/homebrew/bin/herdr", "/usr/local/bin/herdr"]

@@ -3,13 +3,13 @@ import Foundation
 /// How Vignette starts a Claude Code session that is not running, for a send a person aimed at it.
 /// A destination with a `start` is not running: sending to it starts `claude` in a new herdr tab in
 /// its folder, waits until the plugin's inbox holds the session, and then writes the line as a send
-/// to a running session does (`ClaudeCodeConnection.submit`).
+/// to a running session does (`ClaudeCodeConnection.submit(_:to:completion:)`).
 enum SessionStart: Equatable, Codable, Sendable {
     /// `claude --resume <id>` in `folder`: the project's last session, under its own id. Claude Code
     /// keeps the id when it resumes; only `--fork-session` makes a new one.
     case resume(folder: String)
     /// `claude --session-id <id>` in `folder`: a new session, under an id Vignette chose when Send
-    /// was pressed (`AgentDestination.addressed`), so the inbox can be checked for that exact session.
+    /// was pressed (`ScreenshotRequests.send`), so the inbox can be checked for that exact session.
     case new(folder: String)
 
     var folder: String {
@@ -18,8 +18,11 @@ enum SessionStart: Equatable, Codable, Sendable {
         }
     }
 
-    /// The arguments to `claude` that start session `id`. Only a UUID ever reaches them, so the
-    /// command typed into the pane's shell needs no quoting beyond what `shellCommand` gives it.
+    /// The project's name: the folder's own, as a session's row names its project. It labels the
+    /// herdr tab.
+    var label: String { (folder as NSString).lastPathComponent }
+
+    /// The arguments to `claude` that start session `id`.
     func arguments(session id: String) -> [String] {
         switch self {
         case .resume: return ["--resume", id]
@@ -32,30 +35,17 @@ enum SessionStart: Equatable, Codable, Sendable {
 }
 
 extension AgentDestination {
-    /// Whether sending here starts a process. Only a person's pick may do that, so nothing picks
-    /// such a destination on its own (`DestinationChoice`).
+    /// Whether sending here starts a process. Only a person's pick may do that, so these rows travel
+    /// apart from the running sessions (`DestinationChoice.Candidates.startable`).
     var startsProcess: Bool { start != nil }
-
-    /// The label of the herdr tab a start opens: the project's folder name, as a session's row
-    /// names its place.
-    var startLabel: String { detail }
-
-    /// The destination a send addresses. A New session row becomes the session Vignette will start,
-    /// under an id chosen now; every other destination is itself.
-    func addressed(id: String = UUID().uuidString.lowercased()) -> AgentDestination {
-        guard case .new = start else { return self }
-        var started = self
-        started.id = id
-        started.address = .claudeSession(id)
-        return started
-    }
 }
 
 // MARK: Which projects
 
-/// The Claude Code projects a person used lately that have no running session, each as its two
-/// rows: Continue last session and New session. Read off the main thread, in a listing job of its
-/// own (`SessionListing`), since it reads a transcript per project.
+/// The Claude Code projects a person used lately, each as its two rows: Continue last session and New
+/// session. Read off the main thread, in a listing job of its own (`SessionListing`), since it reads a
+/// transcript per project. A project that has a running session is left out when the listing joins
+/// this list to the running sessions (`SessionListing.startable(_:beside:)`).
 ///
 /// Claude Code's prompt history (`~/.claude/history.jsonl`) is the index: one line per prompt the
 /// person typed, with the folder Claude Code ran in and the session. It holds interactive sessions
@@ -66,11 +56,8 @@ extension AgentDestination {
 struct StartableSessions: Sendable {
     var history = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/history.jsonl")
     var transcripts = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
-    /// The folders running sessions are in, as their inboxes say (`pwd -P`). Injected so a test never
-    /// reads the real inboxes.
-    var running: @Sendable () -> [String] = { ClaudeCodeConnection().liveInboxes().compactMap(\.cwd) }
     /// Whether Vignette can start a session at all. Without a launcher no row is offered.
-    var canStart: @Sendable () -> Bool = { HerdrLauncher.binary() != nil }
+    var canStart: @Sendable () -> Bool = { SendContext.herdrBinary() != nil }
     var folderExists: @Sendable (String) -> Bool = { path in
         var folder: ObjCBool = false
         return FileManager.default.fileExists(atPath: path, isDirectory: &folder) && folder.boolValue
@@ -86,53 +73,50 @@ struct StartableSessions: Sendable {
     /// How many of a project's sessions are read to find the one used last.
     static let sessionsPerProject = 3
 
+    private static let readHistory = FileMemo<[Entry]>()
+    private static let readTranscripts = FileMemo<ClaudeCodeConnection.Transcript>()
+
     func destinations() -> [AgentDestination] {
-        guard canStart(), let tail = ClaudeCodeConnection.tail(of: history, bytes: Self.historyBytes) else { return [] }
-        let busy = Set(running().map(Self.canonical))
+        guard canStart() else { return [] }
+        let entries = Self.readHistory.value(of: history) { file in
+            ClaudeCodeConnection.tail(of: file, bytes: Self.historyBytes).map(Self.entries(in:)) ?? []
+        }
         let since = now().addingTimeInterval(-Self.window)
-        let folders = Self.projects(in: Self.entries(in: tail), since: since)
-            .filter { !busy.contains(Self.canonical($0.folder)) && folderExists($0.folder) }
-        return folders.flatMap { project -> [AgentDestination] in
-            let found = SessionPlaces.resolve(folder: project.folder, home: home)
+        return Self.projects(in: entries, since: since).filter { folderExists($0.folder) }.flatMap { project -> [AgentDestination] in
+            let folders = [transcripts.appendingPathComponent(Self.transcriptFolder(of: project.folder))]
             let last = project.sessions.prefix(Self.sessionsPerProject).compactMap { session -> (String, ClaudeCodeConnection.Transcript)? in
-                guard let file = transcriptFile(session: session, folder: project.folder) else { return nil }
-                return (session, TranscriptMemo.shared.transcript(of: file))
+                guard let file = ClaudeCodeConnection.transcriptFile(session: session, folders: folders) else { return nil }
+                return (session, Self.readTranscripts.value(of: file) { ClaudeCodeConnection.tail(of: $0).map(ClaudeCodeConnection.transcript(tail:)) ?? .init() })
             }.max { ($0.1.lastUsed ?? .distantPast) < ($1.1.lastUsed ?? .distantPast) }
             let lastUsed = last?.1.lastUsed ?? project.lastTyped
             guard lastUsed >= since else { return [] }
-            return Self.rows(folder: project.folder, last: last, lastUsed: lastUsed, found: found)
+            let found = SessionPlaces.resolve(folder: project.folder, home: home)
+            return Self.rows(folder: project.folder, last: last, lastUsed: lastUsed, found: found, home: home)
         }
     }
 
-    /// A project's rows: Continue last session when its last session's transcript is there, then New session.
+    /// A project's rows: Continue last session when its last session's transcript is there, worded as
+    /// a running session's row is, then New session.
     static func rows(folder: String, last: (session: String, transcript: ClaudeCodeConnection.Transcript)?, lastUsed: Date,
-                     found: SessionPlaces.Found) -> [AgentDestination] {
-        let project = (folder as NSString).lastPathComponent
+                     found: SessionPlaces.Found, home: String = NSHomeDirectory()) -> [AgentDestination] {
         var rows: [AgentDestination] = []
         if let last {
-            rows.append(AgentDestination(id: last.session, name: last.transcript.title ?? (project.isEmpty ? "Last session" : "Last session in \(project)"),
-                                         detail: project, address: .claudeSession(last.session), lastUsed: lastUsed, place: found.place,
-                                         branch: found.branch, hasOwnName: last.transcript.title != nil, start: .resume(folder: folder)))
+            var resume = ClaudeCodeConnection.destination(session: last.session, cwd: folder, transcript: last.transcript, found: found, home: home)
+            resume.lastUsed = lastUsed
+            resume.start = .resume(folder: folder)
+            rows.append(resume)
         }
+        let project = (folder as NSString).lastPathComponent
         rows.append(AgentDestination(id: SessionStart.newRowID(folder: folder), name: project.isEmpty ? "New session" : "New session in \(project)",
                                      detail: project, address: .claudeSession(""), lastUsed: lastUsed, place: found.place,
-                                     branch: found.branch, hasOwnName: false, start: .new(folder: folder)))
+                                     branch: found.branch, hasOwnName: false, folder: folder, start: .new(folder: folder)))
         return rows
     }
 
-    /// The transcript of `session`, in the folder Claude Code keeps for `folder`'s sessions: every
-    /// character but a letter or a digit becomes "-". That spelling is only where to look first; a
-    /// transcript not there is looked for in no other folder, since `--resume` looks only there.
-    private func transcriptFile(session: String, folder: String) -> URL? {
-        guard UUID(uuidString: session) != nil else { return nil }
-        let name = String(folder.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) && $0.isASCII ? Character($0) : "-" })
-        let file = transcripts.appendingPathComponent(name).appendingPathComponent("\(session).jsonl")
-        return FileManager.default.fileExists(atPath: file.path) ? file : nil
-    }
-
-    /// A path with its links resolved, as an inbox's `pwd -P` spells it.
-    static func canonical(_ path: String) -> String {
-        URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+    /// The folder Claude Code keeps `folder`'s transcripts in: every character but an ASCII letter or
+    /// digit becomes "-". A transcript is looked for there only, since `--resume` looks only there.
+    static func transcriptFolder(of folder: String) -> String {
+        String(folder.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) && $0.isASCII ? Character($0) : "-" })
     }
 
     // MARK: History
@@ -177,21 +161,21 @@ struct StartableSessions: Sendable {
     }
 }
 
-/// What each transcript said, kept while the file's size and modification date stay the same. A
-/// session that is not running does not change its transcript, so a listing reads each once.
-final class TranscriptMemo: @unchecked Sendable {
-    static let shared = TranscriptMemo()
+/// What was read from each file, kept while the file's size and modification date stay the same. A
+/// session that is not running does not change its transcript, and the history changes only when a
+/// prompt is typed, so a listing reads each once.
+final class FileMemo<Value>: @unchecked Sendable {
     private let lock = NSLock()
-    private var kept: [String: (size: UInt64, modified: Date, transcript: ClaudeCodeConnection.Transcript)] = [:]
+    private var kept: [String: (size: UInt64, modified: Date, value: Value)] = [:]
 
-    func transcript(of file: URL) -> ClaudeCodeConnection.Transcript {
+    func value(of file: URL, read: (URL) -> Value) -> Value {
         let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
         let size = (attributes?[.size] as? NSNumber)?.uint64Value ?? 0
         let modified = attributes?[.modificationDate] as? Date ?? .distantPast
-        if let hit = lock.withLock({ kept[file.path] }), hit.size == size, hit.modified == modified { return hit.transcript }
-        let transcript = ClaudeCodeConnection.tail(of: file).map(ClaudeCodeConnection.transcript(tail:)) ?? .init()
-        lock.withLock { kept[file.path] = (size, modified, transcript) }
-        return transcript
+        if let hit = lock.withLock({ kept[file.path] }), hit.size == size, hit.modified == modified { return hit.value }
+        let value = read(file)
+        lock.withLock { kept[file.path] = (size, modified, value) }
+        return value
     }
 }
 
@@ -201,15 +185,10 @@ final class TranscriptMemo: @unchecked Sendable {
 /// Vignette already reads the focus of (`HerdrFocus`); the person's own shell in the tab runs
 /// `claude`, so it is found as it is in any of their terminals.
 struct HerdrLauncher: Sendable {
-    var binary: @Sendable () -> String? = { HerdrLauncher.binary() }
+    var binary: @Sendable () -> String? = { SendContext.herdrBinary() }
     var run: @Sendable (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
         Subprocess.run($0, $1, timeout: $2)
     }
-
-    static let timeout: TimeInterval = 10
-
-    /// herdr, unless this is a test launch, which gets only the one `VIGNETTE_HERDR` names.
-    static func binary() -> String? { AgentTools.forSessions("VIGNETTE_HERDR") { HerdrFocus.binary() } }
 
     /// What a start did: the tab and pane it made, or why it made none.
     enum Started: Equatable {
@@ -217,18 +196,18 @@ struct HerdrLauncher: Sendable {
         case failed(detail: String)
     }
 
-    /// Opens a tab in `start`'s folder, labelled `label`, without moving herdr's focus, and types the
-    /// command that starts session `id` into its shell. It blocks on herdr.
-    func start(_ start: SessionStart, session id: String, label: String) -> Started {
+    /// Opens a tab in `start`'s folder, labelled with its project, without moving herdr's focus, and
+    /// types the command that starts session `id` into its shell. It blocks on herdr.
+    func start(_ start: SessionStart, session id: String) -> Started {
         guard let herdr = binary() else { return .failed(detail: "no herdr") }
         var create = ["tab", "create", "--cwd", start.folder, "--no-focus"]
-        if !label.isEmpty { create += ["--label", label] }
-        guard let made = run(herdr, create, Self.timeout) else { return .failed(detail: "herdr tab create did not run") }
+        if !start.label.isEmpty { create += ["--label", start.label] }
+        guard let made = run(herdr, create, HerdrFocus.timeout) else { return .failed(detail: "herdr tab create did not run") }
         guard made.status == 0, !made.timedOut, let (tab, pane) = Self.created(in: Data(made.output.utf8)) else {
             return .failed(detail: "herdr tab create: \(Subprocess.detail(made.output) ?? "exit \(made.status)")")
         }
-        let command = Self.shellCommand(["claude"] + start.arguments(session: id))
-        guard let typed = run(herdr, ["pane", "run", pane, command], Self.timeout), typed.status == 0, !typed.timedOut else {
+        let command = (["claude"] + start.arguments(session: id)).map(ReplyCommand.quoted).joined(separator: " ")
+        guard let typed = run(herdr, ["pane", "run", pane, command], HerdrFocus.timeout), typed.status == 0, !typed.timedOut else {
             return .failed(detail: "herdr pane run \(pane) failed")
         }
         return .started(tab: tab, pane: pane)
@@ -241,10 +220,5 @@ struct HerdrLauncher: Sendable {
         guard let tab = (result?["tab"] as? [String: Any])?["tab_id"] as? String,
               let pane = (result?["root_pane"] as? [String: Any])?["pane_id"] as? String else { return nil }
         return (tab, pane)
-    }
-
-    /// `words` as one line a POSIX shell reads back as those words: each in single quotes.
-    static func shellCommand(_ words: [String]) -> String {
-        words.map { "'" + $0.replacingOccurrences(of: "'", with: #"'\''"#) + "'" }.joined(separator: " ")
     }
 }
