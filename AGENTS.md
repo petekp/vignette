@@ -262,7 +262,8 @@ own bundle id, name and URL scheme, given on the `xcodebuild` line) and runs the
 `scripts/e2e/scenarios.py`, each on a fresh scratch home, settings file and watch folder. It saves
 the pasteboard and puts it back, even when stopped (`e2e.py restore` after a crash), and writes a
 report under `scripts/e2e/out/runs/`. `--input` adds the scenarios that post keys and clicks, each
-gated on the test copy's own state; they need `Vignette E2E` granted Accessibility once, by hand.
+gated on the test copy's own state; they need `Vignette E2E` granted Accessibility and Screen
+Recording once, by hand. Without Screen Recording, every live ink ask fails at its picture.
 The terminal that runs them needs Accessibility and Screen Recording. On macOS 15, the run's first
 screen capture can raise a prompt asking whether the terminal may "bypass the system private window
 picker". While that prompt is up, the test copy cannot become active (observed 2026-10-01 in a
