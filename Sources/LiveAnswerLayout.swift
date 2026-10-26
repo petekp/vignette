@@ -497,9 +497,11 @@ enum LiveAnswerLayout {
         let room = scene.screen?.insetBy(dx: margin, dy: margin) ?? scene.room
         var best: (place: PopoverPlace, note: Mark?, clear: Bool, cost: CGFloat)?
         for (rank, spot) in spots.enumerated() {
-            let body = PopoverPlace.body(size, hungFrom: spot.at, edge: spot.edge, on: scene.screen)
+            let hung = scene.screen == nil ? PopoverPlace.hung(size, from: spot.at, edge: spot.edge, inside: room)
+                : (at: spot.at, body: PopoverPlace.body(size, hungFrom: spot.at, edge: spot.edge, on: scene.screen))
+            let body = hung.body
             let onMarks = cost(body, room: room, obstacles: marks), onText = cost(body, room: room, obstacles: lines)
-            let place = PopoverPlace(anchor: anchor, at: spot.at, edge: spot.edge, body: body, foot: foot, screen: scene.screen)
+            let place = PopoverPlace(anchor: anchor, at: hung.at, edge: spot.edge, body: body, foot: foot, screen: scene.screen)
             let note = beside(body)
             // Under a square point is rounding, as in `place`.
             if onMarks + onText + note.cost < 1 { best = (place, note.note, true, 0); break }

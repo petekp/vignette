@@ -61,6 +61,23 @@ struct PopoverPlace: Equatable {
         }
         return body
     }
+
+    /// A body of `size` hung from `at` on `edge`, slid along that edge to stay in `room`, and the part
+    /// of `at` its arrow then points at. AppKit slides a popover only onto the screen, and otherwise
+    /// centres it on its arrow, so the body slides by moving the arrow along `at`, as far as `at` reaches.
+    static func hung(_ size: CGSize, from at: CGRect, edge: Edge, inside room: CGRect) -> (at: CGRect, body: CGRect) {
+        func clamped(_ value: CGFloat, _ low: CGFloat, _ high: CGFloat) -> CGFloat { low <= high ? min(max(value, low), high) : value }
+        var arrow = at
+        switch edge {
+        case .below, .above:
+            let middle = clamped(clamped(at.midX, room.minX + size.width / 2, room.maxX - size.width / 2), at.minX, at.maxX)
+            arrow = CGRect(x: middle - 0.5, y: at.minY, width: 1, height: at.height)
+        case .right, .left:
+            let middle = clamped(clamped(at.midY, room.minY + size.height / 2, room.maxY - size.height / 2), at.minY, at.maxY)
+            arrow = CGRect(x: at.minX, y: middle - 0.5, width: at.width, height: 1)
+        }
+        return (arrow, body(size, hungFrom: arrow, edge: edge, on: nil))
+    }
 }
 
 /// What a reply's popover shows, as a conversation that carries on in the note the person typed in:

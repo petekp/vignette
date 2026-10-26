@@ -388,9 +388,10 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     }
 
     /// Fades out where it is, with nothing to take its place, after `delay` and over `duration`, or
-    /// over its own short fade. A handover still waiting for the note to settle is called off.
-    func fadeAway(after delay: CFTimeInterval = 0, over duration: CFTimeInterval? = nil) {
-        guard !closing || handingOver else { return }
+    /// over its own short fade, and runs `gone` once it has closed. A handover still waiting for the
+    /// note to settle is called off.
+    func fadeAway(after delay: CFTimeInterval = 0, over duration: CFTimeInterval? = nil, then gone: (() -> Void)? = nil) {
+        guard !closing || handingOver else { gone?(); return }
         closing = true
         handingOver = false
         stopWatching()
@@ -400,6 +401,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
             guard let window = content.window, duration > 0 else {
                 popover.close()
                 host.orderOut(nil)
+                gone?()
                 return
             }
             NSAnimationContext.runAnimationGroup { context in
@@ -410,6 +412,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
                 MainActor.assumeIsolated {
                     popover.close()
                     host.orderOut(nil)
+                    gone?()
                 }
             }
         }

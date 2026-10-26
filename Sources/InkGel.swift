@@ -545,16 +545,29 @@ final class InkClock: NSObject {
         wake()
     }
 
+    /// What moves ink on the clock's own refresh, by owner: run at the start of each tick, with the
+    /// time that refresh shows, before any gel is drawn. A hand that drew from a display link of its
+    /// own presented drawings that often did not reach the screen (measured 2026-10-25).
+    private var tickers: [ObjectIdentifier: (CFTimeInterval) -> Void] = [:]
+
+    /// Runs `tick` at the start of each refresh for `owner`, or stops with nil. The clock does not rest
+    /// while anything is ticking.
+    func onTick(_ owner: AnyObject, _ tick: ((CFTimeInterval) -> Void)?) {
+        tickers[ObjectIdentifier(owner)] = tick
+        if tick != nil { wake() }
+    }
+
     /// Ticks again, after being paused for want of anything moving.
     func wake() {
         if link == nil, let screen = NSScreen.screens.first {
-            link = screen.displayLink(target: self, selector: #selector(tick))
+            link = screen.displayLink(target: self, selector: #selector(tick(_:)))
             link?.add(to: .main, forMode: .common)
         }
         link?.isPaused = false
     }
 
-    @objc private func tick() {
+    @objc private func tick(_ link: CADisplayLink) {
+        tickers.values.forEach { $0(link.targetTimestamp) }
         let now = CACurrentMediaTime()
         let ui = Settings.shared.data.ui
         let rate = Settings.shared.motionScale * ui.inkGelMotion
@@ -581,10 +594,12 @@ final class InkClock: NSObject {
         // Nothing drifts at motion 0, so the link rests until a layer changes. With no layer showing,
         // it rests and looks again twice a second, since a holder fading back in says nothing here.
         if layers.isEmpty { stopWatchingPointer() }
-        if layers.isEmpty || (!moving && rate <= 0 && !shown.contains(where: \.needsGel)) {
-            link?.isPaused = true
+        if !tickers.isEmpty {
+            return
+        } else if layers.isEmpty || (!moving && rate <= 0 && !shown.contains(where: \.needsGel)) {
+            link.isPaused = true
         } else if shown.isEmpty {
-            link?.isPaused = true
+            link.isPaused = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 if self?.layers.isEmpty == false { self?.wake() }
             }

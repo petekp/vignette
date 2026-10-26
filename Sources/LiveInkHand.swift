@@ -613,6 +613,16 @@ final class InkMarkLayer: CALayer {
         frame.drawable.present()
     }
 
+    /// Draws a short line once, out of sight, so the first gel a person sees does not wait for Metal
+    /// to set itself up. In the VM the first drawing of a launch took 80 ms on the GPU, and the next
+    /// waited 56 ms to be encoded (measured 2026-10-25).
+    static func warmUp(scale: CGFloat) {
+        let layer = InkMarkLayer(scale: scale)
+        let line = InkHand.Stroke(points: [CGPoint(x: 0, y: 0), CGPoint(x: 30, y: 4), CGPoint(x: 60, y: 0)], widths: [1, 1, 1])
+        layer.showPen(line, settled: 0, longest: .greatestFiniteMagnitude, markStyle: Settings.shared.data.ui.markStyle)
+        layer.encode(at: CACurrentMediaTime(), time: InkClock.shared.time)?.commands.commit()
+    }
+
     /// A copy in `markStyle`'s person colour, as the done state's green.
     func twin(in markStyle: MarkStyle) -> InkMarkLayer {
         let twin = InkMarkLayer(scale: contentsScale)
@@ -630,7 +640,9 @@ final class InkMarkLayer: CALayer {
                                duration: ui.inkSettle, bounce: ui.inkSettleBounce, stagger: ui.inkSettleStagger)
         self.settle = settle
         // The layer covers everywhere the line goes while it settles, so it is not resized while it runs.
-        changingGel { fit(covering: [settle.reach(over: shape.stroke)], growOnly: false) }
+        // It draws at once: the pen that drew the stroke goes in this same transaction, and a new
+        // layer left for the clock's next tick showed no ink at all for one refresh (measured 2026-10-25).
+        changingGel(drawing: true) { fit(covering: [settle.reach(over: shape.stroke)], growOnly: false) }
         built = nil
         needsGel = true
         InkClock.shared.wake()

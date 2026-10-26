@@ -182,7 +182,10 @@ The names in brackets are `// MARK:` sections.
   screen the stroke began on, about 3600 pt on a 1512 by 982 pt screen, so a loop can go round as much
   of a large screen as of a small one. Past that the start recedes as the pen goes on, tapering where
   it now starts, and the mark is made from what is still drawn (`InkHand.trailing`).
-  The pen's layer then draws only that part of its settled line and shrinks to it. Its edge is
+  The pen's layer then draws only that part of its settled line and shrinks to it. A gel layer's
+  resize goes in the same transaction as the drawing for its new size (`InkMarkLayer.changingGel`):
+  a resize committed on its own put the old drawing over the new frame for one refresh, a flash of
+  the whole line each time a pen's layer grew a step (measured 2026-10-25). Its edge is
   darker than its middle, it casts a soft shadow, and while it is wet a lighter streak trails the pen. On release the stroke settles onto the
   shape it became on a spring (`InkSettle`), each point keeping its width, so the ellipse or arrow
   still looks drawn by hand. `ui.inkSettle` is the spring's length and `ui.inkSettleBounce` how far
@@ -257,7 +260,12 @@ The names in brackets are `// MARK:` sections.
   side before the popover shows. Below or above its anchor, AppKit also slides the body sideways to
   keep the popover's window inside the visible frame. The window reaches 13 pt past the body
   (measured on macOS 15). `PopoverPlace.body` slides it the same way, so the layout knows where the
-  body lands. The note opens out of sight, placed from the ink alone. It moves once
+  body lands. A scene with no screen keeps the note inside its room, and there AppKit would not
+  slide it, so the arrow moves along the ink's side to where the body fits (`PopoverPlace.hung`).
+  Setup's live ink page uses this, and it drives a real note with no hand: made with
+  `takesKeys: false`, the note never takes the keys or makes the setup window lose them, and
+  `type`, `nextTarget` and `offer` fill in its words, step its target and give it the targets to
+  list. The note opens out of sight, placed from the ink alone. It moves once
   `LivePacket.Glance` gives the window's frame and text, about 20 ms after the capture (Vision's fast
   level, for where the lines are, not what they say), and shows after 0.8 s without it. The list of
   targets opens under the target, or beside the note when the screen has no room below, so it never
