@@ -5,6 +5,9 @@ import SwiftUI
 /// Placeholder copy for setup's live ink pages, until Pete picks the words.
 enum SetupInkCopy {
     static let costNote = "When you ask, Claude sees a picture of the window, its title and its URL, through your own Claude Code. An ask costs about one to four cents."
+    /// macOS asks to quit and reopen an app it has just let record the screen, since the grant
+    /// reaches only a new process.
+    static let reopenNote = "macOS then asks to quit and reopen \(Identity.name). Setup opens again on this page."
 }
 
 // MARK: The title
@@ -635,6 +638,8 @@ final class SetupInkGuide {
     static let screenRecordingButton = "screenRecordingButton"
     static let accessibilityRow = "accessibilityRow"
     static let screenRecordingRow = "screenRecordingRow"
+    static let accessibilityWords = "accessibilityWords"
+    static let screenRecordingWords = "screenRecordingWords"
     static let footer = "footer"
 
     /// What the marks shown point at, and where it was then, in global top-left points.
@@ -697,13 +702,14 @@ final class SetupInkGuide {
     private func marks(for target: Pointing, origin: CGPoint, window: NSWindow) -> [Mark] {
         let back = CGVector(dx: -origin.x, dy: -origin.y)
         let room = StateReport.flipped(window.frame).insetBy(dx: 12, dy: 12)
-        // The page's words, which the labels cover as little as they can, and the other row, which
-        // they keep off, as an answer keeps off the person's notes.
+        // The labels keep off the other row and the words of their own, as an answer keeps off the
+        // person's notes, and cover the line under the rows as little as they can.
         let rows = [Self.accessibilityRow, Self.screenRecordingRow].compactMap(spots.global)
-        let own = target == .accessibility ? Self.accessibilityRow : Self.screenRecordingRow
-        let other = target == .ready ? [] : [target == .accessibility ? Self.screenRecordingRow : Self.accessibilityRow].compactMap(spots.global)
-        let text = [own, Self.footer].compactMap(spots.global)
-        let scene = LiveAnswerLayout.Scene(room: room, ink: [], text: target == .ready ? rows + text : text, notes: other, screen: nil)
+        let ownWords = target == .accessibility ? Self.accessibilityWords : Self.screenRecordingWords
+        let other = target == .accessibility ? Self.screenRecordingRow : Self.accessibilityRow
+        let footer = [Self.footer].compactMap(spots.global)
+        let keptOff = target == .ready ? [] : [other, ownWords].compactMap(spots.global)
+        let scene = LiveAnswerLayout.Scene(room: room, ink: [], text: footer, notes: keptOff, screen: nil)
         let sizes = Settings.shared.answerSizes
         let placed: [Mark]
         switch target {
@@ -715,9 +721,10 @@ final class SetupInkGuide {
             placed = Array(LiveAnswerLayout.placed(for: answer, targets: [button], asked: button, scene: scene, sizes: sizes,
                                                    focusable: false).marks.dropFirst())
         case .ready:
-            let both = rows.reduce(CGRect.null) { $0.union($1) }
-            guard !both.isNull else { return [] }
-            placed = [LiveAnswerLayout.note("Hold ⌃⌥ and draw anywhere", near: both, scene: scene, obstacles: rows, sizes: sizes)]
+            // Under the line below the rows, the room nothing else on the page takes.
+            let page = (rows + footer).reduce(CGRect.null) { $0.union($1) }
+            guard !page.isNull else { return [] }
+            placed = [LiveAnswerLayout.note("Hold ⌃⌥ and draw anywhere", near: page, scene: scene, obstacles: rows + footer, sizes: sizes)]
         }
         return placed.map { mark in
             var mark = LiveWindows.translated(mark, by: back)
@@ -819,6 +826,8 @@ struct LiveInkPage: View {
 /// Allow button, and the agent's light points at the next one.
 struct LiveInkSetupPage: View {
     let guide: SetupInkGuide
+    /// Screen Recording was asked for, which macOS answers by asking to quit and reopen the app.
+    let askedForScreenRecording: () -> Void
     @State private var trusted = ModifierTap.trusted(prompt: false)
     @State private var screenRecording = ScreenRecording.granted
     @State private var askedScreenRecording = false
@@ -835,16 +844,18 @@ struct LiveInkSetupPage: View {
                 Section {
                     PermissionRow(symbol: "hand.draw", title: "Accessibility", reason: "So you can draw while holding ⌃⌥.",
                                   status: trusted ? .granted : .ask, isDefault: !trusted,
-                                  spot: (SetupInkGuide.accessibilityButton, guide.spots)) {
+                                  spot: (SetupInkGuide.accessibilityButton, SetupInkGuide.accessibilityWords, guide.spots)) {
                         Accessibility.request()
                     }
                     .inkSpot(SetupInkGuide.accessibilityRow, in: guide.spots)
                     PermissionRow(symbol: "rectangle.dashed.badge.record", title: "Screen Recording",
-                                  reason: "So Claude can see the window you drew on.", status: screenRecording ? .granted : .ask,
+                                  reason: screenRecording ? screenRecordingReason : "\(screenRecordingReason) \(SetupInkCopy.reopenNote)",
+                                  status: screenRecording ? .granted : .ask,
                                   isDefault: trusted && !screenRecording, button: askedScreenRecording ? "Open Settings…" : "Allow…",
-                                  spot: (SetupInkGuide.screenRecordingButton, guide.spots)) {
+                                  spot: (SetupInkGuide.screenRecordingButton, SetupInkGuide.screenRecordingWords, guide.spots)) {
                         if askedScreenRecording { ScreenRecording.openSystemSettings() } else { ScreenRecording.request() }
                         askedScreenRecording = true
+                        askedForScreenRecording()
                     }
                     .inkSpot(SetupInkGuide.screenRecordingRow, in: guide.spots)
                 }
@@ -867,6 +878,8 @@ struct LiveInkSetupPage: View {
         }
         .onDisappear { guide.leave() }
     }
+
+    private let screenRecordingReason = "So Claude can see the window you drew on."
 
     private var pointing: SetupInkGuide.Pointing {
         !trusted ? .accessibility : !screenRecording ? .screenRecording : .ready

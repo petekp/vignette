@@ -187,6 +187,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         if model.callbacks.folderAccess() == .ask { model.callbacks.askFolder() }
         settings.update { $0.setup = SetupState.done.rawValue }
         UserDefaults.standard.set(true, forKey: SetupWindowController.doneOnThisMacKey)
+        SetupModel.returnsToLiveInkSetup = false
         // The plugin is installed only for someone who saw the page offering it. Closed earlier, the
         // offer is left unmade, and the next launch makes it in the Settings window.
         var skill = "not-offered"
@@ -238,6 +239,9 @@ final class SetupModel: ObservableObject {
     let inkGuide = SetupInkGuide()
     /// Use Live Ink was pressed, which brings in the page for its permissions.
     @Published private(set) var usesLiveInk = false
+    /// A page is about to change. The buttons along the bottom draw no focus ring meanwhile: one round
+    /// a button that leaves with its page stayed on the screen after it, fading.
+    @Published private(set) var turning = false
 
     @Published var page = Page.welcome
     /// Whether the last move was forward, which decides the side the pages slide to.
@@ -253,6 +257,11 @@ final class SetupModel: ObservableObject {
         self.callbacks = callbacks
         isPreview = preview
         if preview { page = .liveInk }
+        if !preview, Settings.shared.data.debug, Settings.shared.data.liveInk, Self.returnsToLiveInkSetup {
+            usesLiveInk = true
+            page = .liveInkSetup
+            Log.write("[setup] reopened on live ink's permissions")
+        }
         chosen = Set(agents.filter(\.hasTool).map(\.root))
         tools = NotificationCenter.default.addObserver(forName: AgentTools.found, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.toolsFound() }
@@ -309,11 +318,27 @@ final class SetupModel: ObservableObject {
         let target = pages[min(max(index + step, 0), pages.count - 1)]
         guard target != page else { return }
         forward = step > 0
+        turning = true
         DispatchQueue.main.async {
             withAnimation(animation) { self.page = target }
             if target == .agents { self.sawAgents = true }
+            DispatchQueue.main.async { self.turning = false }
         }
     }
+
+    /// Screen Recording was asked for on live ink's permissions page. macOS then asks to quit and
+    /// reopen the app, and the next launch's setup opens on that page.
+    func askedForScreenRecording() {
+        guard !isPreview else { return }
+        Self.returnsToLiveInkSetup = true
+    }
+
+    /// Set until setup is done, so a quit and reopen part way through comes back to live ink's permissions.
+    static var returnsToLiveInkSetup: Bool {
+        get { UserDefaults.standard.bool(forKey: returnsToLiveInkSetupKey) }
+        set { UserDefaults.standard.set(newValue, forKey: returnsToLiveInkSetupKey) }
+    }
+    private static let returnsToLiveInkSetupKey = "setupReturnsToLiveInkPermissions"
 }
 
 @MainActor
@@ -380,7 +405,7 @@ struct SetupView: View {
         case .welcome: welcome
         case .shortcut: shortcut
         case .liveInk: LiveInkPage(player: model.inkPlayer)
-        case .liveInkSetup: LiveInkSetupPage(guide: model.inkGuide)
+        case .liveInkSetup: LiveInkSetupPage(guide: model.inkGuide) { model.askedForScreenRecording() }
         case .agents: agents
         }
     }
@@ -545,6 +570,7 @@ struct SetupView: View {
                 }
             }
         }
+        .focusEffectDisabled(model.turning)
         .frame(height: 28)
         .padding(.horizontal, 20).padding(.bottom, 20)
     }
