@@ -204,8 +204,6 @@ final class LiveInk {
             observers = []
             surfaces.forEach { $0.marks = [] }
             asideOnScreen = []
-            practiceMarks = []
-            practiceFinishing = [:]
             showMarks()
             surfaces.forEach { $0.overlay.close(after: LiveMarksLayer.removalFade) }
             surfaces = []
@@ -253,8 +251,6 @@ final class LiveInk {
         let count = marks.count
         for surface in surfaces { surface.marks = [] }
         asideOnScreen = []
-        practiceMarks = []
-        practiceFinishing = [:]
         windows.removeAll()
         endConversation()
         showMarks()
@@ -467,8 +463,7 @@ final class LiveInk {
 
     /// Puts a mark the person drew on the window under it, or on `surface` where there is none.
     private func place(_ mark: Mark, on surface: Surface, among: [Surface], markStyle: MarkStyle) {
-        let point = LiveWindows.point(of: mark)
-        if practice?.area().contains(point) != true, let target = windows.target(under: point) {
+        if let target = windows.target(under: LiveWindows.point(of: mark)) {
             windows.pin(mark, to: target)
         } else {
             add(mark, on: surface, among: among, markStyle: markStyle)
@@ -1778,14 +1773,9 @@ final class LiveInk {
             _ = asks.reduce(.inkingBegan(noteOpen: note != nil))
             closeNote()
             listening?.pressedAgain()
-            if let practice {
-                practice.chord(true)
-            } else {
-                responder.prepare()
-            }
+            responder.prepare()
             startInking()
         case .ended:
-            practice?.chord(false)
             guard isInking else { return }
             if inking.contains(where: \.overlay.isTracking) { watchRelease() } else { finishInking() }
         }
@@ -1849,7 +1839,7 @@ final class LiveInk {
         take(InkHand.trailing(points, length: longestLine(for: points, ui: Settings.shared.data.ui)), on: surface, among: inking)
         strokeBegan = nil
         strokeScreenDiagonal = nil
-        if practice == nil, newInk.count > before, let extent = newInk.last?.shapeExtent { prefetch(at: CGPoint(x: extent.midX, y: extent.midY)) }
+        if newInk.count > before, let extent = newInk.last?.shapeExtent { prefetch(at: CGPoint(x: extent.midX, y: extent.midY)) }
         // The mark the preview was on has gone, or a stroke was drawn; the next move shows it again.
         hover(at: nil)
         if releaseWatch != nil { finishInking() }
@@ -1858,16 +1848,6 @@ final class LiveInk {
     /// The chord was let go: inking stops, and ink drawn while it was held gets the note.
     private func finishInking() {
         stopInking(because: "the chord was let go")
-        if let practice {
-            let drawn = asks.noteInk
-            let ink = shownMarks.filter { drawn.contains($0.id) && !$0.agent }
-            practiceMarks.formUnion(ink.map(\.id))
-            drewWhileInking = false
-            stopListening()
-            FocusReturn.shared.restore(reason: "live ink practice")
-            practice.released(ink)
-            return
-        }
         if drewWhileInking || listening != nil, !newInk.isEmpty { openNote() }
         drewWhileInking = false
         // What is said goes into the note; with no note there is nowhere for it to go.
@@ -1890,87 +1870,6 @@ final class LiveInk {
                 self.finishInking()
             }
         }
-    }
-
-    // MARK: Practice
-
-    /// A try of live ink that answers itself, as setup's live ink page has. While one is set, the
-    /// chord inks as ever, but letting go opens no note, and the responder never starts. Ink drawn
-    /// inside `area` stays at its place on the screen rather than going on the window under it,
-    /// since that window is Vignette's own, which `LiveWindows` passes over.
-    struct Practice {
-        /// In global top-left points.
-        var area: () -> CGRect
-        var chord: (_ down: Bool) -> Void
-        /// The chord was let go, with `ink` the marks the person drew while it was held.
-        var released: (_ ink: [Mark]) -> Void
-    }
-
-    private var practice: Practice?
-    /// The person's practice ink and the answers drawn to it, which leave when the practice ends.
-    private var practiceMarks = Set<Mark.ID>()
-    private var practiceFinishing: [Mark.ID: LiveMarksLayer.Finish] = [:]
-
-    /// Starts a practice, or ends one with nil, taking its marks off as `how` says.
-    func practise(_ practice: Practice?, leaving how: LiveMarksLayer.Finish = .dismissed) {
-        if practice == nil, self.practice != nil { letGoOfPractice(practiceMarks, how) }
-        self.practice = practice
-        Log.write("[live-ink] practice \(practice == nil ? "ended" : "began")")
-    }
-
-    /// Draws an answer the page wrote itself as the responder's answers are drawn: in the agent's
-    /// light, each mark drawing itself on, with its label, placed clear of `ink` inside `room`. The
-    /// reply is left out, since no agent was asked. `targets` are in global top-left points.
-    /// Answers the ids of the marks drawn.
-    @discardableResult
-    func showPracticeAnswer(_ answer: LiveAnswer, targets: [CGRect], about ink: [Mark], room: CGRect, overDark: Bool) -> Set<Mark.ID> {
-        let asked = ink.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
-        let centre = CGPoint(x: room.midX, y: room.midY)
-        let screen = (NSScreen.screens.first { Self.globalFrame(of: $0).contains(centre) } ?? NSScreen.main).map(Self.globalVisibleFrame)
-        let scene = LiveAnswerLayout.Scene(room: room, ink: ink, text: [], screen: screen)
-        let layout = LiveAnswerLayout.placed(for: answer, targets: targets, asked: asked.isNull ? room : asked, scene: scene,
-                                             sizes: answerSizes, focusable: false)
-        let marks = layout.marks.dropFirst().map { mark in
-            var mark = mark
-            if mark.agent { mark.agentName = LiveAnswerLayout.agentName }
-            return mark
-        }
-        let ids = Set(marks.map(\.id))
-        practiceMarks.formUnion(ids)
-        drawingOn.formUnion(ids)
-        if overDark { self.overDark.formUnion(marks.filter { $0.kind != .text }.map(\.id)) }
-        let active = activeSurfaces()
-        let markStyle = Settings.shared.data.ui.markStyle
-        for mark in marks { addToScreen(mark, among: active, markStyle: markStyle) }
-        showMarks()
-        Log.write("[live-ink] practice answer marks=\(marks.count) of \(answer.marks.count)")
-        return ids
-    }
-
-    /// Shows practice marks going, `how`: done turns them green with a check, and dismissed undraws
-    /// them. They come off once they have gone.
-    func letGoOfPractice(_ ids: Set<Mark.ID>, _ how: LiveMarksLayer.Finish) {
-        let leaving = ids.intersection(practiceMarks).subtracting(practiceFinishing.keys)
-        guard !leaving.isEmpty else { return }
-        for id in leaving { practiceFinishing[id] = how }
-        showMarks()
-        DispatchQueue.main.asyncAfter(deadline: .now() + finishDuration(how)) { [weak self] in
-            guard let self else { return }
-            for id in leaving { self.practiceFinishing[id] = nil }
-            self.practiceMarks.subtract(leaving)
-            self.remove(leaving)
-            self.showMarks()
-            self.closeEmpty(fade: 0)
-        }
-    }
-
-    private static func globalFrame(of screen: NSScreen) -> CGRect {
-        CGRect(x: screen.frame.minX, y: StateReport.primaryHeight - screen.frame.maxY, width: screen.frame.width, height: screen.frame.height)
-    }
-
-    private static func globalVisibleFrame(of screen: NSScreen) -> CGRect {
-        let visible = screen.visibleFrame
-        return CGRect(x: visible.minX, y: StateReport.primaryHeight - visible.maxY, width: visible.width, height: visible.height)
     }
 
     // MARK: The pointer field
@@ -2109,8 +2008,8 @@ final class LiveInk {
     private func showMarks() {
         let ui = Settings.shared.data.ui
         let pulsing = asks.pulsing
-        let finishing = asks.finishing.merging(practiceFinishing) { asked, _ in asked }
-        overDark.formIntersection(asks.answerMarks.union(practiceMarks))
+        let finishing = asks.finishing
+        overDark.formIntersection(asks.answerMarks)
         let ids = Set(marks.map(\.id))
         hands = hands.filter { ids.contains($0.key) }
         for surface in surfaces {

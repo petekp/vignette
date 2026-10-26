@@ -59,6 +59,10 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private var listening = false
     private var watching: [NSObjectProtocol] = []
 
+    /// Played by a script, as setup's live ink page plays one: it never takes the keys, so the window
+    /// in front keeps them.
+    private let takesKeys: Bool
+
     /// For `SendContext.menu`: when the note opened, and the menu's picks.
     private var openedAt: CFTimeInterval
     private let menuPicks = MenuPickLog(surface: "note")
@@ -72,11 +76,13 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     static var placementSize: CGSize { NoteLayout.size(lines: 3) }
 
     /// Opens hung from `place`, in global top-left points, out of sight until `reveal`, but with the
-    /// keys, so what the person types meanwhile is in it when it shows.
-    init(at place: PopoverPlace, target: Target) {
+    /// keys, so what the person types meanwhile is in it when it shows. Without `takesKeys`, a script
+    /// types in it (`type`, `nextTarget`, `send`).
+    init(at place: PopoverPlace, target: Target, takesKeys: Bool = true) {
         openedAt = CACurrentMediaTime()
         self.place = place
         self.target = target
+        self.takesKeys = takesKeys
         ownPick = .remembered(target.session)
         host = Host(at: place.at)
         super.init()
@@ -91,9 +97,18 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         content.layOut()
         popover.contentSize = content.frame.size
         host.orderFrontRegardless()
+        let key = NSApp.keyWindow
         popover.show(relativeTo: host.spot, of: host.anchor, preferredEdge: place.edge.rectEdge())
         guard let window = content.window else { return }
         window.alphaValue = 0
+        guard takesKeys else {
+            // A popover takes the keys as it shows, so they go back to the window that had them.
+            content.field.isEditable = false
+            content.field.isSelectable = false
+            window.makeFirstResponder(nil)
+            key?.makeKey()
+            return
+        }
         window.makeKey()
         window.makeFirstResponder(content.field)
         watching.append(NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
@@ -116,7 +131,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         guard !closing else { return }
         closing = true
         stopWatching()
-        letGoOfKeys()
+        if takesKeys { letGoOfKeys() }
         popover.animates = false
         popover.close()
         host.orderOut(nil)
@@ -289,6 +304,25 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         refit()
     }
 
+    /// A script's words, as typed so far.
+    func type(_ words: String) {
+        guard !takesKeys, !sent, !closing else { return }
+        content.field.stringValue = words
+        refit()
+    }
+
+    /// A script's Tab: the next target in the menu's order.
+    func nextTarget() {
+        guard !takesKeys, !sent, !closing else { return }
+        step(backward: false)
+    }
+
+    /// A script's targets after the responder, in place of the sessions Send lists.
+    func offer(_ sessions: [AgentDestination]) {
+        guard !takesKeys else { return }
+        self.sessions = sessions
+    }
+
     /// Says in the empty note that it is listening, or that it is waiting for typing.
     func setListening(_ listening: Bool) {
         self.listening = listening
@@ -311,7 +345,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         sent = true
         content.field.isEditable = false
         content.field.isSelectable = false
-        letGoOfKeys()
+        if takesKeys { letGoOfKeys() }
         content.settle(duration: Self.settleDuration * Settings.shared.motionScale)
         placeLight()
         content.light.think(true)

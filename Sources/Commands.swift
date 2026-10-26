@@ -29,8 +29,6 @@ enum CommandError: String, CaseIterable {
     case unknownSection = "unknown-section"
     /// `unsend` found no send of that screenshot still waiting out its grace.
     case nothingToUnsend = "nothing-to-unsend"
-    /// `concept=` names none of the live ink page's concepts (`SetupInkConcept`).
-    case unknownConcept = "unknown-concept"
 }
 
 /// A `vignette://<name>?file=…&file=…` URL, decoded once.
@@ -60,8 +58,6 @@ struct CommandRequest: Equatable {
     var message: String? = nil
     /// `section=` from the query: the one section `state` reports beside `app`.
     var section: String? = nil
-    /// `concept=` from the query: which of the live ink page's concepts `setup-ink` opens.
-    var concept: String? = nil
     /// `preview=` from the query: `pointer-lab` holds live ink's pointer field on screen, or lets it go.
     var preview: Bool? = nil
 }
@@ -97,7 +93,7 @@ enum Commands {
         Fixed(name: "tweaks", summary: "toggle the live UI tweaks panel", needsDebug: true),
         Fixed(name: "check-lab", summary: "open the Check Lab, for tuning the check on copied and sent cards: the coin, its light, its spin and its bloom", needsDebug: true),
         Fixed(name: "intro-lab", summary: "open the Intro Lab, for tuning how setup's window goes into the menu bar icon", needsDebug: true),
-        Fixed(name: "setup-ink", summary: "open setup's live ink page alone, to try it: &concept=find-the-bug, desktop or writes-back, else the one opened last; closing it changes nothing setup would", needsDebug: true),
+        Fixed(name: "setup-ink", summary: "open setup's live ink pages alone, to try them; closing them changes nothing setup would", needsDebug: true),
         Fixed(name: "pointer-lab", summary: "open the Pointer Lab, for trying and tuning live ink's pointer field; &preview=1 holds the field on screen without opening it, and &preview=0 lets it go", needsDebug: true),
     ]
 
@@ -117,7 +113,6 @@ enum Commands {
                               points: items.first { $0.name == "points" }?.value,
                               message: items.first { $0.name == "message" }?.value,
                               section: items.first { $0.name == "section" }?.value,
-                              concept: items.first { $0.name == "concept" }?.value,
                               preview: items.first { $0.name == "preview" }.map { !["0", "false"].contains($0.value ?? "") })
     }
 

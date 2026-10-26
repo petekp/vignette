@@ -41,7 +41,7 @@ open -g vignette://live-ink-chord-up         # let go of it: with ink drawn whil
 open -g "vignette://live-ink-ask?message=is%20this%20right"  # ask Claude about the live ink, as Return in its note does (needs "debug": true)
 open -g vignette://tweaks                     # live UI tweaks panel (needs "debug": true)
 open -g vignette://intro-lab                  # the Intro Lab, for the intro into the menu bar icon (needs "debug": true)
-open -g "vignette://setup-ink?concept=desktop"  # setup's live ink page alone, to try a concept: find-the-bug, desktop or writes-back (needs "debug": true)
+open -g vignette://setup-ink                  # setup's live ink pages alone, to try them (needs "debug": true)
 open -g vignette://check-lab                  # the Check Lab, for the check on copied and sent cards (needs "debug": true)
 open -g vignette://pointer-lab                # the Pointer Lab, for live ink's pointer field; &preview=1 holds the field on screen, &preview=0 lets it go (needs "debug": true)
 ```
@@ -99,7 +99,7 @@ Every command answers with one line in `~/Library/Logs/Vignette.log`:
 menu bar opens it. The codes are fixed:
 `unknown-command`, `missing-file`, `outside-watch-folder`, `not-enough-files`, `unreadable-image`,
 `debug-disabled`, `no-apple-original`, `write-failed`, `unsupported-type`, `invalid-marks`,
-`no-agent`, `send-failed`, `reply-refused`, `live-ink-off`, `invalid-points`, `live-ink-not-asked`, `unknown-section`, `nothing-to-unsend`, `unknown-concept`. The log has one event per line,
+`no-agent`, `send-failed`, `reply-refused`, `live-ink-off`, `invalid-points`, `live-ink-not-asked`, `unknown-section`, `nothing-to-unsend`. The log has one event per line,
 `HH:mm:ss.SSS [tag] key=value …`, and rotates to `Vignette.log.1` at 5 MB.
 
 ## Input events

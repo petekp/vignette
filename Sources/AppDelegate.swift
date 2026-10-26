@@ -45,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         intro: { [weak self] in self?.introLab.show() },
         pointer: { [weak self] in self?.pointerLab.show() },
         check: { [weak self] in self?.checkLab.show() },
-        setupInk: { [weak self] in self?.showSetupInk(nil) }))
+        setupInk: { [weak self] in self?.showSetupInk() }))
     private lazy var introLab = IntroLabController(
         play: { [weak self] window in
             self?.introduceMenuBar(from: window, close: { window.close() }, finished: {}) ?? false
@@ -709,13 +709,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             }
         case "tweaks": debugPanel.toggle(); Commands.ok("tweaks")
         case "intro-lab": introLab.show(); Commands.ok("intro-lab")
-        case "setup-ink":
-            guard let concept = request.concept == nil ? SetupInkConcept.chosen : request.concept.flatMap(SetupInkConcept.init(rawValue:)) else {
-                Commands.error(cmd, .unknownConcept, "concept=\(request.concept ?? "") is not one of \(SetupInkConcept.allCases.map(\.rawValue).joined(separator: ", "))")
-                return
-            }
-            showSetupInk(concept)
-            Commands.ok(cmd, concept.rawValue)
+        case "setup-ink": showSetupInk(); Commands.ok(cmd)
         case "check-lab": checkLab.show(); Commands.ok("check-lab")
         case "pointer-lab":
             if let preview = request.preview {
@@ -883,15 +877,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             menuBarIconVisible: { [weak self] in self?.visibleStatusButton != nil },
             introduceMenuBar: { [weak self] window, close, finished in
                 self?.introduceMenuBar(from: window, close: close, finished: finished) ?? false
-            },
-            liveInk: liveInk)
+            })
     }
 
-    /// Setup's live ink page alone, in `concept`, or the one opened last.
-    private func showSetupInk(_ concept: SetupInkConcept?) {
-        let concept = concept ?? SetupInkConcept.chosen
-        SetupInkConcept.chosen = concept
-        setupWindow.show(protectedArea: nil, callbacks: setupCallbacks, preview: concept)
+    /// Setup's live ink pages alone, to try them.
+    private func showSetupInk() {
+        setupWindow.show(protectedArea: nil, callbacks: setupCallbacks, preview: true)
     }
 
     private func introduceMenuBar(from window: NSWindow, close: @escaping () -> Void, finished: @escaping () -> Void) -> Bool {

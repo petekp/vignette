@@ -563,6 +563,8 @@ struct PermissionRow: View {
     /// macOS's own prompt is up and has not been answered.
     var busy = false
     var button = "Allow…"
+    /// Names the button for the ink drawn over setup's page.
+    var spot: (name: String, spots: SetupInkSpots)?
     let allow: () -> Void
 
     var body: some View {
@@ -572,6 +574,7 @@ struct PermissionRow: View {
                     .accessibilityLabel("Allowed")
             } else {
                 Button(button, action: allow).keyboardShortcut(isDefault && !busy ? .defaultAction : nil).disabled(busy)
+                    .inkSpot(spot?.name ?? "", in: spot?.spots)
             }
         } label: {
             Label {

@@ -2,538 +2,814 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// The concepts for setup's live ink page that Pete is choosing between. Each is tried on the page
-/// with the real chord and the real ink, and answered by Vignette itself: nothing is asked of an
-/// agent, and nothing leaves the Mac. The page shows only with `debug`.
-enum SetupInkConcept: String, CaseIterable, Identifiable {
-    /// A small illustrated scene with one thing wrong in it, to circle.
-    case findTheBug = "find-the-bug"
-    /// The window steps aside, and Vignette names whatever is circled on the screen.
-    case desktop
-    /// The page speaks in ink, and the person answers by drawing.
-    case writesBack = "writes-back"
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .findTheBug: "Find the bug"
-        case .desktop: "Your desktop"
-        case .writesBack: "Writes back"
-        }
-    }
-
-    private static let key = "setupInkConcept"
-
-    /// The concept a debug setup shows, the one opened last with `vignette://setup-ink`.
-    static var chosen: SetupInkConcept {
-        get { UserDefaults.standard.string(forKey: key).flatMap(SetupInkConcept.init) ?? .findTheBug }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: key) }
-    }
-}
-
-/// Placeholder copy for the live ink page, until Pete picks the words.
+/// Placeholder copy for setup's live ink pages, until Pete picks the words.
 enum SetupInkCopy {
     static let costNote = "When you ask, Claude sees a picture of the window, its title and its URL, through your own Claude Code. An ask costs about one to four cents."
 }
 
-/// The live ink page's try: the chord, what was drawn, and how Vignette answered. It outlives the
-/// page's view, which goes while the window is aside.
-@MainActor
-final class SetupInkTry: ObservableObject {
-    enum Phase: Equatable {
-        case waiting
-        case inking
-        /// Circled something that is not the odd one out.
-        case missed
-        case found
-        /// Named what was circled on the screen.
-        case saw(String)
-    }
+// MARK: The title
 
-    @Published private(set) var phase = Phase.waiting
-    @Published private(set) var chordDown = false
-    @Published private(set) var steppedAside = false
-    /// Answers that were right, each of which spins the coin again.
-    @Published private(set) var successes = 0
+/// The live ink page's title, "Live Ink" in cursive: the centre lines a hand writes it along, in three
+/// strokes, "Live", the i's dot, then "Ink". The page writes them in the real ink, through the pen
+/// the person's own strokes are drawn with.
+enum SetupInkTitle {
+    /// In points, y down, from the start of the baseline, in the order the pen goes.
+    static let strokes: [[CGPoint]] = [
+        [(34, -46), (44, -64), (55, -80), (62, -88), (57, -92), (48, -86), (40, -70), (33, -50), (26, -30), (18, -13), (10, -3),
+         (1, 2), (-7, 0), (-7, -6), (2, -9), (15, -6), (27, 0), (38, -5), (45, -16), (49, -26), (47, -14), (48, -3), (55, 0),
+         (62, -8), (66, -26), (69, -10), (73, 0), (79, -10), (84, -26), (88, -21), (95, -19), (102, -21), (107, -27), (102, -31),
+         (96, -25), (95, -11), (101, -1), (111, 0), (121, -6)],
+        [(49, -43), (52, -44), (54, -41), (52, -38), (49, -39), (48, -41), (50, -43)],
+        [(147, -36), (154, -60), (166, -78), (178, -84), (175, -72), (169, -46), (162, -18), (155, -3), (145, 2), (138, -4),
+         (145, -10), (160, -9), (172, -7), (178, -14), (180, -26), (180, -12), (180, 0), (183, -13), (190, -24), (198, -26),
+         (201, -17), (201, -5), (205, 0), (212, -5), (218, -24), (224, -56), (230, -80), (225, -88), (218, -76), (215, -46),
+         (213, -16), (213, 0), (217, -12), (224, -22), (232, -26), (236, -20), (230, -13), (221, -11), (229, -6), (236, -1),
+         (246, -3)],
+    ].map { $0.map { CGPoint(x: $0.0, y: $0.1) } }
 
-    /// The scene's odd one out, and the scene, in global top-left points.
-    var oddOneOut: () -> CGRect? = { nil }
-    var scene: () -> CGRect? = { nil }
+    /// Room round the lines for the ink's width and glow, in points.
+    private static let margin: CGFloat = 18
 
-    private weak var liveInk: LiveInk?
-    /// Asked each time: the page appears before the window it is in has been handed over.
-    private var findWindow: () -> NSWindow? = { nil }
-    private var window: NSWindow? { findWindow() }
-    private var concept = SetupInkConcept.findTheBug
-    private var shown = Set<Mark.ID>()
-    private var home: NSRect?
-    private var later: DispatchWorkItem?
+    private static let extent: CGRect = {
+        let points = strokes.flatMap { HandStroke.curve(through: $0) }
+        let xs = points.map(\.x), ys = points.map(\.y)
+        return CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+    }()
 
-    func begin(_ concept: SetupInkConcept, liveInk: LiveInk?, window: @escaping () -> NSWindow?) {
-        end()
-        self.concept = concept
-        self.liveInk = liveInk
-        findWindow = window
-        phase = .waiting
-        liveInk?.practise(LiveInk.Practice(
-            area: { [weak self] in self?.windowFrame ?? .null },
-            chord: { [weak self] down in self?.chord(down) },
-            released: { [weak self] ink in self?.released(ink) }))
-        Log.write("[setup] live ink try concept=\(concept.rawValue)")
-        // Where the try is on the screen, for a script that draws there, once the page has slid in.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-            guard let self, self.concept == concept, let frame = self.windowFrame else { return }
-            let target = self.oddOneOut().map { " target=\(Self.numbers($0))" } ?? ""
-            Log.write("[setup] live ink try window=\(Self.numbers(frame))\(target)")
-        }
-    }
+    /// The room the title takes on the page.
+    static var size: CGSize { CGSize(width: extent.width + 2 * margin, height: extent.height + 2 * margin) }
 
-    private static func numbers(_ rect: CGRect) -> String {
-        [rect.minX, rect.minY, rect.width, rect.height].map { String(Int($0.rounded())) }.joined(separator: ",")
-    }
-
-    func end() {
-        later?.cancel()
-        later = nil
-        liveInk?.practise(nil)
-        liveInk = nil
-        shown = []
-        chordDown = false
-        comeBack()
-    }
-
-    /// The window, in global top-left points.
-    private var windowFrame: CGRect? {
-        window.map { CGRect(x: $0.frame.minX, y: StateReport.primaryHeight - $0.frame.maxY, width: $0.frame.width, height: $0.frame.height) }
-    }
-
-    private func chord(_ down: Bool) {
-        chordDown = down
-        guard down else { return }
-        later?.cancel()
-        // A new try: the last one's ink and answer leave.
-        liveInk?.letGoOfPractice(shown, .dismissed)
-        shown = []
-        phase = .inking
-        if concept == .desktop { stepAside() }
-    }
-
-    private func released(_ ink: [Mark]) {
-        shown.formUnion(ink.map(\.id))
-        guard !ink.isEmpty else {
-            phase = .waiting
-            comeBack()
-            return
-        }
-        switch concept {
-        case .findTheBug: judge(ink)
-        case .desktop: name(ink)
-        case .writesBack: phase = .waiting
-        }
-    }
-
-    // MARK: Find the bug
-
-    private func judge(_ ink: [Mark]) {
-        // The answer is drawn on the picture, clear of the page's words.
-        guard let liveInk, let room = scene()?.insetBy(dx: -4, dy: -4) ?? windowFrame else { return }
-        if let target = oddOneOut(), ink.contains(where: { Self.points(at: target, $0) }) {
-            let answer = LiveAnswer(say: "A fish, flying with the birds.", marks: [AnswerMark(kind: .circle, label: "Fish don't fly")])
-            shown.formUnion(liveInk.showPracticeAnswer(answer, targets: [target], about: ink, room: room, overDark: false))
-            phase = .found
-            // The coin comes once the answer has drawn itself on.
-            after(0.55 * Settings.shared.motionScale) { [weak self] in self?.successes += 1 }
-        } else if let circled = ink.compactMap(\.shapeExtent).last {
-            let answer = LiveAnswer(say: "That one belongs.", marks: [AnswerMark(kind: .circle, label: "Nothing wrong here")])
-            shown.formUnion(liveInk.showPracticeAnswer(answer, targets: [circled], about: ink, room: room, overDark: false))
-            phase = .missed
-        }
-    }
-
-    /// Whether `mark` circles `target`, or an arrow ends on it.
-    private static func points(at target: CGRect, _ mark: Mark) -> Bool {
-        switch mark.geometry {
-        case .ellipse(let frame):
-            return frame.insetBy(dx: -8, dy: -8).contains(CGPoint(x: target.midX, y: target.midY))
-        case .arrow(let arrow):
-            return target.insetBy(dx: -24, dy: -24).contains(arrow.end)
-        default:
-            return false
-        }
-    }
-
-    // MARK: Your desktop
-
-    private func name(_ ink: [Mark]) {
-        guard let liveInk, let circled = ink.compactMap(\.shapeExtent).last else { return }
-        let point = CGPoint(x: circled.midX, y: circled.midY)
-        let said = Self.describe(at: point)
-        let screen = NSScreen.screens.first { Self.global($0.frame).contains(point) } ?? NSScreen.main
-        let room = screen.map { Self.global($0.visibleFrame) } ?? circled.insetBy(dx: -400, dy: -300)
-        let answer = LiveAnswer(say: said, marks: [AnswerMark(kind: .circle, label: said)])
-        shown.formUnion(liveInk.showPracticeAnswer(answer, targets: [circled], about: ink, room: room, overDark: false))
-        phase = .saw(said)
-        Log.write("[setup] live ink try saw \"\(said)\"")
-        // Long enough to read the label, then the ink is done and the window comes back for the check.
-        after(2.2) { [weak self] in
-            guard let self else { return }
-            self.liveInk?.letGoOfPractice(self.shown, .done)
-            self.shown = []
-            self.comeBack()
-            self.after(0.35 * Settings.shared.motionScale) { [weak self] in self?.successes += 1 }
-        }
-    }
-
-    /// What Vignette can say about what is at `point` without a capture: the window's app, and its
-    /// title or page from Accessibility.
-    static func describe(at point: CGPoint) -> String {
-        if let screen = NSScreen.screens.first(where: { global($0.frame).contains(point) }),
-           point.y - global(screen.frame).minY < NSStatusBar.system.thickness {
-            return "The menu bar"
-        }
-        guard let window = LiveWindows.window(under: point) else { return "Your desktop" }
-        let app = window.app ?? "A window"
-        let page = LivePacket.page(pid: window.pid, frame: window.frame)?.location
-        let host = page.flatMap { URL(string: $0)?.host }
-        let detail = host ?? title(pid: window.pid, frame: window.frame)
-        let words = [app, detail].compactMap { $0 }.joined(separator: ": ")
-        return words.count > LiveAnswer.maxLabel ? String(words.prefix(LiveAnswer.maxLabel - 1)) + "…" : words
-    }
-
-    /// The title of the app's window at `frame`, from Accessibility, which needs no Screen Recording.
-    private static func title(pid: pid_t, frame: CGRect) -> String? {
-        guard AXIsProcessTrusted() else { return nil }
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.1)
-        let windows = WindowAccessibility.attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
-        for window in windows {
-            guard let position = WindowAccessibility.attribute(window, kAXPositionAttribute) else { continue }
-            var origin = CGPoint.zero
-            AXValueGetValue(position as! AXValue, .cgPoint, &origin)
-            guard abs(origin.x - frame.minX) < 2, abs(origin.y - frame.minY) < 2 else { continue }
-            return (WindowAccessibility.attribute(window, kAXTitleAttribute) as? String).flatMap { $0.isEmpty ? nil : $0 }
-        }
-        return nil
-    }
-
-    /// A screen rect in AppKit's coordinates, in global top-left points.
-    private static func global(_ rect: NSRect) -> CGRect {
-        CGRect(x: rect.minX, y: StateReport.primaryHeight - rect.maxY, width: rect.width, height: rect.height)
-    }
-
-    /// The window shrinks into a strip at the foot of the screen, so the whole screen can be drawn on.
-    private func stepAside() {
-        guard !steppedAside, let window, let screen = window.screen ?? NSScreen.main else { return }
-        home = window.frame
-        steppedAside = true
-        let size = NSSize(width: 360, height: 72)
-        let visible = screen.visibleFrame
-        move(window, to: NSRect(x: visible.midX - size.width / 2, y: visible.minY + 28, width: size.width, height: size.height))
-    }
-
-    private func comeBack() {
-        guard steppedAside, let home, let window else { return }
-        steppedAside = false
-        self.home = nil
-        move(window, to: home)
-    }
-
-    private func move(_ window: NSWindow, to frame: NSRect) {
-        let motion = Settings.shared.motionScale
-        guard motion > 0 else {
-            window.setFrame(frame, display: true)
-            return
-        }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.5 * motion
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.2, 1)
-            window.animator().setFrame(frame, display: true)
-        }
-    }
-
-    private func after(_ seconds: TimeInterval, _ work: @escaping () -> Void) {
-        let item = DispatchWorkItem(block: work)
-        later = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: item)
+    /// Stroke `index` in a room whose top-left is `origin`.
+    static func stroke(_ index: Int, in origin: CGPoint) -> [CGPoint] {
+        let shift = CGPoint(x: origin.x + margin - extent.minX, y: origin.y + margin - extent.minY)
+        return strokes[index].map { CGPoint(x: $0.x + shift.x, y: $0.y + shift.y) }
     }
 }
 
-/// Setup's live ink page, in the concept the model names.
+// MARK: A hand
+
+/// The pointer's events a hand sends as it draws along a line, each with its time from when the pen
+/// landed: closer together where the line turns, as a hand slows there, and where it lands and lifts.
+/// The ink's width follows their spacing, as it does for the person's own strokes.
+struct HandStroke: Equatable {
+    let times: [TimeInterval]
+    let points: [CGPoint]
+
+    var duration: TimeInterval { times.last ?? 0 }
+
+    /// A hand taking `duration` to draw the curve through `controls`, sending `rate` events a second.
+    init(through controls: [CGPoint], duration: TimeInterval, rate: Double = 120) {
+        let curve = Self.curve(through: controls)
+        guard curve.count > 1, duration > 0 else {
+            times = curve.map { _ in 0 }
+            points = curve
+            return
+        }
+        // The time to each point of the curve, at a speed that drops where it turns and at its ends.
+        let lengths = InkHand.lengths(curve)
+        let total = max(lengths.last ?? 0, .ulpOfOne)
+        var reached: [Double] = [0]
+        for index in 1..<curve.count {
+            let along = lengths[index] / total
+            let ends = min(Self.ease(along / 0.12), Self.ease((1 - along) / 0.12))
+            let speed = (0.35 + 0.65 * (1 - Self.turn(at: index, in: curve))) * (0.3 + 0.7 * ends)
+            reached.append(reached[index - 1] + Double(lengths[index] - lengths[index - 1]) / Double(speed))
+        }
+        let scale = duration / max(reached.last ?? 1, .ulpOfOne)
+        var times: [TimeInterval] = []
+        var points: [CGPoint] = []
+        var at = 1
+        for event in 0...Int((duration * rate).rounded(.up)) {
+            let time = min(Double(event) / rate, duration)
+            while at < curve.count - 1, reached[at] * scale < time { at += 1 }
+            let before = reached[at - 1] * scale, after = reached[at] * scale
+            let t = after > before ? min(max(CGFloat((time - before) / (after - before)), 0), 1) : 1
+            let a = curve[at - 1], b = curve[at]
+            times.append(time)
+            points.append(CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t))
+        }
+        self.times = times
+        self.points = points
+    }
+
+    /// The events sent by `elapsed` seconds after the pen landed.
+    func events(by elapsed: TimeInterval) -> [CGPoint] {
+        let count = times.firstIndex { $0 > elapsed } ?? times.count
+        return Array(points.prefix(count))
+    }
+
+    /// How sharply the curve turns at `index`, from 0 for straight to 1 for a right angle or more.
+    private static func turn(at index: Int, in curve: [CGPoint]) -> CGFloat {
+        let reach = 4
+        let a = curve[max(index - reach, 0)], b = curve[index], c = curve[min(index + reach, curve.count - 1)]
+        let one = CGVector(dx: b.x - a.x, dy: b.y - a.y), two = CGVector(dx: c.x - b.x, dy: c.y - b.y)
+        let lengths = hypot(one.dx, one.dy) * hypot(two.dx, two.dy)
+        guard lengths > 0 else { return 0 }
+        let cosine = (one.dx * two.dx + one.dy * two.dy) / lengths
+        return min(acos(min(max(cosine, -1), 1)) / (.pi / 2), 1)
+    }
+
+    private static func ease(_ x: CGFloat) -> CGFloat { let t = min(max(x, 0), 1); return t * t * (3 - 2 * t) }
+
+    /// The centripetal Catmull–Rom curve through `controls`, a point about every `spacing` points.
+    static func curve(through controls: [CGPoint], spacing: CGFloat = 1) -> [CGPoint] {
+        guard controls.count > 1 else { return controls }
+        let padded = [controls[0]] + controls + [controls[controls.count - 1]]
+        var curve: [CGPoint] = []
+        for index in 1..<(padded.count - 2) {
+            let p0 = padded[index - 1], p1 = padded[index], p2 = padded[index + 1], p3 = padded[index + 2]
+            func knot(_ a: CGPoint, _ b: CGPoint) -> CGFloat { max(sqrt(hypot(b.x - a.x, b.y - a.y)), 1e-4) }
+            let t1 = knot(p0, p1), t2 = t1 + knot(p1, p2), t3 = t2 + knot(p2, p3)
+            func lerp(_ a: CGPoint, _ b: CGPoint, _ ta: CGFloat, _ tb: CGFloat, _ t: CGFloat) -> CGPoint {
+                CGPoint(x: (tb - t) / (tb - ta) * a.x + (t - ta) / (tb - ta) * b.x, y: (tb - t) / (tb - ta) * a.y + (t - ta) / (tb - ta) * b.y)
+            }
+            let steps = max(Int(hypot(p2.x - p1.x, p2.y - p1.y) / spacing), 1)
+            for step in 0..<steps {
+                let t = t1 + (t2 - t1) * CGFloat(step) / CGFloat(steps)
+                let a1 = lerp(p0, p1, 0, t1, t), a2 = lerp(p1, p2, t1, t2, t), a3 = lerp(p2, p3, t2, t3, t)
+                curve.append(lerp(lerp(a1, a2, 0, t2, t), lerp(a2, a3, t1, t3, t), t1, t2, t))
+            }
+        }
+        curve.append(controls[controls.count - 1])
+        return curve
+    }
+
+    /// A hand's loop round `rect`, from its upper left and a little past where it began.
+    static func loop(round rect: CGRect) -> [CGPoint] {
+        let first: CGFloat = -0.8 * .pi, turn: CGFloat = 2 * .pi + 0.45
+        return (0...16).map { step in
+            let angle = first + turn * CGFloat(step) / 16
+            let wobble = 1 + 0.04 * sin(3 * angle + 1)
+            return CGPoint(x: rect.midX + rect.width / 2 * wobble * cos(angle), y: rect.midY + rect.height / 2 * wobble * sin(angle))
+        }
+    }
+}
+
+// MARK: The demo
+
+/// What the live ink page shows when it appears, as steps at times from then. Pure, so a test can
+/// play it without a window. The hand writes the title, circles the keys and sends a note about them
+/// to a Claude Code session. The readings of that session's turn are what `NoteCardWait` reads, as
+/// it reads a real note's, and its end starts the done finish.
+enum SetupInkDemo {
+    enum Beat: Equatable {
+        /// The hand holds Control and Option, or lets go.
+        case chord(down: Bool)
+        /// Writes stroke `index` of the title, over `SetupInkDemo.writing[index]`.
+        case write(Int)
+        case circleKeys
+        case openNote
+        /// The note's words, as typed so far.
+        case type(String)
+        /// Tab: the note's target moves to the next in its list.
+        case nextTarget
+        case send
+        /// One reading of the session's turn.
+        case reading(SessionTurn)
+        /// The session's change: the page's keys grow.
+        case growKeys
+        /// The page's words come in, once the title is written.
+        case showWords
+    }
+
+    struct Step: Equatable {
+        let at: TimeInterval
+        let beat: Beat
+    }
+
+    static let writing: [TimeInterval] = [1.15, 0.2, 1.2]
+    static let circling: TimeInterval = 0.75
+    static let words = "make these keys bigger"
+    /// How long the keys take to grow, at full motion: slowly, so it reads as the session's work.
+    static let growing: TimeInterval = 1.4
+    /// How often a session's turn is read, as `LiveNoteCards` reads it.
+    static let readingEvery: TimeInterval = 0.5
+
+    static let steps: [Step] = {
+        var steps: [Step] = []
+        var at: TimeInterval = 0.5
+        func add(_ beat: Beat, after gap: TimeInterval = 0) {
+            at += gap
+            steps.append(Step(at: at, beat: beat))
+        }
+        add(.chord(down: true))
+        add(.write(0), after: 0.15)
+        add(.write(1), after: writing[0] + 0.12)
+        add(.write(2), after: writing[1] + 0.16)
+        add(.chord(down: false), after: writing[2] + 0.1)
+        add(.showWords, after: 0.25)
+        add(.chord(down: true), after: 0.9)
+        add(.circleKeys, after: 0.12)
+        add(.chord(down: false), after: circling + 0.08)
+        add(.openNote, after: 0.05)
+        at += 0.45
+        for count in 1...words.count { add(.type(String(words.prefix(count))), after: 0.055) }
+        add(.nextTarget, after: 0.5)
+        add(.nextTarget, after: 0.6)
+        add(.send, after: 0.7)
+        // The session takes the note at once and works, then its turn ends. The readings run a tick
+        // past `TurnWatch.idleSettle`, since they land on display refreshes rather than to the millisecond.
+        let sent = at
+        steps.append(Step(at: sent + 0.1, beat: .reading(.busy)))
+        for tick in 0...5 { steps.append(Step(at: sent + 0.35 + Double(tick) * readingEvery, beat: .reading(.idle))) }
+        steps.append(Step(at: sent + 0.7, beat: .growKeys))
+        return steps.sorted { $0.at < $1.at }
+    }()
+}
+
+// MARK: The stage
+
+/// Where a page's live ink is drawn: a view over the page, in its points, y down, holding the real
+/// pen layers and the marks layer live ink draws with. It takes no presses.
+final class SetupInkStage: NSView {
+    let marks: LiveMarksLayer
+    /// Runs each display refresh while `isRunning`.
+    var onFrame: (() -> Void)?
+    var isRunning = false { didSet { if isRunning != oldValue { runLink() } } }
+    private var link: CADisplayLink?
+    private let scale: CGFloat
+
+    init() {
+        scale = NSScreen.main?.backingScaleFactor ?? 2
+        marks = LiveMarksLayer(scale: scale)
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.addSublayer(marks)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    /// A new pen, above the marks.
+    func pen() -> InkMarkLayer {
+        let pen = InkMarkLayer(scale: scale)
+        layer?.addSublayer(pen)
+        return pen
+    }
+
+    /// This view's top-left corner, in global top-left points.
+    var globalOrigin: CGPoint? {
+        guard let window else { return nil }
+        return StateReport.flipped(window.convertToScreen(convert(CGRect(x: 0, y: 0, width: 1, height: 1), to: nil))).origin
+    }
+
+    /// The marks drawn over a page are the agent's light on a dark window.
+    var isDark: Bool { effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        runLink()
+    }
+
+    private func runLink() {
+        link?.invalidate()
+        link = nil
+        guard isRunning, window != nil else { return }
+        let link = displayLink(target: self, selector: #selector(refreshed))
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+
+    @objc private func refreshed() { onFrame?() }
+}
+
+/// The stage, laid over a page.
+struct SetupInkCanvas: NSViewRepresentable {
+    let stage: SetupInkStage
+
+    func makeNSView(context: Context) -> SetupInkStage { stage }
+    func updateNSView(_ nsView: SetupInkStage, context: Context) {}
+}
+
+/// The parts of a page the ink is drawn round, by name, for the stage laid over it.
+struct SetupInkAnchors: PreferenceKey {
+    static let defaultValue: [String: Anchor<CGRect>] = [:]
+    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+extension View {
+    /// Names this view's bounds for the ink stage over the page, beside the names inside it.
+    func inkAnchor(_ name: String) -> some View {
+        transformAnchorPreference(key: SetupInkAnchors.self, value: .bounds) { $0[name] = $1 }
+    }
+
+    /// Lays `stage` over this page, and hands `place` the page's named parts, in the stage's points,
+    /// whenever they move.
+    func inkStage(_ stage: SetupInkStage, place: @escaping ([String: CGRect]) -> Void) -> some View {
+        overlayPreferenceValue(SetupInkAnchors.self) { anchors in
+            GeometryReader { geometry in
+                let rects = anchors.mapValues { geometry[$0] }
+                SetupInkCanvas(stage: stage)
+                    .allowsHitTesting(false)
+                    .onAppear { place(rects) }
+                    .onChange(of: rects) { place(rects) }
+            }
+        }
+    }
+}
+
+/// Views a page's ink is drawn round, by name, asked where they are on the screen when the ink is
+/// laid out. Unlike an anchor, it reaches out of a `Form`'s rows, which are hosted views of their own.
+@MainActor
+final class SetupInkSpots {
+    private var views: [String: () -> NSView?] = [:]
+
+    func register(_ name: String, _ view: NSView) { views[name] = { [weak view] in view } }
+
+    /// Where `name` is, in global top-left points, while it is on the screen.
+    func global(_ name: String) -> CGRect? {
+        guard let view = views[name]?(), let window = view.window, view.bounds.width > 0 else { return nil }
+        return StateReport.flipped(window.convertToScreen(view.convert(view.bounds, to: nil)))
+    }
+}
+
+private struct SetupInkSpot: NSViewRepresentable {
+    let name: String
+    let spots: SetupInkSpots
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        spots.register(name, view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+extension View {
+    /// Names this view for `spots`.
+    func inkSpot(_ name: String, in spots: SetupInkSpots?) -> some View {
+        background { if let spots { SetupInkSpot(name: name, spots: spots) } }
+    }
+}
+
+private extension Settings {
+    var answerSizes: LiveAnswerLayout.Sizes {
+        let ui = data.ui
+        return LiveAnswerLayout.Sizes(textSize: ui.liveInkTextSize, textWidth: ui.liveInkTextWidth, style: ui.textStyle)
+    }
+}
+
+// MARK: Playing the demo
+
+/// Plays `SetupInkDemo` on the page's stage with live ink's own parts: the pen and `InkHand` for the
+/// strokes, `InkStroke` and `InkSettle` for the loop, `LiveNotePopover` for the note, `NoteCardWait`
+/// for the session's turn, and `LiveMarksLayer`'s thinking light and done finish. Nothing is sent and
+/// nothing is captured: the note's targets after Claude are the demo's own.
+@MainActor
+final class SetupInkPlayer: ObservableObject {
+    @Published private(set) var keysDown = false
+    @Published private(set) var keysGrown = false
+    @Published private(set) var wordsShown = false
+    let stage = SetupInkStage()
+
+    static let titleAnchor = "title"
+    static let keysAnchor = "keys"
+    static let lineAnchors = ["line1", "line2"]
+
+    /// The page's parts, in the stage's points.
+    private var title = CGRect.zero
+    private var keys = CGRect.zero
+    private var lines: [CGRect] = []
+    private var played = false
+    private var loggedWindow = false
+    private var began: CFTimeInterval = 0
+    private var next = SetupInkDemo.steps.count
+    private struct Writing {
+        let pen: InkMarkLayer
+        let hand: HandStroke
+        let began: CFTimeInterval
+        var writer: InkHand.Pen
+    }
+    private var writing: [Writing] = []
+    private var titlePens: [InkMarkLayer] = []
+    private var loopPen: InkMarkLayer?
+    private var loop: (mark: Mark, hand: InkHand)?
+    private var note: LiveNotePopover?
+    private var wait = NoteCardWait(reportsTurns: true, hasWindow: true, canLookAgain: false)
+
+    /// The demo's targets after Claude: a Codex thread, then the Claude Code session the note goes to.
+    private static let sessions: [AgentDestination] = {
+        let now = Date()
+        return [AgentDestination(id: "setup-demo-codex", name: "inbox", address: .codexThread(uuid: "setup-demo-codex"), lastUsed: now),
+                AgentDestination(id: "setup-demo-claude", name: "vignette", address: .claudeSession("setup-demo-claude"),
+                                 lastUsed: now.addingTimeInterval(-60))]
+    }()
+
+    func place(_ rects: [String: CGRect]) {
+        if let title = rects[Self.titleAnchor] { self.title = title }
+        lines = Self.lineAnchors.compactMap { rects[$0] }
+        // The loop stays round the keys where they were, as they grow inside it.
+        if let keys = rects[Self.keysAnchor], loop == nil, loopPen == nil { self.keys = keys }
+        if played, next >= SetupInkDemo.steps.count, writing.isEmpty { rest() }
+    }
+
+    /// Plays the demo the first time the page appears. After that, and with motion off, shows the
+    /// page as the demo leaves it.
+    func play() {
+        guard !played else { return rest() }
+        played = true
+        guard Settings.shared.motionScale > 0 else { return rest() }
+        began = CACurrentMediaTime()
+        next = 0
+        wait = NoteCardWait(reportsTurns: true, hasWindow: true, canLookAgain: false)
+        stage.onFrame = { [weak self] in self?.refreshed() }
+        stage.isRunning = true
+        Log.write("[setup] live ink demo began")
+    }
+
+    /// The page went: the demo stops, and its ink and note leave with the page.
+    func stop() {
+        stage.isRunning = false
+        note?.fadeAway()
+        note = nil
+        guard next < SetupInkDemo.steps.count || loop != nil else { return }
+        next = SetupInkDemo.steps.count
+        writing = []
+        // A title cut short is written whole the next time the page appears.
+        titlePens.forEach { $0.removeFromSuperlayer() }
+        titlePens = []
+        loopPen?.removeFromSuperlayer()
+        loopPen = nil
+        loop = nil
+        show([])
+        keysDown = false
+        Log.write("[setup] live ink demo stopped")
+    }
+
+    /// The page as the demo leaves it: the title written, the words in and the keys grown.
+    private func rest() {
+        if titlePens.isEmpty, title != .zero {
+            let feel = Settings.shared.data.ui.inkHandFeel
+            for (index, duration) in SetupInkDemo.writing.enumerated() {
+                let hand = HandStroke(through: SetupInkTitle.stroke(index, in: title.origin), duration: duration)
+                let pen = stage.pen()
+                pen.showPen(InkHand.stroke(hand.points, tapersEnd: true, feel: feel), settled: 0, longest: .greatestFiniteMagnitude,
+                            markStyle: Settings.shared.data.ui.markStyle)
+                titlePens.append(pen)
+            }
+        }
+        wordsShown = true
+        keysGrown = true
+    }
+
+    private func refreshed() {
+        let now = CACurrentMediaTime()
+        if !loggedWindow, let frame = stage.window.map({ StateReport.flipped($0.frame) }) {
+            loggedWindow = true
+            Log.write("[setup] live ink demo window=\([frame.minX, frame.minY, frame.width, frame.height].map { String(Int($0)) }.joined(separator: ","))")
+        }
+        while next < SetupInkDemo.steps.count, SetupInkDemo.steps[next].at <= now - began {
+            run(SetupInkDemo.steps[next].beat, at: now)
+            next += 1
+        }
+        draw(at: now)
+        if next >= SetupInkDemo.steps.count, writing.isEmpty { stage.isRunning = false }
+    }
+
+    private func run(_ beat: SetupInkDemo.Beat, at now: CFTimeInterval) {
+        let feel = Settings.shared.data.ui.inkHandFeel
+        switch beat {
+        case .chord(let down):
+            keysDown = down
+        case .write(let index):
+            let pen = stage.pen()
+            titlePens.append(pen)
+            writing.append(Writing(pen: pen, hand: HandStroke(through: SetupInkTitle.stroke(index, in: title.origin),
+                                                              duration: SetupInkDemo.writing[index]),
+                                   began: now, writer: InkHand.Pen(feel: feel)))
+        case .circleKeys:
+            let pen = stage.pen()
+            loopPen = pen
+            writing.append(Writing(pen: pen, hand: HandStroke(through: HandStroke.loop(round: keys.insetBy(dx: -22, dy: -15)),
+                                                              duration: SetupInkDemo.circling),
+                                   began: now, writer: InkHand.Pen(feel: feel)))
+        case .openNote:
+            openNote()
+        case .type(let words):
+            note?.type(words)
+        case .nextTarget:
+            note?.nextTarget()
+        case .send:
+            note?.send()
+            let effects = wait.handle(.sent, at: Date())
+            if effects.contains(.watchTurn), let loop { show([loop.mark], pulsing: [loop.mark.id]) }
+        case .reading(let turn):
+            if wait.handle(.turn(turn, replied: false), at: Date()).contains(.sayDone) { done() }
+        case .growKeys:
+            keysGrown = true
+        case .showWords:
+            wordsShown = true
+        }
+    }
+
+    /// Draws each stroke under way as far as its hand has got, and lets go of those it has finished.
+    private func draw(at now: CFTimeInterval) {
+        let markStyle = Settings.shared.data.ui.markStyle
+        for index in writing.indices.reversed() {
+            let elapsed = now - writing[index].began
+            let points = writing[index].hand.events(by: elapsed)
+            guard points.count > 1 else { continue }
+            let stroke = writing[index].writer.stroke(through: points)
+            let pen = writing[index].pen
+            pen.showPen(stroke, settled: writing[index].writer.settled.points.count, longest: .greatestFiniteMagnitude, markStyle: markStyle)
+            guard elapsed >= writing[index].hand.duration else { continue }
+            let finished = writing.remove(at: index)
+            if pen === loopPen { endLoop(finished.hand.points) }
+        }
+    }
+
+    /// The loop is let go: it becomes the ellipse live ink makes of it and settles onto it, as the
+    /// person's own does.
+    private func endLoop(_ raw: [CGPoint]) {
+        let ui = Settings.shared.data.ui
+        defer {
+            loopPen?.removeFromSuperlayer()
+            loopPen = nil
+        }
+        guard case .ellipse(let frame) = InkStroke(raw, shortestArrow: ui.shortestArrow) else { return }
+        let mark = Mark(geometry: .ellipse(frame))
+        guard let hand = InkHand(raw: raw, mark: mark, feel: ui.inkHandFeel) else { return }
+        loop = (mark, hand)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        show([mark], drawingOn: [mark.id])
+        loopPen?.isHidden = true
+        CATransaction.commit()
+    }
+
+    /// The note opens from the loop where live ink would hang it, with the demo's targets.
+    private func openNote() {
+        guard let loop, let window = stage.window, let origin = stage.globalOrigin else { return }
+        let global = LiveWindows.translated(loop.mark, by: CGVector(dx: origin.x, dy: origin.y))
+        // The page's words, the title among them, as the glance at a window gives live ink its text.
+        let text = (lines + [title]).map { $0.offsetBy(dx: origin.x, dy: origin.y) }
+        let scene = LiveAnswerLayout.Scene(room: StateReport.flipped(window.frame).insetBy(dx: 8, dy: 8), ink: [global], text: text,
+                                           screen: window.screen.map { StateReport.flipped($0.visibleFrame) })
+        guard let place = LiveAnswerLayout.noteHang(LiveNotePopover.placementSize, for: global, scene: scene) else { return }
+        let note = LiveNotePopover(at: place, target: .responder, takesKeys: false)
+        note.offer(Self.sessions)
+        note.reveal()
+        self.note = note
+    }
+
+    /// The session's turn ended: the ink turns green with its check and leaves, and the note with it.
+    private func done() {
+        guard let loop else { return }
+        show([loop.mark], finishing: [loop.mark.id: .done])
+        let leave = LiveMarksLayer.popoverLeave(.done)
+        note?.fadeAway(after: leave.after, over: leave.fade)
+        note = nil
+        Log.write("[setup] live ink demo turn ended")
+        let gone = (LiveMarksLayer.doneHold + LiveMarksLayer.doneAway) * Settings.shared.motionScale + 0.15
+        DispatchQueue.main.asyncAfter(deadline: .now() + gone) { [weak self] in
+            guard let self, self.loop?.mark.id == loop.mark.id else { return }
+            self.loop = nil
+            self.show([])
+            Log.write("[setup] live ink demo done")
+        }
+    }
+
+    private func show(_ marks: [Mark], drawingOn: Set<Mark.ID> = [], pulsing: Set<Mark.ID> = [],
+                      finishing: [Mark.ID: LiveMarksLayer.Finish] = [:]) {
+        let ui = Settings.shared.data.ui
+        stage.marks.show(marks, markStyle: ui.markStyle, textStyle: ui.textStyle, drawingOn: drawingOn, pulsing: pulsing,
+                         finishing: finishing, hands: loop.map { [$0.mark.id: $0.hand] } ?? [:])
+    }
+}
+
+// MARK: Pointing at the permissions
+
+/// The setup page's pointers at what to press next, in the agent's light: a ring round the next
+/// Allow button with its label, or, with both allowed, a note saying what to do now. They are laid
+/// out as an answer's marks are (`LiveAnswerLayout`) and drawn by `LiveMarksLayer`.
+@MainActor
+final class SetupInkGuide {
+    enum Pointing: Equatable { case accessibility, screenRecording, ready }
+
+    let stage = SetupInkStage()
+    let spots = SetupInkSpots()
+    static let accessibilityButton = "accessibilityButton"
+    static let screenRecordingButton = "screenRecordingButton"
+    static let accessibilityRow = "accessibilityRow"
+    static let screenRecordingRow = "screenRecordingRow"
+    static let footer = "footer"
+
+    /// What the marks shown point at, and where it was then, in global top-left points.
+    private var pointing: Pointing?
+    private var aimedAt: CGRect?
+    private var shown: [Mark] = []
+    private var leaving: [Mark.ID: LiveMarksLayer.Finish] = [:]
+    private var dark = Set<Mark.ID>()
+
+    /// Points at `target` once the page is on the screen, asked again until it is, and again when what
+    /// it points at changes size, as a button does when its title changes.
+    func point(at target: Pointing) {
+        let aim = aim(of: target)
+        let moved = aim.map { aim in aimedAt.map { abs($0.width - aim.width) > 2 || abs($0.height - aim.height) > 2 } ?? true } ?? false
+        guard target != pointing || moved, let origin = stage.globalOrigin, let window = stage.window else { return }
+        let new = marks(for: target, origin: origin, window: window)
+        guard !new.isEmpty else { return }
+        pointing = target
+        aimedAt = aim
+        let old = shown.filter { leaving[$0.id] == nil }
+        for mark in old { leaving[mark.id] = .dismissed }
+        shown = shown + new
+        if stage.isDark { dark.formUnion(new.filter { $0.kind != .text }.map(\.id)) }
+        draw(drawingOn: Set(new.map(\.id)))
+        Log.write("[setup] live ink pointing at \(target) marks=\(new.count)")
+        guard !old.isEmpty else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + LiveMarksLayer.doneAway * Settings.shared.motionScale + 0.15) { [weak self] in
+            guard let self else { return }
+            let gone = Set(old.map(\.id))
+            self.shown.removeAll { gone.contains($0.id) }
+            for id in gone { self.leaving[id] = nil }
+            self.draw()
+        }
+    }
+
+    func leave() {
+        shown = []
+        leaving = [:]
+        pointing = nil
+        aimedAt = nil
+        draw()
+    }
+
+    /// What `target`'s marks are laid out round, in global top-left points.
+    private func aim(of target: Pointing) -> CGRect? {
+        switch target {
+        case .accessibility: spots.global(Self.accessibilityButton)
+        case .screenRecording: spots.global(Self.screenRecordingButton)
+        case .ready: [Self.accessibilityRow, Self.screenRecordingRow].compactMap(spots.global).reduce(CGRect.null) { $0.union($1) }
+        }
+    }
+
+    private func draw(drawingOn: Set<Mark.ID> = []) {
+        let ui = Settings.shared.data.ui
+        stage.marks.show(shown, markStyle: ui.markStyle, textStyle: ui.textStyle, drawingOn: drawingOn, pulsing: [],
+                         finishing: leaving, overDark: dark)
+    }
+
+    /// The marks for `target`, in the stage's points.
+    private func marks(for target: Pointing, origin: CGPoint, window: NSWindow) -> [Mark] {
+        let back = CGVector(dx: -origin.x, dy: -origin.y)
+        let room = StateReport.flipped(window.frame).insetBy(dx: 12, dy: 12)
+        // The page's words, which the labels cover as little as they can, and the other row, which
+        // they keep off, as an answer keeps off the person's notes.
+        let rows = [Self.accessibilityRow, Self.screenRecordingRow].compactMap(spots.global)
+        let own = target == .accessibility ? Self.accessibilityRow : Self.screenRecordingRow
+        let other = target == .ready ? [] : [target == .accessibility ? Self.screenRecordingRow : Self.accessibilityRow].compactMap(spots.global)
+        let text = [own, Self.footer].compactMap(spots.global)
+        let scene = LiveAnswerLayout.Scene(room: room, ink: [], text: target == .ready ? rows + text : text, notes: other, screen: nil)
+        let sizes = Settings.shared.answerSizes
+        let placed: [Mark]
+        switch target {
+        case .accessibility, .screenRecording:
+            let name = target == .accessibility ? Self.accessibilityButton : Self.screenRecordingButton
+            guard let button = spots.global(name) else { return [] }
+            let answer = LiveAnswer(say: "", marks: [AnswerMark(kind: .circle, label: target == .accessibility ? "Start here" : "Then this")])
+            // The first mark is the reply, which no agent wrote here.
+            placed = Array(LiveAnswerLayout.placed(for: answer, targets: [button], asked: button, scene: scene, sizes: sizes,
+                                                   focusable: false).marks.dropFirst())
+        case .ready:
+            let both = rows.reduce(CGRect.null) { $0.union($1) }
+            guard !both.isNull else { return [] }
+            placed = [LiveAnswerLayout.note("Hold ⌃⌥ and draw anywhere", near: both, scene: scene, obstacles: rows, sizes: sizes)]
+        }
+        return placed.map { mark in
+            var mark = LiveWindows.translated(mark, by: back)
+            if mark.agent { mark.agentName = LiveAnswerLayout.agentName }
+            return mark
+        }
+    }
+}
+
+// MARK: The pages
+
+/// Setup's live ink page: the title written in ink, what live ink is, and whether to use it. The
+/// demo plays once when it appears.
 struct LiveInkPage: View {
-    @ObservedObject var model: SetupModel
+    @ObservedObject var player: SetupInkPlayer
     @ObservedObject private var settings = Settings.shared
+    @StateObject private var held = HeldModifiers()
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Color.clear
+                .frame(width: SetupInkTitle.size.width, height: SetupInkTitle.size.height)
+                .inkAnchor(SetupInkPlayer.titleAnchor)
+                .accessibilityElement()
+                .accessibilityLabel("Live Ink")
+                .accessibilityAddTraits(.isHeader)
+                .padding(.top, 52)
+            VStack(spacing: 10) {
+                HStack(spacing: 0) {
+                    Text("Hold ").opacity(words)
+                    keys.inkAnchor(SetupInkPlayer.keysAnchor)
+                    Text(" and draw on anything on your screen.").opacity(words)
+                }
+                .font(.system(size: 15))
+                .inkAnchor(SetupInkPlayer.lineAnchors[0])
+                Text("Then ask Claude about it, or send it to a Claude Code or Codex session.")
+                    .foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 340)
+                    .opacity(words)
+                    .inkAnchor(SetupInkPlayer.lineAnchors[1])
+            }
+            .animation(Anim.spring(0.5 * settings.motionScale), value: player.wordsShown)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .inkStage(player.stage) { player.place($0) }
+        .onAppear {
+            held.start()
+            player.play()
+        }
+        .onDisappear {
+            held.stop()
+            player.stop()
+        }
+    }
+
+    private var words: Double { player.wordsShown ? 1 : 0 }
+
+    private var keys: some View {
+        let size: CGFloat = player.keysGrown ? 34 : 24
+        return HStack(spacing: size * 0.16) {
+            key("⌃", down: player.keysDown || held.flags.contains(.control), size: size)
+            key("⌥", down: player.keysDown || held.flags.contains(.option), size: size)
+        }
+        .padding(.horizontal, 5)
+        .animation(Anim.spring(SetupInkDemo.growing * settings.motionScale, bounce: 0.2), value: player.keysGrown)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Control and Option")
+    }
+
+    private func key(_ glyph: String, down: Bool, size: CGFloat) -> some View {
+        KeyboardKey(width: size * 1.12, height: size, down: down, motion: settings.motionScale, inset: 0) {
+            Text(glyph).font(.system(size: size * 0.5, weight: .medium))
+        }
+    }
+}
+
+/// Setup's page for live ink's two permissions, after Use Live Ink. Each is asked for from its own
+/// Allow button, and the agent's light points at the next one.
+struct LiveInkSetupPage: View {
+    let guide: SetupInkGuide
     @State private var trusted = ModifierTap.trusted(prompt: false)
     @State private var screenRecording = ScreenRecording.granted
     @State private var askedScreenRecording = false
     private let poll = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
-    private var tried: SetupInkTry { model.inkTry }
-
     var body: some View {
-        VStack(spacing: 4) {
-            switch model.inkConcept {
-            case .findTheBug: findTheBug
-            case .desktop: desktop
-            case .writesBack: writesBack
+        VStack(spacing: 14) {
+            VStack(spacing: 6) {
+                Text("Set Up Live Ink").font(.title).bold()
+                Text("macOS asks for two permissions.").foregroundStyle(.secondary)
             }
-            permissions
-        }
-        .overlay(alignment: .top) {
-            // A preview chooses its concept here.
-            if model.isPreview {
-                Picker("Concept", selection: $model.inkConcept) {
-                    ForEach(SetupInkConcept.allCases) { Text($0.title).tag($0) }
+            .padding(.top, 60)
+            Form {
+                Section {
+                    PermissionRow(symbol: "hand.draw", title: "Accessibility", reason: "So you can draw while holding ⌃⌥.",
+                                  status: trusted ? .granted : .ask, isDefault: !trusted,
+                                  spot: (SetupInkGuide.accessibilityButton, guide.spots)) {
+                        Accessibility.request()
+                    }
+                    .inkSpot(SetupInkGuide.accessibilityRow, in: guide.spots)
+                    PermissionRow(symbol: "rectangle.dashed.badge.record", title: "Screen Recording",
+                                  reason: "So Claude can see the window you drew on.", status: screenRecording ? .granted : .ask,
+                                  isDefault: trusted && !screenRecording, button: askedScreenRecording ? "Open Settings…" : "Allow…",
+                                  spot: (SetupInkGuide.screenRecordingButton, guide.spots)) {
+                        if askedScreenRecording { ScreenRecording.openSystemSettings() } else { ScreenRecording.request() }
+                        askedScreenRecording = true
+                    }
+                    .inkSpot(SetupInkGuide.screenRecordingRow, in: guide.spots)
                 }
-                .pickerStyle(.segmented).labelsHidden().controlSize(.small).fixedSize()
-                .padding(.top, 6)
+                Section {} footer: {
+                    Text(SetupInkCopy.costNote).font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .inkSpot(SetupInkGuide.footer, in: guide.spots)
+                        // Room under the rows for the label pointing at the next Allow button.
+                        .padding(.top, 30)
+                }
             }
+            .formStyle(.grouped).scrollDisabled(true).fixedSize(horizontal: false, vertical: true)
         }
-        .onAppear(perform: begin)
-        .onChange(of: model.inkConcept) {
-            SetupInkConcept.chosen = model.inkConcept
-            begin()
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .inkStage(guide.stage) { _ in }
         .onReceive(poll) { _ in
             trusted = ModifierTap.trusted(prompt: false)
             screenRecording = ScreenRecording.granted
+            guide.point(at: pointing)
         }
+        .onDisappear { guide.leave() }
     }
 
-    private func begin() {
-        // The page's switch starts on: someone who reached this page installed Vignette to use it.
-        if !settings.data.liveInk, !model.inkSwitchShown { settings.update { $0.liveInk = true } }
-        model.inkSwitchShown = true
-        tried.begin(model.inkConcept, liveInk: model.callbacks.liveInk) { [weak model] in model?.window }
+    private var pointing: SetupInkGuide.Pointing {
+        !trusted ? .accessibility : !screenRecording ? .screenRecording : .ready
     }
-
-    // MARK: Find the bug
-
-    private var findTheBug: some View {
-        VStack(spacing: 10) {
-            OddOneOutScene(found: tried.phase == .found, onFish: { tried.oddOneOut = $0 })
-                .background(ScreenRect { tried.scene = $0 })
-                .padding(.top, 30)
-            Text("Find the bug").font(.title).bold()
-            HStack(spacing: 8) {
-                ChordKeys(motion: settings.motionScale)
-                Text("Hold these and circle what doesn't belong.").foregroundStyle(.secondary)
-            }
-            status(found: tried.phase == .found) {
-                switch tried.phase {
-                case .waiting, .saw(_): "Draw with the pointer while you hold them."
-                case .inking: "Now circle it."
-                case .missed: "Not that one. Try again."
-                case .found: "Found it. That's live ink."
-                }
-            }
-        }
-    }
-
-    // MARK: Your desktop
-
-    private var desktop: some View {
-        VStack(spacing: 10) {
-            DesktopPicture().padding(.top, 30)
-            Text("Draw on anything").font(.title).bold()
-            HStack(spacing: 8) {
-                ChordKeys(motion: settings.motionScale)
-                Text("Hold these and circle something on your screen.").foregroundStyle(.secondary)
-            }
-            status(found: tried.successes > 0) {
-                if case .saw(let said) = tried.phase { "Vignette saw \(said)." } else { "This window will step aside." }
-            }
-        }
-    }
-
-    // MARK: Writes back
-
-    private var writesBack: some View {
-        VStack(spacing: 12) {
-            Text("Writes back").font(.title).bold().padding(.top, 60)
-            ChordKeys(motion: settings.motionScale)
-        }
-    }
-
-    // MARK: Pieces
-
-    /// The line under the heading that answers the try, with the check coin once it has worked.
-    private func status(found: Bool, _ text: () -> String) -> some View {
-        HStack(spacing: 8) {
-            if found {
-                CheckCoin(diameter: 20).id(tried.successes).transition(.scale.combined(with: .opacity))
-            } else {
-                Image(systemName: "hand.draw").foregroundStyle(Color.accentColor).transition(.opacity)
-            }
-            Text(text()).contentTransition(.opacity)
-        }
-        .animation(Anim.spring(0.3 * settings.motionScale), value: found)
-        .animation(Anim.spring(0.3 * settings.motionScale), value: tried.phase)
-        .frame(height: 24)
-    }
-
-    /// The switch and what live ink needs: Accessibility for the chord, and Screen Recording for asking.
-    private var permissions: some View {
-        Form {
-            Section {
-                Toggle("Live Ink", isOn: Binding(get: { settings.data.liveInk }, set: { on in settings.update { $0.liveInk = on } }))
-                if settings.data.liveInk, !trusted {
-                    PermissionRow(symbol: "lock.fill", title: "Needs Accessibility permission",
-                                  reason: SettingsView.liveInkAccessibilityReason, status: .ask, isDefault: true) { Accessibility.request() }
-                }
-            }
-            if settings.data.liveInk {
-                Section {
-                    if screenRecording {
-                        PermissionRow(symbol: "rectangle.dashed.badge.record", title: "Vignette can see what you ask about", status: .granted) {}
-                    } else {
-                        PermissionRow(symbol: "rectangle.dashed.badge.record", title: "Asking needs Screen Recording", status: .ask,
-                                      isDefault: trusted, button: askedScreenRecording ? "Open Settings…" : "Allow…") {
-                            if askedScreenRecording { ScreenRecording.openSystemSettings() } else { ScreenRecording.request() }
-                            askedScreenRecording = true
-                        }
-                    }
-                } footer: {
-                    Text(SetupInkCopy.costNote).font(.caption).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
-        .formStyle(.grouped).scrollDisabled(true).fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-/// The window while it is aside: the keys and what to do, at the foot of the screen.
-struct SteppedAside: View {
-    @ObservedObject var model: SetupModel
-    @ObservedObject private var settings = Settings.shared
-
-    var body: some View {
-        HStack(spacing: 12) {
-            ChordKeys(motion: settings.motionScale, height: 40)
-            Text(model.inkTry.chordDown ? "Circle anything on your screen." : "Let go to see what Vignette saw.")
-                .font(.headline).contentTransition(.opacity)
-        }
-        .animation(Anim.spring(0.25 * settings.motionScale), value: model.inkTry.chordDown)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-/// Control and Option as keycaps that go down while the person holds them, as the shortcut page's
-/// keys do.
-struct ChordKeys: View {
-    var motion = 1.0
-    var height: CGFloat = 44
-    @StateObject private var held = HeldModifiers()
-
-    var body: some View {
-        HStack(spacing: 6) {
-            key("⌃", word: "control", down: held.flags.contains(.control))
-            key("⌥", word: "option", down: held.flags.contains(.option))
-        }
-        .onAppear { held.start() }
-        .onDisappear { held.stop() }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Control and Option")
-    }
-
-    private func key(_ glyph: String, word: String, down: Bool) -> some View {
-        KeyboardKey(width: height * 1.2, height: height, down: down, motion: motion) {
-            VStack(alignment: .trailing, spacing: 0) {
-                Text(glyph).font(.system(size: height * 0.3))
-                Spacer(minLength: 0)
-                Text(word).font(.system(size: height * 0.2))
-            }
-            .frame(maxWidth: .infinity, alignment: .trailing)
-        }
-    }
-}
-
-/// A sky over hills, with birds flying and a fish flying with them.
-struct OddOneOutScene: View {
-    var found = false
-    /// Hands over where the fish is on the screen, asked again whenever it is needed.
-    let onFish: (@escaping () -> CGRect?) -> Void
-
-    static let size = CGSize(width: 330, height: 116)
-
-    var body: some View {
-        let w = Self.size.width, h = Self.size.height
-        ZStack {
-            LinearGradient(colors: [Color(red: 0.55, green: 0.80, blue: 0.98), Color(red: 0.86, green: 0.95, blue: 1)],
-                           startPoint: .top, endPoint: .bottom)
-            Ellipse().fill(Color(red: 0.49, green: 0.76, blue: 0.43)).frame(width: w * 0.9, height: h * 0.7).position(x: w * 0.25, y: h * 1.08)
-            Ellipse().fill(Color(red: 0.38, green: 0.68, blue: 0.36)).frame(width: w, height: h * 0.62).position(x: w * 0.8, y: h * 1.12)
-            symbol("sun.max.fill", 30, .yellow).position(x: w * 0.88, y: h * 0.24)
-            symbol("cloud.fill", 34, .white).position(x: w * 0.16, y: h * 0.24)
-            symbol("cloud.fill", 24, .white.opacity(0.9)).position(x: w * 0.66, y: h * 0.16)
-            symbol("bird.fill", 15, Color(white: 0.25)).position(x: w * 0.34, y: h * 0.36)
-            symbol("bird.fill", 12, Color(white: 0.3)).position(x: w * 0.44, y: h * 0.24)
-            symbol("bird.fill", 14, Color(white: 0.25)).scaleEffect(x: -1).position(x: w * 0.6, y: h * 0.38)
-            symbol("fish.fill", 17, Color(red: 0.98, green: 0.55, blue: 0.2))
-                .background(ScreenRect(found: onFish))
-                .rotationEffect(.degrees(found ? -10 : 0))
-                .position(x: w * 0.5, y: h * 0.34)
-            symbol("tree.fill", 38, Color(red: 0.2, green: 0.5, blue: 0.25)).position(x: w * 0.16, y: h * 0.7)
-            symbol("house.fill", 32, Color(red: 0.91, green: 0.53, blue: 0.35)).position(x: w * 0.74, y: h * 0.72)
-        }
-        .frame(width: w, height: h)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.black.opacity(0.08)))
-        .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
-        .animation(Anim.spring(0.4, bounce: 0.5), value: found)
-        .accessibilityHidden(true)
-    }
-
-    private func symbol(_ name: String, _ size: CGFloat, _ color: Color) -> some View {
-        Image(systemName: name).font(.system(size: size)).foregroundStyle(color)
-    }
-}
-
-/// A desktop in miniature: a few windows on a wallpaper, for the page that draws on the real one.
-struct DesktopPicture: View {
-    var body: some View {
-        ZStack {
-            LinearGradient(colors: [Color(red: 0.36, green: 0.42, blue: 0.78), Color(red: 0.75, green: 0.5, blue: 0.75)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-            window(width: 150, height: 74).position(x: 110, y: 56)
-            window(width: 120, height: 64).position(x: 225, y: 70)
-            Ellipse().strokeBorder(Color.white.opacity(0.9), lineWidth: 2.5).frame(width: 82, height: 46).position(x: 228, y: 72)
-        }
-        .frame(width: 330, height: 116)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.black.opacity(0.08)))
-        .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
-        .accessibilityHidden(true)
-    }
-
-    private func window(width: CGFloat, height: CGFloat) -> some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 3) {
-                ForEach(0..<3, id: \.self) { _ in Circle().fill(.white.opacity(0.5)).frame(width: 5, height: 5) }
-                Spacer()
-            }
-            .padding(5)
-            Spacer()
-        }
-        .frame(width: width, height: height)
-        .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(0.85)))
-    }
-}
-
-/// Reads where the view it is behind is on the screen, in global top-left points.
-struct ScreenRect: NSViewRepresentable {
-    let found: (@escaping () -> CGRect?) -> Void
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        found { [weak view] in
-            guard let view, let window = view.window else { return nil }
-            let rect = window.convertToScreen(view.convert(view.bounds, to: nil))
-            return CGRect(x: rect.minX, y: StateReport.primaryHeight - rect.maxY, width: rect.width, height: rect.height)
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
 }
