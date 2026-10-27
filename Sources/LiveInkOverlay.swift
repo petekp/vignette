@@ -53,9 +53,11 @@ final class LiveInkOverlay: NSPanel {
     func take(_ input: Input) { canvas.take(input) }
 
     private let canvas: Canvas
-    /// Taking presses to draw, and holding the pointer field up: either raises it to the inking level.
+    /// Taking presses to draw, holding the pointer field up, and keeping ink drawn over a menu above it:
+    /// each raises it to the inking level.
     private var takesInk = false
     private var holdsField = false
+    private var keptAboveMenus = false
 
     /// Comes up at once, on the Space that is active now.
     init(screen: NSScreen, display: CGDirectDisplayID) {
@@ -144,8 +146,15 @@ final class LiveInkOverlay: NSPanel {
         canvas.field.show(on)
     }
 
+    /// Keeps it at the inking level once inking has stopped, passing every press through, so ink drawn
+    /// over a menu stays above the menu until it has closed.
+    func keepAboveMenus(_ on: Bool) {
+        keptAboveMenus = on
+        raise()
+    }
+
     private func raise() {
-        level = takesInk || holdsField ? .screenSaver : Self.restingLevel
+        level = takesInk || holdsField || keptAboveMenus ? .screenSaver : Self.restingLevel
     }
 
     override func close() {
@@ -523,6 +532,19 @@ final class LiveMarksLayer: CALayer {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for id in Array(drawn.keys) { remove(id) }
+        CATransaction.commit()
+    }
+
+    /// Takes these marks off without a fade, in the turn another layer starts drawing them where they
+    /// are, so no frame shows two of one mark.
+    func handOff(_ ids: Set<Mark.ID>) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for id in ids {
+            if previewing?.id == id { previewing = nil }
+            popovers.removeValue(forKey: id)?.close(fade: 0)
+            drawn.removeValue(forKey: id)?.holder.removeFromSuperlayer()
+        }
         CATransaction.commit()
     }
 
