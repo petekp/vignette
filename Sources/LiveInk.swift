@@ -532,6 +532,7 @@ final class LiveInk {
         surfaces.forEach { $0.overlay.keepAboveMenus(false) }
         guard !overMenus.isEmpty else { return }
         let held = pinsAfterMenus
+        let drawnOver = overMenus.count
         overMenus = []
         pinsAfterMenus = [:]
         let pins = screenMarks.compactMap { mark in held[mark.id].flatMap(windows.target(id:)).map { (mark: mark, target: $0) } }
@@ -543,7 +544,7 @@ final class LiveInk {
         windows.pin(pins)
         showMarks()
         closeEmpty(fade: 0)
-        Log.write("[live-ink] pinned \(pins.count) of \(held.count) marks drawn over a menu")
+        Log.write("[live-ink] pinned \(pins.count) of \(drawnOver) marks drawn over a menu")
     }
 
     private enum TapTarget {

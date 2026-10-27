@@ -17,6 +17,7 @@ The names in brackets are `// MARK:` sections.
 | To change | Look in |
 |---|---|
 | The chord, inking, the overlays per screen and Space | `LiveInk.swift` (Inking, Surfaces), `LiveInkOverlay.swift`, `ModifierChord.swift` |
+| Inking over an open menu: the event tap, closing the menu before the note | `LiveInkTap.swift`, `LiveMenus.swift`, `LiveInk.swift` (Inking) |
 | What a stroke becomes, and erasing | `InkStroke.swift`, `LiveInk.swift` (Strokes) |
 | How the person's ink looks | `LiveInkHand.swift` |
 | How an agent's shapes look | `LiveInkLight.swift` |
@@ -90,7 +91,48 @@ The names in brackets are `// MARK:` sections.
   the dim (2) and Vignette's floating windows, so the stack and the annotator cover the marks, and
   so do menus, the Dock and other apps' floating windows. It passes every press then
   (`ignoresMouseEvents`). While the chord is held it is inking: it rises to `.screenSaver` with the
-  flag off and takes every press, over clear pixels too, as the matte rule in `AGENTS.md` says.
+  flag off. The pointer's events then come from an event tap (the next rule). The overlay takes
+  presses itself, over clear pixels too, as the matte rule in `AGENTS.md` says, only when macOS
+  refuses the tap.
+- While inking, an active event tap takes the pointer's presses, drags, releases and moves before
+  any app hears them (`LiveInkTap`). It drops each one, and hands the left button's events and the
+  moves to the inking (`LiveInk.tapped`). An open menu hears every press on the screen, whatever
+  window is under the pointer, so a press the overlay takes closes a menu being drawn on. With the
+  tap, the menu stays open and highlights nothing as the pen crosses its items. The same holds for
+  anything else that closes when a press lands elsewhere, so the tap needs no list of element kinds.
+  Measured 2026-10-26 in a VM, on Finder's File menu, a desktop right-click menu and Control
+  Center's panel.
+  While the tap is on, no app on the Mac hears a click. So it exists only while inking:
+  `startInking` makes it, and `stopInking` stops it, whatever ended the inking. A process that exits
+  takes its taps with it (checked with `kill -9` mid-press). The callback runs on a thread of its
+  own and only hands each event to the main thread. macOS turns off a tap whose callback is slow to
+  answer. With the callback on the main thread, a 4.8 s stall as inking started turned the tap off
+  in the VM, and the menu under the ink then highlighted an item. A tap turned off that way goes on
+  again while inking lasts. Without Accessibility, macOS refuses the tap and the overlay takes the
+  presses. Each change logs one line: `[live-ink] tap on`, `tap off`, `tap turned off by macOS: …`
+  or `error tap refused by macOS; the overlay takes the presses`.
+  The session's button state, which `NSEvent.pressedMouseButtons` reads, never counts a press the
+  tap dropped. So the missed release (`watchRelease`) and the pointer field read the hardware's
+  state instead (`LiveInkTap.isButtonDown`).
+- A window over every app's windows is one above the status bar's level that does not cover its
+  screen (`LiveMenus.open`, `LivePacket.menuBarLevel`). Menus, context menus and Control Center's
+  panel are at level 101. A window's marks are drawn just above that window, so they would sit under
+  a menu. Ink drawn over a menu while inking therefore stays on the screen's surface
+  (`LiveInk.place`, `overMenus`), and the surface stays at the inking level until the menu has
+  closed. Then each of those marks moves onto the window under it, in place, and no frame shows two
+  copies (`pinOverMenus`, `LiveMarksLayer.handOff`). A mark with no window under it stays on the
+  surface.
+  An open menu would take the note's keys, so letting go of the chord closes the menus before the
+  note opens. They close once the note's capture has the screen, menu included, or after
+  `revealLimit` (0.8 s). `LiveMenus.close` performs Accessibility's cancel action on the outermost
+  `AXMenu` under each, then waits up to 0.5 s for their windows to leave. Escape is never posted:
+  once the menu is gone, it would reach the frontmost app. Control Center's panel has no `AXMenu`.
+  It closes on its own when the note takes the keys. When a cancel is refused, or a menu is still
+  open after the wait, the note opens without the keys
+  (`[live-ink] note open without the keys: a menu is still open`). The log says
+  `[live-ink] menus closing count=<n> refused=<n>`, then `menus closed` or
+  `menus still open after 0.5 s`, and `pinned <n> of <m> marks drawn over a menu` once the marks
+  have moved.
 - Esc backs out of live ink one step per press, the first of these that applies (`LiveEscape.next`,
   a pure function of a snapshot of what is up; `Tests/LiveInkTests.swift`):
   1. Discard the note, while it has the keys: listening stops and its ink, all the ink no ask has
@@ -158,7 +200,7 @@ The names in brackets are `// MARK:` sections.
   It is centred a little below and right of the arrow's tip, round the arrow's middle, and macOS
   draws the real arrow above it. It grows in as it shows, tightens and brightens while the button
   is down, and stretches along the way it moves. Each refresh the field reads the pointer and the
-  button from its display link (`NSEvent.mouseLocation`, `NSEvent.pressedMouseButtons`), so the
+  button from its display link (`NSEvent.mouseLocation`, `LiveInkTap.isButtonDown`), so the
   ring is sprung towards where the pointer is then, not where the last event put it. Its motion is
   a pure value, `PointerFieldMotion`.
 - The field draws from a live picture of the display (`ScreenFeed`). The picture starts when the
@@ -252,8 +294,9 @@ The names in brackets are `// MARK:` sections.
   person was in stays in front. Closing it while it has them gives the keys back at once
   (`letGoOfKeys`), because AppKit counts Vignette as active while the field has them. A press with
   Control held makes Vignette the frontmost app even on a non-activating panel (measured on macOS 15:
-  the chord's press activated it, and the same press without modifiers did not), so every press of the
-  chord does. The keys go back through `FocusReturn`, as the annotator's do: to the Vignette window
+  the chord's press activated it, and the same press without modifiers did not). The tap's presses
+  reach no window, so inking leaves the app the person was in at the front. Only when macOS refuses
+  the tap does each press of the chord activate Vignette. The keys go back through `FocusReturn`, as the annotator's do: to the Vignette window
   that was key when the chord went down (`sessionStarting`), or else to the app the person was in:
   activated when Vignette is frontmost, and by Vignette letting go when that app still is, since
   activating a frontmost app leaves the keys where they are.
@@ -444,7 +487,11 @@ The names in brackets are `// MARK:` sections.
   An answer names a line by id only among those sent, and other text by its words or a box
   (`docs/live-ink-ask-cost-2026-10-06.md`).
   Ink asked about on more than one window, or on a window and on none, gets a picture of the screen
-  instead. `LivePacket.Plan` decides this, and `Tests/LiveInkTests.swift` tests it. The picture is the
+  instead. So does ink over a window above the status bar's level, such as an open menu, because a
+  window's own capture leaves the menu out. The picture then covers the menu as well. The note's ink
+  is planned and captured as its last stroke ends, while the menu is still open. An ask about that
+  same ink uses that plan and capture. `LivePacket.Plan` decides which picture an ask gets, and
+  `Tests/LiveInkTests.swift` tests it. The screen's picture is the
   part of the newest ink's display that those windows' frames cover. It is captured as the person
   sees it, without Vignette's windows, with every stroke drawn in and numbered. A stroke is covered
   when a normal window in front of its own window overlaps it. A window of the stroke's own app
