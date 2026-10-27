@@ -813,7 +813,7 @@ final class LiveInk {
             point = centre
             run(effects)
         }
-        let answerer = (agent: session?.destination.client.rawValue ?? LiveAnswerLayout.agentName, name: session?.destination.project)
+        let answerer = (agent: session?.destination.client.rawValue ?? LiveAnswerLayout.agentName, name: session?.title)
         answerers[id] = answerer
         if let note { handing[id] = note.panel }
         if let reply {

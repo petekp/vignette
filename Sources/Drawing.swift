@@ -68,8 +68,8 @@ struct Mark: Equatable, Identifiable {
     /// For a live answer's reply, Vignette's word on it, which its row shows after who answers: why
     /// the ask failed. Never written to a file.
     var notice: String?
-    /// For a live answer's reply, the name its row gives who answers, when it is not the agent's: the
-    /// session's project, for a note sent to a session. Never written to a file.
+    /// For a live answer's reply, the name its row gives who answers, when it is not the agent's: for
+    /// a note sent to a session, the title the note's target showed. Never written to a file.
     var answerer: String?
     /// For a live answer's reply, where it hangs as a popover; a text without it is a note. Never
     /// written to a file.
