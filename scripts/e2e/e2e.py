@@ -10,8 +10,11 @@
 
 The test copy (`scripts/e2e/build.sh`) has its own bundle id, name and URL scheme. Each scenario
 launches it on a fresh scratch home (`CFFIXED_USER_HOME`), settings file (`VIGNETTE_SETTINGS`) and
-watch folder, so it never reads or writes the person's own. A test launch uses no codex and no
-herdr unless `VIGNETTE_CODEX` or `VIGNETTE_HERDR` names one, and every agent session is a fake.
+watch folder, so it never reads or writes the person's own. Preferences ignore that home, so the
+copy's two domains are cleared before each scenario. A launch with no environment, such as
+macOS's Quit & Reopen, takes the home the copy's Info.plist names (build.sh), which the runner links
+to the scenario's. A test launch uses no codex and no herdr unless `VIGNETTE_CODEX` or
+`VIGNETTE_HERDR` names one, and every agent session is a fake.
 A Claude Code session is an inbox folder held by a `sleep` process, which is all Send looks for. A
 Codex thread is listed by a fake codex (`fake_codex.py`) that `VIGNETTE_CODEX` names.
 
@@ -23,6 +26,7 @@ import datetime
 import html
 import json
 import os
+import plistlib
 import random
 import re
 import shutil
@@ -62,7 +66,16 @@ def test_copy():
     app_name = f'{name} E2E'
     path = os.path.join(OUT, 'dd-e2e', 'Build', 'Products', 'Release', f'{app_name}.app')
     return {'name': app_name, 'bundle': f'{bundle}.e2e', 'scheme': f'{scheme}-e2e', 'path': path,
-            'executable': os.path.join(path, 'Contents', 'MacOS', app_name)}
+            'executable': os.path.join(path, 'Contents', 'MacOS', app_name), 'relaunchHome': relaunch_home(path)}
+
+
+def relaunch_home(app):
+    """The home the copy's Info.plist names for a launch with no environment (build.sh), or None."""
+    try:
+        with open(os.path.join(app, 'Contents', 'Info.plist'), 'rb') as f:
+            return plistlib.load(f).get('LSEnvironment', {}).get('CFFIXED_USER_HOME')
+    except FileNotFoundError:
+        return None
 
 
 def running_pids(executable):
@@ -131,8 +144,15 @@ class App:
             json.dump(data, f, indent=2)
 
     def defaults(self, domain, *args):
-        env = dict(os.environ, CFFIXED_USER_HOME=self.home)
-        subprocess.run(['defaults', 'write', domain, *args], env=env, check=True)
+        subprocess.run(['defaults', 'write', domain, *args], check=True)
+
+    def reset_defaults(self):
+        """Clears the copy's preference domains, which every scenario shares: macOS keeps them in
+        the real ~/Library/Preferences whatever the home."""
+        for domain in (self.copy['bundle'], f"{self.copy['bundle']}.screencapture"):
+            subprocess.run(['defaults', 'delete', domain], capture_output=True)
+            if subprocess.run(['defaults', 'read', domain], capture_output=True).returncode == 0:
+                raise Failed(f'{domain} still holds values after defaults delete')
 
     def prepare(self, **settings):
         if not os.path.exists(self.settings):
@@ -144,10 +164,28 @@ class App:
 
     # -- Launch and stop
 
+    def link_relaunch_home(self):
+        """Points the home the copy's Info.plist names at this scenario's, so a launch with no
+        environment comes back on this scenario's files. A folder there was made by such a launch
+        while nothing was linked."""
+        link = self.copy['relaunchHome']
+        os.makedirs(os.path.dirname(link), exist_ok=True)
+        if os.path.isdir(link) and not os.path.islink(link):
+            shutil.rmtree(link)
+        temp = f'{link}.{os.getpid()}'
+        os.symlink(self.home, temp)
+        os.replace(temp, link)
+
+    def unlink_relaunch_home(self):
+        link = self.copy['relaunchHome']
+        if os.path.islink(link) and os.readlink(link) == self.home:
+            os.remove(link)
+
     def launch(self, **env):
         for pid in running_pids(self.copy['executable']):
             raise Failed(f'another test copy is running (pid {pid}); stop it first')
         self.env = env
+        self.link_relaunch_home()
         offset = self.log_size()
         args = ['open', '-g', '--env', f'VIGNETTE_SETTINGS={self.settings}', '--env', f'CFFIXED_USER_HOME={self.home}']
         for key, value in env.items():
@@ -172,6 +210,7 @@ class App:
 
     def close(self):
         self.stop()
+        self.unlink_relaunch_home()
         pids = os.path.join(self.folder, 'herdr', 'pids')
         if os.path.exists(pids):
             self.fakes += [int(line) for line in open(pids).read().split()]
@@ -204,8 +243,7 @@ class App:
         raise Failed(f'no {needle!r}{f" with {also!r}" if also else ""} in the log within {timeout} s')
 
     def url(self, command):
-        # With the copy gone, `open` would launch it again without VIGNETTE_SETTINGS, on the
-        # person's own settings and screenshots.
+        # With the copy gone, `open` would launch it again without this scenario's environment.
         if not self.pid:
             raise Failed(f'the test copy is not running; not sending {command.split("?")[0]}')
         try:
@@ -481,6 +519,28 @@ def build_probe():
         subprocess.run(['swiftc', '-O', '-o', PROBE, source], check=True)
 
 
+def first_run(copy, timeout=60):
+    """Runs the test copy once and returns the tries and the seconds it took.
+
+    macOS checks a new executable the first time it runs, and now and then refuses that first run:
+    syspolicyd logs "Terminating process due to Gatekeeper rejection" and kills it, while `open`
+    still answers 0. `reply --help` exits before the app starts."""
+    start = time.monotonic()
+    tries = 0
+    while True:
+        tries += 1
+        result = subprocess.run([copy['executable'], 'reply', '--help'], capture_output=True, text=True)
+        if result.returncode == 0:
+            return tries, time.monotonic() - start
+        killed = result.returncode == -signal.SIGKILL
+        if not killed:
+            sys.exit(f'the test copy did not run: exit {result.returncode} {result.stderr.strip()}')
+        if time.monotonic() - start > timeout:
+            sys.exit(f'macOS killed every run of the test copy for {timeout} s; '
+                     "`log show --last 5m --predicate 'process == \"syspolicyd\"'` says why")
+        time.sleep(1)
+
+
 def save_pasteboard():
     if os.path.exists(SAVED_PASTEBOARD):
         sys.exit(f'a pasteboard from an earlier run is still saved at {SAVED_PASTEBOARD}; run `e2e.py restore` first')
@@ -511,8 +571,17 @@ def run(names, with_input, build):
     copy = test_copy()
     if not os.path.exists(copy['executable']):
         sys.exit('no test copy; run without --no-build')
+    if not copy['relaunchHome']:
+        sys.exit('the test copy names no home for a launch with no environment; run without --no-build')
     for pid in running_pids(copy['executable']):
         sys.exit(f'a test copy is already running (pid {pid})')
+    # A new build's first run pays macOS's check of it, or is killed by it, so no scenario's launch does.
+    tries, seconds = first_run(copy)
+    line = f'test copy ran once before the scenarios in {seconds * 1000:.0f} ms'
+    if tries > 1:
+        killed = 'try 1' if tries == 2 else f'tries 1 to {tries - 1}'
+        line += f', on try {tries}; macOS killed {killed} (SIGKILL: Gatekeeper refused it)'
+    print(line, flush=True)
 
     folder = os.path.join(OUT, 'runs', datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S'))
     os.makedirs(folder)
@@ -531,6 +600,7 @@ def run(names, with_input, build):
                 continue
             app = App(copy, os.path.join(folder, scenario.__name__), report)
             try:
+                app.reset_defaults()
                 scenario(app)
                 report.end('pass', app.log_since(0))
             except Failed as error:

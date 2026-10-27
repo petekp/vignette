@@ -1,6 +1,8 @@
 import AppKit
 import XCTest
 
+private let retinaScreen = DrawingScreen(scale: 2, size: CGSize(width: 1512, height: 982))
+
 @MainActor
 final class ScreenshotRequestsTests: XCTestCase {
     private var root: URL!
@@ -26,7 +28,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         requests = ScreenshotRequests(root: root)
         requests.callbacks = ScreenshotRequests.Callbacks(
-            installDrawing: { [unowned self] _, marks, _, done in
+            installDrawing: { [unowned self] _, marks, _, _, done in
                 self.added.append(marks)
                 guard self.heldAdd == nil else { self.heldAdd = done; return }
                 done(self.addFails ? Drawings.Failure(code: .writeFailed, description: "disk full") : nil)
@@ -133,9 +135,9 @@ final class ScreenshotRequestsTests: XCTestCase {
     func testRecoveryPublishesOneCompleteDrawingAfterInstallationWasInterrupted() throws {
         let store = DrawingStore(directory: root.deletingLastPathComponent().appendingPathComponent("drawings"))
         let drawings = Drawings(store: store)
-        requests.callbacks.installDrawing = { [unowned self] shot, marks, agent, done in
+        requests.callbacks.installDrawing = { [unowned self] shot, marks, agent, _, done in
             do {
-                try drawings.installReply(marks, from: agent, at: shot.key, style: .standard, newPointScale: 2)
+                try drawings.installReply(marks, from: agent, at: shot.key, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule)
                 self.heldAdd = done
             } catch {
                 done(Drawings.Failure(code: .writeFailed, description: "\(error)"))
@@ -157,9 +159,9 @@ final class ScreenshotRequestsTests: XCTestCase {
         changedUI.agentTextSize *= 2
         let changedStyle = changedUI.textStyle
         requests.callbacks = ScreenshotRequests.Callbacks(
-            installDrawing: { shot, marks, agent, done in
+            installDrawing: { shot, marks, agent, _, done in
                 do {
-                    try reopened.installReply(marks, from: agent, at: shot.key, style: changedStyle, newPointScale: 1)
+                    try reopened.installReply(marks, from: agent, at: shot.key, style: changedStyle, newScreen: DrawingScreen(scale: 1, size: retinaScreen.size), rule: UITweaks().markScaleRule)
                     done(nil)
                 } catch { done(Drawings.Failure(code: .writeFailed, description: "\(error)")) }
             },

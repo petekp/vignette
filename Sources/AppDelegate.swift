@@ -71,7 +71,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// Live ink notes sent to a session: their note cards, their waits and their result cards.
     private lazy var noteCards = LiveNoteCards(
         folder: folderWrites, drawings: drawings, requests: requests, cards: thumbnail, connections: AppDelegate.connections,
-        addMarks: { [weak self] marks, agent, url, done in self?.addMarks(marks, from: agent, to: url, done: done) })
+        addMarks: { [weak self] marks, agent, url, done in
+            guard let self else { return }
+            addMarks(marks, from: agent, to: url, rule: settings.data.ui.liveInkMarkScaleRule, done: done)
+        })
     private var watcherGeneration = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -453,7 +456,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             folder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
             present: { [weak self] shot, annotate in self?.present(shot, annotate: annotate) },
             showCard: { [weak self] in self?.thumbnail.show($0) },
-            joinMarks: { [weak self] marks, agent, key, done in self?.addMarks(marks, from: agent, to: key, done: done) },
+            joinMarks: { [weak self] marks, agent, key, done in
+                guard let self else { return }
+                addMarks(marks, from: agent, to: key, rule: settings.data.ui.markScaleRule, done: done)
+            },
             removeCards: { [weak self] in self?.thumbnail.remove($0) },
             removeDrawings: { [weak self] keys, observedAt in self?.drawings.remove(keys, observedAt: observedAt) },
             removeReply: { [weak self] in self?.requests.fileRemoved($0) },
@@ -490,16 +496,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         drawings.onChange = { [weak self] key, drawing in self?.thumbnail.setDrawing(drawing, for: key) }
     }
 
+    /// The screen an agent's new drawing is sized for: the main screen, the best guess with no
+    /// annotator open.
+    private static var newDrawingScreen: DrawingScreen { DrawingScreen(NSScreen.main ?? NSScreen.screens[0]) }
+
     /// Agents' marks joining a screenshot's drawing: the one open in the editor, or the stored one.
-    /// `done` answers once the drawing is written, with how many marks joined it. A new drawing takes
-    /// the main screen's point scale, the best guess with no annotator open. `agent` names the agent
-    /// they are from.
-    private func addMarks(_ marks: [AgentMark], from agent: String?, to key: ScreenshotKey, done: @escaping (Result<Int, Drawings.Failure>) -> Void) {
+    /// `done` answers once the drawing is written, with how many marks joined it. A new drawing is
+    /// sized for the main screen, the best guess with no annotator open, by `rule`. `agent` names the
+    /// agent they are from.
+    private func addMarks(_ marks: [AgentMark], from agent: String?, to key: ScreenshotKey, rule: MarkScaleRule,
+                          done: @escaping (Result<Int, Drawings.Failure>) -> Void) {
         // A turn later, so callers can set their own state after asking.
         Task {
             do {
                 done(.success(try drawings.add(marks, from: agent, to: key, style: settings.data.ui.textStyle,
-                                               newPointScale: (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor)))
+                                               newScreen: Self.newDrawingScreen, rule: rule)))
             } catch let failure as Drawings.Failure {
                 done(.failure(failure))
             } catch {
@@ -1239,20 +1250,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// Wires the coordinator and reads what is already on disk. Runs before the watcher starts and
     /// before anything warms the stack: until the reply records are loaded nothing knows which
     /// managed files are unfinished, and an unfinished one must never read as an ordinary capture.
-    /// The point scale a reply's new drawing takes: the main screen's, the best guess with no
-    /// annotator open.
-    private static var replyPointScale: CGFloat { (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor }
-
     /// `clearingUnsent` is false when this launch replaces a copy that may still be handing its waiting
     /// sends over as it quits (`ScreenshotRequests.load`).
     private func startRequests(clearingUnsent: Bool) {
         requests.callbacks = ScreenshotRequests.Callbacks(
-            installDrawing: { [weak self] shot, marks, agent, done in
+            installDrawing: { [weak self] shot, marks, agent, answersLiveInk, done in
                 guard let self else { return done(Drawings.Failure(code: .writeFailed, description: "the app is gone")) }
                 Task {
                     do {
-                        try self.drawings.installReply(marks, from: agent, at: shot.key, style: self.settings.data.ui.textStyle,
-                                                  newPointScale: Self.replyPointScale)
+                        let ui = self.settings.data.ui
+                        try self.drawings.installReply(marks, from: agent, at: shot.key, style: ui.textStyle, newScreen: Self.newDrawingScreen,
+                                                       rule: answersLiveInk ? ui.liveInkMarkScaleRule : ui.markScaleRule)
                         done(nil)
                     } catch let failure as Drawings.Failure {
                         done(failure)
@@ -1263,8 +1271,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             },
             cardCanvas: { [weak self] url, agent in
                 guard let self, let pixels = PixelSize(imageAt: url) else { return nil }
-                let pointScale = min(max(Self.replyPointScale, Drawing.pointScales.lowerBound), Drawing.pointScales.upperBound)
-                return LiveAnswer.Canvas(pixels: pixels, pointScale: pointScale, style: settings.data.ui.textStyle, agent: agent)
+                let ui = settings.data.ui
+                let pointScale = ui.liveInkMarkScaleRule.scale(for: pixels, on: Self.newDrawingScreen).point
+                return LiveAnswer.Canvas(pixels: pixels, pointScale: pointScale, style: ui.textStyle, smallestText: ui.smallestNoteText,
+                                         agent: agent)
             },
             present: { [weak self] shot in self?.folderWrites.published(shot) },
             presentLive: { [weak self] record, answer, done in

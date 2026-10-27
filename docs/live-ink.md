@@ -410,6 +410,14 @@ The names in brackets are `// MARK:` sections.
   or a relaunch since the note went, makes the reply a card on the picture the session was sent,
   with a ring or an arrow for each mark that gave a box (`Reply.cardMarks`), laid out the same way
   on that picture (`ScreenshotRequests.Callbacks.cardCanvas`).
+- A card live ink makes draws its marks at full size, however small the window
+  (`UITweaks.liveInkMarkScaleRule`). A screenshot's marks shrink when it is smaller than the screen
+  (`docs/mark-scale-2026-10-27.md`). A live ink card shows the window as live ink drew on it, at
+  the screen's own size. Its marks are laid out in the capture's points at the capture's scale
+  (`ResultCard`, `cardCanvas`), so the layout and the drawing must use the same point scale. A note
+  card's drawing is made at mark scale 1 (`LiveNoteCards.send`). A result card's and a reply card's
+  are made by the rule. An agent's note on any card keeps the floor every agent's note has: a model
+  that resizes the card reads its text at no less than `ui.smallestNoteText` px.
 - When a session's turn ends with no reply, Vignette looks at the window again (`LiveNoteCards`,
   `LiveChange`).
   - **The before picture.** The note's own capture gives the part of the window round the ink: the

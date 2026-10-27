@@ -383,7 +383,8 @@ final class LiveNoteCards {
                 }
                 let card = ResultCard(frame: packet.frame, pixels: PixelSize(width: packet.capture.width, height: packet.capture.height),
                                       pointScale: packet.scale, page: packet.page, lines: packet.lines)
-                let drawn = card.marks(for: answer, about: note.ink, style: ui.textStyle, agent: note.destination.client.rawValue)
+                let drawn = card.marks(for: answer, about: note.ink, style: ui.textStyle, smallestText: ui.smallestNoteText,
+                                       agent: note.destination.client.rawValue)
                 Log.write("[live-ink] result for request=\(request) marks=\(answer.marks.count) notFound=\(drawn.notDrawn.count)")
                 guard let self else { return done(nil) }
                 addResult(packet.capture, pointScale: packet.scale, marks: drawn.marks, answering: 1, from: destination) { shot in
@@ -403,7 +404,7 @@ final class LiveNoteCards {
         guard let made = note.resultCard, let file = made.file, FileManager.default.fileExists(atPath: file.url.path) else {
             return done(nil)
         }
-        let style = Settings.shared.data.ui.textStyle
+        let ui = Settings.shared.data.ui
         let agent = note.destination.client.rawValue
         Task { @MainActor [weak self] in
             let image = made.image
@@ -411,7 +412,7 @@ final class LiveNoteCards {
             // The page is not known here, so the words may go anywhere on the picture.
             let card = ResultCard(frame: made.frame, pixels: PixelSize(width: image.width, height: image.height),
                                   pointScale: made.pointScale, page: nil, lines: lines)
-            let drawn = card.marks(for: answer, about: note.ink, style: style, agent: agent)
+            let drawn = card.marks(for: answer, about: note.ink, style: ui.textStyle, smallestText: ui.smallestNoteText, agent: agent)
             Log.write("[live-ink] result for request=\(request) marks=\(answer.marks.count) notFound=\(drawn.notDrawn.count) on \(file.key.name)")
             guard let self else { return done(nil) }
             guard !drawn.marks.isEmpty else { return done(drawn.notDrawn) }

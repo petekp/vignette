@@ -310,6 +310,8 @@ struct UITweaks: Codable, Equatable {
     var badgeOverlap = 0.2           // and how far it overlaps the tag's top edge
     var arrowheadLength = 4.5        // multiples of the stroke width
     var arrowheadWidth = 4.0
+    var markScalePower = 0.5         // how marks shrink on a screenshot smaller than the screen: 0 never, 1 in step with its size
+    var smallestNoteText = 16.0      // px a new note's text never falls below, as a reader that resizes the image sees it
     // Stitch
     var stitchLongSide = 4096.0      // a composition longer than this is scaled down to it
     // The pointer field, which says the screen is taking ink while the chord is held: the ring round
@@ -502,6 +504,17 @@ extension UITweaks {
                          agentFont: agentTextFont, agentWeight: named(agentTextWeight, UITweaks().agentTextWeight),
                          lineHeight: textLineHeight, padTop: notePaddingTop, padBottom: notePaddingBottom, padSide: notePaddingSide,
                          widthCap: noteMaxWidth, badgeInset: badgeInset, badgeOverlap: badgeOverlap, agentSize: agentTextSize / 100)
+    }
+
+    /// How big a new drawing's marks are on its screenshot.
+    var markScaleRule: MarkScaleRule {
+        MarkScaleRule(power: markScalePower, smallestNoteText: smallestNoteText, newTextSize: newTextSize)
+    }
+
+    /// How big the marks are on a card live ink makes: full size on any picture, since the card shows
+    /// a window as live ink drew on it, at the screen's own size. An agent's note keeps its floor.
+    var liveInkMarkScaleRule: MarkScaleRule {
+        MarkScaleRule(power: 0, smallestNoteText: smallestNoteText, newTextSize: newTextSize)
     }
 
     /// How every mark is painted. A colour that is not `#rrggbb` takes the default's, as `validated`

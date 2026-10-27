@@ -17,8 +17,10 @@ struct ResultCard {
     /// `answer` drawn as this card draws it (`LiveAnswer.cardMarks`), each mark at what it names in
     /// these lines (`AnswerMark.target`), every line counting as sent. `ink`, in global top-left points,
     /// is what the note was about. `notDrawn` is the indexes of the answer's marks with no target on
-    /// the window. On the main actor, as `LivePacket.Line.box(of:)` is.
-    @MainActor func marks(for answer: LiveAnswer, about ink: CGRect, style: TextStyle, agent: String?) -> (marks: [AgentMark], notDrawn: [Int]) {
+    /// the window. `smallestText` is the card's floor for a note's text (`LiveAnswer.Canvas`). On the
+    /// main actor, as `LivePacket.Line.box(of:)` is.
+    @MainActor func marks(for answer: LiveAnswer, about ink: CGRect, style: TextStyle, smallestText: CGFloat,
+                          agent: String?) -> (marks: [AgentMark], notDrawn: [Int]) {
         let sent = Set(lines.map(\.id))
         // A rect in global top-left points as fractions of the capture, or nil when none of it is on it.
         func fraction(_ rect: CGRect) -> CGRect? {
@@ -37,7 +39,8 @@ struct ResultCard {
             return fraction(found)
         }
         let notDrawn = targets.indices.filter { targets[$0] == nil }
-        let canvas = LiveAnswer.Canvas(pixels: pixels, pointScale: pointScale, style: style, agent: agent, page: page.flatMap(fraction))
+        let canvas = LiveAnswer.Canvas(pixels: pixels, pointScale: pointScale, style: style, smallestText: smallestText, agent: agent,
+                                       page: page.flatMap(fraction))
         return (answer.cardMarks(targets: targets, about: fraction(ink), text: lines.map(\.box), on: canvas), notDrawn)
     }
 }

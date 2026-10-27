@@ -10,16 +10,19 @@ extension AgentMark {
 
     /// `agentMarks` as marks in px on an image of `pixels`, for a drawing at `pointScale`, every one
     /// inside the image and one the drawing file's validator takes. Every mark carries `agent` and the
-    /// agent's name, `agent`, so it is drawn in the agent's colour whatever colour it names.
-    /// `tooLong` numbers the texts that are still bigger than the image after fitting, counted from 1
-    /// as `invalid-marks` counts them: each keeps its start showing and is cut at the image's edge.
+    /// agent's name, `agent`, so it is drawn in the agent's colour whatever colour it names. A text
+    /// reaches a reader that resizes the image (`Stitch.readerScale`) at no less than `smallestText`
+    /// px (`MarkScaleRule`). `tooLong` numbers the texts that are still bigger than the image after
+    /// fitting, counted from 1 as `invalid-marks` counts them: each keeps its start showing and is cut
+    /// at the image's edge.
     static func marks(_ agentMarks: [AgentMark], from agent: String?, in pixels: PixelSize, pointScale: CGFloat,
-                      style: TextStyle) -> (marks: [Mark], tooLong: [Int]) {
+                      style: TextStyle, smallestText: CGFloat) -> (marks: [Mark], tooLong: [Int]) {
         var marks: [Mark] = []
         var tooLong: [Int] = []
         let name = Agent.clean(agent).flatMap { $0.isEmpty ? nil : $0 }
         for (index, agentMark) in agentMarks.enumerated() {
-            guard var geometry = agentMark.geometry(in: pixels, pointScale: pointScale, style: style.forAgent(named: name)) else {
+            guard var geometry = agentMark.geometry(in: pixels, pointScale: pointScale, style: style.forAgent(named: name),
+                                                    smallestText: smallestText) else {
                 Log.write("[marks] dropped mark=\(index + 1): its fields do not make a mark of type=\(agentMark.type.rawValue)")
                 continue
             }
@@ -41,7 +44,7 @@ extension AgentMark {
     /// The mark's geometry in px, before it is placed. Nil when a field its type needs is missing or
     /// out of range, which `parse` refuses but a stored record read back might still hold. `style` is
     /// the agent's, which sets a text's size.
-    private func geometry(in pixels: PixelSize, pointScale: CGFloat, style: TextStyle) -> Mark.Geometry? {
+    private func geometry(in pixels: PixelSize, pointScale: CGFloat, style: TextStyle, smallestText: CGFloat) -> Mark.Geometry? {
         let width = CGFloat(pixels.width), height = CGFloat(pixels.height)
         let origin = CGPoint(x: x * width, y: y * height)
         switch type {
@@ -56,7 +59,8 @@ extension AgentMark {
             return .arrow(Mark.Arrow(start: origin, end: end))
         case .text:
             guard let text, let checked = try? MarkFields(item: ["text": text], unit: .fraction).text(), w.map({ $0 > 0 }) ?? true else { return nil }
-            var mark = Mark.Text(origin: origin, text: checked, size: min(style.agentSize * width / pointScale, Mark.Text.maxSize))
+            let smallest = smallestText / Stitch.readerScale(CGSize(width: width, height: height))
+            var mark = Mark.Text(origin: origin, text: checked, size: min(max(style.agentSize * width, smallest) / pointScale, Mark.Text.maxSize))
             // Its tag is `w` wide at most, or as wide as a person's note without a wrap width, but
             // never narrower than the least room a text is given.
             mark.wrap = w.map { $0 * width } ?? max(TextLayout.minimumRoom * width, TextLayout.tagWidth(of: mark, imageWidth: width, pointScale: pointScale, style: style))
@@ -106,13 +110,14 @@ extension AgentMark {
 }
 
 extension AgentMark {
-    /// An agent's note of `text`, set as `marks` sets it on a picture of `pixels` at `pointScale` (its
-    /// wrap, its fit), and placed by `LiveAnswerLayout.place` beside `near`, inside `room` and the
-    /// picture's `textRoom`, covering as little of `obstacles` as it can; all three in the picture's
-    /// points. Answers the note, which `marks` leaves where it was placed when it fits that room, and
-    /// the rect it covers there, badge included. Nil when `marks` makes no text of it.
+    /// An agent's note of `text`, set as `marks` sets it on a picture of `pixels` at `pointScale` with
+    /// `smallestText` (its size, wrap and fit), and placed by `LiveAnswerLayout.place` beside `near`,
+    /// inside `room` and the picture's `textRoom`, covering as little of `obstacles` as it can; all
+    /// three in the picture's points. Answers the note, which `marks` leaves where it was placed when it
+    /// fits that room, and the rect it covers there, badge included. Nil when `marks` makes no text of it.
     static func note(_ text: String, from agent: String?, near: CGRect, room: CGRect, obstacles: [CGRect],
-                     in pixels: PixelSize, pointScale: CGFloat, style: TextStyle) -> (mark: AgentMark, covers: CGRect)? {
+                     in pixels: PixelSize, pointScale: CGFloat, style: TextStyle,
+                     smallestText: CGFloat) -> (mark: AgentMark, covers: CGRect)? {
         let width = CGFloat(pixels.width), height = CGFloat(pixels.height), scale = pointScale
         // Inside the margin `marks` keeps from the edges, so its fit leaves the note where it is put.
         let picture = textRoom(CGSize(width: width / scale, height: height / scale))
@@ -120,7 +125,7 @@ extension AgentMark {
         let room = inside.isNull || inside.isEmpty ? picture : inside
         // Set as the card will set it, at the wrap it chooses, with the badge above the tag.
         guard let set = marks([AgentMark(type: .text, x: 0, y: 0, text: text)], from: agent, in: pixels,
-                              pointScale: scale, style: style).marks.first,
+                              pointScale: scale, style: style, smallestText: smallestText).marks.first,
               case .text(let words) = set.geometry, let wrap = words.wrap else { return nil }
         let layout = TextLayout(words, imageWidth: width, pointScale: scale, style: style.forMark(set))
         let drawn = layout.drawnBox()

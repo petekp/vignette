@@ -1,6 +1,8 @@
 import AppKit
 import XCTest
 
+private let retinaScreen = DrawingScreen(scale: 2, size: CGSize(width: 1512, height: 982))
+
 final class DrawingStoreTests: XCTestCase {
     private var dir: URL!
     private var lines: LogLines!
@@ -149,6 +151,28 @@ final class DrawingStoreTests: XCTestCase {
         }
     }
 
+    func testAMarkScaleUnderOneIsWrittenAndReadBackAndOneOutsideItsRangeMakesTheFileInvalid() throws {
+        let box = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 50)))
+        try store.write(Drawing(key: key, pixels: pixels, pointScale: 1, markScale: 0.5, marks: [box]))
+        let file = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: store.url(for: key))) as? [String: Any])
+        XCTAssertEqual(file["markScale"] as? Double, 0.5)
+        XCTAssertEqual(file["pointScale"] as? Double, 1)
+        let back = try XCTUnwrap(read())
+        XCTAssertEqual(back.markScale, 0.5)
+        XCTAssertEqual(back.screenScale, 2)
+
+        try store.write(Drawing(key: key, pixels: pixels, pointScale: 2, marks: [box]))
+        let full = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: store.url(for: key))) as? [String: Any])
+        XCTAssertNil(full["markScale"], "left out at 1")
+        XCTAssertEqual(read()?.markScale, 1)
+
+        for scale in ["0", "1.5", "\"half\""] {
+            try put(#"{"version": 1, "key": "\#(key)", "pixels": [3024, 1964], "pointScale": 1, "markScale": \#(scale), "marks": [{"type": "rectangle", "x": 1, "y": 1, "w": 5, "h": 5}]}"#)
+            XCTAssertNil(read(), scale)
+            XCTAssertTrue(lines.all.last?.contains("markScale must be a number from 0.05 to 1") == true, "\(lines.all)")
+        }
+    }
+
     func testADrawingWhosePixelsDifferIsDropped() throws {
         let drawing = Drawing(key: key, pixels: pixels, pointScale: 2,
                               marks: [Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 50)))])
@@ -251,7 +275,7 @@ final class DrawingsTests: XCTestCase {
         let theirs = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))
         drawings.write(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [theirs]), reason: "saved")
 
-        let added = try drawings.add(pushed, from: nil, to: shot.screenshotKey, style: .standard, newPointScale: 2)
+        let added = try drawings.add(pushed, from: nil, to: shot.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule)
         XCTAssertEqual(added, 2)
         let stored = try XCTUnwrap(drawings.read(shot.screenshotKey, pixels: pixels, style: .standard))
         XCTAssertEqual(stored.pointScale, 1, "a stored drawing keeps its own scale")
@@ -260,11 +284,11 @@ final class DrawingsTests: XCTestCase {
         XCTAssertEqual(stored.marks.dropFirst().map(\.agent), [true, true])
         XCTAssertEqual(stored.marks.dropFirst().map(\.color), [.agent, .agent], "a colour the agent names is ignored")
 
-        // A screenshot with no drawing gets a new one at the scale it is given.
         let fresh = try redShot()
-        XCTAssertEqual(try drawings.add(pushed, from: nil, to: fresh.screenshotKey, style: .standard, newPointScale: 2), 2)
+        XCTAssertEqual(try drawings.add(pushed, from: nil, to: fresh.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule), 2)
         let made = try XCTUnwrap(drawings.read(fresh.screenshotKey, pixels: pixels, style: .standard))
-        XCTAssertEqual(made.pointScale, 2)
+        XCTAssertEqual(made.markScale, 16.0 / 34, accuracy: 1e-9, "300 by 200 px is small enough for the floor: a 17 pt note at 2x reaches 16 px")
+        XCTAssertEqual(made.pointScale, 2 * made.markScale, accuracy: 1e-9)
         XCTAssertEqual(made.marks.count, 2)
         XCTAssertEqual(drawings.keys, [shot.screenshotKey, fresh.screenshotKey])
     }
@@ -273,13 +297,13 @@ final class DrawingsTests: XCTestCase {
         let shot = try redShot()
         let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
         let reply = pushed + [AgentMark(type: .text, x: 0.2, y: 0.2, text: "A complete reply")]
-        try drawings.installReply(reply, from: "claude", at: shot.screenshotKey, style: .standard, newPointScale: 2)
+        try drawings.installReply(reply, from: "claude", at: shot.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule)
         let checkpoint = try XCTUnwrap(drawings.store.readComplete(key: shot.path, pixels: pixels, style: .standard))
         let bytes = try Data(contentsOf: drawings.store.url(for: shot.path))
         let restarted = Drawings(store: drawings.store)
         var changedUI = UITweaks()
         changedUI.agentTextSize *= 2
-        try restarted.installReply(reply, from: "claude", at: shot.screenshotKey, style: changedUI.textStyle, newPointScale: 1)
+        try restarted.installReply(reply, from: "claude", at: shot.screenshotKey, style: changedUI.textStyle, newScreen: DrawingScreen(scale: 1, size: retinaScreen.size), rule: UITweaks().markScaleRule)
         let recovered = try XCTUnwrap(restarted.store.readComplete(key: shot.path, pixels: pixels, style: .standard))
         XCTAssertEqual(recovered.pointScale, checkpoint.pointScale)
         XCTAssertEqual(recovered.marks.map(\.geometry), checkpoint.marks.map(\.geometry))
@@ -289,28 +313,28 @@ final class DrawingsTests: XCTestCase {
 
     func testReplyRecoveryRefusesPartialOrCorruptCheckpoints() throws {
         let shot = try redShot()
-        try drawings.installReply(pushed, from: "claude", at: shot.screenshotKey, style: .standard, newPointScale: 2)
+        try drawings.installReply(pushed, from: "claude", at: shot.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule)
         let file = drawings.store.url(for: shot.path)
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
         var marks = try XCTUnwrap(json["marks"] as? [[String: Any]])
         json["marks"] = [marks[0]]
         try JSONSerialization.data(withJSONObject: json).write(to: file)
-        XCTAssertThrowsError(try drawings.installReply(pushed, from: "claude", at: shot.screenshotKey, style: .standard, newPointScale: 1))
+        XCTAssertThrowsError(try drawings.installReply(pushed, from: "claude", at: shot.screenshotKey, style: .standard, newScreen: DrawingScreen(scale: 1, size: retinaScreen.size), rule: UITweaks().markScaleRule))
         var outside = marks
         outside[1]["x"] = 1000
         json["marks"] = outside
         try JSONSerialization.data(withJSONObject: json).write(to: file)
-        XCTAssertThrowsError(try drawings.installReply(pushed, from: "claude", at: shot.screenshotKey, style: .standard, newPointScale: 1))
+        XCTAssertThrowsError(try drawings.installReply(pushed, from: "claude", at: shot.screenshotKey, style: .standard, newScreen: DrawingScreen(scale: 1, size: retinaScreen.size), rule: UITweaks().markScaleRule))
         marks[1]["x"] = "invalid"
         json["marks"] = marks
         let partial = try JSONSerialization.data(withJSONObject: json)
         try partial.write(to: file)
         let restarted = Drawings(store: drawings.store)
-        XCTAssertThrowsError(try restarted.installReply(pushed, from: "claude", at: shot.screenshotKey, style: .standard, newPointScale: 1))
+        XCTAssertThrowsError(try restarted.installReply(pushed, from: "claude", at: shot.screenshotKey, style: .standard, newScreen: DrawingScreen(scale: 1, size: retinaScreen.size), rule: UITweaks().markScaleRule))
         XCTAssertEqual(try Data(contentsOf: file), partial)
         try Data("not JSON".utf8).write(to: file)
         let afterScan = Drawings(store: drawings.store)
-        XCTAssertThrowsError(try afterScan.installReply(pushed, from: "claude", at: shot.screenshotKey, style: .standard, newPointScale: 1))
+        XCTAssertThrowsError(try afterScan.installReply(pushed, from: "claude", at: shot.screenshotKey, style: .standard, newScreen: DrawingScreen(scale: 1, size: retinaScreen.size), rule: UITweaks().markScaleRule))
         XCTAssertEqual(try Data(contentsOf: file.appendingPathExtension("invalid")), Data("not JSON".utf8))
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
     }
@@ -375,14 +399,14 @@ final class DrawingsTests: XCTestCase {
         var written: [Drawing?] = []
         drawings.onChange = { _, drawing in written.append(drawing) }
 
-        XCTAssertEqual(try drawings.add(pushed, from: nil, to: shot.screenshotKey, style: .standard, newPointScale: 2), 2)
+        XCTAssertEqual(try drawings.add(pushed, from: nil, to: shot.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule), 2)
         XCTAssertEqual(editor.drawing.marks.dropFirst().map(\.agent), [true, true], "the marks join the open drawing")
         XCTAssertEqual(written.map { $0?.marks.count }, [3], "one write, of the joined drawing")
         XCTAssertEqual(drawings.read(shot.screenshotKey, pixels: pixels, style: .standard)?.marks.count, 3)
 
         // The push answers from the write, not from the marks having joined.
         try FileManager.default.removeItem(at: shot)
-        XCTAssertThrowsError(try drawings.add(pushed, from: nil, to: shot.screenshotKey, style: .standard, newPointScale: 2)) { error in
+        XCTAssertThrowsError(try drawings.add(pushed, from: nil, to: shot.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule)) { error in
             XCTAssertEqual((error as? Drawings.Failure)?.code, .writeFailed)
         }
     }

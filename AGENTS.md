@@ -29,7 +29,10 @@ makes such a decision, and mark the old one superseded when a change reverses it
   `TextStyle` (`docs/mark-style-settings-2026-09-29.md`). A change
   reaches every place that draws marks at once: the open editor (`AnnotationController.applyTweaks`),
   the cards and flights (`ThumbnailController.applyTweaks`), live ink (`LiveInk.applyTweaks`), and
-  the next stitch, drag image and rendering, which read the settings when they draw. What a user would tune belongs in `UITweaks`,
+  the next stitch, drag image and rendering, which read the settings when they draw. How much
+  smaller marks are on a small screenshot is the exception: `UITweaks.markScaleRule` sets a
+  drawing's mark scale when it is made, and a change reaches only the drawing open in the editor
+  (the editor-and-drawings rules below). What a user would tune belongs in `UITweaks`,
   with an entry in `TweakCatalog`, which gives it its row in the tweak panel and its safety range
   (`UITweaks.bounds` is made from it); when in doubt, put it there. Editing the file is a supported way to
   change settings; the app reloads it within a second. It is the user's real config: never test
@@ -112,6 +115,14 @@ Before you drive the app:
 - Stop a test copy by its PID before you launch another copy of the same bundle id. On 2026-09-26,
   `open -a <a Release copy> <url>`, sent after a Debug copy of the same bundle id had run, launched a
   second Release instance without `VIGNETTE_SETTINGS`, on the user's real settings file.
+- A launch through LaunchServices with no environment is not a test launch. macOS's Quit & Reopen
+  after a permission grant, Sparkle's relaunch and a bare `open` are all such launches.
+  `Launch.isTest` then reads false. The copy reads `~/.config/<its URL scheme>/settings.json`,
+  writes Apple's own screenshot settings, can register a login item, runs the updater and reaches
+  the person's `~/.claude` and `~/.codex`. The end-to-end copies name a scratch home and settings
+  file under `LSEnvironment` in their Info.plist, `/tmp/<bundle id>/home` (`scripts/e2e/build.sh`),
+  so one launched that way is still a test launch. `open --env` overrides those values key by key.
+  For a test by hand, launch the copy on that home, or link it to your scratch home.
 
 The steps below have the details.
 
@@ -206,10 +217,10 @@ The steps below have the details.
    `transition` (phase), `annotator` (`current`, `frame`, `toolbar`, `windowVisible`, `key`, `tool`,
    and the zoom's own keys, which the zoom bullet below names), `editor` (`open`, `tool`, `marks`
    with each mark's `type`, `frame` and `agent`, `selection` as indexes into `marks`, `typing`,
-   `undo`, `redo`; never a text's words), `drawings` (keys), `requests`, `memory` (rss and thumbnail
-   cache in bytes), `backdrop`, `dim`, and `liveInk` (`docs/live-ink.md`). Frames are
-   `[x, y, w, h]` in global top-left points, except a drawing's mark's, which is in the image's
-   pixels.
+   `undo`, `redo`, `pointScale`, `markScale`; never a text's words), `drawings` (keys), `requests`,
+   `memory` (rss and thumbnail cache in bytes), `backdrop`, `dim`, and `liveInk` (`docs/live-ink.md`).
+   Frames are `[x, y, w, h]` in global top-left points, except a drawing's mark's, which is in the
+   image's pixels.
    `[app] ready pid=… build=… watching=…` marks the end of launch: after it every command
    answers. `build` is `git describe` of the checkout, written into the bundle by a build phase
    (project.yml), so a build from Xcode carries it too.
@@ -259,9 +270,16 @@ images opening measured no narrowing at all, and `stack.widthScale` in `[state]`
 
 The end-to-end tests: `scripts/e2e/e2e.py run` builds the test copy (`scripts/e2e/build.sh`: its
 own bundle id, name and URL scheme, given on the `xcodebuild` line) and runs the scenarios in
-`scripts/e2e/scenarios.py`, each on a fresh scratch home, settings file and watch folder. It saves
-the pasteboard and puts it back, even when stopped (`e2e.py restore` after a crash), and writes a
-report under `scripts/e2e/out/runs/`. `--input` adds the scenarios that post keys and clicks, each
+`scripts/e2e/scenarios.py`, each on a fresh scratch home, settings file and watch folder. Before
+each launch the runner links the home the copy's Info.plist names to the scenario's, so a launch
+with no environment comes back on the scenario's files. It removes the link when the scenario
+ends. Before the first scenario it runs the copy once, as `<executable> reply --help`, which exits
+before the app starts. macOS checks a new build the first time it runs, and now and then kills that
+run: syspolicyd logs "Terminating process due to Gatekeeper rejection". In the VM that was 1 first
+run in about 30 (measured 2026-10-26). `open` still answers 0 for a killed launch, so a scenario
+would wait its full 30 s for a process that is gone. The runner tries a killed run again and prints
+how long the run took and whether macOS killed it. It saves the pasteboard and puts it back, even when stopped (`e2e.py restore` after a
+crash), and writes a report under `scripts/e2e/out/runs/`. `--input` adds the scenarios that post keys and clicks, each
 gated on the test copy's own state; they need `Vignette E2E` granted Accessibility and Screen
 Recording once, by hand. Without Screen Recording, every live ink ask fails at its picture.
 The terminal that runs them needs Accessibility and Screen Recording. On macOS 15, the run's first
@@ -279,9 +297,13 @@ thread is listed by a fake codex that `VIGNETTE_CODEX` names (`App.fake_codex`,
 each `codex queue --thread <id> --message <line>`, which is how Send hands a Codex thread its line. Launched
 with `--env CFFIXED_USER_HOME=<folder>`, the app takes that folder for the home folder, so the Agents
 tab and setup read and write a scratch `.claude` rather than the user's; its log is then under that
-folder's `Library/Logs`, which must exist before the launch, or the log lines are dropped. Apple's
-screenshot location for such a launch is written with the same variable:
-`CFFIXED_USER_HOME=<folder> defaults write <bundle id>.screencapture location <watch folder>`.
+folder's `Library/Logs`, which must exist before the launch, or the log lines are dropped. A
+scratch home moves files, not preferences: `defaults` and `UserDefaults` ignore
+`CFFIXED_USER_HOME` and write the real `~/Library/Preferences` (measured 2026-10-26 on macOS 15). A
+test copy's preferences are kept apart from the person's by its bundle id, in `<bundle id>` and,
+as a test launch, `<bundle id>.screencapture`. So its screenshot location is
+`defaults write <bundle id>.screencapture location <watch folder>`. Those two domains outlive a
+scratch home, so the end-to-end runner clears both before each scenario (`App.reset_defaults`).
 
 ## Rules that are not obvious from the code
 
@@ -410,12 +432,15 @@ screenshot location for such a launch is written with the same variable:
   Accessibility. Nothing else
   may raise that dialog: `ModifierTap` is constructed with `prompt: false`, so the only
   `trusted(prompt: true)` in the app is `Accessibility.request()`, which runs from a button the user
-  pressed: this window's, after choosing the double tap, and the Settings window's. A dialog raised
+  pressed: this window's, after choosing the double tap, the Settings window's, and the status
+  menu's Allow Accessibility for the Shortcut…. A dialog raised
   during launch, on a question nobody asked, is the one people dismiss. `request()` raises macOS's
   own alert and nothing else, and opens the pane itself only when no `universalAccessAuthWarn`
   window is up 1.5 s later (measured: the alert came up within half a second). Opening both at
-  once put the pane in front of the alert, which then waited behind it and outlived the grant, and
-  each further press queued one more alert to come up after it. The window learns the grant landed
+  once put the pane in front of the alert, which then waited behind it and outlived the grant. A
+  press while the alert is up brings the alert to the front, since any window can cover it:
+  Vignette yields its activation to the alert's app and activates it (`bringForward`). It does not
+  ask again, which would queue a second alert behind the first. The window learns the grant landed
   by polling (AXIsProcessTrusted announces nothing), comes back to the front then, since System
   Settings was covering it, and learns the shortcut works from the `.hotKeyFired`
   notification, which `registerHotKey`'s `fire` posts: the keys firing is what proves the setup
@@ -1019,10 +1044,23 @@ screenshot location for such a launch is written with the same variable:
   `color` in `marks=` is ignored and logged. An agent's note becomes the person's when typing ends
   with its words changed (`EditorCore.endTyping`), as one undo step; a move or a resize keeps it the
   agent's. `docs/mark-colour-2026-09-29.md` has the reasons and the candidates.
-- A drawing's sizes are in points of its own `pointScale`. A new drawing in the annotator takes the
-  backing scale of the screen it opens on; one an agent's marks create takes `NSScreen.main`'s, the
-  best guess with no annotator open. Both are clamped to `Drawing.pointScales`. A stored drawing
-  keeps its own, so a mark keeps its size in the image when the drawing is opened on another screen.
+- A drawing's sizes are in points of its own `pointScale`, which is the screen's backing scale times
+  the drawing's `markScale`. A new drawing in the annotator takes the screen it opens on; one an
+  agent's marks create takes `NSScreen.main`, the best guess with no annotator open. Both are
+  clamped to `Drawing.pointScales`. `MarkScaleRule` sets the mark scale from the image's area
+  against that screen's, in screen points: 1 for a capture of the whole screen or anything larger,
+  less for a smaller one, and never so small that a new note's text reaches a model that resizes the
+  image (`Stitch.readerScale`) under `ui.smallestNoteText` px. Every drawer converts through
+  `pointScale` alone, so the editor, the text being typed, cards, flights, renderings and stitches
+  draw the same size, and so does an older build that shares the drawings folder. The file writes
+  `markScale` only when it is under 1, and the format's version stays 1
+  (`docs/adr/0025-marks-are-sized-to-the-screenshot.md`). A stored drawing keeps both, so a mark
+  keeps its size in the image when the drawing is opened on another screen or after the rule
+  changes. A change to `ui.markScalePower` or `ui.smallestNoteText` rescales the open drawing
+  (`EditorCore.Input.rescaled`), which hands it over and is no undo step. An agent's note keeps
+  `ui.agentTextSize` of the image's width, with the same floor (`AgentMarks`). Live ink's cards keep
+  full-size marks (`UITweaks.liveInkMarkScaleRule`, `docs/live-ink.md`).
+  `docs/mark-scale-2026-10-27.md` has the reasons and the measurements.
 
 ### Zoom
 
@@ -1151,6 +1189,7 @@ screenshot location for such a launch is written with the same variable:
   launch runs no updater unless `VIGNETTE_FEED` names a feed. Sparkle relaunches an updated app
   through LaunchServices, with no environment, so a test copy that must stay on scratch files sets
   `VIGNETTE_SETTINGS`, `CFFIXED_USER_HOME` and `VIGNETTE_FEED` under `LSEnvironment` in its Info.plist.
+  The end-to-end copies set the first two (`scripts/e2e/build.sh`).
   `docs/updater-2026-09-27.md` has the tests.
 
 ### Agents

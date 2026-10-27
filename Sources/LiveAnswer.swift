@@ -144,11 +144,14 @@ struct LiveAnswer: Equatable {
     }
 
     /// The picture an answer's card is drawn on, which its words and labels are measured on: its
-    /// size, the point scale its drawing takes, the text style, and the agent whose notes they are.
+    /// size, the point scale its drawing takes, the text style, the px a note's text never falls
+    /// below as a reader that resizes the picture sees it (`MarkScaleRule.smallestNoteText`), and the
+    /// agent whose notes they are.
     struct Canvas {
         let pixels: PixelSize
         let pointScale: CGFloat
         let style: TextStyle
+        let smallestText: CGFloat
         let agent: String?
         /// A browser's page, in fractions, which the texts keep to, off its toolbar and tabs.
         var page: CGRect? = nil
@@ -204,7 +207,8 @@ struct LiveAnswer: Equatable {
         var obstacles = shapes.map { points($0.extent).insetBy(dx: -4, dy: -4) } + lines
         func note(_ text: String, near: CGRect) -> AgentMark? {
             guard let placed = AgentMark.note(text, from: canvas.agent, near: points(near), room: room, obstacles: obstacles,
-                                              in: canvas.pixels, pointScale: canvas.pointScale, style: canvas.style) else { return nil }
+                                              in: canvas.pixels, pointScale: canvas.pointScale, style: canvas.style,
+                                              smallestText: canvas.smallestText) else { return nil }
             obstacles.append(placed.covers)
             return placed.mark
         }

@@ -4,25 +4,13 @@ Things decided or raised but not built. Each entry says what, why, and what it w
 
 ## Product
 
-### Marks sized to the screenshot (raised 2026-10-01)
+### Marks on images larger than the screen (raised 2026-10-27)
 
-On a small capture, the shapes and notes take up too much of the picture. A mark's sizes, its
-stroke and edge widths and its text, are in points of the drawing's `pointScale`. So a capture of
-one button gets the same 3.5 pt stroke and the same note text as a capture of the whole screen.
-Marks should scale down with the screenshot's size, to a minimum below which a note's text or a
-stroke would be hard to read.
-
-Still to decide:
-
-- **The measure of "small":** the capture's size in points, its shorter side, or its size against
-  the screen it was taken on.
-- **The minimum:** the smallest text and stroke that stay legible at the editor's fitted size, and
-  whether that is a `UITweaks` value with a slider.
-- **Where the scale lives:** fixed in the drawing when it is made, or worked out from the image each
-  time a mark is drawn, so it applies the same in the editor, on cards, in flights and in the PNG.
-  Old drawings need not keep their look.
-- **Agent marks:** whether a pushed note scales the same way, since its width cap and line breaks
-  depend on its text size.
+A drawing's mark scale stops at 1 (`docs/editor.md`, section 1's Size), so a stitch, or a capture
+from a display larger than the annotator's, gets a full capture's marks. A model that resizes it
+then sees a note's text under the 16 px floor: on a 5K display a full capture's note reaches it at
+about 10 px. Letting the floor raise the scale above 1 would fix that, and would change how big a
+full capture's marks are on a large display. Waits on Pete's call.
 
 ### Vignette without the agent features (raised 2026-09-26)
 

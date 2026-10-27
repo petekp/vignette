@@ -458,6 +458,7 @@ private struct SequenceRun {
         case .enterCanvas(let backward): return "enterCanvas\(backward ? " backward" : "")"
         case .zoomChanged(let zoom): return "zoom \(zoom)"
         case .tweaksChanged: return "tweaks"
+        case .rescaled(let pointScale, let markScale): return "rescaled \(pointScale) \(markScale)"
         case .typingChanged(let text): return "type \(text.count) characters"
         case .typingEnded: return "typingEnded"
         case .timerFired: return "timer"

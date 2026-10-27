@@ -487,7 +487,8 @@ final class LiveInkTests: XCTestCase {
         let pixels = PixelSize(width: 2400, height: 1600), scale: CGFloat = 2, style = UITweaks().textStyle
         // A browser's page, below its toolbar.
         let page = CGRect(x: 0, y: 0.08, width: 1, height: 0.92)
-        let canvas = LiveAnswer.Canvas(pixels: pixels, pointScale: scale, style: style, agent: "claude", page: page)
+        let canvas = LiveAnswer.Canvas(pixels: pixels, pointScale: scale, style: style, smallestText: UITweaks().smallestNoteText,
+                                       agent: "claude", page: page)
         // A field's placeholder left of the button, where the words would otherwise go, and the word
         // after the arrow's, which an arrow from the right would cross.
         let line = CGRect(x: 0.16, y: 0.41, width: 0.22, height: 0.04)
@@ -496,7 +497,7 @@ final class LiveInkTests: XCTestCase {
         XCTAssertEqual(laidOut.map(\.type), answer.cardMarks(targets: answer.marks.map(\.box), on: nil).map(\.type))
         XCTAssertEqual(laidOut.first?.text, answer.say)
 
-        let marks = AgentMark.marks(laidOut, from: "claude", in: pixels, pointScale: scale, style: style).marks
+        let marks = AgentMark.marks(laidOut, from: "claude", in: pixels, pointScale: scale, style: style, smallestText: UITweaks().smallestNoteText).marks
         XCTAssertEqual(marks.count, laidOut.count)
         func extent(_ mark: Mark) -> CGRect {
             guard case .text(let text) = mark.geometry else { return mark.shapeExtent ?? .null }
@@ -877,10 +878,11 @@ final class LiveInkTests: XCTestCase {
         let obstacle = CGRect(x: 700, y: 280, width: near.minX - 10 - 700, height: 55)
         // Given the page alone, the note keeps the margin itself.
         let placed = try XCTUnwrap(AgentMark.note("Made the button green and moved the email field under it.", from: "claude", near: near,
-                                                  room: page, obstacles: [obstacle], in: pixels, pointScale: scale, style: style))
+                                                  room: page, obstacles: [obstacle], in: pixels, pointScale: scale, style: style,
+                                                  smallestText: UITweaks().smallestNoteText))
         XCTAssertEqual(placed.covers.maxX, room.maxX, accuracy: 0.5)
 
-        let set = try XCTUnwrap(AgentMark.marks([placed.mark], from: "claude", in: pixels, pointScale: scale, style: style).marks.first)
+        let set = try XCTUnwrap(AgentMark.marks([placed.mark], from: "claude", in: pixels, pointScale: scale, style: style, smallestText: UITweaks().smallestNoteText).marks.first)
         guard case .text(let text) = set.geometry else { return XCTFail("not a note") }
         let drawn = TextLayout(text, imageWidth: CGFloat(pixels.width), pointScale: scale, style: style.forMark(set)).drawnBox()
         XCTAssertNotNil(style.forMark(set).badge, "an agent's note, with its badge")
@@ -896,8 +898,9 @@ final class LiveInkTests: XCTestCase {
         let atEdge = CGRect(x: page.maxX - 100, y: 300, width: 100, height: 30)
         let left = CGRect(x: 700, y: 280, width: atEdge.minX - 10 - 700, height: 55)
         let edged = try XCTUnwrap(AgentMark.note("Made the button green and moved the email field under it.", from: "claude", near: atEdge,
-                                                 room: page, obstacles: [left], in: pixels, pointScale: scale, style: style))
-        let setAtEdge = try XCTUnwrap(AgentMark.marks([edged.mark], from: "claude", in: pixels, pointScale: scale, style: style).marks.first)
+                                                 room: page, obstacles: [left], in: pixels, pointScale: scale, style: style,
+                                                  smallestText: UITweaks().smallestNoteText))
+        let setAtEdge = try XCTUnwrap(AgentMark.marks([edged.mark], from: "claude", in: pixels, pointScale: scale, style: style, smallestText: UITweaks().smallestNoteText).marks.first)
         guard case .text(let edgeText) = setAtEdge.geometry else { return XCTFail("not a note") }
         let drawnAtEdge = TextLayout(edgeText, imageWidth: CGFloat(pixels.width), pointScale: scale, style: style.forMark(setAtEdge)).drawnBox()
         XCTAssertEqual(drawnAtEdge.minX / scale, edged.covers.minX, accuracy: 0.5, "the fit leaves it where it was placed")
@@ -916,8 +919,8 @@ final class LiveInkTests: XCTestCase {
     -> (marks: [AgentMark], notDrawn: [Int], set: [Mark]) {
         let style = UITweaks().textStyle
         let card = ResultCard(frame: cardFrame, pixels: cardPixels, pointScale: 2, page: page, lines: lines)
-        let made = card.marks(for: answer, about: ink, style: style, agent: "claude")
-        let set = AgentMark.marks(made.marks, from: "claude", in: cardPixels, pointScale: 2, style: style).marks
+        let made = card.marks(for: answer, about: ink, style: style, smallestText: UITweaks().smallestNoteText, agent: "claude")
+        let set = AgentMark.marks(made.marks, from: "claude", in: cardPixels, pointScale: 2, style: style, smallestText: UITweaks().smallestNoteText).marks
         XCTAssertEqual(set.count, made.marks.count, "the card draws every mark")
         return (made.marks, made.notDrawn, set)
     }
