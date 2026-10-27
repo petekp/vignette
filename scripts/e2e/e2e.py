@@ -345,14 +345,14 @@ class App:
         os.makedirs(claude, exist_ok=True)
         with open(os.path.join(claude, 'history.jsonl'), 'a') as f:
             f.write(json.dumps({'display': 'hi', 'pastedContents': {}, 'timestamp': int(now * 1000),
-                                'project': folder, 'sessionId': session}) + '\n')
+                                'project': folder, 'sessionId': session}, separators=(',', ':')) + '\n')
         transcripts = os.path.join(claude, 'projects', re.sub(r'[^A-Za-z0-9]', '-', folder))
         os.makedirs(transcripts, exist_ok=True)
         stamp = time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime(now))
         with open(os.path.join(transcripts, f'{session}.jsonl'), 'w') as f:
-            f.write(json.dumps({'type': 'ai-title', 'aiTitle': title, 'sessionId': session}) + '\n')
+            f.write(json.dumps({'type': 'ai-title', 'aiTitle': title, 'sessionId': session}, separators=(',', ':')) + '\n')
             f.write(json.dumps({'type': 'user', 'timestamp': stamp, 'cwd': folder,
-                                'message': {'role': 'user', 'content': 'hi'}}) + '\n')
+                                'message': {'role': 'user', 'content': 'hi'}}, separators=(',', ':')) + '\n')
         return folder, session
 
     def inbox_of(self, session):
