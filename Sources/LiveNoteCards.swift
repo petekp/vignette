@@ -22,6 +22,8 @@ final class LiveNoteCards {
     private struct Note {
         var shot: Screenshot
         let destination: AgentDestination
+        /// What its card calls the session, as the note's target showed it at Send.
+        let title: String
         let window: CGWindowID?
         let ink: CGRect
         var before: Before?
@@ -75,7 +77,7 @@ final class LiveNoteCards {
     /// watch folder with the ink and the words as its drawing, the request names that file, and its
     /// card shows the send as a send from the editor does. A send refused before it is stored takes
     /// the file and its drawing back, and the ink stays on the window, saying why.
-    func send(_ note: LiveInk.NoteCard, to destination: AgentDestination, message: String,
+    func send(_ note: LiveInk.NoteCard, to destination: AgentDestination, titled title: String, message: String,
               done: @escaping (Result<String, ScreenshotRequests.Refusal>) -> Void) {
         let refused = ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason)
         let (capture, scale) = (note.capture, note.pointScale)
@@ -96,12 +98,12 @@ final class LiveNoteCards {
                 folder.takeBack(shot)
                 return done(.failure((error as? ScreenshotRequests.Refusal) ?? refused))
             }
-            notes[record.id] = Note(shot: shot, destination: destination, window: note.window, ink: note.ink, before: note.before)
+            notes[record.id] = Note(shot: shot, destination: destination, title: title, window: note.window, ink: note.ink, before: note.before)
             // The card comes ahead of the watcher's report, which then finds it there.
             cards.show(shot, drawing: drawing)
             folder.ready(shot)
             let grace = requests.grace(of: record.id)
-            cards.showSending(shot, request: record.id, to: destination, grace: grace)
+            cards.showSending(shot, request: record.id, to: destination, titled: title, grace: grace)
             done(.success(record.id))
             registerWait(record.id, held: grace != nil)
         }
@@ -247,7 +249,7 @@ final class LiveNoteCards {
             guard FileManager.default.fileExists(atPath: note.shot.url.path) else { return }
             let quietly = effect == .sayDoneQuietly
             Log.write("[live-ink] done with no result card request=\(id)" + (quietly ? " quiet" : ""))
-            cards.finished(note.shot, request: id, in: note.destination, quietly: quietly)
+            cards.finished(note.shot, request: id, in: note.destination, titled: note.title, quietly: quietly)
         case .drawReplyOnFreshCapture:
             guard case .answer(let record, let answer, _, let done) = input else { return }
             drawFresh(answer, for: record, on: note, done: done)

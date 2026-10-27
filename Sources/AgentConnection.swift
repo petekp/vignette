@@ -114,7 +114,7 @@ struct AgentDestination: Equatable, Identifiable {
     }
 
     var client: AgentClient { address.client }
-    /// What the toolbar's target and the sent card call it: its project, or the client's name.
+    /// Its project folder's name, or the client's name when it has none.
     var project: String { detail.isEmpty ? client.label : detail }
 
     /// Whether this session is known to be in use, which is what Send's menu lists. A Claude Code

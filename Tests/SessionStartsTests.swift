@@ -110,6 +110,9 @@ final class SessionStartsTests: XCTestCase {
         XCTAssertEqual(SessionMenu.row(of: resume, among: [running], now: now).title, SessionMenu.lastSession(in: "site"))
         XCTAssertEqual(SessionMenu.row(of: new, among: [running], now: now).title, SessionMenu.newSession(in: "site"))
         XCTAssertTrue(SessionMenu.row(of: resume, among: [running], now: now).tooltip.hasPrefix(SessionMenu.continueLast))
+        XCTAssertEqual(SessionMenu.cardTitle(of: SessionMenu.row(of: resume, among: [running], now: now)), "site")
+        XCTAssertEqual(SessionMenu.cardTitle(of: SessionMenu.row(of: new, among: [running], now: now)), "site")
+        XCTAssertEqual(SessionMenu.cardTitle(of: rows[0]), "r")
     }
 
     private nonisolated static func inbox(_ root: URL, pid: Int32, session: String) throws {

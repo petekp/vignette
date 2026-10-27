@@ -24,8 +24,9 @@ final class AnnotationController {
     /// The frame moved: it was placed, a zoom stepped it, or it came home on the way out. The
     /// stack follows it, so it narrows as the frame grows towards it.
     var onFrame: ((NSRect) -> Void)?
-    /// Send or Reply handed the drawing to this agent session, with the message typed in the bar, if any.
-    var onSend: ((Screenshot, Drawing, AgentDestination, String?) -> Void)?
+    /// Send or Reply handed the drawing to this agent session, with what the sent card calls it and the
+    /// message typed in the bar, if any.
+    var onSend: ((Screenshot, Drawing, AgentDestination, _ title: String, _ message: String?) -> Void)?
     /// Cmd+C with nothing selected: this drawing's rendering goes on the clipboard.
     var onCopyDrawing: ((Screenshot, Drawing) -> Void)?
 
@@ -110,7 +111,8 @@ final class AnnotationController {
         editor.onSend = { [weak self] drawing in
             guard let self, let shot = current, let destination = sendingTo ?? toolbar.model.offer.destination else { return }
             sendingTo = nil
-            onSend?(shot, drawing, destination, toolbar.model.sentMessage)
+            let title = SessionMenu.cardTitle(of: toolbar.model.targetRow(for: destination))
+            onSend?(shot, drawing, destination, title, toolbar.model.sentMessage)
         }
         editor.onCopyDrawing = { [weak self] drawing in
             guard let self, let shot = current else { return }

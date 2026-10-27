@@ -10,7 +10,7 @@ final class CardNoticesTests: XCTestCase {
     }
 
     private func sending(_ request: String) -> CardNotices.Event {
-        .sending(request: request, client: .claude, project: "vignette")
+        .sending(request: request, client: .claude, sessionTitle: "vignette")
     }
 
     private func sendState(_ notices: CardNotices) -> SendNotice.State? {
@@ -123,7 +123,7 @@ final class CardNoticesTests: XCTestCase {
     private let grace = SendNotice.Grace(deadline: 13, length: 3)
 
     private func waiting(_ request: String) -> CardNotices.Event {
-        .sending(request: request, client: .claude, project: "vignette", grace: grace)
+        .sending(request: request, client: .claude, sessionTitle: "vignette", grace: grace)
     }
 
     /// A card stuck on the countdown would offer Don't send for a line that has gone.
