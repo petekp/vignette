@@ -16,8 +16,9 @@ new message matches the ones already there. Change a message here and in the cod
 - **Keep the way forward in view.** Nothing is lost when a send fails, since the drawing is still
   there, so a message points at the next try rather than at the failure. A queued send says when it
   will be read.
-- **Fit the card.** A headline is two or three words. A reason is one or two short sentences, about
-  60 characters, since it sits under the headline on a card.
+- **Fit the card.** A headline is two or three words, plus the session's title when it names one.
+  The card cuts a title that is too long. A reason is one or two short sentences, about 60
+  characters, since it sits under the headline on a card.
 - **"The log has details."** is how a message points at the log. Use it only when the person can do
   nothing else.
 - **Contractions, and no exclamation marks.** "couldn't", "can't", "isn't".
