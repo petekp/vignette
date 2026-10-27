@@ -136,7 +136,9 @@ final class MotionTests: XCTestCase {
     }
 
     @MainActor
-    func testSpringTweenSettlesWithoutOvershootAndReversesFromWhereItIs() {
+    func testSpringTweenSettlesWithoutOvershootAndReversesFromWhereItIs() throws {
+        try XCTSkipUnless(RefreshProbe.screenRefreshes(),
+                          "The screen is not refreshing, as while it is locked, so its display link never ticks.")
         var seen: [CGFloat] = []
         let tween = Tween(initial: 0) { seen.append($0) }
         let done = expectation(description: "settled")
@@ -175,5 +177,25 @@ final class MotionTests: XCTestCase {
             }
             XCTAssertEqual(value, 1, accuracy: 0.001, "and it still arrives")
         }
+    }
+}
+
+@MainActor
+private final class RefreshProbe: NSObject {
+    private var ticked = false
+
+    @objc private func tick(_ link: CADisplayLink) { ticked = true }
+
+    static func screenRefreshes() -> Bool {
+        guard let screen = NSScreen.main else { return true }
+        let probe = RefreshProbe()
+        let link = screen.displayLink(target: probe, selector: #selector(tick))
+        link.add(to: .main, forMode: .common)
+        defer { link.invalidate() }
+        let deadline = Date(timeIntervalSinceNow: 0.5)
+        while !probe.ticked && Date() < deadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
+        return probe.ticked
     }
 }
