@@ -812,12 +812,24 @@ extension LivePacket {
     /// such as a sheet or a title bar's window, sit over their own window.
     static let ownAppCoverSize: CGFloat = 200
 
+    /// Windows above this level, the menu bar's items', are over every app's windows: an open menu, or a
+    /// tooltip.
+    static let menuBarLevel = Int(CGWindowLevelForKey(.statusWindow))
+
     /// The picture for `asked`, oldest first, from `windows`, the app windows on the screen front to
     /// back, and `screens`, the displays' frames, all in global top-left points.
+    ///
+    /// Ink drawn over a window above the menu bar, such as an open menu, is pinned to the window under
+    /// it, and a capture of that window alone leaves the menu out. So the picture is then of the screen
+    /// as the person sees it, round the menu and the ink's windows. A window as large as a screen is left
+    /// out, since it covers every window and so tells nothing about this ink.
     static func plan(for asked: [Asked], windows: [Listed], screens: [CGRect]) -> Plan {
         var holders: [CGWindowID?] = []
         for mark in asked where !holders.contains(mark.window) { holders.append(mark.window) }
-        guard holders.count > 1, let newest = asked.last else { return .window(holders.first ?? nil) }
+        let over = windows.filter { window in
+            window.layer > menuBarLevel && !screens.contains { window.frame.contains($0) } && asked.contains { $0.box.intersects(window.frame) }
+        }
+        guard holders.count > 1 || !over.isEmpty, let newest = asked.last else { return .window(holders.first ?? nil) }
         let order = Dictionary(windows.enumerated().map { ($1.id, $0) }, uniquingKeysWith: min)
         let screen = screens.first { $0.contains(CGPoint(x: newest.box.midX, y: newest.box.midY)) }
             ?? screens.first { $0.intersects(newest.box) }
@@ -827,6 +839,7 @@ extension LivePacket {
             let part = frame ?? mark.box.insetBy(dx: -screenInkMargin, dy: -screenInkMargin)
             area = area.union(screen.map(part.intersection) ?? part)
         }
+        for window in over { area = area.union(screen.map(window.frame.intersection) ?? window.frame) }
         guard !area.isNull else { return .window(newest.window) }
         func isCovered(_ mark: Asked) -> Bool {
             guard let id = mark.window, let index = order[id] else { return false }
@@ -848,8 +861,8 @@ extension LivePacket {
         return .area(area, windows: shown, alone: alone)
     }
 
-    /// The app windows on the screen, front to back, but Vignette's and those at the Dock's level or
-    /// above, which are not what ink is drawn on.
+    /// The app windows on the screen, front to back, but Vignette's, the Dock's, and the menu bar's and
+    /// its items'. Ink is not drawn on those, and they never cover the ink's window.
     @MainActor
     static func listedWindows() -> [Listed] {
         let own = ProcessInfo.processInfo.processIdentifier
@@ -857,7 +870,7 @@ extension LivePacket {
         return windows.compactMap { info in
             guard let id = info[kCGWindowNumber as String] as? CGWindowID,
                   let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid != own,
-                  let layer = info[kCGWindowLayer as String] as? Int, layer < Int(CGWindowLevelForKey(.dockWindow)),
+                  let layer = info[kCGWindowLayer as String] as? Int, layer < Int(CGWindowLevelForKey(.dockWindow)) || layer > menuBarLevel,
                   (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
                   let frame = WindowList.bounds(info) else { return nil }
             return Listed(id: id, pid: pid, layer: layer, frame: frame)

@@ -178,10 +178,11 @@ final class LiveWindows {
     }
 
     /// Hangs the person's note from `place`'s anchor, in global top-left points, on the window that
-    /// mark is on, and lets go of it on every other.
-    func hang(_ note: LiveNotePopover?, place: PopoverPlace?) {
+    /// mark is on, and lets go of it on every other. Without `takingKeys`, a note hung the first time
+    /// opens without the keys.
+    func hang(_ note: LiveNotePopover?, place: PopoverPlace?, takingKeys: Bool = true) {
         for window in windows.values {
-            window.overlay.marks.hang(note, place: place?.offsetBy(dx: -window.frame.minX, dy: -window.frame.minY))
+            window.overlay.marks.hang(note, place: place?.offsetBy(dx: -window.frame.minX, dy: -window.frame.minY), takingKeys: takingKeys)
         }
     }
 

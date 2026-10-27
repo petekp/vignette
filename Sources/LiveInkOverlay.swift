@@ -10,7 +10,9 @@ import QuartzCore
 /// At rest it sits at `restingLevel`, just above ordinary windows and below the dim and Vignette's
 /// floating windows, so the stack and the annotator cover the marks; so do menus, the Dock and other
 /// apps' floating windows. It passes every press through then. Inking raises it to `.screenSaver`,
-/// over all of those.
+/// over all of those. While inking, `LiveInkTap` takes the pointer's events before they reach any
+/// window and hands them to `take`; the overlay's own events are the way in only when macOS refused
+/// the tap.
 @MainActor
 final class LiveInkOverlay: NSPanel {
     /// Level 1: above normal windows (0), below the dim (2) and Vignette's floating windows.
@@ -37,10 +39,29 @@ final class LiveInkOverlay: NSPanel {
         set { canvas.onHover = newValue }
     }
 
+    /// What the pointer did while inking, in global top-left points: from the overlay's own events, or
+    /// from `LiveInkTap`, which takes them before the window server delivers them.
+    enum Input {
+        case pressed(CGPoint)
+        case dragged(CGPoint)
+        case released(CGPoint)
+        case moved(CGPoint)
+    }
+
+    /// Takes `input` as the canvas takes its own events: a press starts a stroke here, which its drags
+    /// and its release go on and end.
+    func take(_ input: Input) { canvas.take(input) }
+
+    /// Whether `LiveInkTap` takes this overlay's presses, so a press that reaches the overlay itself is
+    /// one the tap missed.
+    var tapTakesPresses = false
+
     private let canvas: Canvas
-    /// Taking presses to draw, and holding the pointer field up: either raises it to the inking level.
+    /// Taking presses to draw, holding the pointer field up, and keeping ink drawn over a menu above it:
+    /// each raises it to the inking level.
     private var takesInk = false
     private var holdsField = false
+    private var keptAboveMenus = false
 
     /// Comes up at once, on the Space that is active now.
     init(screen: NSScreen, display: CGDirectDisplayID) {
@@ -129,8 +150,15 @@ final class LiveInkOverlay: NSPanel {
         canvas.field.show(on)
     }
 
+    /// Keeps it at the inking level once inking has stopped, passing every press through, so ink drawn
+    /// over a menu stays above the menu until it has closed.
+    func keepAboveMenus(_ on: Bool) {
+        keptAboveMenus = on
+        raise()
+    }
+
     private func raise() {
-        level = takesInk || holdsField ? .screenSaver : Self.restingLevel
+        level = takesInk || holdsField || keptAboveMenus ? .screenSaver : Self.restingLevel
     }
 
     override func close() {
@@ -216,26 +244,33 @@ final class LiveInkOverlay: NSPanel {
             pen.showPen(stroke, settled: hand.settled.points.count, longest: longest, markStyle: markStyle)
         }
 
-        override func mouseMoved(with event: NSEvent) {
-            guard !isTracking else { return }
-            onHover?(location(of: event))
-        }
-
+        override func mouseMoved(with event: NSEvent) { take(.moved(location(of: event))) }
         override func mouseDown(with event: NSEvent) {
-            stroke = [location(of: event)]
-            onStrokeMoved?(stroke)
+            if (window as? LiveInkOverlay)?.tapTakesPresses == true {
+                Log.write("[live-ink] error a press reached the overlay while the tap is on")
+            }
+            take(.pressed(location(of: event)))
         }
+        override func mouseDragged(with event: NSEvent) { take(.dragged(location(of: event))) }
+        override func mouseUp(with event: NSEvent) { take(.released(location(of: event))) }
 
-        override func mouseDragged(with event: NSEvent) {
-            guard isTracking else { return }
-            stroke.append(location(of: event))
-            onStrokeMoved?(stroke)
-        }
-
-        override func mouseUp(with event: NSEvent) {
-            guard isTracking else { return }
-            stroke.append(location(of: event))
-            endStroke()
+        func take(_ input: Input) {
+            switch input {
+            case .moved(let point):
+                guard !isTracking else { return }
+                onHover?(point)
+            case .pressed(let point):
+                stroke = [point]
+                onStrokeMoved?(stroke)
+            case .dragged(let point):
+                guard isTracking else { return }
+                stroke.append(point)
+                onStrokeMoved?(stroke)
+            case .released(let point):
+                guard isTracking else { return }
+                stroke.append(point)
+                endStroke()
+            }
         }
 
         func endStroke() {
@@ -506,6 +541,19 @@ final class LiveMarksLayer: CALayer {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for id in Array(drawn.keys) { remove(id) }
+        CATransaction.commit()
+    }
+
+    /// Takes these marks off without a fade, in the turn another layer starts drawing them where they
+    /// are, so no frame shows two of one mark.
+    func handOff(_ ids: Set<Mark.ID>) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for id in ids {
+            if previewing?.id == id { previewing = nil }
+            popovers.removeValue(forKey: id)?.close(fade: 0)
+            drawn.removeValue(forKey: id)?.holder.removeFromSuperlayer()
+        }
         CATransaction.commit()
     }
 
