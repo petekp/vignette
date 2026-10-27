@@ -10,7 +10,9 @@ import QuartzCore
 /// At rest it sits at `restingLevel`, just above ordinary windows and below the dim and Vignette's
 /// floating windows, so the stack and the annotator cover the marks; so do menus, the Dock and other
 /// apps' floating windows. It passes every press through then. Inking raises it to `.screenSaver`,
-/// over all of those.
+/// over all of those. While inking, `LiveInkTap` takes the pointer's events before they reach any
+/// window and hands them to `take`; the overlay's own events are the way in only when macOS refused
+/// the tap.
 @MainActor
 final class LiveInkOverlay: NSPanel {
     /// Level 1: above normal windows (0), below the dim (2) and Vignette's floating windows.
@@ -36,6 +38,19 @@ final class LiveInkOverlay: NSPanel {
         get { canvas.onHover }
         set { canvas.onHover = newValue }
     }
+
+    /// What the pointer did while inking, in global top-left points: from the overlay's own events, or
+    /// from `LiveInkTap`, which takes them before the window server delivers them.
+    enum Input {
+        case pressed(CGPoint)
+        case dragged(CGPoint)
+        case released(CGPoint)
+        case moved(CGPoint)
+    }
+
+    /// Takes `input` as the canvas takes its own events: a press starts a stroke here, which its drags
+    /// and its release go on and end.
+    func take(_ input: Input) { canvas.take(input) }
 
     private let canvas: Canvas
     /// Taking presses to draw, and holding the pointer field up: either raises it to the inking level.
@@ -216,26 +231,28 @@ final class LiveInkOverlay: NSPanel {
             pen.showPen(stroke, settled: hand.settled.points.count, longest: longest, markStyle: markStyle)
         }
 
-        override func mouseMoved(with event: NSEvent) {
-            guard !isTracking else { return }
-            onHover?(location(of: event))
-        }
+        override func mouseMoved(with event: NSEvent) { take(.moved(location(of: event))) }
+        override func mouseDown(with event: NSEvent) { take(.pressed(location(of: event))) }
+        override func mouseDragged(with event: NSEvent) { take(.dragged(location(of: event))) }
+        override func mouseUp(with event: NSEvent) { take(.released(location(of: event))) }
 
-        override func mouseDown(with event: NSEvent) {
-            stroke = [location(of: event)]
-            onStrokeMoved?(stroke)
-        }
-
-        override func mouseDragged(with event: NSEvent) {
-            guard isTracking else { return }
-            stroke.append(location(of: event))
-            onStrokeMoved?(stroke)
-        }
-
-        override func mouseUp(with event: NSEvent) {
-            guard isTracking else { return }
-            stroke.append(location(of: event))
-            endStroke()
+        func take(_ input: Input) {
+            switch input {
+            case .moved(let point):
+                guard !isTracking else { return }
+                onHover?(point)
+            case .pressed(let point):
+                stroke = [point]
+                onStrokeMoved?(stroke)
+            case .dragged(let point):
+                guard isTracking else { return }
+                stroke.append(point)
+                onStrokeMoved?(stroke)
+            case .released(let point):
+                guard isTracking else { return }
+                stroke.append(point)
+                endStroke()
+            }
         }
 
         func endStroke() {

@@ -1110,6 +1110,19 @@ final class LiveInkTests: XCTestCase {
                        "the picture keeps to the newest ink's display")
     }
 
+    func testInkOverAnOpenMenuIsTheScreenRoundTheMenuAndItsWindow() {
+        let menuLevel = Int(CGWindowLevelForKey(.popUpMenuWindow))
+        let menu = LivePacket.Listed(id: 90, pid: 900, layer: menuLevel, frame: CGRect(x: 102, y: 25, width: 246, height: 587))
+        let onMenu = asked(CGRect(x: 150, y: 100, width: 80, height: 40), on: terminal)
+        XCTAssertEqual(LivePacket.plan(for: [onMenu], windows: [menu, terminal], screens: [screen]),
+                       .area(CGRect(x: 0, y: 25, width: 900, height: 705), windows: [terminal.id], alone: []),
+                       "the window alone would leave the menu out")
+        let elsewhere = LivePacket.Listed(id: 91, pid: 910, layer: menuLevel, frame: CGRect(x: 1200, y: 25, width: 200, height: 300))
+        let overlay = LivePacket.Listed(id: 92, pid: 920, layer: Int(CGWindowLevelForKey(.screenSaverWindow)), frame: screen)
+        XCTAssertEqual(LivePacket.plan(for: [onMenu], windows: [overlay, elsewhere, terminal], screens: [screen]), .window(terminal.id),
+                       "a menu off the ink and a window over the whole screen are not what the ink is on")
+    }
+
     func testInkOnNoWindowBesideAWindowsInkTakesInARoomRoundIt() {
         let onDesktop = asked(CGRect(x: 1300, y: 850, width: 80, height: 40), on: nil)
         let onTerminal = asked(CGRect(x: 50, y: 100, width: 80, height: 40), on: terminal)

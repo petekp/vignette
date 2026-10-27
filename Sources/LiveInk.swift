@@ -23,6 +23,11 @@ final class LiveInk {
     private var chordShowsField = false
     /// Runs while a stroke outlives the chord, until the button is up: inking ends then.
     private var releaseWatch: Timer?
+    /// Takes the pointer's events while inking, so no app hears them (`LiveInkTap`).
+    private var tap: LiveInkTap?
+    /// The surface the press under way began on, which takes its drags and its release, as the window
+    /// server sends them to the window that took the press.
+    private var pressedSurface: Surface?
     /// Runs after ⌘⇧ while there are marks, looking for macOS's window picker.
     private var pickerWatch: Timer?
     private var pickerWatchUntil = Date.distantPast
@@ -625,10 +630,11 @@ final class LiveInk {
         return LiveAnswerLayout.noteHang(LiveNotePopover.placementSize, for: mark, scene: scene(frame: extent, page: nil, text: []))
     }
 
-    /// Gives the new ink its note, with the keys. A note up already keeps its words, its target and
-    /// its caret, and moves to hang from the newest ink. Answers whether the note took the keys.
+    /// Gives the new ink its note, with the keys unless `takingKeys` is false. A note up already keeps
+    /// its words, its target and its caret, and moves to hang from the newest ink. Answers whether the
+    /// note took the keys.
     @discardableResult
-    private func showNote() -> Bool {
+    private func showNote(takingKeys: Bool = true) -> Bool {
         guard let mark = newInk.last(where: { $0.shapeExtent != nil }), let first = firstPlace(beside: mark) else { return false }
         if let note {
             if notePlace?.anchor != mark.id {
@@ -636,6 +642,7 @@ final class LiveInk {
                 prepare(beside: mark, panel: note)
                 Log.write("[live-ink] note moved to the newest ink")
             }
+            guard takingKeys else { return false }
             // Taking the keys back lists the targets again (`onKeysBack`).
             note.takeKeys()
             return true
@@ -658,14 +665,14 @@ final class LiveInk {
         panel.onEscape = { [weak self] in self?.escape() }
         panel.onTyped = { [weak self] in self?.typedInNote() }
         note = panel
-        hang(panel, from: mark, at: first)
+        hang(panel, from: mark, at: first, takingKeys: takingKeys)
         prepare(beside: mark, panel: panel)
         refreshTargets(of: panel)
         if let listening {
             panel.setListening(listening.listensPastRelease)
             if !typedOver, !listening.words.isEmpty { panel.hear(listening.text) }
         }
-        Log.write("[live-ink] note open")
+        Log.write("[live-ink] note open\(takingKeys ? "" : " without the keys: a menu is still open")")
         return panel.hasKeys
     }
 
@@ -675,23 +682,26 @@ final class LiveInk {
         listSessions? { [weak panel] candidates in panel?.setSessions(candidates) }
     }
 
-    /// Hangs the note from `mark`, at `place`.
-    private func hang(_ panel: LiveNotePopover, from mark: Mark, at place: PopoverPlace) {
+    /// Hangs the note from `mark`, at `place`. A note hung the first time opens with the keys when
+    /// `takingKeys`.
+    private func hang(_ panel: LiveNotePopover, from mark: Mark, at place: PopoverPlace, takingKeys: Bool = true) {
         var place = place
         place.anchor = mark.id
         notePlace = place
-        hangNote()
+        hangNote(takingKeys: takingKeys)
     }
 
     /// Hands the note to the overlays: the one that draws the mark it hangs from, its window's or its
     /// home screen's, hangs it, and every other lets go of it.
-    private func hangNote() {
+    private func hangNote(takingKeys: Bool = true) {
         let anchor = notePlace?.anchor
         let drawing = surfaces.filter { $0.marks.contains { $0.id == anchor } }
         let mark = drawing.first?.marks.first { $0.id == anchor }
         let holder = mark.flatMap { home(of: $0, among: drawing) }
-        for surface in surfaces { surface.overlay.marks.hang(surface === holder ? note : nil, place: notePlace) }
-        windows.hang(note, place: notePlace)
+        for surface in surfaces {
+            surface.overlay.marks.hang(surface === holder ? note : nil, place: notePlace, takingKeys: takingKeys)
+        }
+        windows.hang(note, place: notePlace, takingKeys: takingKeys)
     }
 
     /// The note goes when its ink does: asked about, taken back, erased, or gone with its window. When
@@ -828,9 +838,12 @@ final class LiveInk {
         showMarks()
         let started = Date()
         let ui = Settings.shared.data.ui
-        let plan = picturePlan(for: about)
+        // The note's ink was planned and captured as its last stroke ended, while a menu drawn on was
+        // still open; planned now, the menu would be gone from the picture.
+        let captured = reply == nil ? prepared.flatMap { $0.ink == Set(person.map(\.id)) ? $0 : nil } : nil
+        let plan = captured?.plan ?? picturePlan(for: about)
         Log.write("[live-ink] asking id=\(id) new=\(fresh.count) about=\(about.count) words=\(trimmed.split(whereSeparator: \.isWhitespace).count) queued=\(asks.queued.count) picture=\(Self.describe(plan))")
-        let early = prepared.flatMap { $0.ink == Set(person.map(\.id)) && $0.plan == plan ? $0.packet : nil }
+        let early = captured?.packet
         if reply == nil { prepared = nil }
         let inkWindows = inkWindows(of: person)
         Task { @MainActor [weak self] in
@@ -1902,6 +1915,7 @@ final class LiveInk {
 
     private func startInking() {
         isInking = true
+        inkings += 1
         FocusReturn.shared.sessionStarting()
         letGoOfFocus(because: "ink")
         drewWhileInking = false
@@ -1910,6 +1924,7 @@ final class LiveInk {
         releaseWatch = nil
         inking = activeSurfaces()
         inking.forEach { $0.overlay.setInking(true) }
+        startTap()
         // The ink takes its colour from what is behind it.
         InkBackdrop.shared.refresh()
         let ui = Settings.shared.motionUI
@@ -1933,10 +1948,46 @@ final class LiveInk {
         fieldTimer?.invalidate()
         chordShowsField = false
         holdField()
+        stopTap()
         inking.forEach { $0.overlay.setInking(false) }
         inking = []
         closeEmpty(fade: 0)
         Log.write("[live-ink] stopped: \(reason)")
+    }
+
+    /// Takes the pointer's events from the window server for as long as inking lasts, or leaves them to
+    /// the overlays when macOS refuses.
+    private func startTap() {
+        guard tap == nil else { return }
+        tap = LiveInkTap.start { [weak self] input in self?.tapped(input) }
+        Log.write(tap == nil ? "[live-ink] error tap refused by macOS; the overlay takes the presses" : "[live-ink] tap on")
+    }
+
+    private func stopTap() {
+        pressedSurface = nil
+        guard let tap else { return }
+        tap.stop()
+        self.tap = nil
+        Log.write("[live-ink] tap off")
+    }
+
+    /// An event the tap took: a press goes to the surface under it, and that surface takes the rest of
+    /// the stroke, wherever the pointer goes; a move goes to the surface under the pointer.
+    private func tapped(_ input: LiveInkOverlay.Input) {
+        let under = { (point: CGPoint) in self.inking.first { $0.overlay.globalFrame.contains(point) } }
+        switch input {
+        case .pressed(let point):
+            pressedSurface = under(point)
+            pressedSurface?.overlay.take(input)
+        case .dragged:
+            pressedSurface?.overlay.take(input)
+        case .released:
+            let surface = pressedSurface
+            pressedSurface = nil
+            surface?.overlay.take(input)
+        case .moved(let point):
+            under(point)?.overlay.take(input)
+        }
     }
 
     private func strokeMoved(_ points: [CGPoint]) {
@@ -1966,14 +2017,51 @@ final class LiveInk {
 
     /// The chord was let go: inking stops, and the new ink gets its note, with the keys. A chord cut
     /// short by a key, as a shortcut's start, gives the note the keys only when ink was drawn.
+    ///
+    /// A menu still open would take the note's keys, so it is closed first (`LiveMenus`), once the
+    /// picture of the ink drawn on it is captured, and the note opens after. When it does not close, the
+    /// note opens without the keys.
     private func finishInking() {
         stopInking(because: chordInterrupted ? "a key cut the chord short" : "the chord was let go")
-        let noteHasKeys = !newInk.isEmpty && (drewWhileInking || listening != nil || !chordInterrupted) && showNote()
+        let opensNote = !newInk.isEmpty && (drewWhileInking || listening != nil || !chordInterrupted)
         drewWhileInking = false
+        let menus = opensNote ? LiveMenus.open() : []
+        guard !menus.isEmpty else { return settleInking(opensNote: opensNote) }
+        let inking = inkings
+        menusWaiting = inking
+        // The glance comes once the window is captured, the menu with it.
+        if let glance = prepared?.glance {
+            Task { @MainActor [weak self] in
+                _ = await glance.value
+                self?.closeMenus(menus, after: inking)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.revealLimit) { [weak self] in self?.closeMenus(menus, after: inking) }
+    }
+
+    /// Counts the inkings, so what one that ended still waits for is dropped once another starts: the
+    /// chord let go again then opens the note.
+    private var inkings = 0
+    /// The inking whose note waits for the capture before the menus close.
+    private var menusWaiting: Int?
+
+    private func closeMenus(_ menus: [LiveMenus.Window], after inking: Int) {
+        guard menusWaiting == inking, inkings == inking, !isInking else { return }
+        menusWaiting = nil
+        LiveMenus.close(menus) { [weak self] closed in
+            guard let self, self.inkings == inking, !self.isInking, self.isOn else { return }
+            guard self.mayInk() else { return Log.write("[live-ink] no note: the stack or the annotator came up") }
+            self.settleInking(opensNote: true, takingKeys: closed)
+        }
+    }
+
+    /// Opens the note on the new ink, with the keys unless `takingKeys` is false, and hands the keys back
+    /// to the app the person was in when it does not take them.
+    private func settleInking(opensNote: Bool, takingKeys: Bool = true) {
+        let noteHasKeys = opensNote && showNote(takingKeys: takingKeys)
         keepNoteWithItsInk()
         // What is said goes into the note; with no note there is nowhere for it to go.
         if note != nil { listening?.released() } else { stopListening() }
-        // The chord's press, with Control held, made Vignette frontmost.
         if !noteHasKeys { FocusReturn.shared.restore(reason: "live ink inking") }
     }
 
