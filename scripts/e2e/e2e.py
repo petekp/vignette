@@ -467,6 +467,28 @@ def build_probe():
         subprocess.run(['swiftc', '-O', '-o', PROBE, source], check=True)
 
 
+def first_run(copy, timeout=60):
+    """Runs the test copy once and returns the tries and the seconds it took.
+
+    macOS checks a new executable the first time it runs, and now and then refuses that first run:
+    syspolicyd logs "Terminating process due to Gatekeeper rejection" and kills it, while `open`
+    still answers 0. `reply --help` exits before the app starts."""
+    start = time.monotonic()
+    tries = 0
+    while True:
+        tries += 1
+        result = subprocess.run([copy['executable'], 'reply', '--help'], capture_output=True, text=True)
+        if result.returncode == 0:
+            return tries, time.monotonic() - start
+        killed = result.returncode == -signal.SIGKILL
+        if not killed:
+            sys.exit(f'the test copy did not run: exit {result.returncode} {result.stderr.strip()}')
+        if time.monotonic() - start > timeout:
+            sys.exit(f'macOS killed every run of the test copy for {timeout} s; '
+                     "`log show --last 5m --predicate 'process == \"syspolicyd\"'` says why")
+        time.sleep(1)
+
+
 def save_pasteboard():
     if os.path.exists(SAVED_PASTEBOARD):
         sys.exit(f'a pasteboard from an earlier run is still saved at {SAVED_PASTEBOARD}; run `e2e.py restore` first')
@@ -501,6 +523,13 @@ def run(names, with_input, build):
         sys.exit('the test copy names no home for a launch with no environment; run without --no-build')
     for pid in running_pids(copy['executable']):
         sys.exit(f'a test copy is already running (pid {pid})')
+    # A new build's first run pays macOS's check of it, or is killed by it, so no scenario's launch does.
+    tries, seconds = first_run(copy)
+    line = f'test copy ran once before the scenarios in {seconds * 1000:.0f} ms'
+    if tries > 1:
+        killed = 'try 1' if tries == 2 else f'tries 1 to {tries - 1}'
+        line += f', on try {tries}; macOS killed {killed} (SIGKILL: Gatekeeper refused it)'
+    print(line, flush=True)
 
     folder = os.path.join(OUT, 'runs', datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S'))
     os.makedirs(folder)
