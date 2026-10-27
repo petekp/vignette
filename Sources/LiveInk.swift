@@ -223,7 +223,8 @@ final class LiveInk {
             for (center, observer) in observers { center.removeObserver(observer) }
             observers = []
             surfaces.forEach { $0.marks = [] }
-            overMenus = [:]
+            overMenus = []
+            pinsAfterMenus = [:]
             asideOnScreen = []
             showMarks()
             surfaces.forEach { $0.overlay.close(after: LiveMarksLayer.removalFade) }
@@ -271,7 +272,8 @@ final class LiveInk {
     func clear() -> Int {
         let count = marks.count
         for surface in surfaces { surface.marks = [] }
-        overMenus = [:]
+        overMenus = []
+        pinsAfterMenus = [:]
         asideOnScreen = []
         windows.removeAll()
         endConversation()
@@ -504,29 +506,34 @@ final class LiveInk {
     /// Puts a mark the person drew on the window under it, or on `surface` where there is none. Drawn
     /// over a menu while inking, it stays on `surface` until the menu has closed (`overMenus`).
     private func place(_ mark: Mark, on surface: Surface, among: [Surface], markStyle: MarkStyle) {
-        guard let target = windows.target(under: LiveWindows.point(of: mark)) else {
-            return add(mark, on: surface, among: among, markStyle: markStyle)
-        }
+        let target = windows.target(under: LiveWindows.point(of: mark))
         if isInking, let extent = mark.shapeExtent, LiveMenus.open().contains(where: { $0.frame.intersects(extent) }) {
-            overMenus[mark.id] = target.id
+            overMenus.insert(mark.id)
+            pinsAfterMenus[mark.id] = target?.id
             add(mark, on: surface, among: among, markStyle: markStyle)
-        } else {
+        } else if let target {
             windows.pin(mark, to: target)
+        } else {
+            add(mark, on: surface, among: among, markStyle: markStyle)
         }
     }
 
-    /// Marks drawn over a menu, by the window under them. A window's marks are drawn just above it,
-    /// under the menu, so these stay on the screen's surfaces, above the menu, until it has closed, and
-    /// then go onto their windows where they are (`pinOverMenus`).
-    private var overMenus: [Mark.ID: CGWindowID] = [:]
+    /// Marks drawn over a menu. A window's marks are drawn just above it, under the menu, and a
+    /// surface rests under menus too, so these stay on the screen's surfaces, kept above the menu, until
+    /// it has closed (`pinOverMenus`).
+    private var overMenus: Set<Mark.ID> = []
+    /// The window under each mark drawn over a menu, which it goes onto, where it is, once the menu has
+    /// closed. One drawn where there is no window stays on its surface.
+    private var pinsAfterMenus: [Mark.ID: CGWindowID] = [:]
 
     /// Puts the marks drawn over a menu on the windows under them, and lets the surfaces that kept
     /// them above the menu down.
     private func pinOverMenus() {
         surfaces.forEach { $0.overlay.keepAboveMenus(false) }
         guard !overMenus.isEmpty else { return }
-        let held = overMenus
-        overMenus = [:]
+        let held = pinsAfterMenus
+        overMenus = []
+        pinsAfterMenus = [:]
         let pins = screenMarks.compactMap { mark in held[mark.id].flatMap(windows.target(id:)).map { (mark: mark, target: $0) } }
         let pinned = Set(pins.map(\.mark.id))
         for surface in surfaces {
@@ -1103,7 +1110,7 @@ final class LiveInk {
     }
 
     /// The window a mark is on, or goes onto once the menu it was drawn over has closed.
-    private func window(of id: Mark.ID) -> CGWindowID? { windows.window(of: id) ?? overMenus[id] }
+    private func window(of id: Mark.ID) -> CGWindowID? { windows.window(of: id) ?? pinsAfterMenus[id] }
 
     private static func describe(_ plan: LivePacket.Plan) -> String {
         switch plan {
@@ -2120,7 +2127,7 @@ final class LiveInk {
         releaseWatch?.invalidate()
         releaseWatch = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, NSEvent.pressedMouseButtons & 1 == 0 else { return }
+                guard let self, !LiveInkTap.isButtonDown else { return }
                 self.releaseWatch?.invalidate()
                 self.releaseWatch = nil
                 self.inking.forEach { $0.overlay.endStroke() }

@@ -53,6 +53,11 @@ final class LiveInkTap {
         return tap
     }
 
+    /// Whether the mouse's left button is down. Read from the hardware's state: the session's, which
+    /// `NSEvent.pressedMouseButtons` reads, never counts a press this tap dropped (measured in a VM:
+    /// down for the hardware, up for the session, all through a held stroke).
+    nonisolated static var isButtonDown: Bool { CGEventSource.buttonState(.hidSystemState, button: .left) }
+
     func stop() {
         guard let port = link.takePort() else { return }
         CGEvent.tapEnable(tap: port, enable: false)
@@ -134,13 +139,16 @@ final class LiveInkTap {
         case .leftMouseDragged: input = .dragged(point)
         case .leftMouseUp: input = .released(point)
         case .mouseMoved: input = .moved(point)
-        case .tapDisabledByTimeout:
-            // The tap exists only while inking, so it goes back on.
-            if let port = link.port { CGEvent.tapEnable(tap: port, enable: true) }
-            Log.write("[live-ink] tap turned off by macOS: too slow; on again")
-            return Unmanaged.passUnretained(event)
-        case .tapDisabledByUserInput:
-            Log.write("[live-ink] tap turned off by macOS: user input; the overlay takes the presses")
+        case .tapDisabledByTimeout, .tapDisabledByUserInput:
+            // `stop` takes the port before it turns the tap off, which comes here too.
+            guard let port = link.port else { return Unmanaged.passUnretained(event) }
+            if type == .tapDisabledByTimeout {
+                // The tap exists only while inking, so it goes back on.
+                CGEvent.tapEnable(tap: port, enable: true)
+                Log.write("[live-ink] tap turned off by macOS: too slow; on again")
+            } else {
+                Log.write("[live-ink] tap turned off by macOS: user input; the overlay takes the presses")
+            }
             return Unmanaged.passUnretained(event)
         default: return nil
         }

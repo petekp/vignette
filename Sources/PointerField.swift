@@ -291,7 +291,7 @@ final class PointerField: NSObject {
         let now = CACurrentMediaTime()
         let pointer = self.pointer
         // The button is global, so only the screen the pointer is on shrinks its ring for a press.
-        let pressed = NSEvent.pressedMouseButtons & 1 != 0 && CGRect(origin: .zero, size: screenFrame.size).contains(pointer)
+        let pressed = LiveInkTap.isButtonDown && CGRect(origin: .zero, size: screenFrame.size).contains(pointer)
         let moved = motion.step(to: now, pointer: pointer, pressed: pressed, deep: deepUnderPointer(), ui: ui,
                                 colourSettling: 0.3 * Settings.shared.motionScale)
         let needsPicture = ui.ringBends && !pictureFailed
