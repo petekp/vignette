@@ -1,6 +1,8 @@
 import AppKit
 import XCTest
 
+private let retinaScreen = DrawingScreen(scale: 2, size: CGSize(width: 1512, height: 982))
+
 @MainActor
 final class ScreenshotRequestsTests: XCTestCase {
     private var root: URL!
@@ -125,7 +127,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         let drawings = Drawings(store: store)
         requests.callbacks.installDrawing = { [unowned self] shot, marks, agent, done in
             do {
-                try drawings.installReply(marks, from: agent, at: shot.key, style: .standard, newPointScale: 2)
+                try drawings.installReply(marks, from: agent, at: shot.key, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule)
                 self.heldAdd = done
             } catch {
                 done(Drawings.Failure(code: .writeFailed, description: "\(error)"))
@@ -149,7 +151,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         requests.callbacks = ScreenshotRequests.Callbacks(
             installDrawing: { shot, marks, agent, done in
                 do {
-                    try reopened.installReply(marks, from: agent, at: shot.key, style: changedStyle, newPointScale: 1)
+                    try reopened.installReply(marks, from: agent, at: shot.key, style: changedStyle, newScreen: DrawingScreen(scale: 1, size: retinaScreen.size), rule: UITweaks().markScaleRule)
                     done(nil)
                 } catch { done(Drawings.Failure(code: .writeFailed, description: "\(error)")) }
             },

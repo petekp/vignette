@@ -134,7 +134,7 @@ final class EditorPicture {
             return true
         }
         let resolution = state.resolution, gesture = state.gesture
-        let style = MarkLayers.Styles(text: state.geometry.style, paint: state.geometry.markStyle)
+        let style = MarkLayers.Styles(text: state.geometry.style, paint: state.geometry.markStyle, pointScale: state.geometry.pointScale)
         let whole = MarkLayers.padded(text, box: state.geometry.layout(text, of: mark).box, pointScale: state.geometry.pointScale,
                                       markStyle: state.geometry.markStyle)
             .intersection(state.drawing.pixels.bounds)

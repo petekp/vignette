@@ -504,6 +504,23 @@ final class EditorViewTests: XCTestCase {
         XCTAssertEqual(typed.x, drawn.x, accuracy: 0.5)
     }
 
+    func testANewMarkScaleRedrawsTheOpenDrawingsStrokesAndNotesAtIt() throws {
+        open([Mark(geometry: .arrow(Mark.Arrow(start: CGPoint(x: 600, y: 100), end: CGPoint(x: 900, y: 100)))),
+              Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 100, y: 100), text: "Note", wrap: nil, size: 24)))])
+        settleTexts()
+        let before = try capture { self.isBackground(self.pixel($0, 500, 300)) }
+        XCTAssertTrue(isRed(pixel(before, 888, 104)), "inside the arrowhead: \(pixel(before, 888, 104))")
+        XCTAssertGreaterThan(red(before, x: 100...140, y: 135...148), 100, "inside the note's tag")
+
+        view.applyTweaks(style: .standard, metrics: .standard, markStyle: .standard, scale: (mark: 0.5, point: 0.5))
+        settleTexts()
+        let after = try capture { self.isBackground(self.pixel($0, 500, 300)) }
+        XCTAssertFalse(isRed(pixel(after, 888, 104)), "the head is half as long: \(pixel(after, 888, 104))")
+        XCTAssertTrue(isRed(pixel(after, 897, 100)), "and still at the tip: \(pixel(after, 897, 100))")
+        XCTAssertEqual(red(after, x: 100...140, y: 135...148), 0, "the tag is half as tall")
+        XCTAssertGreaterThan(red(after, x: 100...140, y: 104...120), 100)
+    }
+
     /// The selection's blue (`#3182ed`), whatever the display's profile did to it.
     private func isBlue(_ c: (r: CGFloat, g: CGFloat, b: CGFloat)) -> Bool { c.b > 0.8 && c.r < 0.4 && c.g < 0.7 }
 

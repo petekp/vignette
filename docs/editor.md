@@ -26,7 +26,7 @@ parks and zooms the editor, and the rest of the app, which stores and renders it
 | Unit | Meaning |
 |---|---|
 | px | A pixel of the screenshot file. Drawings are stored in px. |
-| pt | A drawing point: px divided by the drawing's point scale, per Decision 8. On a Retina capture, 1 pt is 2 px. Stroke width and text size are set in pt. |
+| pt | A drawing point: px divided by the drawing's point scale, per Decision 8. On a Retina capture of the whole screen, 1 pt is 2 px, and on a smaller capture it is fewer. Stroke width and text size are set in pt. |
 | screen pt | A point on the screen. A threshold in screen pt stays the same size at any zoom. |
 
 ## Decisions
@@ -40,7 +40,7 @@ parks and zooms the editor, and the rest of the app, which stores and renders it
 | 5 | Can text be formatted? | No. Text is plain and can run to several lines. | Notes on screenshots are short. Formatting shortcuts fire by accident. |
 | 6 | Can marks be rotated? | No. | Marks point at interface elements, which are upright. |
 | 7 | Can arrows be curved? | Yes. The Arrow tool draws freehand, so an arrow follows the hand's path and gets its head where the button comes up. A stroke that stays close to a straight line draws a straight arrow, which bends by its middle dot. | A curve shows something moving from one place to another, and takes an arrow around a mark it would otherwise cross. Most arrows are meant to be straight, and a straight one is easier to read. |
-| 8 | What sets the size of strokes and text? | Each drawing records its point scale, the px per pt of the display the annotator is on when the drawing's first mark is made. A drawing that an agent's marks start takes the main display's. Every mark in the drawing uses it. | The drawing looks the same on any display it reopens on. A capture file does not say which display took it, so the annotator's display is the best available guess. |
+| 8 | What sets the size of strokes and text? | Each drawing records its point scale: the px per pt of the display the annotator is on when the drawing's first mark is made, times the drawing's mark scale. The mark scale is 1 on a capture of the whole screen and less on a smaller one, per section 1's Size. A drawing that an agent's marks start takes the main display's. Every mark in the drawing uses it. | The drawing looks the same on any display it reopens on. A capture file does not say which display took it, so the annotator's display is the best available guess. One line of a note sized for the whole screen would cover a fifth of a small crop's height. |
 | 9 | Which font does text use? | SF Pro Rounded for yours, SF Mono for an agent's. | Both are the system's own faces, so nothing is bundled and macOS supplies every script and emoji. The rounded face reads as a note, apart from the SF Pro text in most screenshots. The app already uses it for the numbers on selected cards. SF Mono tells an agent's words from yours at a glance. It is wider, so an agent's note takes more room. |
 | 10 | What do Cmd+C and Cmd+V do? | With marks selected, Cmd+C copies those marks, and Cmd+V pastes them. With nothing selected, Cmd+C copies the drawing as an image, the same PNG the toolbar's Copy makes, and the editor stays open. Cmd+V with text adds a text mark. Cmd+V with an image beeps and adds nothing. Section 8 has the details. | The visible selection says what Cmd+C will copy. |
 | 11 | Do marks snap to each other and to the image's edges? | No. | Marks point at things in the screenshot, so alignment between marks rarely matters. |
@@ -111,6 +111,8 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
   image's size, or whose `key` names another screenshot, does not fit the image. The image opens
   without it, with a log line, and the file stays on disk.
 - `pointScale` is between 0.5 and 8.
+- `markScale` is the drawing's mark scale, from 0.05 to 1, and is left out at 1. `pointScale`
+  includes it, so `pointScale` divided by `markScale` is the display's px per screen pt.
 - A mark's fields are the ones its type uses. `bend`, `via`, `wrap`, `agent` and `agentName` are
   left out at their defaults. A text's `size` is always written. A mark has no id and no colour in
   the file.
@@ -144,6 +146,39 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
 - These are the defaults. The tweaks panel's Marks and Notes sections change the colours, the
   stroke and edge widths, the shadows and the text style for every mark at once
   (`docs/mark-style-settings-2026-09-29.md`).
+
+### Size
+
+Marks are sized for their screenshot. On a capture of the whole screen they have the sizes this
+document gives. On a smaller capture every size in pt is smaller by the drawing's mark scale: the
+strokes, the edges, the shadows, the tags and the text. So are the editor's own steps in pt, such
+as a nudge and the gap between a box and its note.
+
+```
+mark scale = min(1, max(curve, floor))
+curve      = (image area / screen area) ^ (shrink / 2)
+floor      = smallest note text / (new text size × screen scale × reader scale)
+```
+
+- The image and the screen are measured in screen pt, on the display the annotator opens on. So a
+  capture of the whole screen gets 1 on any display, and so does an image larger than the screen.
+- Area is the measure because a note has a height as well as a width. A strip 1500 by 100 pt is as
+  cramped for a note as a small square.
+- Shrink is `ui.markScalePower`, 0.5 by default. At 0.5 the mark scale is the square root of the
+  image's width against the screen's, for an image of the screen's shape. On a 1512 by 982 pt
+  screen, a 640 by 400 crop gets 0.64. At 0 marks never shrink, and at 1 a note covers the same
+  share of every image.
+- The floor keeps a new note's text readable to a model that resizes the image to read it, as
+  `Stitch.readerScale` does. The text reaches the model at no less than `ui.smallestNoteText`,
+  16 px by default. A 300 by 200 pt crop gets 0.47 from the floor. A capture on a 1x display has
+  half as many px per side, so its crops hardly shrink.
+- The mark scale is set when the drawing is made and written into its file. A drawing keeps it when
+  its image reopens on another display and after the rule changes. A tweak that changes the rule
+  rescales the drawing open in the editor, which is not an undo step.
+- The editor fits a small crop to a larger frame, so its marks look bigger on screen than a full
+  capture's. They cover the same share of the picture as in the PNG.
+
+[mark-scale-2026-10-27.md](mark-scale-2026-10-27.md) has the reasons and the measurements.
 
 ### Agents' marks
 
@@ -535,12 +570,15 @@ text, and that name must not become a text mark.
 Copied marks:
 
 - They go on the clipboard in a type of Vignette's own. It holds the marks as the drawing file does,
-  with the source drawing's point scale.
+  with the source drawing's point scale and mark scale.
 - Any app can write that type, so a paste checks the marks with the same validator as a file.
 - Pasted into the same screenshot while the originals are still there, they land 10 pt right and
   down, like Cmd+D. Each further paste steps another 10 pt.
 - Anywhere else, including another screenshot or after a cut, they land where the originals were.
-- Positions and sizes carry over in pt, so a mark keeps its look on a screenshot of another scale.
+- Positions, and the sizes of boxes, ellipses and arrows, carry over in screen pt. A box drawn
+  around a button keeps its size on a capture from a display of another scale.
+- Strokes and text take the size of the marks already on the screenshot, per section 1's Size. A
+  note keeps its lines.
 - Either way they are kept inside the image.
 - A pasted mark keeps the original's fields, so an agent's mark pasted is still the agent's.
 
@@ -691,8 +729,11 @@ The host sets what Return and Cmd+Return do from what its toolbar offers (`Edito
 - An agent's mark stays the agent's when the person moves or resizes it. A note whose words the
   person changes becomes theirs when typing ends: it springs to their colour and face, and its
   badge fades out.
+- An agent's boxes, ellipses and arrows are drawn at the drawing's mark scale, as a person's are.
 - An agent's text is sized and fitted like this:
-  - Its size is 1.33% of the image's width, set in SF Mono Semibold.
+  - Its size is 1.33% of the image's width, set in SF Mono Semibold. On a small crop that would be
+    too small to read, so it is never less than the floor in section 1's Size: 16 px as a model
+    that resizes the image sees it.
   - Its tag is at most `w` wide when it has one. Without `w`, it wraps like a person's note: at
     18 em, or the room to the right edge less a 2% margin, and never in less than 15% of the width.
   - It is widened until it fits the image's height, in up to four passes.
@@ -715,8 +756,8 @@ The host sets what Return and Cmd+Return do from what its toolbar offers (`Edito
 ### Inspecting and driving
 
 - `[state]` has an `editor` section: whether the editor is open, the tool, each mark's type, frame
-  in px and whether an agent made it, the selection, whether text is being typed, and the undo and
-  redo depth. It never holds a text's words.
+  in px and whether an agent made it, the selection, whether text is being typed, the undo and
+  redo depth, and the drawing's point scale and mark scale. It never holds a text's words.
 - `[annotate] loaded <ms>ms <name>` reports when the editor has the image.
 
 ### Failures

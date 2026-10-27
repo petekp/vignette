@@ -29,7 +29,10 @@ makes such a decision, and mark the old one superseded when a change reverses it
   `TextStyle` (`docs/mark-style-settings-2026-09-29.md`). A change
   reaches every place that draws marks at once: the open editor (`AnnotationController.applyTweaks`),
   the cards and flights (`ThumbnailController.applyTweaks`), and the next stitch, drag image and
-  rendering, which read the settings when they draw. What a user would tune belongs in `UITweaks`
+  rendering, which read the settings when they draw. How much smaller marks are on a small
+  screenshot is the exception: `UITweaks.markScaleRule` sets a drawing's mark scale when it is made,
+  and a change reaches only the drawing open in the editor (the editor-and-drawings rules below).
+  What a user would tune belongs in `UITweaks`
   with a `Bound` and a slider; when in doubt, put it there. Editing the file is a supported way to
   change settings; the app reloads it within a second. It is the user's real config: never test
   against it. `VIGNETTE_SETTINGS=<path>` in the environment
@@ -208,7 +211,7 @@ The steps below have the details.
    `transition` (phase), `annotator` (`current`, `frame`, `toolbar`, `windowVisible`, `key`, `tool`,
    and the zoom's own keys, which the zoom bullet below names), `editor` (`open`, `tool`, `marks`
    with each mark's `type`, `frame` and `agent`, `selection` as indexes into `marks`, `typing`,
-   `undo`, `redo`; never a text's words), `drawings` (keys), `requests`, `memory` (rss and thumbnail
+   `undo`, `redo`, `pointScale`, `markScale`; never a text's words), `drawings` (keys), `requests`, `memory` (rss and thumbnail
    cache in bytes), `backdrop`, and `dim`. Frames are `[x, y, w, h]` in global top-left points,
    except a mark's, which is in the image's pixels.
    `[app] ready pid=… build=… watching=…` marks the end of launch: after it every command
@@ -1026,10 +1029,22 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   `color` in `marks=` is ignored and logged. An agent's note becomes the person's when typing ends
   with its words changed (`EditorCore.endTyping`), as one undo step; a move or a resize keeps it the
   agent's. `docs/mark-colour-2026-09-29.md` has the reasons and the candidates.
-- A drawing's sizes are in points of its own `pointScale`. A new drawing in the annotator takes the
-  backing scale of the screen it opens on; one an agent's marks create takes `NSScreen.main`'s, the
-  best guess with no annotator open. Both are clamped to `Drawing.pointScales`. A stored drawing
-  keeps its own, so a mark keeps its size in the image when the drawing is opened on another screen.
+- A drawing's sizes are in points of its own `pointScale`, which is the screen's backing scale times
+  the drawing's `markScale`. A new drawing in the annotator takes the screen it opens on; one an
+  agent's marks create takes `NSScreen.main`, the best guess with no annotator open. Both are
+  clamped to `Drawing.pointScales`. `MarkScaleRule` sets the mark scale from the image's area
+  against that screen's, in screen points: 1 for a capture of the whole screen or anything larger,
+  less for a smaller one, and never so small that a new note's text reaches a model that resizes the
+  image (`Stitch.readerScale`) under `ui.smallestNoteText` px. Every drawer converts through
+  `pointScale` alone, so the editor, the text being typed, cards, flights, renderings and stitches
+  draw the same size, and so does an older build that shares the drawings folder. The file writes
+  `markScale` only when it is under 1, and the format's version stays 1
+  (`docs/adr/0020-marks-are-sized-to-the-screenshot.md`). A stored drawing keeps both, so a mark
+  keeps its size in the image when the drawing is opened on another screen or after the rule
+  changes. A change to `ui.markScalePower` or `ui.smallestNoteText` rescales the open drawing
+  (`EditorCore.Input.rescaled`), which hands it over and is no undo step. An agent's note keeps
+  `ui.agentTextSize` of the image's width, with the same floor (`AgentMarks`).
+  `docs/mark-scale-2026-10-27.md` has the reasons and the measurements.
 
 ### Zoom
 

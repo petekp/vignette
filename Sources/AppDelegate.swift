@@ -476,7 +476,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         Task {
             do {
                 done(.success(try drawings.add(marks, from: agent, to: key, style: settings.data.ui.textStyle,
-                                               newPointScale: (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor)))
+                                               newScreen: DrawingScreen(NSScreen.main ?? NSScreen.screens[0]),
+                                               rule: settings.data.ui.markScaleRule)))
             } catch let failure as Drawings.Failure {
                 done(.failure(failure))
             } catch {
@@ -1099,7 +1100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 Task {
                     do {
                         try self.drawings.installReply(marks, from: agent, at: shot.key, style: self.settings.data.ui.textStyle,
-                                                  newPointScale: (NSScreen.main ?? NSScreen.screens[0]).backingScaleFactor)
+                                                       newScreen: DrawingScreen(NSScreen.main ?? NSScreen.screens[0]),
+                                                       rule: self.settings.data.ui.markScaleRule)
                         done(nil)
                     } catch let failure as Drawings.Failure {
                         done(failure)

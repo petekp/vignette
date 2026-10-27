@@ -6,10 +6,10 @@ final class EditorCoreTests: XCTestCase {
     typealias Core = EditorCore
     private static let image = PixelSize(width: 1000, height: 600)
 
-    private func core(_ marks: [Mark] = [], pixels: PixelSize = image, scale: CGFloat = 1, zoom: CGFloat = 1,
+    private func core(_ marks: [Mark] = [], pixels: PixelSize = image, scale: CGFloat = 1, markScale: CGFloat = 1, zoom: CGFloat = 1,
                       metrics: EditorMetrics = .standard) -> Core {
         var core = Core()
-        _ = core.reduce(.open(Drawing(key: "/tmp/shot.png", pixels: pixels, pointScale: scale, marks: marks), style: .standard,
+        _ = core.reduce(.open(Drawing(key: "/tmp/shot.png", pixels: pixels, pointScale: scale, markScale: markScale, marks: marks), style: .standard,
                               metrics: metrics, markStyle: .standard))
         _ = core.reduce(.zoomChanged(zoom))
         return core
@@ -994,6 +994,21 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertEqual(frame(small.drawing.marks.first), CGRect(x: 750, y: 350, width: 50, height: 50), "kept inside the image")
     }
 
+    func testMarksPastedIntoAScreenshotWithSmallerMarksKeepTheirBoxAndTakeItsNoteSize() throws {
+        let note = Mark(geometry: .text(Mark.Text(origin: CGPoint(x: 100, y: 300), text: "the gap", wrap: 300, size: 17)))
+        var full = core([rect(100, 100, 200, 100), note], pixels: PixelSize(width: 2000, height: 1200), scale: 2)
+        full.key(.character("a"), .command)
+        let payload = try XCTUnwrap(copied(full.key(.character("c"), .command)))
+
+        var crop = core(pixels: PixelSize(width: 600, height: 400), scale: 1, markScale: 0.5)
+        _ = crop.reduce(.paste(.marks(payload)))
+        XCTAssertEqual(frame(crop.drawing.marks.first), CGRect(x: 100, y: 100, width: 200, height: 100), "the same box around the same points of the screen")
+        let pasted = try XCTUnwrap(textOf(crop.drawing.marks.last))
+        XCTAssertEqual(pasted.size, 17, "in drawing pt, so drawn as the crop's own notes are")
+        XCTAssertEqual(pasted.wrap, 150, "its lines kept")
+        XCTAssertEqual(pasted.origin.x, 100)
+    }
+
     func testCmdXRemovesTheSelectedMarksAndCmdVPutsThemBackWhereTheyWere() throws {
         var core = core([rect(100, 100, 100, 100), arrow(300, 300, 400, 350)])
         core.key(.character("a"), .command)
@@ -1102,6 +1117,18 @@ final class EditorCoreTests: XCTestCase {
         core.key(.character("z"), .command)
         core.key(.character("z"), .command)
         XCTAssertTrue(core.drawing.marks.isEmpty, "the steps from before the tweaks still undo")
+    }
+
+    func testANewMarkScaleChangesHowBigTheMarksAreAndHandsTheDrawingOverAsNoStep() throws {
+        var core = core([rect(100, 100, 200, 100)], scale: 2)
+        let marks = core.drawing.marks
+        let effects = core.reduce(.rescaled(pointScale: 1, markScale: 0.5))
+        XCTAssertEqual(core.drawing.pointScale, 1)
+        XCTAssertEqual(core.drawing.markScale, 0.5)
+        XCTAssertEqual(core.drawing.marks, marks)
+        XCTAssertTrue(effects.contains(.scheduleTimer))
+        XCTAssertEqual(core.undoSteps.count, 0)
+        XCTAssertEqual(core.inspection["markScale"] as? CGFloat, 0.5)
     }
 
     // MARK: Opening and agents

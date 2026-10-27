@@ -197,7 +197,9 @@ struct DebugPanelView: View {
                     Tweak("Shadow opacity", \.shadowOpacity, 0...3, step: 0.05)
                     Tweak("Arrowhead length", \.arrowheadLength, 1...10, step: 0.25)
                     Tweak("Arrowhead width", \.arrowheadWidth, 1...10, step: 0.25)
-                    Text("Widths are in the drawing's points. Shadow opacity multiplies the shadows' darkness. The arrowhead's length and width are multiples of the stroke width.")
+                    Tweak("Shrink on small screenshots", \.markScalePower, 0...1, step: 0.05)
+                    Tweak("Smallest note text", \.smallestNoteText, 4...40, step: 0.5, unit: "px")
+                    Text("Widths are in the drawing's points. Shadow opacity multiplies the shadows' darkness. The arrowhead's length and width are multiples of the stroke width. Marks shrink on a screenshot smaller than the screen. At 0 they never shrink, and at 1 they shrink in step with its size. A new note's text never falls below the smallest size, measured after a model resizes the image.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Notes") {

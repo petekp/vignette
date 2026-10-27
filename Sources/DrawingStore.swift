@@ -79,7 +79,7 @@ struct DrawingStore: Sendable {
             }
         }
         guard !marks.isEmpty else { return nil }
-        return Drawing(key: key, pixels: pixels, pointScale: stored.pointScale, marks: marks)
+        return Drawing(key: key, pixels: pixels, pointScale: stored.pointScale, markScale: stored.markScale, marks: marks)
     }
 
     /// A reply checkpoint must preserve every stored mark and its geometry. Ordinary reads may
@@ -122,7 +122,7 @@ struct DrawingStore: Sendable {
                 }
             }
             catch { throw Refusal.incomplete("\(error)") }
-            return Drawing(key: key, pixels: pixels, pointScale: stored.pointScale, marks: marks)
+            return Drawing(key: key, pixels: pixels, pointScale: stored.pointScale, markScale: stored.markScale, marks: marks)
         } catch {
             log("[drawing] error incomplete \((key as NSString).lastPathComponent): \(error)")
             throw error
@@ -224,6 +224,7 @@ struct DrawingStore: Sendable {
         let key: String
         let pixels: PixelSize
         let pointScale: CGFloat
+        let markScale: CGFloat
         let marks: [Any]
         /// The whole file, as parsed.
         let object: [String: Any]
@@ -263,7 +264,13 @@ struct DrawingStore: Sendable {
             let range = Drawing.pointScales
             return .invalid("pointScale must be a number from \(String(format: "%g", range.lowerBound)) to \(String(format: "%g", range.upperBound))")
         }
+        let markScale = object["markScale"] == nil ? 1 : DrawingJSON.number(object["markScale"])
+        guard let markScale, Drawing.markScales.contains(markScale) else {
+            let range = Drawing.markScales
+            return .invalid("markScale must be a number from \(String(format: "%g", range.lowerBound)) to \(String(format: "%g", range.upperBound))")
+        }
         guard let marks = object["marks"] as? [Any] else { return .invalid("marks must be a list") }
-        return .stored(Stored(key: key, pixels: PixelSize(width: width, height: height), pointScale: pointScale, marks: marks, object: object))
+        return .stored(Stored(key: key, pixels: PixelSize(width: width, height: height), pointScale: pointScale, markScale: markScale,
+                              marks: marks, object: object))
     }
 }

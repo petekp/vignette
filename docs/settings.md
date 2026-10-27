@@ -157,11 +157,13 @@ dragged card, and what Copy, Send and Copy Drawing render. Widths are in points 
 | `shadowOpacity` | 1 | A multiplier on the marks' shadows' darkness. 0 turns them off. |
 | `arrowheadLength` | 4.5 | A multiple of the stroke width |
 | `arrowheadWidth` | 4 | A multiple of the stroke width |
+| `markScalePower` | 0.5 | How far marks shrink on a screenshot smaller than the screen. At 0 they never shrink, and at 1 a note covers the same share of every image. |
+| `smallestNoteText` | 16 | The smallest a new note's text gets on a small screenshot, in px as a model that resizes the image sees it |
 | `textFont` | `rounded` | A person's notes |
 | `textWeight` | 600 | From 100 to 900, the nearest weight the font has |
 | `agentTextFont` | `monospaced` | An agent's notes |
 | `agentTextWeight` | 600 | From 100 to 900 |
-| `agentTextSize` | 1.33 | An agent's note, as a percentage of the image's width. A person's is `newTextSize`. |
+| `agentTextSize` | 1.33 | An agent's note, as a percentage of the image's width, and never under `smallestNoteText`. A person's is `newTextSize`. |
 | `textLineHeight` | 1.32 | A multiple of the text's size |
 | `notePaddingTop` | 0.42 | The tag above the words, a multiple of the text's size |
 | `notePaddingBottom` | 0.47 | Below the words |
@@ -170,6 +172,9 @@ dragged card, and what Copy, Send and Copy Drawing render. Widths are in points 
 | `badgeInset` | 0.35 | An agent's badge from its tag's left edge, a multiple of the text's size |
 | `badgeOverlap` | 0.2 | How far the badge overlaps the tag's top edge, from 0 to 1.36, its height |
 
+- `markScalePower` and `smallestNoteText` set a drawing's mark scale when it is made
+  (`docs/editor.md`, section 1's Size). A change rescales the drawing open in the editor. A stored
+  drawing keeps the scale it was made with.
 - A colour is `#rrggbb`.
 - A font is `rounded`, `monospaced`, `serif` or `default`, which pick one of the system font's
   designs, or the name of an installed font family, such as `Avenir Next`.

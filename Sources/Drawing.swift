@@ -11,7 +11,7 @@ struct PixelSize: Equatable {
 
 /// The marks drawn on one screenshot. Geometry is in the screenshot's own px, so a drawing looks the
 /// same on any display, and it fits only an image of `pixels`. The sizes set in pt, the stroke width
-/// and a text's size, become px through `pointScale`.
+/// and a text's size, are drawing pt, which become px through `pointScale`.
 struct Drawing: Equatable {
     /// The file format's version. `DrawingStore` leaves a file with a newer one alone.
     static let version = 1
@@ -19,19 +19,82 @@ struct Drawing: Equatable {
     /// The point scales a drawing file or copied marks may carry. Displays are 1 to 3 px per pt;
     /// far outside that, a text is too large to lay out or too small to see.
     static let pointScales: ClosedRange<CGFloat> = 0.5...8
+    /// The mark scales a drawing file or copied marks may carry.
+    static let markScales: ClosedRange<CGFloat> = 0.05...1
 
     /// The screenshot's path.
     var key: String
     let pixels: PixelSize
-    /// px per pt: the scale of the display the annotator was on when the drawing's first mark was made.
+    /// px per drawing pt: the scale of the screen the annotator was on when the drawing was made,
+    /// times `markScale`.
     var pointScale: CGFloat
+    /// The share of their full size the marks are drawn at, from `MarkScaleRule` when the drawing was
+    /// made: 1 on a full-screen capture, less on a smaller one.
+    var markScale: CGFloat
     /// In drawing order: the last one is on top, and it is the newest.
     var marks: [Mark]
+
+    init(key: String, pixels: PixelSize, pointScale: CGFloat, markScale: CGFloat = 1, marks: [Mark]) {
+        self.key = key
+        self.pixels = pixels
+        self.pointScale = pointScale
+        self.markScale = markScale
+        self.marks = marks
+    }
+
+    /// A drawing with no marks yet, sized for an image of `pixels` annotated on `screen`.
+    init(key: String, pixels: PixelSize, sizedFor screen: DrawingScreen, rule: MarkScaleRule) {
+        let scale = rule.scale(for: pixels, on: screen)
+        self.init(key: key, pixels: pixels, pointScale: scale.point, markScale: scale.mark, marks: [])
+    }
+
+    /// px per pt of the screen the drawing was made on, which the screenshot's own points are in.
+    var screenScale: CGFloat { pointScale / markScale }
 
     /// The file's JSON, in the format `DrawingStore` reads.
     func encoded() throws -> Data {
         try DrawingJSON.encode(DrawingRecord(version: Self.version, key: key, pixels: [pixels.width, pixels.height],
-                                             pointScale: pointScale, marks: marks.map(MarkRecord.init)))
+                                             pointScale: pointScale, markScale: markScale == 1 ? nil : markScale,
+                                             marks: marks.map(MarkRecord.init)))
+    }
+}
+
+/// The screen a new drawing is sized for: its backing scale, px per pt, and its size in pt.
+struct DrawingScreen: Equatable {
+    var scale: CGFloat
+    var size: CGSize
+}
+
+extension DrawingScreen {
+    init(_ screen: NSScreen) {
+        self.init(scale: screen.backingScaleFactor, size: screen.frame.size)
+    }
+}
+
+/// How big a new drawing's marks are, against the screen it is made on (`docs/mark-scale-2026-10-27.md`).
+/// A screenshot as big as the screen keeps full-size marks. A smaller one shrinks them by `power` of its
+/// size against the screen's, measured by area, to no less than the size at which a new note's text
+/// still reaches a reader that resizes the image (`Stitch.readerScale`) at `smallestNoteText` px.
+struct MarkScaleRule: Equatable {
+    /// 0 keeps full-size marks on every screenshot; 1 shrinks them in step with its size.
+    var power: CGFloat
+    /// px, after the reader's resize.
+    var smallestNoteText: CGFloat
+    /// A new note's size, in drawing pt.
+    var newTextSize: CGFloat
+
+    /// The mark scale for an image of `pixels` on `screen`, and the point scale it gives.
+    func scale(for pixels: PixelSize, on screen: DrawingScreen) -> (mark: CGFloat, point: CGFloat) {
+        let screenScale = min(max(screen.scale, Drawing.pointScales.lowerBound), Drawing.pointScales.upperBound)
+        let image = CGSize(width: CGFloat(pixels.width) / screenScale, height: CGFloat(pixels.height) / screenScale)
+        let screenArea = screen.size.width * screen.size.height
+        let share = screenArea > 0 ? image.width * image.height / screenArea : 1
+        let curve = pow(max(share, 0), power / 2)
+        let reader = Stitch.readerScale(CGSize(width: pixels.width, height: pixels.height))
+        let floor = smallestNoteText / (newTextSize * screenScale * reader)
+        var mark = min(1, max(curve.isFinite ? curve : 1, floor.isFinite ? floor : 1))
+        mark = max(mark, Drawing.pointScales.lowerBound / screenScale, Drawing.markScales.lowerBound)
+        return (mark, screenScale * mark)
     }
 }
 
@@ -400,12 +463,16 @@ private struct DrawingRecord: Encodable {
     let key: String
     let pixels: [Int]
     let pointScale: CGFloat
+    /// Left out at 1.
+    let markScale: CGFloat?
     let marks: [MarkRecord]
 }
 
 private struct CopiedMarksRecord: Encodable {
     let version: Int
     let pointScale: CGFloat
+    /// Left out at 1.
+    let markScale: CGFloat?
     let marks: [MarkRecord]
 }
 
@@ -470,21 +537,28 @@ enum DrawingJSON {
 // MARK: - Copied marks
 
 /// Marks on the clipboard, in a pasteboard type of Vignette's own: the marks as a drawing file holds
-/// them, and the point scale of the drawing they came from, so a paste keeps their sizes in pt. Any
-/// app can write the type, so the marks go through the same validator as a file's.
+/// them, and the point and mark scales of the drawing they came from, so a paste keeps their places
+/// in the screenshot's points and their sizes in drawing pt. Any app can write the type, so the marks
+/// go through the same validator as a file's.
 struct CopiedMarks: Equatable {
     static let pasteboardType = NSPasteboard.PasteboardType(Identity.bundleID + ".marks")
 
     let pointScale: CGFloat
+    let markScale: CGFloat
     let marks: [Mark]
 
-    init(pointScale: CGFloat, marks: [Mark]) {
+    init(pointScale: CGFloat, markScale: CGFloat = 1, marks: [Mark]) {
         self.pointScale = pointScale
+        self.markScale = markScale
         self.marks = marks
     }
 
+    /// px per pt of the screen the marks' drawing was made on.
+    var screenScale: CGFloat { pointScale / markScale }
+
     func encoded() throws -> Data {
-        try DrawingJSON.encode(CopiedMarksRecord(version: Drawing.version, pointScale: pointScale, marks: marks.map(MarkRecord.init)))
+        try DrawingJSON.encode(CopiedMarksRecord(version: Drawing.version, pointScale: pointScale,
+                                                 markScale: markScale == 1 ? nil : markScale, marks: marks.map(MarkRecord.init)))
     }
 
     /// Nil when `data` is not copied marks this build can read, or none of its marks passes the
@@ -493,6 +567,7 @@ struct CopiedMarks: Equatable {
         guard let object = (try? DrawingJSON.object(from: data)) as? [String: Any],
               let version = DrawingJSON.wholeNumber(object["version"]), (1...Drawing.version).contains(version),
               let scale = DrawingJSON.number(object["pointScale"]), Drawing.pointScales.contains(scale),
+              let markScale = object["markScale"] == nil ? 1 : DrawingJSON.number(object["markScale"]), Drawing.markScales.contains(markScale),
               let list = object["marks"] as? [Any] else {
             Log.write("[paste] error the clipboard's marks are not ones this build reads")
             return nil
@@ -507,7 +582,7 @@ struct CopiedMarks: Equatable {
             catch { Log.write("[paste] dropped mark=\(index + 1): \(error)") }
         }
         guard !marks.isEmpty else { return nil }
-        self.init(pointScale: scale, marks: marks)
+        self.init(pointScale: scale, markScale: markScale, marks: marks)
     }
 }
 
