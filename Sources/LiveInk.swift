@@ -1956,6 +1956,7 @@ final class LiveInk {
     }
 
     private func startInking() {
+        let began = Date()
         isInking = true
         inkings += 1
         FocusReturn.shared.sessionStarting()
@@ -1966,7 +1967,7 @@ final class LiveInk {
         releaseWatch = nil
         inking = activeSurfaces()
         inking.forEach { $0.overlay.setInking(true) }
-        startTap()
+        startTap(since: began)
         // The ink takes its colour from what is behind it.
         InkBackdrop.shared.refresh()
         let ui = Settings.shared.motionUI
@@ -2007,14 +2008,17 @@ final class LiveInk {
 
     /// Takes the pointer's events from the window server for as long as inking lasts, or leaves them to
     /// the overlays when macOS refuses.
-    private func startTap() {
+    private func startTap(since began: Date) {
         guard tap == nil else { return }
         tap = LiveInkTap.start { [weak self] input in self?.tapped(input) }
-        Log.write(tap == nil ? "[live-ink] error tap refused by macOS; the overlay takes the presses" : "[live-ink] tap on")
+        inking.forEach { $0.overlay.tapTakesPresses = tap != nil }
+        let ms = Int(Date().timeIntervalSince(began) * 1000)
+        Log.write(tap == nil ? "[live-ink] error tap refused by macOS; the overlay takes the presses" : "[live-ink] tap on ms=\(ms)")
     }
 
     private func stopTap() {
         pressedSurface = nil
+        inking.forEach { $0.overlay.tapTakesPresses = false }
         guard let tap else { return }
         tap.stop()
         self.tap = nil

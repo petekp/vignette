@@ -109,8 +109,10 @@ The names in brackets are `// MARK:` sections.
   answer. With the callback on the main thread, a 4.8 s stall as inking started turned the tap off
   in the VM, and the menu under the ink then highlighted an item. A tap turned off that way goes on
   again while inking lasts. Without Accessibility, macOS refuses the tap and the overlay takes the
-  presses. Each change logs one line: `[live-ink] tap on`, `tap off`, `tap turned off by macOS: …`
-  or `error tap refused by macOS; the overlay takes the presses`.
+  presses. Each change logs one line: `[live-ink] tap on ms=<n>`, the time since inking started,
+  `tap off`, `tap turned off by macOS: …` or `error tap refused by macOS; the overlay takes the
+  presses`. A press that reaches an overlay while the tap is on is one the tap missed, and it logs
+  `[live-ink] error a press reached the overlay while the tap is on`.
   The session's button state, which `NSEvent.pressedMouseButtons` reads, never counts a press the
   tap dropped. So the missed release (`watchRelease`) and the pointer field read the hardware's
   state instead (`LiveInkTap.isButtonDown`).

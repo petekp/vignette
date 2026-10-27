@@ -52,6 +52,10 @@ final class LiveInkOverlay: NSPanel {
     /// and its release go on and end.
     func take(_ input: Input) { canvas.take(input) }
 
+    /// Whether `LiveInkTap` takes this overlay's presses, so a press that reaches the overlay itself is
+    /// one the tap missed.
+    var tapTakesPresses = false
+
     private let canvas: Canvas
     /// Taking presses to draw, holding the pointer field up, and keeping ink drawn over a menu above it:
     /// each raises it to the inking level.
@@ -241,7 +245,12 @@ final class LiveInkOverlay: NSPanel {
         }
 
         override func mouseMoved(with event: NSEvent) { take(.moved(location(of: event))) }
-        override func mouseDown(with event: NSEvent) { take(.pressed(location(of: event))) }
+        override func mouseDown(with event: NSEvent) {
+            if (window as? LiveInkOverlay)?.tapTakesPresses == true {
+                Log.write("[live-ink] error a press reached the overlay while the tap is on")
+            }
+            take(.pressed(location(of: event)))
+        }
         override func mouseDragged(with event: NSEvent) { take(.dragged(location(of: event))) }
         override func mouseUp(with event: NSEvent) { take(.released(location(of: event))) }
 
