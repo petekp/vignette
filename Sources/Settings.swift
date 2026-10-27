@@ -261,6 +261,8 @@ struct UITweaks: Codable, Equatable {
     var badgeOverlap = 0.2           // and how far it overlaps the tag's top edge
     var arrowheadLength = 4.5        // multiples of the stroke width
     var arrowheadWidth = 4.0
+    var markScalePower = 0.5         // how marks shrink on a screenshot smaller than the screen: 0 never, 1 in step with its size
+    var smallestNoteText = 16.0      // px a new note's text never falls below, as a reader that resizes the image sees it
     // Stitch
     var stitchLongSide = 4096.0      // a composition longer than this is scaled down to it
 
@@ -345,6 +347,7 @@ struct UITweaks: Codable, Equatable {
         // `NoteTag.reach` leaves room above a tag for the badge's whole height, and no more.
         Bound("badgeInset", \.badgeInset, 0...100), Bound("badgeOverlap", \.badgeOverlap, 0...Double(NoteBadge.height)),
         Bound("arrowheadLength", \.arrowheadLength, 0...100), Bound("arrowheadWidth", \.arrowheadWidth, 0...100),
+        Bound("markScalePower", \.markScalePower, 0...10), Bound("smallestNoteText", \.smallestNoteText, 0...1000),
         // The floor is the slider's, because below it a stitch is not a smaller picture but a
         // useless one: four wide captures at 64 come out a 64 x 1 PNG the app still reports as ok.
         Bound("stitchLongSide", \.stitchLongSide, 512...20_000),
@@ -404,6 +407,11 @@ extension UITweaks {
                          agentFont: agentTextFont, agentWeight: named(agentTextWeight, UITweaks().agentTextWeight),
                          lineHeight: textLineHeight, padTop: notePaddingTop, padBottom: notePaddingBottom, padSide: notePaddingSide,
                          widthCap: noteMaxWidth, badgeInset: badgeInset, badgeOverlap: badgeOverlap, agentSize: agentTextSize / 100)
+    }
+
+    /// How big a new drawing's marks are on its screenshot.
+    var markScaleRule: MarkScaleRule {
+        MarkScaleRule(power: markScalePower, smallestNoteText: smallestNoteText, newTextSize: newTextSize)
     }
 
     /// How every mark is painted. A colour that is not `#rrggbb` takes the default's, as `validated`

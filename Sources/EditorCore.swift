@@ -111,6 +111,9 @@ struct EditorCore {
         /// drawing, the selection, the history, a gesture and a typing session stay; a text keeps its
         /// origin, and its lines break where the new style breaks them.
         case tweaksChanged(style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle)
+        /// The host's rule for how big marks are changed: the drawing is drawn at these point and mark
+        /// scales from now on, and goes to the host. The marks keep their places and their sizes in pt.
+        case rescaled(pointScale: CGFloat, markScale: CGFloat)
         /// The text of the typing session is now this.
         case typingChanged(String)
         /// The text view ended the session on its own.
@@ -541,6 +544,11 @@ struct EditorCore {
             self.style = style
             self.metrics = metrics
             self.markStyle = markStyle
+        case .rescaled(let pointScale, let markScale):
+            guard pointScale != drawing.pointScale || markScale != drawing.markScale else { break }
+            drawing.pointScale = pointScale
+            drawing.markScale = markScale
+            if !drawing.marks.isEmpty { changed() }
         case .typingChanged(let text): typed(text)
         case .typingEnded: endTyping()
         case .timerFired: timerFired()
@@ -1503,7 +1511,8 @@ struct EditorCore {
             guard case .text(let text)? = mark(id)?.geometry else { return nil }
             return text.text
         }
-        emit(.copyMarks(CopiedMarks(pointScale: drawing.pointScale, marks: marks), text: words.isEmpty ? nil : words.joined(separator: "\n")))
+        emit(.copyMarks(CopiedMarks(pointScale: drawing.pointScale, markScale: drawing.markScale, marks: marks),
+                        text: words.isEmpty ? nil : words.joined(separator: "\n")))
     }
 
     private mutating func paste(_ content: PasteContent) {
@@ -1526,12 +1535,13 @@ struct EditorCore {
         }
     }
 
-    /// Copied marks keep their size and place in pt. On the same screenshot, while the marks they
-    /// came from are still there, they land 10 pt right and down, and 10 pt more for each copy
-    /// already there, with their texts' lines as they were; anywhere else, where the originals were,
-    /// placed as marks from outside.
+    /// Copied marks keep their places and their boxes in the screenshot's points, and a text keeps
+    /// its size in drawing pt with its lines, so it takes the size of the notes already there. On the
+    /// same screenshot, while the marks they came from are still there, they land 10 pt right and
+    /// down, and 10 pt more for each copy already there, with their texts' lines as they were;
+    /// anywhere else, where the originals were, placed as marks from outside.
     private mutating func pasteMarks(_ copied: CopiedMarks) {
-        let factor = drawing.pointScale / copied.pointScale
+        let factor = drawing.screenScale / copied.screenScale, lines = drawing.pointScale / copied.pointScale
         let converted = copied.marks.map { mark -> Mark in
             var mark = Self.fresh(mark)
             switch mark.geometry {
@@ -1545,7 +1555,7 @@ struct EditorCore {
                 mark.geometry = .arrow(arrow)
             case .text(var text):
                 text.origin = CGPoint(x: text.origin.x * factor, y: text.origin.y * factor)
-                text.wrap = text.wrap.map { $0 * factor }
+                text.wrap = text.wrap.map { $0 * lines }
                 mark.geometry = .text(text)
             }
             return mark
@@ -1598,8 +1608,8 @@ struct EditorCore {
     // MARK: Inspecting
 
     /// The `editor` section of `[state]`: the tool, each mark's type, frame in px and whether an agent
-    /// drew it, the selection as indexes into the marks, whether a text is being typed, and the undo
-    /// and redo depth. Never a text's words.
+    /// drew it, the selection as indexes into the marks, whether a text is being typed, the drawing's
+    /// point and mark scales, and the undo and redo depth. Never a text's words.
     var inspection: [String: Any] {
         let geometry = self.geometry
         return [
@@ -1612,6 +1622,8 @@ struct EditorCore {
             },
             "selection": drawing.marks.indices.filter { selection.contains(drawing.marks[$0].id) },
             "typing": typing != nil,
+            "pointScale": drawing.pointScale,
+            "markScale": drawing.markScale,
             "undo": undoSteps.count,
             "redo": redoSteps.count,
         ]
@@ -1636,7 +1648,7 @@ private extension EditorCore.Input {
     /// A key decides for itself (`startsNote`).
     var keepsNoteMark: Bool {
         switch self {
-        case .keyDown, .keyUp, .pointerMoved, .pointerExited, .modifiersChanged, .zoomChanged, .tweaksChanged, .timerFired: return true
+        case .keyDown, .keyUp, .pointerMoved, .pointerExited, .modifiersChanged, .zoomChanged, .tweaksChanged, .rescaled, .timerFired: return true
         default: return false
         }
     }
@@ -1645,7 +1657,7 @@ private extension EditorCore.Input {
     var keepsNudge: Bool {
         switch self {
         case .keyDown(let key, _, _): return key.direction != nil
-        case .keyUp, .pointerMoved, .pointerExited, .modifiersChanged, .zoomChanged, .tweaksChanged, .timerFired: return true
+        case .keyUp, .pointerMoved, .pointerExited, .modifiersChanged, .zoomChanged, .tweaksChanged, .rescaled, .timerFired: return true
         default: return false
         }
     }

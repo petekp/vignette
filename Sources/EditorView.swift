@@ -212,13 +212,18 @@ final class EditorView: NSView {
     }
 
     /// The tweaks changed: the text style, the sizes and the arrowhead replace the ones `open` gave,
-    /// and the drawing, the selection, the history and a typing session stay. The strokes take a new
-    /// arrowhead at once. Each text keeps its bitmap until one in the new style arrives, and a text
-    /// being typed is laid out again where it is.
-    func applyTweaks(style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle) {
-        guard core.isOpen, style != core.style || metrics != core.metrics || markStyle != core.markStyle else { return }
-        let restyled = style != core.style || markStyle != core.markStyle
+    /// and the drawing, the selection, the history and a typing session stay. `scale`, when the rule
+    /// for how big marks are changed, is the drawing's new point and mark scale. The strokes take a
+    /// new arrowhead or scale at once. Each text keeps its bitmap until one in the new style arrives,
+    /// and a text being typed is laid out again where it is.
+    func applyTweaks(style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle, scale: (mark: CGFloat, point: CGFloat)? = nil) {
+        let rescaled = scale.map { $0.point != core.drawing.pointScale || $0.mark != core.drawing.markScale } ?? false
+        guard core.isOpen, rescaled || style != core.style || metrics != core.metrics || markStyle != core.markStyle else { return }
+        let restyled = rescaled || style != core.style || markStyle != core.markStyle
         for effect in core.reduce(.tweaksChanged(style: style, metrics: metrics, markStyle: markStyle)) { run(effect, event: nil) }
+        if let scale, rescaled {
+            for effect in core.reduce(.rescaled(pointScale: scale.point, markScale: scale.mark)) { run(effect, event: nil) }
+        }
         if restyled {
             for field in [typingField, lingering].compactMap({ $0 }) {
                 guard let mark = core.mark(field.id), case .text(let text) = mark.geometry else { continue }

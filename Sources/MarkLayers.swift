@@ -61,6 +61,7 @@ final class MarkLayers {
         private let fill = CAShapeLayer()
         var mark: Mark?
         var markStyle: MarkStyle?
+        var pointScale: CGFloat?
 
         init(scale: CGFloat) {
             edges = NoteTag.shadows.map { _ in (CALayer(), CAShapeLayer(), CAShapeLayer()) }
@@ -116,6 +117,7 @@ final class MarkLayers {
             fill.strokeColor = nil
             self.mark = mark
             self.markStyle = markStyle
+            self.pointScale = pointScale
         }
     }
 
@@ -129,10 +131,12 @@ final class MarkLayers {
         let style: Styles
     }
 
-    /// The two styles a note is drawn in: how its words are set, and how it is painted.
+    /// The two styles a note is drawn in, how its words are set and how it is painted, and the
+    /// drawing's px per pt, which sizes both.
     struct Styles: Equatable, Sendable {
         let text: TextStyle
         let paint: MarkStyle
+        let pointScale: CGFloat
     }
 
     enum Part { case whole, detail }
@@ -141,16 +145,16 @@ final class MarkLayers {
     /// at the same scale, and the second to ask shows the first one's rather than drawing it again.
     fileprivate final class Recent: @unchecked Sendable {
         private struct Entry {
-            let target: Target, pointScale: CGFloat, imageWidth: CGFloat, frame: CGRect
+            let target: Target, imageWidth: CGFloat, frame: CGRect
             weak var surface: IOSurface?
         }
         private let lock = NSLock()
         private var entries: [Entry] = []
 
-        func find(_ target: Target, pointScale: CGFloat, imageWidth: CGFloat) -> (IOSurface, CGRect)? {
+        func find(_ target: Target, imageWidth: CGFloat) -> (IOSurface, CGRect)? {
             lock.withLock {
                 for entry in entries where entry.target.region == target.region && entry.target.scale == target.scale
-                    && entry.target.style == target.style && entry.pointScale == pointScale && entry.imageWidth == imageWidth
+                    && entry.target.style == target.style && entry.imageWidth == imageWidth
                     && MarkLayers.alike(entry.target.mark, target.mark) {
                     if let surface = entry.surface { return (surface, entry.frame) }
                 }
@@ -158,10 +162,10 @@ final class MarkLayers {
             }
         }
 
-        func add(_ surface: IOSurface, frame: CGRect, for target: Target, pointScale: CGFloat, imageWidth: CGFloat) {
+        func add(_ surface: IOSurface, frame: CGRect, for target: Target, imageWidth: CGFloat) {
             lock.withLock {
                 entries.removeAll { $0.surface == nil }
-                entries.append(Entry(target: target, pointScale: pointScale, imageWidth: imageWidth, frame: frame, surface: surface))
+                entries.append(Entry(target: target, imageWidth: imageWidth, frame: frame, surface: surface))
             }
         }
     }
@@ -302,7 +306,8 @@ final class MarkLayers {
                 layers.append(record.detail)
             } else {
                 let record = shapes[mark.id] ?? ShapeMark(scale: contentsScale)
-                if record.mark != mark || record.markStyle != markStyle, let shape = mark.shape(pointScale: drawing.pointScale, markStyle: markStyle) {
+                if record.mark != mark || record.markStyle != markStyle || record.pointScale != drawing.pointScale,
+                   let shape = mark.shape(pointScale: drawing.pointScale, markStyle: markStyle) {
                     record.show(mark, shape, pointScale: drawing.pointScale, markStyle: markStyle)
                 }
                 shapes[mark.id] = record
@@ -332,7 +337,7 @@ final class MarkLayers {
         guard !isParked else { return }
         wholeShow = (scale, bound)
         let imageWidth = CGFloat(drawing.pixels.width), pointScale = drawing.pointScale
-        let styles = Styles(text: style, paint: markStyle)
+        let styles = Styles(text: style, paint: markStyle, pointScale: pointScale)
         show(drawing, markStyle: markStyle, layout: { TextLayout($0, imageWidth: imageWidth, pointScale: pointScale, style: style.forMark($1)) },
              adopting: sources) { record, mark, _ in
             record.wantWhole = Target(mark: mark, region: bound, scale: scale, style: styles)
@@ -395,7 +400,7 @@ final class MarkLayers {
     /// nearer the resolution `record` wants than the one it has. True when it did.
     @discardableResult
     private func take(from source: MarkLayers, into record: Text, _ mark: Mark) -> Bool {
-        guard source !== self, source.pixels == pixels, source.drawing?.pointScale == drawing?.pointScale, let want = record.wantWhole,
+        guard source !== self, source.pixels == pixels, let want = record.wantWhole,
               let found = source.texts.values.first(where: { other in
                   other.whole.contents != nil && other.drawn.map { Self.alike($0.mark, mark) && $0.style == want.style } == true
               }),
@@ -448,20 +453,19 @@ final class MarkLayers {
         }
         record.pending = (part, target)
         let wanted = record.wanted, identity = ObjectIdentifier(record), sourceFrame = record.drawnFrame
-        let pointScale = drawing.pointScale, imageWidth = CGFloat(drawing.pixels.width)
+        let imageWidth = CGFloat(drawing.pixels.width)
         queue.async { [weak self] in
             let result: Result
             if !wanted.contains(target) {
                 result = .skipped
             } else if let source {
                 result = .drawn(MarkLayers.scaled(source, to: sourceFrame, scale: target.scale), sourceFrame)
-            } else if let (surface, region) = MarkLayers.recent.find(target, pointScale: pointScale, imageWidth: imageWidth) {
+            } else if let (surface, region) = MarkLayers.recent.find(target, imageWidth: imageWidth) {
                 result = .drawn(surface, region)
             } else {
-                let region = MarkLayers.covered(by: target, pointScale: pointScale, imageWidth: imageWidth)
-                let surface = MarkLayers.bitmap(of: target.mark, pointScale: pointScale, imageWidth: imageWidth, region: region,
-                                                scale: target.scale, style: target.style)
-                if let surface { MarkLayers.recent.add(surface, frame: region, for: target, pointScale: pointScale, imageWidth: imageWidth) }
+                let region = MarkLayers.covered(by: target, imageWidth: imageWidth)
+                let surface = MarkLayers.bitmap(of: target.mark, imageWidth: imageWidth, region: region, scale: target.scale, style: target.style)
+                if let surface { MarkLayers.recent.add(surface, frame: region, for: target, imageWidth: imageWidth) }
                 result = .drawn(surface, region)
             }
             DispatchQueue.main.async { [weak self] in
@@ -529,8 +533,9 @@ final class MarkLayers {
     }
 
     /// The rect a bitmap for `target` covers, in px: the part of its region the text may touch.
-    nonisolated private static func covered(by target: Target, pointScale: CGFloat, imageWidth: CGFloat) -> CGRect {
+    nonisolated private static func covered(by target: Target, imageWidth: CGFloat) -> CGRect {
         guard case .text(let text) = target.mark.geometry else { return .null }
+        let pointScale = target.style.pointScale
         let box = TextLayout(text, imageWidth: imageWidth, pointScale: pointScale, style: target.style.text.forMark(target.mark)).box
         return aligned(padded(text, box: box, pointScale: pointScale, markStyle: target.style.paint).intersection(target.region), scale: target.scale)
     }
@@ -580,10 +585,9 @@ final class MarkLayers {
 
     /// `mark` drawn by the renderer over `region` of an image `imageWidth` px wide, `scale` device px
     /// to a px.
-    nonisolated private static func bitmap(of mark: Mark, pointScale: CGFloat, imageWidth: CGFloat, region: CGRect, scale: CGFloat,
-                                           style: Styles) -> IOSurface? {
+    nonisolated private static func bitmap(of mark: Mark, imageWidth: CGFloat, region: CGRect, scale: CGFloat, style: Styles) -> IOSurface? {
         bitmap(region: region, scale: scale) { ctx in
-            mark.draw(in: ctx, pointScale: pointScale, imageWidth: imageWidth, style: style.text, markStyle: style.paint)
+            mark.draw(in: ctx, pointScale: style.pointScale, imageWidth: imageWidth, style: style.text, markStyle: style.paint)
         }
     }
 }

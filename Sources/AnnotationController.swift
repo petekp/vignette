@@ -60,6 +60,9 @@ final class AnnotationController {
     private var windowUp = false
     /// The text style of the tweaks.
     private var textStyle = TextStyle.standard
+    /// The rule the open drawing's mark scale was last set by, so a change of the rule in the tweaks
+    /// rescales it and any other tweak leaves it as it was made.
+    private var markScaleRule = UITweaks().markScaleRule
 
     /// Room the annotator needs below its window: the toolbar and its gap.
     var spaceBelow: CGFloat { AnnotatorToolbar.height + Settings.shared.data.ui.annotationToolbarGap }
@@ -164,13 +167,12 @@ final class AnnotationController {
             return
         }
         let screen = zoomScreen ?? NSScreen.main ?? NSScreen.screens[0]
-        // A new drawing takes the point scale of the screen the annotator opens on: Decision 8 in
-        // docs/editor.md.
-        let pointScale = min(max(screen.backingScaleFactor, Drawing.pointScales.lowerBound), Drawing.pointScales.upperBound)
-        let drawing = storedDrawing?(shot.key, pixels) ?? Drawing(key: key, pixels: pixels, pointScale: pointScale, marks: [])
+        let ui = Settings.shared.data.ui
+        // A new drawing is sized for the screen the annotator opens on: Decision 8 in docs/editor.md.
+        markScaleRule = ui.markScaleRule
+        let drawing = storedDrawing?(shot.key, pixels) ?? Drawing(key: key, pixels: pixels, sizedFor: DrawingScreen(screen), rule: markScaleRule)
         let maxPixel = Thumbnailer.screenPixels(on: screen), space = screen.colorSpace?.cgColorSpace
         let decoded = Thumbnailer.cached(at: shot.url, maxPixel: maxPixel, space: space).flatMap(Self.cgImage)
-        let ui = Settings.shared.data.ui
         textStyle = ui.textStyle
         editor.open(drawing, image: decoded, picture: container?.bounds ?? .zero, style: textStyle, metrics: ui.editorMetrics,
                     markStyle: ui.markStyle)
@@ -542,7 +544,13 @@ final class AnnotationController {
         let ui = Settings.shared.data.ui
         zoom.edge = Self.edgePull(ui)
         textStyle = ui.textStyle
-        editor.applyTweaks(style: textStyle, metrics: ui.editorMetrics, markStyle: ui.markStyle)
+        var scale: (mark: CGFloat, point: CGFloat)?
+        if ui.markScaleRule != markScaleRule, editor.core.isOpen {
+            let screen = zoomScreen ?? NSScreen.main ?? NSScreen.screens[0]
+            scale = ui.markScaleRule.scale(for: editor.core.drawing.pixels, on: DrawingScreen(screen))
+        }
+        markScaleRule = ui.markScaleRule
+        editor.applyTweaks(style: textStyle, metrics: ui.editorMetrics, markStyle: ui.markStyle, scale: scale)
         editor.noteSettleDuration = Settings.shared.motionUI.noteSettleDuration
     }
 

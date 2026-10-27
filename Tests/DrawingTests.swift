@@ -174,6 +174,30 @@ final class DrawingTests: XCTestCase {
         XCTAssertEqual(TextLayout(moved, imageWidth: 1600, pointScale: 2, style: .standard).box.maxX, 1600 * 0.98, accuracy: 0.001)
     }
 
+    func testMarksShrinkWithAScreenshotSmallerThanTheScreenNoFurtherThanTheSmallestNoteText() {
+        let rule = UITweaks().markScaleRule
+        let laptop = DrawingScreen(scale: 2, size: CGSize(width: 1512, height: 982))
+        func scale(_ width: Int, _ height: Int, on screen: DrawingScreen = laptop, rule: MarkScaleRule = rule) -> (mark: CGFloat, point: CGFloat) {
+            rule.scale(for: PixelSize(width: width, height: height), on: screen)
+        }
+        XCTAssertEqual(scale(3024, 1964).mark, 1, "a full-screen capture")
+        XCTAssertEqual(scale(6048, 3928).mark, 1, "a capture larger than the screen")
+        XCTAssertEqual(scale(1280, 800).mark, 0.644, accuracy: 0.001, "640 by 400 pt: the fourth root of its share of the screen's area")
+        XCTAssertEqual(scale(600, 400).mark, 16.0 / 34, accuracy: 1e-9, "300 by 200 pt: a 17 pt note at 2x reaches 16 px")
+        XCTAssertEqual(scale(3000, 200).mark, 0.900, accuracy: 0.001, "a strip the reader shrinks by its long side keeps a note readable")
+        XCTAssertEqual(scale(300, 200, on: DrawingScreen(scale: 1, size: CGSize(width: 1920, height: 1080))).mark, 16.0 / 17, accuracy: 1e-9,
+                       "on a 1x screen 16 px is nearly a full-size note")
+        XCTAssertEqual(scale(1280, 800).point, 2 * scale(1280, 800).mark, accuracy: 1e-9)
+        var never = rule
+        never.power = 0
+        never.smallestNoteText = 0
+        XCTAssertEqual(scale(600, 400, rule: never).mark, 1)
+        var tiny = rule
+        tiny.power = 4
+        tiny.smallestNoteText = 0
+        XCTAssertEqual(scale(100, 100, rule: tiny).point, Drawing.pointScales.lowerBound, accuracy: 1e-9, "never under the files' least point scale")
+    }
+
     // MARK: Copied marks
 
     func testCopiedMarksComeBackThroughTheValidator() throws {
@@ -184,6 +208,9 @@ final class DrawingTests: XCTestCase {
         ]
         let copied = try XCTUnwrap(CopiedMarks(data: try CopiedMarks(pointScale: 2, marks: marks).encoded()))
         XCTAssertEqual(copied.pointScale, 2)
+        XCTAssertEqual(copied.markScale, 1)
+        let small = try XCTUnwrap(CopiedMarks(data: try CopiedMarks(pointScale: 1, markScale: 0.5, marks: marks).encoded()))
+        XCTAssertEqual(small.screenScale, 2)
         XCTAssertEqual(copied.marks.map(\.geometry), marks.map(\.geometry))
         XCTAssertEqual(copied.marks.map(\.agent), marks.map(\.agent))
 
@@ -192,6 +219,7 @@ final class DrawingTests: XCTestCase {
         XCTAssertEqual(CopiedMarks(data: Data(written.utf8))?.marks.map(\.geometry), [.rectangle(CGRect(x: 0, y: 0, width: 1, height: 1))])
         XCTAssertNil(CopiedMarks(data: Data(#"{"version": 2, "pointScale": 1, "marks": []}"#.utf8)), "a newer build's marks")
         XCTAssertNil(CopiedMarks(data: Data(#"{"version": 1, "pointScale": 9, "marks": [{"type": "rectangle", "x": 0, "y": 0, "w": 1, "h": 1, "color": "red"}]}"#.utf8)))
+        XCTAssertNil(CopiedMarks(data: Data(#"{"version": 1, "pointScale": 1, "markScale": 2, "marks": [{"type": "rectangle", "x": 0, "y": 0, "w": 1, "h": 1}]}"#.utf8)))
         XCTAssertNil(CopiedMarks(data: Data(#"{"version": 1, "pointScale": 1, "marks": []}"#.utf8)))
         XCTAssertNil(CopiedMarks(data: Data("plain words".utf8)))
         XCTAssertEqual(CopiedMarks.pasteboardType.rawValue, Identity.bundleID + ".marks")
