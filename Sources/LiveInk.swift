@@ -2028,6 +2028,8 @@ final class LiveInk {
     /// An event the tap took: a press goes to the surface under it, and that surface takes the rest of
     /// the stroke, wherever the pointer goes; a move goes to the surface under the pointer.
     private func tapped(_ input: LiveInkOverlay.Input) {
+        // The gel is lit from the pointer, and its own watch hears no move the tap takes.
+        if InkClock.shared.showsInk { InkClock.shared.wake() }
         let under = { (point: CGPoint) in self.inking.first { $0.overlay.globalFrame.contains(point) } }
         switch input {
         case .pressed(let point):

@@ -577,7 +577,7 @@ final class InkClock: NSObject {
         let shown = layers.values.compactMap(\.layer).filter(\.isVisible)
         let idle = rate > 0 && now - lastIdle >= 1.0 / 30
         if idle { lastIdle = now }
-        let pointer = NSEvent.mouseLocation
+        let pointer = LiveInkTap.pointer
         let pointerMoved = ui.inkGelPointerLight > 0 && pointer != lastPointer
         lastPointer = pointer
         var drawn: [(commands: MTLCommandBuffer, drawable: CAMetalDrawable)] = []

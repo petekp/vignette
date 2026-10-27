@@ -274,14 +274,14 @@ final class PointerField: NSObject {
 
     /// The pointer now, in the layer's points.
     private var pointer: CGPoint {
-        let mouse = NSEvent.mouseLocation
+        let mouse = LiveInkTap.pointer
         return CGPoint(x: mouse.x - screenFrame.minX, y: screenFrame.maxY - mouse.y)
     }
 
     /// Whether the deep blue stands out more than the ice from the content under the pointer, from
     /// the backdrop the ink reads; with no backdrop the field is the ice.
     private func deepUnderPointer() -> Bool {
-        let mouse = NSEvent.mouseLocation
+        let mouse = LiveInkTap.pointer
         let global = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
         return InkBackdrop.shared.cell(at: global).map(contrast.deepWins(behind:)) ?? false
     }
