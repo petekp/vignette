@@ -10,7 +10,9 @@ struct SendNotice: Equatable {
     enum State: Equatable { case inGrace, sending, sent, queued, uncertain, failed, replyFailed, done }
     let request: String   // the request's id, so an answer to an earlier send is never taken for this one's
     let client: AgentClient
-    let project: String
+    /// What the card calls the session: the title the target showed when Send was pressed
+    /// (`SessionMenu.cardTitle`).
+    let sessionTitle: String
     var state: State
     /// What went wrong and what to do about it, once a delivery has failed or gone unconfirmed.
     var reason: String? = nil
@@ -67,7 +69,7 @@ struct CardNotices {
         case notCopied(reason: String)
         /// A send is stored and its card is going home; it waits for `answered`. With a `grace` the
         /// line has not gone yet: the card counts it down until `released` or `cancelled`.
-        case sending(request: String, client: AgentClient, project: String, grace: SendNotice.Grace? = nil, starts: Bool = false)
+        case sending(request: String, client: AgentClient, sessionTitle: String, grace: SendNotice.Grace? = nil, starts: Bool = false)
         /// The grace of `request` ended and its line is going to the client.
         case released(request: String)
         /// `request` was cancelled before its line went: its notice goes and no answer is waited for.
@@ -77,7 +79,7 @@ struct CardNotices {
         /// The agent's reply to `request` arrived and could not be made a card.
         case replyFailed(request: String, client: AgentClient, reason: String)
         /// The session's turn on `request`, a live ink note, ended with no result card.
-        case finished(request: String, client: AgentClient, project: String)
+        case finished(request: String, client: AgentClient, sessionTitle: String)
     }
 
     /// A notice the card now shows. `hold`: when to call `expire(_:on:)`, nil while a send waits for
@@ -103,8 +105,8 @@ struct CardNotices {
             notice = .copied(label: label)
         case .notCopied(let reason):
             notice = .notCopied(reason: reason)
-        case .sending(let request, let client, let project, let grace, let starts):
-            let send = SendNotice(request: request, client: client, project: project, state: grace == nil ? .sending : .inGrace, grace: grace,
+        case .sending(let request, let client, let sessionTitle, let grace, let starts):
+            let send = SendNotice(request: request, client: client, sessionTitle: sessionTitle, state: grace == nil ? .sending : .inGrace, grace: grace,
                                   starts: starts)
             awaitingAnswer[file] = send
             return show(.send(send), on: file, hold: nil)
@@ -134,10 +136,10 @@ struct CardNotices {
             notice = .send(send)
         case .replyFailed(let request, let client, let reason):
             if let later = awaitingAnswer[file], later.request != request { return nil }
-            notice = .send(SendNotice(request: request, client: client, project: client.label, state: .replyFailed, reason: reason))
-        case .finished(let request, let client, let project):
+            notice = .send(SendNotice(request: request, client: client, sessionTitle: client.label, state: .replyFailed, reason: reason))
+        case .finished(let request, let client, let sessionTitle):
             if let later = awaitingAnswer[file], later.request != request { return nil }
-            notice = .send(SendNotice(request: request, client: client, project: project, state: .done))
+            notice = .send(SendNotice(request: request, client: client, sessionTitle: sessionTitle, state: .done))
         }
         return show(notice, on: file, hold: noticeHold * (Self.explains(notice) ? 3 : 1))
     }

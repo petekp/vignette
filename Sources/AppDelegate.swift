@@ -116,9 +116,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.onAnnotatorPress = { [weak self] event, key in self?.annotator.take(event, for: key) }
         thumbnail.onTakesScreen = { [weak self] in self?.liveInk.standAside() }
         liveInk.listSessions = { [weak self] answer in self?.sessions.list(answer) }
-        liveInk.sendNote = { [weak self] note, destination, message, done in
+        liveInk.sendNote = { [weak self] note, destination, title, message, done in
             guard let self else { return done(.failure(ScreenshotRequests.Refusal(reason: SubmissionOutcome.internalReason))) }
-            noteCards.send(note, to: destination, message: message, done: done)
+            noteCards.send(note, to: destination, titled: title, message: message, done: done)
         }
         liveInk.unsendNote = { [weak self] request in self?.noteCards.unsend(request: request) }
         annotator.onTakesEvents = { [weak self] opening in self?.thumbnail.annotatorTakesEvents(opening) }
@@ -130,7 +130,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             return drawings.read(key, pixels: pixels, style: settings.data.ui.textStyle)
         }
         annotator.onDrawing = { [weak self] drawing, reason in self?.drawings.write(drawing, reason: reason) }
-        annotator.onSend = { [weak self] shot, drawing, destination, message in self?.sendDrawing(drawing, of: shot, to: destination, message: message) }
+        annotator.onSend = { [weak self] shot, drawing, destination, title, message in
+            self?.sendDrawing(drawing, of: shot, to: destination, titled: title, message: message)
+        }
         annotator.onCopyDrawing = { [weak self] shot, drawing in self?.copyDrawing(drawing, of: shot) }
         thumbnail.dragItems = { [weak self] cards in self?.dragItems(cards) ?? [] }
         settingsWindow.callbacks = SettingsWindowController.Callbacks(
@@ -699,7 +701,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 let fresh = candidates.fresh
                 if let session = candidates.destinations.first(where: { $0.id == id }) {
                     answered = true
-                    switch liveInk.ask(words, sendingTo: session) {
+                    let title = SessionMenu.cardTitle(of: SessionMenu.row(of: session, among: candidates.destinations))
+                    switch liveInk.ask(words, sendingTo: (session, title)) {
                     case .success: Commands.ok(cmd, "sending to \(session.project)")
                     case .failure(let failure): Commands.error(cmd, .liveInkNotAsked, failure.reason)
                     }
@@ -1359,7 +1362,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// anywhere before then leaves the drawing exactly where the hand left it.
     /// The button shows the send from the press until the bar leaves, and says "Not sent" when it
     /// fails before the request is stored, since the drawing is still in the editor then.
-    private func sendDrawing(_ drawing: Drawing, of shot: Screenshot, to destination: AgentDestination, message: String?) {
+    private func sendDrawing(_ drawing: Drawing, of shot: Screenshot, to destination: AgentDestination, titled title: String, message: String?) {
         guard !annotator.sending, let opening = annotator.opening else { return }
         let name = shot.url.lastPathComponent
         annotator.sending = true
@@ -1380,7 +1383,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 else { annotator.sendFailed("Vignette couldn't render the drawing. The log has details.") }
                 return
             }
-            submit(png, of: shot, to: destination, message: message)
+            submit(png, of: shot, to: destination, titled: title, message: message)
         }
     }
 
@@ -1388,7 +1391,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         "Vignette can't read \(name). It may have been moved or deleted."
     }
 
-    private func submit(_ png: Data, of shot: Screenshot, to destination: AgentDestination, message: String?) {
+    private func submit(_ png: Data, of shot: Screenshot, to destination: AgentDestination, titled title: String, message: String?) {
         let record: ScreenshotRequests.Record
         do {
             record = try requests.send(png: png, source: shot.key, to: destination, message: message,
@@ -1404,7 +1407,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         // the next `prepare` resets it.
         sentShots[record.id] = shot
         SendContext.sent(file: shot.url.lastPathComponent, request: record.id, to: destination, offered: annotator.offered)
-        thumbnail.showSending(shot, request: record.id, to: destination, grace: requests.grace(of: record.id))
+        thumbnail.showSending(shot, request: record.id, to: destination, titled: title, grace: requests.grace(of: record.id))
         thumbnail.annotationSent()
     }
 

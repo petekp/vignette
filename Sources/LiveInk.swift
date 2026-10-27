@@ -39,9 +39,9 @@ final class LiveInk {
     /// The working sessions Send can reach, newest first, as the candidates found so far: once from
     /// the kept lists, then again as each client's fresh answer arrives.
     var listSessions: ((@escaping (DestinationChoice.Candidates) -> Void) -> Void)?
-    /// Sends a note to a session through today's Send, as the card it becomes, and answers on the
-    /// main thread with the request's id, or why it was refused.
-    var sendNote: ((NoteCard, AgentDestination, String,
+    /// Sends a note to a session through today's Send, as the card it becomes, which calls the session
+    /// `title`, and answers on the main thread with the request's id, or why it was refused.
+    var sendNote: ((NoteCard, AgentDestination, _ title: String, _ message: String,
                     @escaping (Result<String, ScreenshotRequests.Refusal>) -> Void) -> Void)?
     /// Withdraws a note sent to a session that is still in its grace (Don't send), by its request id.
     var unsendNote: ((String) -> Void)?
@@ -642,12 +642,12 @@ final class LiveInk {
         }
         let panel = LiveNotePopover(at: first, target: lastTarget)
         noteOffered = lastTarget
-        panel.onAsk = { [weak self, weak panel] words, target in
+        panel.onAsk = { [weak self, weak panel] words, target, title in
             guard let self else { return }
             self.stopListening()
             self.letGoOfNotePanel()
             self.lastTarget = target
-            let session = target.session
+            let session = target.session.map { (destination: $0, title: title) }
             let note = panel.flatMap { panel in panel.shownPlace.map { (panel: panel, place: $0, tag: panel.tagFrame) } }
             if case .failure = self.ask(words, sendingTo: session, from: note) { panel?.fadeAway() }
         }
@@ -780,14 +780,14 @@ final class LiveInk {
     /// Asks the responder about the new ink, with `words` as its note, or about the ink asked about
     /// last when there is none new, as a follow-up. The picture is taken now, and the ask waits for the
     /// asks to the responder before it (`LiveAsks.Effect.send`). With `session`, sends the picture and
-    /// the words to that working session instead, as a card (`share`), at once. `note` is the note asked
-    /// in, where it hangs and where its words are: the conversation takes its place, and a card draws
-    /// the words there. `following` is the reply the person answered with `picked`: it stays, with
+    /// the words to that working session instead, as a card that calls it `title` (`share`), at once.
+    /// `note` is the note asked in, where it hangs and where its words are: the conversation takes its
+    /// place, and a card draws the words there. `following` is the reply the person answered with `picked`: it stays, with
     /// their words as its question, and it and the answer's marks carry the thinking light until the
     /// next answer replaces them. A follow-up is about the ink asked about, and the note, with its new
     /// ink and its words, stays. Answers whether an ask started, and why not.
     @discardableResult
-    func ask(_ words: String, sendingTo session: AgentDestination? = nil,
+    func ask(_ words: String, sendingTo session: (destination: AgentDestination, title: String)? = nil,
              from note: (panel: LiveNotePopover, place: PopoverPlace, tag: CGRect?)? = nil,
              following reply: Mark? = nil, picked: LiveAnswerActions.Pick? = nil) -> Result<Void, LiveResponder.Failure> {
         let trimmed = words.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -813,7 +813,7 @@ final class LiveInk {
             point = centre
             run(effects)
         }
-        let answerer = (agent: session?.client.rawValue ?? LiveAnswerLayout.agentName, name: session?.project)
+        let answerer = (agent: session?.destination.client.rawValue ?? LiveAnswerLayout.agentName, name: session?.title)
         answerers[id] = answerer
         if let note { handing[id] = note.panel }
         if let reply {
@@ -848,10 +848,10 @@ final class LiveInk {
                     case .session(let destination): destination.id
                     case nil: nil
                     }
-                    SendContext.note(packet, to: session?.id ?? "responder", offered: offered)
+                    SendContext.note(packet, to: session?.destination.id ?? "responder", offered: offered)
                 }
                 if let session {
-                    self?.share(packet, words: words, spoken: said, with: session, from: spot, for: id)
+                    self?.share(packet, words: words, spoken: said, with: session.destination, titled: session.title, from: spot, for: id)
                 } else {
                     self?.send(packet, words: words, spoken: said, about: about, new: Set(fresh.map(\.id)), started: started, for: id)
                 }
@@ -919,7 +919,7 @@ final class LiveInk {
     /// a note, which is what the session is sent. Once the request is stored the ink and the note leave
     /// the window, and `LiveNoteCards` waits on the session's turn.
     private func share(_ packet: LivePacket, words: String, spoken: (words: [SpokenWord], began: Date)?, with session: AgentDestination,
-                       from spot: CGRect?, for id: LiveAsks.Ask.ID) {
+                       titled title: String, from spot: CGRect?, for id: LiveAsks.Ask.ID) {
         var shared: Set<Mark.ID>?
         for case .share(let about) in asks.reduce(.arrived(.packetCame, for: id)) { shared = about }
         guard let about = shared else { return }
@@ -950,7 +950,7 @@ final class LiveInk {
         let card = NoteCard(picture: packet.picture, capture: packet.capture,
                             marks: packet.drawingMarks(person + (note.map { [$0] } ?? [])), pointScale: packet.scale,
                             window: packet.windowID, ink: inkBox, before: LiveNoteCards.before(packet, ink: inkBox))
-        sendNote(card, session, message) { [weak self] result in
+        sendNote(card, session, title, message) { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let request):

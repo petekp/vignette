@@ -475,9 +475,10 @@ The names in brackets are `// MARK:` sections.
   is the note's width, 300 pt, or as wide as its buttons. It has no backing: it keeps the note's
   translucency. Its words take the glass's vibrancy, as the question's label does, so over a dark
   window they stay darker than the greyed question (`docs/live-ink-conversation-2026-10-17.md` has
-  the contrast). `Mark.quote` keeps the question and `Mark.answerer` the row's name, the session's
-  project for a session; neither is written to a file. Beside its ink, as on any side edge, AppKit
-  keeps the body centred on its arrow, so a conversation that grows downwards also rises. A whole
+  the contrast). `Mark.quote` keeps the question and `Mark.answerer` the row's name, which for a
+  session is the title the note's target showed; neither is written to a file. Beside its ink, as
+  on any side edge, AppKit keeps the body centred on its arrow, so a conversation that grows
+  downwards also rises. A whole
   answer with no reply up yet hangs the reply from its first pointing mark, off the middle of a
   circle's or a box's side or from an arrow's tail, so the words lead along the mark to what it
   points at. That mark's label is placed with the reply, so neither covers the other. An answer that

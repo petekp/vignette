@@ -711,9 +711,9 @@ final class ThumbnailController: NSObject {
     }
 
     /// The request for `shot` is stored and its card is going home: the card shows where it is going
-    /// from the moment it lands.
-    func showSending(_ shot: Screenshot, request: String, to destination: AgentDestination, grace: SendNotice.Grace? = nil) {
-        post(.sending(request: request, client: destination.client, project: SessionMenu.sentLabel(of: destination), grace: grace,
+    /// from the moment it lands, calling the session `title`.
+    func showSending(_ shot: Screenshot, request: String, to destination: AgentDestination, titled title: String, grace: SendNotice.Grace? = nil) {
+        post(.sending(request: request, client: destination.client, sessionTitle: title, grace: grace,
                       starts: destination.startsProcess), on: shot)
     }
 
@@ -738,8 +738,8 @@ final class ThumbnailController: NSObject {
     /// The session's turn on the live ink note `shot` ended with nothing to show as a result card.
     /// A card not on screen comes up as the lone thumbnail to say it, as a result card would, unless
     /// `quietly`: it then says it in place, and a card off screen stays off.
-    func finished(_ shot: Screenshot, request: String, in destination: AgentDestination, quietly: Bool = false) {
-        post(.finished(request: request, client: destination.client, project: SessionMenu.sentLabel(of: destination)), on: shot, comesUp: !quietly)
+    func finished(_ shot: Screenshot, request: String, in destination: AgentDestination, titled title: String, quietly: Bool = false) {
+        post(.finished(request: request, client: destination.client, sessionTitle: title), on: shot, comesUp: !quietly)
     }
 
     /// A reply to a send could not be made a card, so the card that was sent says so, as it says a

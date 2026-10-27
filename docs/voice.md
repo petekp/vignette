@@ -16,8 +16,9 @@ new message matches the ones already there. Change a message here and in the cod
 - **Keep the way forward in view.** Nothing is lost when a send fails, since the drawing is still
   there, so a message points at the next try rather than at the failure. A queued send says when it
   will be read.
-- **Fit the card.** A headline is two or three words. A reason is one or two short sentences, about
-  60 characters, since it sits under the headline on a card.
+- **Fit the card.** A headline is two or three words, plus the session's title when it names one.
+  The card cuts a title that is too long. A reason is one or two short sentences, about 60
+  characters, since it sits under the headline on a card.
 - **"The log has details."** is how a message points at the log. Use it only when the person can do
   nothing else.
 - **Contractions, and no exclamation marks.** "couldn't", "can't", "isn't".
@@ -38,17 +39,17 @@ anything works inside.
 
 | State | Headline | Reason |
 | --- | --- | --- |
-| Waiting to send (the line has not gone yet) | Sending to *place* | Button: Don't send |
-| Sending | Sending to *place* | |
-| Starting the session, which was not running at Send | Starting in *place* | |
-| Sent | Sent to *place* | |
-| Queued: no Codex engine has the thread open | Queued for *place* | Codex reads it when you open this thread. |
-| Not confirmed in time | Check *place* | Codex didn't confirm it. It may still have arrived. |
+| Waiting to send (the line has not gone yet) | Sending to *session* | Button: Don't send |
+| Sending | Sending to *session* | |
+| Starting the session, which was not running at Send | Starting in *session* | |
+| Sent | Sent to *session* | |
+| Queued: no Codex engine has the thread open | Queued for *session* | Codex reads it when you open this thread. |
+| Not confirmed in time | Check *session* | Codex didn't confirm it. It may still have arrived. |
 | Not sent | Not sent | One of the reasons below |
 | A reply that could not be shown | Reply not shown | You can ask *agent* to send it again. / Vignette couldn't save the reply. The log has details. |
-| A live ink note whose session finished with nothing to show as a result card | Done in *place* | |
+| A live ink note whose session finished with nothing to show as a result card | Done in *session* | |
 
-*place* is the header of the row the session was picked from: the repository's folder name, the path from home for a folder with no repository, or the agent's name for a session with no folder. It is taken when Send is pressed.
+*session* is the session's title as the toolbar or the live ink note showed it when Send was pressed: the herdr tab's label, else the session's name, with a suffix when two sessions share a title. `SessionMenu.cardTitle` decides it. A session that Send starts has no title yet, so the card names its project folder instead. On a card too narrow for the headline, the title stands alone. A title too long even for that is cut in the middle.
 
 Pressing Don't send says nothing. The press is the confirmation, the ring and the button go with
 it, and "Not sent" is the headline for a failure, not for a choice.

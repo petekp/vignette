@@ -564,7 +564,8 @@ struct CopiedOverlay: View {
 }
 
 /// The Copied notice's counterpart for a send: the destination's logo, a badge on it for the
-/// delivery, and where it went. The words go on a card too narrow for them, the project name last.
+/// delivery, and the session it went to. On a card too narrow for the words the session's title
+/// stands alone, cut when it is too long for that too.
 /// A delivery usually answers about as the card lands, so the sending state, once on screen, holds
 /// `sendingHold` before it gives way: two steps rather than one state flickering into the next.
 /// While the send waits out its grace the logo wears a ring that empties, and a Don't send button
@@ -585,21 +586,25 @@ struct SendOverlay: View {
     private static let sendingHold: TimeInterval = 0.45
     /// The logo over the smallest Don't send. A card shorter than this puts the button beside it.
     private static let stackedHeight: CGFloat = 57
+    /// The narrowest a cut headline is shown at: a few letters either side of the ellipsis.
+    private static let shortestCut: CGFloat = 40
 
     private var state: SendNotice.State { shown ?? notice.state }
 
     private var words: String {
         switch state {
-        case .inGrace: return "Sending to \(notice.project)"
-        case .sending: return notice.starts ? "Starting in \(notice.project)" : "Sending to \(notice.project)"
-        case .sent: return "Sent to \(notice.project)"
-        case .queued: return "Queued for \(notice.project)"
-        case .uncertain: return "Check \(notice.project)"
+        case .inGrace: return "Sending to \(notice.sessionTitle)"
+        case .sending: return notice.starts ? "Starting in \(notice.sessionTitle)" : "Sending to \(notice.sessionTitle)"
+        case .sent: return "Sent to \(notice.sessionTitle)"
+        case .queued: return "Queued for \(notice.sessionTitle)"
+        case .uncertain: return "Check \(notice.sessionTitle)"
         case .failed: return "Not sent"
         case .replyFailed: return "Reply not shown"
-        case .done: return "Done in \(notice.project)"
+        case .done: return "Done in \(notice.sessionTitle)"
         }
     }
+
+    private var namesSession: Bool { state != .failed && state != .replyFailed }
 
     var body: some View {
         let motion = Settings.shared.motionScale
@@ -660,13 +665,16 @@ struct SendOverlay: View {
         if state == .inGrace {
             Group {
                 if stacked {
-                    ViewThatFits {
-                        VStack(spacing: 5) {
-                            label(words).allowsHitTesting(false)
-                            unsendButton
-                        }
+                    let unsend = ViewThatFits(in: .horizontal) {
                         unsendButton
                         unsendMark
+                    }
+                    ViewThatFits(in: .vertical) {
+                        VStack(spacing: 5) {
+                            headline.allowsHitTesting(false)
+                            unsend
+                        }
+                        unsend
                     }
                 } else {
                     unsendMark
@@ -719,18 +727,22 @@ struct SendOverlay: View {
         .onHover(perform: onOverControl)
     }
 
-    /// The words, or the project alone on a card too narrow for them, or nothing.
+    /// The words; on a card too narrow for them, the session's title alone; then the title cut in
+    /// the middle, as the toolbar's target cuts it, so a suffix that tells two sessions apart stays.
+    /// A failure names no session, so its words are what is cut. Nothing on a card too narrow for
+    /// even that.
     private var headline: some View {
-        ViewThatFits(in: .horizontal) {
-            label(words)
-            if state != .failed && state != .replyFailed { label(notice.project) }
+        let shortest = namesSession ? notice.sessionTitle : words
+        return ViewThatFits(in: .horizontal) {
+            label(words).fixedSize()
+            if namesSession { label(notice.sessionTitle).fixedSize() }
+            label(shortest).truncationMode(.middle).frame(idealWidth: Self.shortestCut)
             Color.clear.frame(width: 1, height: 1)
         }
     }
 
     private func label(_ text: String) -> some View {
-        Text(text).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
-            .lineLimit(1).fixedSize()
+        Text(text).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
     }
 
     /// The agent's logo on a white disc, as on a card an agent sent: in its grace with the ring that

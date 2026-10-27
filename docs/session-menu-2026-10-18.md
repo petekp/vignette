@@ -236,12 +236,12 @@ submenus.
   title, cut in the middle at their current widths. Their tooltip is the title, the second line,
   then the repository or the path from home. Before this, the toolbar's tooltip said the name and
   the agent client, and live ink's was the same for every session.
-- **The sent card** names the row's header: the repository, the path from home in Other folders, or
-  the agent client's name for a session with no folder (`SessionMenu.sentLabel`). That holds for
-  every headline in `docs/voice.md`'s send table that names a place: "Sending to", "Sent to",
-  "Queued for", "Check" and "Done in". The label is taken when Send is pressed and kept on the
-  notice, so every headline names the same thing. It is the repository's folder name; two
-  repositories with one folder name are told apart in the menu's headers only.
+- **The sent card** names the session by the title the destination control or live ink's target
+  button showed when Send was pressed, or by its project folder's name for a session Send starts
+  (`SessionMenu.cardTitle`). That holds for every headline in `docs/voice.md`'s send table that
+  names the session: "Sending to", "Starting in", "Sent to", "Queued for", "Check" and "Done in".
+  The title is kept on the notice, so every headline names the same thing. A title too long for
+  the card is cut in the middle, as the destination control cuts it.
 - **`AgentDestination.detail` stays.** The `[send]` log lines, the `project` field of the JSON
   `annotate` answer, and matching a session again after `/clear` read it. `project` stays as the
   fallback label. Live ink's answer row (`Mark.answerer`) and the `sending to` line of the

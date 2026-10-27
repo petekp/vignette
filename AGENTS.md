@@ -1316,9 +1316,10 @@ screenshot location for such a launch is written with the same variable:
 - A send reports on the card it was sent from. Once the request is stored the card
   carries a `SendNotice` (`ThumbnailController.showSending`), keyed by the file's path because a lone
   thumbnail's card leaves the panel while it is in the editor. It shows the destination's logo and
-  place (`SessionMenu.sentLabel`: the repository, the path from home, or the agent's name) from the moment the card lands, and `delivered` turns it to sent, queued, uncertain or
-  failed when the client answers. Anything but sent carries a `reason`: every `SubmissionOutcome`
-  but `accepted` has one, written where the client knows what happened, and `detail` stays for the
+  the session's title from the moment the card lands: the title the toolbar or the live ink note
+  showed at Send, or the project folder's name for a session Send starts (`SessionMenu.cardTitle`).
+  `delivered` turns it to sent, queued, uncertain or failed when the client answers. Anything but
+  sent carries a `reason`: every `SubmissionOutcome` but `accepted` has one, written where the client knows what happened, and `detail` stays for the
   log. A card gone from the screen by then says nothing more about a success and comes back as a
   lone thumbnail for anything else. A failure before the request is stored leaves the drawing in
   the editor, so it shows there: the button reads "Not sent" and a popover on it gives the reason,

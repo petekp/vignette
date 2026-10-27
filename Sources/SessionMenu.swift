@@ -152,14 +152,10 @@ enum SessionMenu {
         return active + [destination]
     }
 
-    /// What the sent card calls the place: the repository, the path from home for a folder, or the
-    /// agent client's name for a session with no folder.
-    static func sentLabel(of destination: AgentDestination) -> String {
-        switch destination.place {
-        case .repository(let name, _, _, _): return name
-        case .folder(let path): return path
-        case .none: return destination.client.label
-        }
+    /// What the sent card calls `row`'s session: the row's title, or the project of a session Send
+    /// starts, which the row titles by what sending to it does.
+    static func cardTitle(of row: Row) -> String {
+        row.destination.startsProcess ? row.destination.project : row.title
     }
 
     // MARK: Groups

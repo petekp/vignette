@@ -793,13 +793,6 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertEqual(SessionMenu.menu(apart, destination: nil, now: now).topRows.map(\.title), ["Fix", "Fix"])
     }
 
-    func testTheSentCardNamesTheRepositoryOrTheFolderOrTheAgent() {
-        let now = Date()
-        XCTAssertEqual(SessionMenu.sentLabel(of: session("a", used: 1, place: repo("vignette"), now: now)), "vignette")
-        XCTAssertEqual(SessionMenu.sentLabel(of: session("a", used: 1, place: .folder(fromHome: "~/Code"), now: now)), "~/Code")
-        XCTAssertEqual(SessionMenu.sentLabel(of: session("a", used: 1, now: now)), "Claude Code")
-    }
-
     // MARK: The inbox mod's store
 
     func testTheInboxModsGoalAndOpenQuestionsAreReadBySession() throws {

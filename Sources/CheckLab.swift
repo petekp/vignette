@@ -159,7 +159,7 @@ private struct CheckLabView: View {
             VStack(spacing: 14) {
                 sampleCard(card) { CopiedOverlay(corner: ui.cardCornerRadius, label: "Copied") }
                 sampleCard(card) {
-                    SendOverlay(notice: SendNotice(request: "check-lab", client: .claude, project: "vignette", state: model.sendState),
+                    SendOverlay(notice: SendNotice(request: "check-lab", client: .claude, sessionTitle: "vignette", state: model.sendState),
                                 corner: ui.cardCornerRadius, onUnsend: {}, onOverControl: { _ in })
                 }
             }

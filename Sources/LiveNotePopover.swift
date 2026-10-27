@@ -36,8 +36,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         }
     }
 
-    /// The words typed, trimmed, and the target, when the person presses Return.
-    var onAsk: ((String, Target) -> Void)?
+    /// The words typed, trimmed, the target, and the title a card sent to it shows, when the person
+    /// presses Return.
+    var onAsk: ((String, Target, _ title: String) -> Void)?
     /// The note has the keys again, after a click elsewhere took them.
     var onKeysBack: (() -> Void)?
     /// Esc, when the hotkey did not take it first: live ink decides what it does (`LiveEscape`).
@@ -45,6 +46,8 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// The person typed in the note, which takes over from what they say.
     var onTyped: (() -> Void)?
     private(set) var target: Target
+    /// The title a card sent to the target shows, as the target is shown now (`SessionMenu.cardTitle`).
+    private var targetTitle = ""
     /// The note's own pick, which each session list resolves: the session picked last until the
     /// person picks by hand, then their pick. Only the person changes it: a hand-picked session missing
     /// from a list shows the responder, and comes back when a later list has it.
@@ -254,10 +257,12 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         case .responder:
             content.session.show(logo: Agent.logo(for: "claude"), title: "Claude")
             content.session.toolTip = "Claude answers on the screen."
+            targetTitle = "Claude"
         case .session(let destination):
             let row = SessionMenu.row(of: destination, among: sessions)
             content.session.show(logo: Agent.logo(for: destination.client.rawValue), title: row.title)
             content.session.toolTip = row.tooltip
+            targetTitle = SessionMenu.cardTitle(of: row)
         }
         showPlaceholder()
     }
@@ -380,9 +385,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     func send() {
         guard !sent, !closing else { return }
         let words = content.field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let target = target
+        let (target, title) = (target, targetTitle)
         if words.isEmpty { dismiss() } else { showSent() }
-        onAsk?(words, target)
+        onAsk?(words, target, title)
     }
 
     /// Sent: the words stay, the target settles into the name the conversation's row shows, the key
