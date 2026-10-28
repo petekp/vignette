@@ -14,7 +14,7 @@ final class DebugPanelController: NSObject, NSWindowDelegate {
         var intro: () -> Void
         var pointer: () -> Void
         var check: () -> Void
-        var setupInk: () -> Void
+        var setup: () -> Void
     }
 
     private var panel: NSPanel?
@@ -140,7 +140,7 @@ struct DebugPanelView: View {
                         Button("Menu Bar Intro Lab", action: previews.intro)
                         Button("Pointer Lab", action: previews.pointer)
                         Button("Check Lab", action: previews.check)
-                        Button("Setup's Live Ink Page", action: previews.setupInk)
+                        Button("Setup Lab", action: previews.setup)
                         Divider()
                         Button(samples.isShown ? "Hide Ink Samples" : "Ink Samples") { samples.toggle() }
                     } label: {
@@ -196,10 +196,12 @@ struct DebugPanelView: View {
                                 .help("Read the screen behind the samples again and draw them on")
                         }
                         Spacer()
-                        Button("Reset \(section.name)") {
-                            settings.update { data in section.tweaks.forEach { $0.reset(&data.ui) } }
+                        if !section.tweaks.isEmpty {
+                            Button("Reset \(section.name)") {
+                                settings.update { data in section.tweaks.forEach { $0.reset(&data.ui) } }
+                            }
+                            .disabled(changed(in: section, ui) == 0)
                         }
-                        .disabled(changed(in: section, ui) == 0)
                     }
                 }
                 TweakGroups(section: section, ui: ui)
@@ -239,6 +241,7 @@ struct DebugPanelView: View {
         case .intro: "Menu Bar Intro Lab"
         case .pointer: "Pointer Lab"
         case .check: "Check Lab"
+        case .setup: "Setup Lab"
         }
     }
 
@@ -247,6 +250,7 @@ struct DebugPanelView: View {
         case .intro: previews.intro()
         case .pointer: previews.pointer()
         case .check: previews.check()
+        case .setup: previews.setup()
         }
     }
 }

@@ -477,7 +477,13 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   Done. The page dots are laid over the buttons, so they sit on the window's centre line whatever
   the buttons are. The skill page's switches start on, and closing the window installs the ones
   still on, but only for someone who reached that page: closed earlier, `agentSkill` stays
-  `unasked`, and the next launch offers the skill in the Settings window instead.
+  `unasked`, and the next launch offers the skill in the Settings window instead. The Setup Lab
+  (`SetupLab.swift`, `vignette://setup-lab`, needs `debug`) runs setup as a new person sees it, all
+  of it or live ink's pages alone, from any page. It simulates the permissions, the watch folder,
+  Save to, the agents and the menu bar icon, which setup reads through
+  `SetupWindowController.Callbacks`. A run records nothing. Allow… on a simulated permission flips
+  the lab's value a second later instead of asking macOS, and closing plays the intro but writes no
+  setting, login item or plugin.
   `docs/settings-polish-2026-09-25.md` has the design and its reasons. Closing the window is where
   the menu bar icon is introduced (`MenuBarIntro`), since otherwise it appears in a busy bar with
   nothing pointing at it: a picture of the window covers it, the window closes, and the picture

@@ -89,7 +89,7 @@ struct TweakGroup: @unchecked Sendable {
 /// One entry of the panel's sidebar. A section a lab also shows names the lab, and one that changes
 /// how live ink looks offers its samples (`InkSamples`).
 struct TweakSection: @unchecked Sendable, Identifiable {
-    enum Lab { case intro, pointer, check }
+    enum Lab { case intro, pointer, check, setup }
 
     let name: String
     let lab: Lab?
@@ -381,6 +381,8 @@ enum TweakCatalog {
                 .number("introFunnelFade", "Fade into icon", \.introFunnelFade, 0.05...1, step: 0.05, safe: 0...1),
             ], caption: { _ in "Smoothing eases each row's start and stop, which curves the sides. Corner is the radius the pour's corners grow to. Smear averages squeezed rows so text softens instead of breaking up. Rim light brightens the bent edges. Fade into icon is how much of each row's travel it fades over as it reaches the icon." }),
         ]),
+        // Setup has no settings to tune. Its section opens the lab.
+        TweakSection("Setup", lab: .setup, []),
         TweakSection("Check", lab: .check, [
             TweakGroup("Coin", [
                 .colour("checkColor", "Colour", \.checkColor),

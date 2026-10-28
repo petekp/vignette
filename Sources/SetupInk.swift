@@ -225,11 +225,14 @@ final class SetupInkStage: NSView {
         return pen
     }
 
-    /// This view's top-left corner, in global top-left points.
-    var globalOrigin: CGPoint? {
+    /// This view's frame, in global top-left points.
+    var globalFrame: CGRect? {
         guard let window else { return nil }
-        return StateReport.flipped(window.convertToScreen(convert(CGRect(x: 0, y: 0, width: 1, height: 1), to: nil))).origin
+        return StateReport.flipped(window.convertToScreen(convert(bounds, to: nil)))
     }
+
+    /// This view's top-left corner, in global top-left points.
+    var globalOrigin: CGPoint? { globalFrame?.origin }
 
     /// The marks drawn over a page are the agent's light on a dark window.
     var isDark: Bool { effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }
@@ -612,8 +615,8 @@ final class SetupInkGuide {
     func point(at target: Pointing) {
         let aim = aim(of: target)
         let moved = aim.map { aim in aimedAt.map { abs($0.width - aim.width) > 2 || abs($0.height - aim.height) > 2 } ?? true } ?? false
-        guard target != pointing || moved, let origin = stage.globalOrigin, let window = stage.window else { return }
-        let new = marks(for: target, origin: origin, window: window)
+        guard target != pointing || moved, let frame = stage.globalFrame else { return }
+        let new = marks(for: target, onStageAt: frame)
         guard !new.isEmpty else { return }
         pointing = target
         aimedAt = aim
@@ -653,10 +656,12 @@ final class SetupInkGuide {
                          finishing: leaving, overDark: dark)
     }
 
-    /// The marks for `target`, in the stage's points.
-    private func marks(for target: Pointing, origin: CGPoint, window: NSWindow) -> [Mark] {
-        let back = CGVector(dx: -origin.x, dy: -origin.y)
-        let room = StateReport.flipped(window.frame).insetBy(dx: 12, dy: 12)
+    /// The marks for `target`, in the stage's points, with the stage at `frame` in global top-left points.
+    private func marks(for target: Pointing, onStageAt frame: CGRect) -> [Mark] {
+        let back = CGVector(dx: -frame.minX, dy: -frame.minY)
+        // The stage's frame rather than the window's: the first pointing can come while the page is
+        // still sliding in, or before a new window's first layout, and the marks move with the page.
+        let room = frame.insetBy(dx: 12, dy: 12)
         // The labels keep off the other row and the words of their own, as an answer keeps off the
         // person's notes, and cover the line under the rows as little as they can.
         let rows = Self.rows.compactMap(spots.global)
@@ -780,8 +785,8 @@ struct LiveInkSetupPage: View {
     let guide: SetupInkGuide
     let trusted: Bool
     let screenRecording: Bool
-    /// Screen Recording was asked for, which macOS answers by asking to quit and reopen the app.
-    let askedForScreenRecording: () -> Void
+    /// Where the Allow buttons go: macOS, or the Setup Lab.
+    let callbacks: SetupWindowController.Callbacks
     @State private var askedScreenRecording = false
     private let accessibility = SetupInkGuide.Permission.accessibility
     private let recording = SetupInkGuide.Permission.screenRecording
@@ -798,7 +803,7 @@ struct LiveInkSetupPage: View {
                     PermissionRow(symbol: "hand.draw", title: "Accessibility", reason: "So you can draw while holding ⌃⌥.",
                                   status: trusted ? .granted : .ask, isDefault: !trusted,
                                   spot: (guide.spots, accessibility.button, accessibility.words)) {
-                        Accessibility.request()
+                        callbacks.askAccessibility()
                     }
                     .screenSpot(accessibility.row, in: guide.spots)
                     PermissionRow(symbol: "rectangle.dashed.badge.record", title: "Screen Recording",
@@ -806,9 +811,9 @@ struct LiveInkSetupPage: View {
                                   status: screenRecording ? .granted : .ask,
                                   isDefault: trusted && !screenRecording, button: askedScreenRecording ? "Open Settings…" : "Allow…",
                                   spot: (guide.spots, recording.button, recording.words)) {
-                        if askedScreenRecording { ScreenRecording.openSystemSettings() } else { ScreenRecording.request() }
+                        if askedScreenRecording { callbacks.openScreenRecordingSettings() } else { callbacks.askScreenRecording() }
                         askedScreenRecording = true
-                        askedForScreenRecording()
+                        callbacks.askedForScreenRecording()
                     }
                     .screenSpot(recording.row, in: guide.spots)
                 }

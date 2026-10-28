@@ -349,7 +349,7 @@ struct SettingsView: View {
     @ViewBuilder private var screenshots: some View {
         Section {
             SaveToPicker()
-            if settings.appleTarget != "file" { CaptureTargetRow() }
+            if settings.appleTarget != "file" { CaptureTargetRow(target: settings.appleTarget) { settings.saveCapturesAsFiles() } }
             if folderDenied {
                 PermissionRow(symbol: "folder", title: "Vignette doesn't have access to this folder", status: .refused) {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")!)
@@ -600,13 +600,15 @@ struct PermissionRow: View {
 /// Shown while ⌘⇧5's Options send captures to the Clipboard, Mail or Preview, where no file
 /// reaches the folder. The button asks macOS to save them as files again.
 struct CaptureTargetRow: View {
-    @ObservedObject private var settings = Settings.shared
+    /// ⌘⇧5's Save to (`AppleScreencapture.target`).
+    let target: String
     var isDefault = false
+    let saveToFolder: () -> Void
 
     var body: some View {
-        PermissionRow(symbol: "folder", title: "macOS sends screenshots to \(AppleScreencapture.targetName(settings.appleTarget))",
+        PermissionRow(symbol: "folder", title: "macOS sends screenshots to \(AppleScreencapture.targetName(target))",
                       reason: "Vignette shows only screenshots saved to a folder.", status: .refused,
-                      isDefault: isDefault, button: "Save to Folder") { settings.saveCapturesAsFiles() }
+                      isDefault: isDefault, button: "Save to Folder", allow: saveToFolder)
     }
 }
 

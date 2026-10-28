@@ -21,6 +21,25 @@ enum FolderAccess {
     case refused
 }
 
+/// What the setup window reacts to, read together each time it looks: the permissions, the watch
+/// folder and macOS's own screenshot settings. Setup reads them from this Mac, and the Setup Lab
+/// sets them.
+struct SetupConditions: Equatable {
+    /// Trusted for Accessibility, which the double tap and live ink need.
+    var trusted: Bool
+    /// Allowed to record the screen, which live ink's asks need.
+    var screenRecording: Bool
+    /// The folder macOS will ask about, as setup names it ("your Desktop"), or nil when it won't
+    /// ask, which leaves the welcome page without a folder row.
+    var protectedArea: String?
+    var folder: FolderAccess
+    var hasScreenshots: Bool
+    /// ⌘⇧5's Save to: `file`, or where else macOS sends screenshots (`AppleScreencapture.target`).
+    var saveTarget: String
+    /// Whether the menu bar icon can be seen: it is off, or macOS found no room for it.
+    var menuBarIconVisible: Bool
+}
+
 /// The window a first launch opens: a page per step. Welcome, with the folder permission when macOS
 /// protects the folder; the shortcut, with the Accessibility permission the double tap needs; and
 /// the agent skill, when Claude Code or Codex is on this Mac.
@@ -30,19 +49,31 @@ enum FolderAccess {
 /// nobody asked. Here each dialog answers a row that says why it is needed.
 @MainActor
 final class SetupWindowController: NSObject, NSWindowDelegate {
-    /// What the window asks for rather than doing itself: AppDelegate's parts, and the records
-    /// setup makes, which `show` supplies. A preview leaves the records out, so trying its pages
-    /// changes nothing.
+    /// What the window reads and asks for rather than doing itself: AppDelegate's parts, macOS's
+    /// permissions, and the records setup makes, which `show` supplies. A test run from the Setup
+    /// Lab leaves the records out and supplies the lab's conditions, so trying it changes nothing.
     struct Callbacks {
-        /// Asked again on every look rather than read once: a folder filled while the window is
-        /// open is the case the window is asking the user to create.
-        var hasScreenshots: () -> Bool = { false }
-        var folderAccess: () -> FolderAccess = { .granted }
+        /// Asked again on every look rather than read once: a grant, or a folder filled while the
+        /// window is open, is what the window is asking for.
+        var conditions: () -> SetupConditions = {
+            SetupConditions(trusted: true, screenRecording: true, protectedArea: nil, folder: .granted,
+                            hasScreenshots: false, saveTarget: "file", menuBarIconVisible: true)
+        }
+        /// The agents the last page offers the plugin to.
+        var agents: () -> [AgentPluginStatus] = { [] }
         /// Starts the watcher, whose first read of a protected folder is what raises macOS's prompt.
         var askFolder: () -> Void = {}
+        /// After a refusal. macOS doesn't ask twice, so the answer is changed where it keeps it.
+        var openFolderSettings: () -> Void = {}
+        var askAccessibility: () -> Void = {}
+        var askScreenRecording: () -> Void = {}
+        var openScreenRecordingSettings: () -> Void = {}
+        /// Sets ⌘⇧5's Save to back to a folder.
+        var saveToFolder: () -> Void = {}
+        /// Open at login, which the welcome page shows.
+        var launchAtLogin: () -> Bool = { true }
+        var setLaunchAtLogin: (Bool) -> Void = { _ in }
         var installAgentPlugin: ([URL]) -> Void = { _ in }
-        /// Whether the menu bar icon can be seen: it is off, or macOS found no room for it.
-        var menuBarIconVisible: () -> Bool = { true }
         /// Flies the closing window into the menu bar icon, calls `close` once it may close, and
         /// `finished` once the intro has gone. False when there is no intro, and the window closes
         /// as any window does.
@@ -56,8 +87,8 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     }
 
     private let settings = Settings.shared
-    private var window: NSWindow?
-    private var model: SetupModel?
+    private(set) var window: NSWindow?
+    private(set) var model: SetupModel?
     /// Set when the app starts to quit. AppKit closes the window after `applicationWillTerminate`,
     /// and a quit is not an answer: nothing the window would apply on closing is applied.
     var quitting = false
@@ -80,34 +111,53 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     /// Read before this launch creates the folder.
     private let launchedHereBefore = FileManager.default.fileExists(atPath: Identity.applicationSupportURL.path)
 
-    /// `protectedArea` names the folder macOS will ask about ("your Desktop"), or is nil when it
-    /// won't ask, which leaves the welcome page without a folder row.
-    func show(protectedArea: String?, callbacks: Callbacks) {
+    /// Setup for a first launch, which records what it was told when it closes.
+    func show(callbacks: Callbacks) {
         var callbacks = callbacks
         callbacks.choseLiveInk = { use in Settings.shared.update { $0.liveInk = use } }
         // macOS asks to quit and reopen, and the next launch's setup opens on live ink's permissions.
         callbacks.askedForScreenRecording = { SetupModel.returnsToLiveInkSetup = true }
         callbacks.closed = { [weak self] model in self?.record(model) }
-        open(protectedArea: protectedArea, callbacks: callbacks, preview: false)
+        let data = settings.data
+        let reopened = data.debug && data.liveInk && SetupModel.returnsToLiveInkSetup
+        if reopened { Log.write("[setup] reopened on live ink's permissions") }
+        open(callbacks: callbacks, scope: .whole, start: reopened ? .liveInkSetup : .welcome, test: false)
     }
 
-    /// The live ink pages alone, to try them (`vignette://setup-ink`, needs `debug`). They record
-    /// nothing, and closing them changes nothing setup would.
-    func showPreview() {
-        var callbacks = Callbacks()
-        callbacks.closed = { _ in Log.write("[setup] preview closed") }
-        open(protectedArea: nil, callbacks: callbacks, preview: true)
+    /// Setup as a new person sees it, for the Setup Lab (`vignette://setup-lab`, needs `debug`). The
+    /// lab's callbacks record nothing. `place` puts the window where it opens, beside the lab.
+    func run(callbacks: Callbacks, scope: SetupModel.Scope, start: SetupModel.Page, place: @escaping (NSWindow) -> Void) {
+        open(callbacks: callbacks, scope: scope, start: start, test: true, place: place)
     }
 
-    private func open(protectedArea: String?, callbacks: Callbacks, preview: Bool) {
+    /// Closes a test run's window without the intro, fading it out, then calls `then`. A window
+    /// already flying into the menu bar icon finishes first.
+    func closeRun(then: @escaping () -> Void) {
+        guard let window else { return then() }
+        whenGone.append(then)
+        let closing = model == nil || introducing || fading
+        guard !closing else { return }
+        fading = true
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2 * settings.motionScale
+            window.animator().alphaValue = 0
+        } completionHandler: {
+            MainActor.assumeIsolated { window.close() }
+        }
+    }
+
+    /// What waits for the window to have gone.
+    private var whenGone: [() -> Void] = []
+    private var fading = false
+
+    private func open(callbacks: Callbacks, scope: SetupModel.Scope, start: SetupModel.Page, test: Bool,
+                      place: ((NSWindow) -> Void)? = nil) {
         if let win = window {
             win.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let model = SetupModel(protectedArea: protectedArea,
-                               agents: AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser),
-                               callbacks: callbacks, preview: preview)
+        let model = SetupModel(callbacks: callbacks, scope: scope, start: start, offersLiveInk: settings.data.debug)
         model.granted = { [weak self] in self?.granted() }
         model.folderAnswered = { [weak self] access in self?.folderAnswered(access) }
         model.dropFocus = { [weak self] in self?.window?.makeFirstResponder(nil) }
@@ -131,10 +181,12 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         win.delegate = self
         win.setContentSize(NSSize(width: SetupView.width, height: SetupView.height))
         win.center()
+        place?(win)
         window = win
-        Log.write("[setup] shown\(preview ? " preview" : "") folder=\(protectedArea.map { "\"\($0)\"" } ?? "none") agents=\(model.agents.count)")
-        // A preview opens over whatever is on the screen, so it fades in rather than appearing.
-        let fades = preview && settings.motionScale > 0
+        let area = callbacks.conditions().protectedArea
+        Log.write("[setup] shown\(test ? " test pages=\(scope) start=\(model.page)" : "") folder=\(area.map { "\"\($0)\"" } ?? "none") agents=\(model.agents.count)")
+        // A test run opens over whatever is on the screen, so it fades in rather than appearing.
+        let fades = test && settings.motionScale > 0
         if fades { win.alphaValue = 0 }
         win.makeKeyAndOrderFront(nil)
         if fades {
@@ -196,11 +248,19 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         model.inkPlayer.stop()
         model.callbacks.closed(model)
         self.model = nil
+        // Gone from the screen, so there is nothing left to close twice. The Setup Lab opens the
+        // next window from this same controller.
+        introducing = false
+        fading = false
         // The view's poll would otherwise keep running in the closed window. Let go after this
         // turn, since AppKit is still closing the window.
         DispatchQueue.main.async { [weak self] in
-            self?.window?.contentViewController = nil
-            self?.window = nil
+            guard let self else { return }
+            self.window?.contentViewController = nil
+            self.window = nil
+            let waiting = self.whenGone
+            self.whenGone = []
+            waiting.forEach { $0() }
         }
     }
 
@@ -211,7 +271,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             return
         }
         // Vignette can't work without the folder, so a window closed before it asked asks now.
-        if model.callbacks.folderAccess() == .ask { model.callbacks.askFolder() }
+        if model.callbacks.conditions().folder == .ask { model.callbacks.askFolder() }
         settings.update { $0.setup = SetupState.done.rawValue }
         UserDefaults.standard.set(true, forKey: SetupWindowController.doneOnThisMacKey)
         SetupModel.returnsToLiveInkSetup = false
@@ -245,15 +305,20 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
 final class SetupModel: ObservableObject {
     /// `liveInkSetup`, live ink's permissions, follows Use Live Ink on the live ink page and shares its dot.
     enum Page { case welcome, shortcut, liveInk, liveInkSetup, agents }
+    /// Which pages the window holds: all of setup, or live ink's pages alone, to try them.
+    enum Scope { case whole, liveInk }
 
-    let protectedArea: String?
     @Published private(set) var agents: [AgentPluginStatus]
     let callbacks: SetupWindowController.Callbacks
     var granted: () -> Void = {}
     var folderAnswered: (FolderAccess) -> Void = { _ in }
     var done: () -> Void = {}
-    /// The live ink pages alone, opened to try them. Nothing is written when it closes.
-    let isPreview: Bool
+    let scope: Scope
+    /// Whether all of setup includes live ink's pages. They are still being designed, so they show
+    /// only with `debug`.
+    let offersLiveInk: Bool
+    /// Asks the window to look at the conditions now rather than at its next poll.
+    let looksAgain = PassthroughSubject<Void, Never>()
     /// The live ink page's demo, kept here so going back to the page shows where it rested.
     let inkPlayer = SetupInkPlayer()
     let inkGuide = SetupInkGuide()
@@ -271,20 +336,20 @@ final class SetupModel: ObservableObject {
     @Published var chosen: Set<URL>
     private(set) var sawAgents = false
 
-    init(protectedArea: String?, agents: [AgentPluginStatus], callbacks: SetupWindowController.Callbacks, preview: Bool = false) {
-        self.protectedArea = protectedArea
-        self.agents = agents
+    /// Opens on `start`, or on the first page when `start` is not among them. Starting on live ink's
+    /// permissions is starting after Use Live Ink, as a reopen after asking for Screen Recording does.
+    init(callbacks: SetupWindowController.Callbacks, scope: Scope = .whole, start: Page = .welcome, offersLiveInk: Bool = false) {
         self.callbacks = callbacks
-        isPreview = preview
-        if preview { page = .liveInk }
-        if !preview, Settings.shared.data.debug, Settings.shared.data.liveInk, Self.returnsToLiveInkSetup {
-            usesLiveInk = true
-            page = .liveInkSetup
-            Log.write("[setup] reopened on live ink's permissions")
-        }
+        self.scope = scope
+        self.offersLiveInk = offersLiveInk
+        let agents = callbacks.agents()
+        self.agents = agents
+        usesLiveInk = start == .liveInkSetup
         chosen = Set(agents.filter(\.hasTool).map(\.root))
+        page = pages.contains(start) ? start : pages[0]
+        if page == .agents { sawAgents = true }
         tools = NotificationCenter.default.addObserver(forName: AgentTools.found, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.toolsFound() }
+            MainActor.assumeIsolated { self?.readAgents() }
         }
     }
 
@@ -292,11 +357,20 @@ final class SetupModel: ObservableObject {
 
     private var tools: NSObjectProtocol?
 
-    /// The login shell found a tool the folders did not: its switch comes on, as it would have.
-    private func toolsFound() {
+    /// Reads the agents again: the login shell found a tool the folders did not, or the Setup Lab
+    /// changed them. A switch comes on when its tool turns up, as it would have at the start, and goes
+    /// off when its tool goes. A window showing the agents page when the last agent goes steps back.
+    func readAgents() {
+        let now = callbacks.agents()
+        guard now != agents else { return }
         let before = Set(agents.filter(\.hasTool).map(\.root))
-        agents = AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser)
-        chosen.formUnion(agents.filter { $0.hasTool && !before.contains($0.root) }.map(\.root))
+        let withTool = Set(now.filter(\.hasTool).map(\.root))
+        withAnimation(SetupView.spring) {
+            agents = now
+            chosen.formUnion(withTool.subtracting(before))
+            chosen.formIntersection(withTool)
+        }
+        if !pages.contains(page), let last = pages.last { show(last, forward: false, animation: SetupView.spring) }
     }
 
     var claude: AgentPluginStatus? { agents.first { $0.client == .claude } }
@@ -309,11 +383,12 @@ final class SetupModel: ObservableObject {
     /// without the plugin until they reload.
     var installsIntoClaude: Bool { claude.map { !$0.installed && chosen.contains($0.root) } ?? false }
 
-    /// The live ink pages are still being designed, so they show only with `debug`.
     var pages: [Page] {
-        let liveInk: [Page] = isPreview || Settings.shared.data.debug ? [.liveInk] + (usesLiveInk ? [.liveInkSetup] : []) : []
-        if isPreview { return liveInk }
-        return [.welcome, .shortcut] + liveInk + (agents.isEmpty ? [] : [.agents])
+        let liveInk: [Page] = [.liveInk] + (usesLiveInk ? [.liveInkSetup] : [])
+        switch scope {
+        case .liveInk: return liveInk
+        case .whole: return [.welcome, .shortcut] + (offersLiveInk ? liveInk : []) + (agents.isEmpty ? [] : [.agents])
+        }
     }
     var index: Int { pages.firstIndex(of: page) ?? 0 }
     var isLast: Bool { index == pages.count - 1 }
@@ -323,21 +398,24 @@ final class SetupModel: ObservableObject {
     var stepIndex: Int { steps.firstIndex(of: page == .liveInkSetup ? .liveInk : page) ?? 0 }
 
     /// The live ink page's answer. Use Live Ink turns it on and goes on to its permissions; Not Now
-    /// leaves it off and skips them, and closes a preview.
+    /// leaves it off and skips them, and closes the window when no page follows.
     func useLiveInk(_ use: Bool, animation: Animation) {
         usesLiveInk = use
         callbacks.choseLiveInk(use)
         Log.write("[setup] live ink \(use ? "used" : "not now")")
-        if !use, isPreview || isLast { return done() }
+        if !use, isLast { return done() }
         go(by: 1, animation: animation)
+    }
+
+    func go(by step: Int, animation: Animation) {
+        show(pages[min(max(index + step, 0), pages.count - 1)], forward: step > 0, animation: animation)
     }
 
     /// The side is set a turn before the page changes: SwiftUI takes the leaving page's transition
     /// from the last time it drew that page, so a side set in the same turn reaches only the new one.
-    func go(by step: Int, animation: Animation) {
-        let target = pages[min(max(index + step, 0), pages.count - 1)]
+    private func show(_ target: Page, forward: Bool, animation: Animation) {
         guard target != page else { return }
-        forward = step > 0
+        self.forward = forward
         dropFocus()
         DispatchQueue.main.async {
             withAnimation(animation) { self.page = target }
@@ -361,16 +439,20 @@ struct SetupView: View {
 
     @ObservedObject var model: SetupModel
     @ObservedObject private var settings = Settings.shared
-    @State private var trusted = ModifierTap.trusted(prompt: false)
-    @State private var screenRecording = ScreenRecording.granted
+    /// The conditions as the last look found them.
+    @State private var seen: SetupConditions
     /// How many times the shortcut has fired on this page; each one presses the keycap again.
     @State private var fires = 0
     @State private var held = false
-    @State private var hasShots = true
-    @State private var folder = FolderAccess.ask
-    @State private var iconVisible = true
     /// Neither the grants nor macOS's folder prompt announce their answers, so the window looks.
     private let poll = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+
+    init(model: SetupModel) {
+        self.model = model
+        _seen = State(initialValue: model.callbacks.conditions())
+    }
+
+    static var spring: Animation { Anim.spring(0.45 * Settings.shared.motionScale) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -384,7 +466,7 @@ struct SetupView: View {
             .clipped()
             // Closing flies the window into the icon and points at it. With no icon to point at,
             // the last page says where the settings are instead.
-            if model.isLast, !iconVisible {
+            if model.isLast, !seen.menuBarIconVisible {
                 Text("\(Identity.name)'s icon isn't showing in the menu bar. To get back to its settings, open \(Identity.name) again.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .frame(maxWidth: 400).padding(.bottom, 12)
@@ -394,26 +476,25 @@ struct SetupView: View {
         .frame(width: SetupView.width, height: SetupView.height)
         .onAppear(perform: look)
         .onReceive(poll) { _ in look() }
+        .onReceive(model.looksAgain) { look() }
+        .onChange(of: settings.appleTarget) { look() }
         .onReceive(NotificationCenter.default.publisher(for: .hotKeyFired)) { _ in fires += 1 }
         .onReceive(NotificationCenter.default.publisher(for: .hotKeyHeld)) { _ in held = true }
         .onChange(of: settings.data.recentHotkey) { fires = 0; held = false }
     }
 
     private func look() {
-        let now = ModifierTap.trusted(prompt: false)
-        if now, !trusted { model.granted() }
-        trusted = now
-        screenRecording = ScreenRecording.granted
+        let before = seen
+        let now = model.callbacks.conditions()
+        if now != before { withAnimation(Self.spring) { seen = now } }
+        if seen.trusted, !before.trusted { model.granted() }
         if model.page == .liveInkSetup {
-            model.inkGuide.point(at: SetupInkGuide.Pointing(trusted: trusted, screenRecording: screenRecording))
+            model.inkGuide.point(at: SetupInkGuide.Pointing(trusted: seen.trusted, screenRecording: seen.screenRecording))
         }
-        hasShots = model.callbacks.hasScreenshots()
-        iconVisible = model.callbacks.menuBarIconVisible()
-        let before = folder
-        folder = model.callbacks.folderAccess()
         // After an answer to macOS's prompt, or a change made in System Settings after a refusal.
         // Not from `.ask`: a folder already allowed answers at once, with no prompt to cover us.
-        if before != .ask, before != folder, folder == .granted || folder == .refused { model.folderAnswered(folder) }
+        let folder = seen.folder
+        if before.folder != .ask, before.folder != folder, folder == .granted || folder == .refused { model.folderAnswered(folder) }
     }
 
     @ViewBuilder private func page(_ page: SetupModel.Page) -> some View {
@@ -422,8 +503,8 @@ struct SetupView: View {
         case .shortcut: shortcut
         case .liveInk: LiveInkPage(player: model.inkPlayer)
         case .liveInkSetup:
-            LiveInkSetupPage(guide: model.inkGuide, trusted: trusted, screenRecording: screenRecording,
-                             askedForScreenRecording: model.callbacks.askedForScreenRecording)
+            LiveInkSetupPage(guide: model.inkGuide, trusted: seen.trusted, screenRecording: seen.screenRecording,
+                             callbacks: model.callbacks)
         case .agents: agents
         }
     }
@@ -438,10 +519,10 @@ struct SetupView: View {
             heading("Welcome to \(Identity.name)",
                     "Take screenshots with ⌘⇧3, 4 or 5, as before. Vignette keeps the recent ones one shortcut away, ready to draw on.")
             form {
-                if let area = model.protectedArea {
+                if let area = seen.protectedArea {
                     Section { folderRow(area) }
                 }
-                Section { Toggle("Open at login", isOn: binding(\.launchAtLogin)) }
+                Section { Toggle("Open at login", isOn: launchAtLogin) }
             }
         }
     }
@@ -450,15 +531,15 @@ struct SetupView: View {
     /// because macOS protects it. So it says why Vignette needs it.
     @ViewBuilder private func folderRow(_ area: String) -> some View {
         let reason = "macOS saves your screenshots there."
-        switch folder {
+        switch seen.folder {
         case .ask, .waiting:
             PermissionRow(symbol: "folder", title: "Vignette needs access to \(area)", reason: reason, status: .ask,
-                          isDefault: true, busy: folder == .waiting) { askFolder() }
+                          isDefault: true, busy: seen.folder == .waiting) { askFolder() }
         case .refused:
             PermissionRow(symbol: "folder", title: "Vignette doesn't have access to \(area)", reason: reason,
                           status: .refused, isDefault: true) {
-                // macOS doesn't ask twice, so the answer is changed where it keeps it.
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")!)
+                model.callbacks.openFolderSettings()
+                look()
             }
         case .granted:
             PermissionRow(symbol: "folder", title: "Vignette has access to \(area)", status: .granted) {}
@@ -486,17 +567,20 @@ struct SetupView: View {
     /// One row that changes in place, rather than rows that come and go: the user is watching this
     /// spot for the answer. Only the symbol takes a colour, so the line never reads as a link.
     @ViewBuilder private func status(_ spec: HotKeySpec?) -> some View {
-        if settings.data.usesDoubleTap, !trusted {
+        if settings.data.usesDoubleTap, !seen.trusted {
             // A step to take, not a fault: nothing has gone wrong on a fresh install.
             PermissionRow(symbol: "lock.fill", title: "Needs Accessibility permission",
-                          reason: SettingsView.accessibilityReason, status: .ask, isDefault: true) { Accessibility.request() }
-        } else if folder != .granted {
+                          reason: SettingsView.accessibilityReason, status: .ask, isDefault: true) { model.callbacks.askAccessibility() }
+        } else if seen.folder != .granted {
             // Nothing can appear until Vignette can read the folder, so that comes before trying the keys.
-            folderRow(model.protectedArea ?? "your screenshots folder")
-        } else if settings.appleTarget != "file" {
+            folderRow(seen.protectedArea ?? "your screenshots folder")
+        } else if seen.saveTarget != "file" {
             // A capture made now would never reach the folder, so the try below would fail.
-            CaptureTargetRow(isDefault: true)
-        } else if !hasShots {
+            CaptureTargetRow(target: seen.saveTarget, isDefault: true) {
+                model.callbacks.saveToFolder()
+                look()
+            }
+        } else if !seen.hasScreenshots {
             // Ahead of `fired`: with nothing in the folder the shortcut opens nothing, so saying
             // it worked would be saying so about an empty corner.
             line("Take a screenshot with ⌘⇧4 first.", symbol: "camera", tint: .accentColor)
@@ -576,11 +660,11 @@ struct SetupView: View {
                 .accessibilityLabel("Page \(model.stepIndex + 1) of \(model.steps.count)")
             }
             HStack {
-                if model.index > 0 { Button("Back") { model.go(by: -1, animation: slide) } }
+                if model.index > 0 { Button("Back") { model.go(by: -1, animation: Self.spring) } }
                 Spacer()
                 if model.page == .liveInk {
-                    Button("Not Now") { model.useLiveInk(false, animation: slide) }
-                    Button("Use Live Ink") { model.useLiveInk(true, animation: slide) }
+                    Button("Not Now") { model.useLiveInk(false, animation: Self.spring) }
+                    Button("Use Live Ink") { model.useLiveInk(true, animation: Self.spring) }
                         .keyboardShortcut(.defaultAction)
                 } else {
                     Button(model.isLast ? "Done" : "Continue", action: next)
@@ -596,10 +680,10 @@ struct SetupView: View {
     /// and carries the window's one default button. Until then the Allow… still to press carries it.
     private var pageIsDone: Bool {
         switch model.page {
-        case .welcome: return model.protectedArea == nil || folder == .granted
-        case .shortcut: return (!settings.data.usesDoubleTap || trusted) && folder == .granted && settings.appleTarget == "file"
+        case .welcome: return seen.protectedArea == nil || seen.folder == .granted
+        case .shortcut: return (!settings.data.usesDoubleTap || seen.trusted) && seen.folder == .granted && seen.saveTarget == "file"
         case .liveInk: return true
-        case .liveInkSetup: return trusted && screenRecording
+        case .liveInkSetup: return seen.trusted && seen.screenRecording
         case .agents: return true
         }
     }
@@ -607,8 +691,8 @@ struct SetupView: View {
     private func next() {
         // Moving on without Allow still asks: the prompt then comes up over the next page, with
         // the reason still fresh, rather than later over nothing.
-        if model.page == .welcome, model.protectedArea != nil, folder == .ask { askFolder() }
-        if model.isLast { model.done() } else { model.go(by: 1, animation: slide) }
+        if model.page == .welcome, seen.protectedArea != nil, seen.folder == .ask { askFolder() }
+        if model.isLast { model.done() } else { model.go(by: 1, animation: Self.spring) }
     }
 
     private func askFolder() {
@@ -616,8 +700,6 @@ struct SetupView: View {
         model.callbacks.askFolder()
         look()
     }
-
-    private var slide: Animation { Anim.spring(0.45 * settings.motionScale) }
 
     // MARK: Pieces
 
@@ -645,8 +727,13 @@ struct SetupView: View {
                 set: { on in if on { model.chosen.insert(root) } else { model.chosen.remove(root) } })
     }
 
-    private func binding<T>(_ path: WritableKeyPath<SettingsData, T>) -> Binding<T> {
-        Binding(get: { settings.data[keyPath: path] }, set: { v in settings.update { $0[keyPath: path] = v } })
+    /// Through the callbacks, since a test run's switch is the Setup Lab's rather than the person's.
+    /// Changed here, the window draws again whoever holds the value.
+    private var launchAtLogin: Binding<Bool> {
+        Binding(get: model.callbacks.launchAtLogin, set: { on in
+            model.objectWillChange.send()
+            model.callbacks.setLaunchAtLogin(on)
+        })
     }
 }
 
