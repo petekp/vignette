@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import XCTest
 
@@ -29,6 +30,20 @@ final class SetupModelTests: XCTestCase {
         model.done = { closed = true }
         model.useLiveInk(false, animation: .default)
         XCTAssertTrue(closed)
+    }
+
+    func testAToolFoundAfterSetupOpensTurnsItsSwitchOn() {
+        let root = URL(fileURLWithPath: "/setup-tests/.claude")
+        var hasTool = false
+        let changed = PassthroughSubject<Void, Never>()
+        var callbacks = SetupWindowController.Callbacks()
+        callbacks.agents = { [AgentPluginStatus(root: root, client: .claude, installed: false, hasTool: hasTool)] }
+        callbacks.changes = changed.eraseToAnyPublisher()
+        let model = SetupModel(callbacks: callbacks)
+        XCTAssertFalse(model.chosen.contains(root))
+        hasTool = true
+        changed.send()
+        XCTAssertTrue(model.chosen.contains(root))
     }
 
     func testStartingOnLiveInkPermissionsHoldsThemAfterUseLiveInk() {

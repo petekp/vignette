@@ -48,17 +48,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         setup: { [weak self] in self?.setupLab.show() }))
     private lazy var introLab = IntroLabController(
         play: { [weak self] window in
-            self?.introduceMenuBar(from: window, close: { window.close() }, finished: {}) ?? false
+            guard let self else { return false }
+            return self.introduceMenuBar(from: window, conditions: self.setupConditions(protectedArea: nil),
+                                         usesLiveInk: self.settings.data.usesLiveInk, close: { window.close() }, finished: {})
         },
         iconFrame: { [weak self] in
             self?.visibleStatusButton.flatMap { button in button.window?.convertToScreen(button.convert(button.bounds, to: nil)) }
         })
     private let checkLab = CheckLabController()
     private lazy var setupLab = SetupLabController(
-        callbacks: { [unowned self] in self.setupCallbacks(protectedArea: ScreenshotWatcher.protectedArea(of: self.watchFolder)) },
-        introduce: { [unowned self] window, conditions, usesLiveInk, close, finished in
-            self.introduceMenuBar(from: window, missing: self.missing(in: conditions, usesLiveInk: usesLiveInk), close: close, finished: finished)
-        })
+        callbacks: { [unowned self] in self.setupCallbacks(protectedArea: ScreenshotWatcher.protectedArea(of: self.watchFolder)) })
     private lazy var pointerLab = PointerLabController(preview: { [weak self] on in self?.liveInk.previewField(on) })
     private let settings = Settings.shared
     private var watchFolder: URL { settings.data.folderURL }
@@ -885,21 +884,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     /// What setup reads from this Mac and asks of it. `protectedArea` names the folder macOS will ask
-    /// about, or is nil when it won't. Setup's closing flies its window into the menu bar icon, and a
-    /// popover under the icon says how to use Vignette, or, while something still needs the person's
-    /// permission, that the menu has it. With no icon to point at, setup closes as any window does.
+    /// about, or is nil when it won't.
     private func setupCallbacks(protectedArea: String?) -> SetupWindowController.Callbacks {
         SetupWindowController.Callbacks(
-            conditions: { [unowned self] in
-                SetupConditions(trusted: ModifierTap.trusted(prompt: false), screenRecording: ScreenRecording.granted,
-                                protectedArea: protectedArea, folder: folderAccess, hasScreenshots: hasScreenshots,
-                                saveTarget: settings.appleTarget, menuBarIconVisible: visibleStatusButton != nil)
-            },
+            conditions: { [unowned self] in setupConditions(protectedArea: protectedArea) },
             agents: { AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser) },
+            // `@Published` sends before the change lands, so the window looks a turn later.
+            changes: settings.$appleTarget.dropFirst().map { _ in }
+                .merge(with: NotificationCenter.default.publisher(for: AgentTools.found).map { _ in })
+                .receive(on: DispatchQueue.main)
+                .eraseToAnyPublisher(),
             askFolder: { [weak self] in self?.askForFolder() },
-            openFolderSettings: {
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")!)
-            },
+            openFolderSettings: { [weak self] in self?.openFilesAndFolders() },
             askAccessibility: { Accessibility.request() },
             askScreenRecording: { ScreenRecording.request() },
             openScreenRecordingSettings: { ScreenRecording.openSystemSettings() },
@@ -907,20 +903,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             launchAtLogin: { Settings.shared.data.launchAtLogin },
             setLaunchAtLogin: { on in Settings.shared.update { $0.launchAtLogin = on } },
             installAgentPlugin: { [weak self] roots in self?.installAgentPluginFromSetup(roots) },
-            introduceMenuBar: { [weak self] window, close, finished in
-                self?.introduceMenuBar(from: window, close: close, finished: finished) ?? false
+            introduceMenuBar: { [weak self] window, conditions, usesLiveInk, close, finished in
+                self?.introduceMenuBar(from: window, conditions: conditions, usesLiveInk: usesLiveInk, close: close, finished: finished) ?? false
             })
     }
 
-    /// `missing` is what the popover names as still to allow, this Mac's unless the Setup Lab says.
-    private func introduceMenuBar(from window: NSWindow, missing: [Blocker]? = nil,
+    /// This Mac's conditions, as setup reads them. `protectedArea` names the folder macOS will ask
+    /// about, or is nil when it won't.
+    private func setupConditions(protectedArea: String?) -> SetupConditions {
+        SetupConditions(trusted: ModifierTap.trusted(prompt: false), screenRecording: ScreenRecording.granted,
+                        protectedArea: protectedArea, folder: folderAccess, hasScreenshots: hasScreenshots,
+                        saveTarget: settings.appleTarget, menuBarIconVisible: visibleStatusButton != nil)
+    }
+
+    /// Setup is closing: its window flies into the menu bar icon, and a popover under the icon says
+    /// how to use Vignette, or names what `conditions` leave missing for someone who uses live ink or
+    /// not, which the menu then lists. False with no icon to point at, and setup closes as any window
+    /// does.
+    private func introduceMenuBar(from window: NSWindow, conditions: SetupConditions, usesLiveInk: Bool,
                                   close: @escaping () -> Void, finished: @escaping () -> Void) -> Bool {
-        guard let button = visibleStatusButton else {
+        guard conditions.menuBarIconVisible, let button = visibleStatusButton else {
             Log.write("[setup] menu bar intro skipped: the icon is \(statusItem == nil ? "off" : "not showing")")
             return false
         }
         let shortcut = HotKeySpec.parse(settings.data.recentHotkey)
-        let note: MenuBarIntro.Note = missingNote(missing ?? self.missing())
+        let note: MenuBarIntro.Note = missingNote(missing(in: conditions, usesLiveInk: usesLiveInk))
             ?? shortcut.map { .shortcut($0) } ?? .text("Use the shortcut to see your recent screenshots.")
         Log.write("[setup] menu bar intro")
         menuBarIntro.play(from: window, into: button, note: note, duration: settings.motionUI.introDuration,
@@ -960,24 +967,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     private func missing() -> [Blocker] {
-        missing(folderDenied: watcher?.isDenied == true, saveTarget: settings.appleTarget, trusted: ModifierTap.trusted(prompt: false),
-                screenRecording: ScreenRecording.granted, usesLiveInk: settings.data.usesLiveInk)
+        missing(in: setupConditions(protectedArea: nil), usesLiveInk: settings.data.usesLiveInk)
     }
 
-    /// What would be missing under the Setup Lab's conditions, for someone who answered live ink's
-    /// page with `usesLiveInk`.
-    private func missing(in conditions: SetupConditions, usesLiveInk: Bool) -> [Blocker] {
-        missing(folderDenied: conditions.folder == .refused, saveTarget: conditions.saveTarget, trusted: conditions.trusted,
-                screenRecording: conditions.screenRecording, usesLiveInk: usesLiveInk)
-    }
-
-    private func missing(folderDenied: Bool, saveTarget: String, trusted: Bool, screenRecording: Bool, usesLiveInk liveInk: Bool) -> [Blocker] {
+    /// What is missing under `conditions`, for someone who uses live ink or not.
+    private func missing(in conditions: SetupConditions, usesLiveInk liveInk: Bool) -> [Blocker] {
         var missing: [Blocker] = []
-        if folderDenied { missing.append(.folderAccess) }
-        if saveTarget != "file" { missing.append(.saveTarget(AppleScreencapture.targetName(saveTarget))) }
+        if conditions.folder == .refused { missing.append(.folderAccess) }
+        if conditions.saveTarget != "file" { missing.append(.saveTarget(AppleScreencapture.targetName(conditions.saveTarget))) }
         let shortcut = settings.data.usesDoubleTap
-        if shortcut || liveInk, !trusted { missing.append(.accessibility(shortcut: shortcut, liveInk: liveInk)) }
-        if liveInk, !screenRecording { missing.append(.screenRecording) }
+        if shortcut || liveInk, !conditions.trusted { missing.append(.accessibility(shortcut: shortcut, liveInk: liveInk)) }
+        if liveInk, !conditions.screenRecording { missing.append(.screenRecording) }
         return missing
     }
 
