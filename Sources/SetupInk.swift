@@ -780,8 +780,8 @@ struct LiveInkSetupPage: View {
     let guide: SetupInkGuide
     let trusted: Bool
     let screenRecording: Bool
-    /// Screen Recording was asked for, which macOS answers by asking to quit and reopen the app.
-    let askedForScreenRecording: () -> Void
+    /// Where the Allow buttons go: macOS, or the Setup Lab.
+    let callbacks: SetupWindowController.Callbacks
     @State private var askedScreenRecording = false
     private let accessibility = SetupInkGuide.Permission.accessibility
     private let recording = SetupInkGuide.Permission.screenRecording
@@ -798,7 +798,7 @@ struct LiveInkSetupPage: View {
                     PermissionRow(symbol: "hand.draw", title: "Accessibility", reason: "So you can draw while holding ⌃⌥.",
                                   status: trusted ? .granted : .ask, isDefault: !trusted,
                                   spot: (guide.spots, accessibility.button, accessibility.words)) {
-                        Accessibility.request()
+                        callbacks.askAccessibility()
                     }
                     .screenSpot(accessibility.row, in: guide.spots)
                     PermissionRow(symbol: "rectangle.dashed.badge.record", title: "Screen Recording",
@@ -806,9 +806,9 @@ struct LiveInkSetupPage: View {
                                   status: screenRecording ? .granted : .ask,
                                   isDefault: trusted && !screenRecording, button: askedScreenRecording ? "Open Settings…" : "Allow…",
                                   spot: (guide.spots, recording.button, recording.words)) {
-                        if askedScreenRecording { ScreenRecording.openSystemSettings() } else { ScreenRecording.request() }
+                        if askedScreenRecording { callbacks.openScreenRecordingSettings() } else { callbacks.askScreenRecording() }
                         askedScreenRecording = true
-                        askedForScreenRecording()
+                        callbacks.askedForScreenRecording()
                     }
                     .screenSpot(recording.row, in: guide.spots)
                 }

@@ -50,8 +50,7 @@ final class IntroLabController: NSObject, NSWindowDelegate {
     /// Setup's shortcut page in a window like setup's. It has no callbacks, so its Done and its
     /// closing apply nothing: no settings, no plugins, no login item.
     private func standIn() -> NSWindow {
-        let setup = SetupModel(protectedArea: nil, agents: [], callbacks: .init())
-        setup.page = .shortcut
+        let setup = SetupModel(callbacks: .init(), start: .shortcut)
         let win = NSWindow(contentViewController: NSHostingController(rootView: SetupView(model: setup)))
         win.styleMask = [.titled, .closable, .fullSizeContentView]
         win.titlebarAppearsTransparent = true

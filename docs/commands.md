@@ -41,7 +41,7 @@ open -g vignette://live-ink-chord-up         # let go of it: with ink drawn whil
 open -g "vignette://live-ink-ask?message=is%20this%20right"  # ask Claude about the live ink, as Return in its note does (needs "debug": true)
 open -g vignette://tweaks                     # live UI tweaks panel (needs "debug": true)
 open -g vignette://intro-lab                  # the Intro Lab, for the intro into the menu bar icon (needs "debug": true)
-open -g vignette://setup-ink                  # setup's live ink pages alone, to try them (needs "debug": true)
+open -g vignette://setup-lab                  # the Setup Lab, to run setup as a new person sees it (needs "debug": true)
 open -g vignette://check-lab                  # the Check Lab, for the check on copied and sent cards (needs "debug": true)
 open -g vignette://pointer-lab                # the Pointer Lab, for live ink's pointer field; &preview=1 holds the field on screen, &preview=0 lets it go (needs "debug": true)
 ```
