@@ -71,32 +71,12 @@ enum LiveAnswerLayout {
         for (answerMark, target) in zip(answer.marks, targets) {
             findings.append([])
             guard let target else { continue }
-            // A mark and its label are placed together: of the ways to point, the one whose label
-            // covers least, so a label is not pushed onto another note by where its arrow went.
-            var best: (mark: Mark, label: Mark?, cost: CGFloat)?
             // A step is something to click, and a focus with no window to blur would show nothing, so
             // either way a focus is a circle.
             let kind = (answer.steps || !focusable) && answerMark.kind == .focus ? .circle : answerMark.kind
-            for mark in pointers(kind, at: target, scene: scene, obstacles: marks + text, column: column?.x, zoom: answerMark.zoom) {
-                guard let extent = mark.shapeExtent else { continue }
-                var total = cost(extent, room: scene.room, obstacles: marks + text)
-                if case .arrow(let arrow) = mark.geometry {
-                    // A long arrow only when the short one's label has no room.
-                    if isLong(arrow) { total += longCost }
-                    if let column {
-                        total += (arrow.start.x > arrow.end.x) == column.fromRight ? abs(arrow.start.x - column.x) * 4 : otherSide
-                    }
-                }
-                var tag: Mark?
-                // A label touches its own mark, so only the others count against it.
-                if let label = answerMark.label {
-                    let spot = self.label(label, of: mark, room: scene.room, marks: marks, text: text, sizes: sizes)
-                    tag = spot?.mark
-                    total += spot?.cost ?? missingLabel
-                }
-                if total < best?.cost ?? .infinity { best = (mark, tag, total) }
-            }
-            guard let best, let extent = best.mark.shapeExtent else { continue }
+            guard let best = pointing(kind, label: answerMark.label, at: target, zoom: answerMark.zoom, column: column, scene: scene,
+                                      marks: marks, text: text, sizes: sizes),
+                  let extent = best.mark.shapeExtent else { continue }
             var tag = best.label
             if say == nil, !answer.steps {
                 // Its label goes in the room the reply leaves, and the reply goes where the two cover least.
@@ -148,6 +128,46 @@ enum LiveAnswerLayout {
             }
         }
         return ([reply] + placed, findings, tour)
+    }
+
+    /// A mark pointing at `target`, with `label` beside it, placed as an answer's mark is but with no
+    /// reply to make room for: the mark, then its label when it has room.
+    static func pointer(_ kind: AnswerMark.Kind, label: String?, at target: CGRect, scene: Scene, sizes: Sizes) -> [Mark] {
+        let marks = personsMarks(in: scene) + [target.insetBy(dx: -4, dy: -4)]
+        let text = scene.text.map { $0.insetBy(dx: -2, dy: -2) } + enclosed(in: scene)
+        guard let best = pointing(kind, label: label, at: target, zoom: false, column: nil, scene: scene, marks: marks, text: text,
+                                  sizes: sizes) else { return [] }
+        return [best.mark] + (best.label.map { [$0] } ?? [])
+    }
+
+    /// Of the ways to point at `target`, the mark and label that cover least, and what they cover. A
+    /// mark and its label are placed together, so a label is not pushed onto another note by where
+    /// its arrow went. `marks` is what nothing may cover and `text` the window's lines; `column` is
+    /// the first arrow's tail, which later arrows from the same side start level with.
+    private static func pointing(_ kind: AnswerMark.Kind, label: String?, at target: CGRect, zoom: Bool,
+                                 column: (x: CGFloat, fromRight: Bool)?, scene: Scene, marks: [CGRect], text: [CGRect],
+                                 sizes: Sizes) -> (mark: Mark, label: Mark?, cost: CGFloat)? {
+        var best: (mark: Mark, label: Mark?, cost: CGFloat)?
+        for mark in pointers(kind, at: target, scene: scene, obstacles: marks + text, column: column?.x, zoom: zoom) {
+            guard let extent = mark.shapeExtent else { continue }
+            var total = cost(extent, room: scene.room, obstacles: marks + text)
+            if case .arrow(let arrow) = mark.geometry {
+                // A long arrow only when the short one's label has no room.
+                if isLong(arrow) { total += longCost }
+                if let column {
+                    total += (arrow.start.x > arrow.end.x) == column.fromRight ? abs(arrow.start.x - column.x) * 4 : otherSide
+                }
+            }
+            var tag: Mark?
+            // A label touches its own mark, so only the others count against it.
+            if let label {
+                let spot = self.label(label, of: mark, room: scene.room, marks: marks, text: text, sizes: sizes)
+                tag = spot?.mark
+                total += spot?.cost ?? missingLabel
+            }
+            if total < best?.cost ?? .infinity { best = (mark, tag, total) }
+        }
+        return best
     }
 
     /// What an arrow from the other side than the answer's first costs, in square points: about a

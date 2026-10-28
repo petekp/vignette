@@ -673,10 +673,7 @@ final class SetupInkGuide {
         let placed: [Mark]
         if let permissions {
             guard let button = spots.global(permissions.next.button) else { return [] }
-            let answer = LiveAnswer(say: "", marks: [AnswerMark(kind: .circle, label: permissions.next.label)])
-            // The first mark is the reply, which no agent wrote here.
-            placed = Array(LiveAnswerLayout.placed(for: answer, targets: [button], asked: button, scene: scene, sizes: sizes,
-                                                   focusable: false).marks.dropFirst())
+            placed = LiveAnswerLayout.pointer(.circle, label: permissions.next.label, at: button, scene: scene, sizes: sizes)
         } else {
             // Under the line below the rows, the room nothing else on the page takes.
             let page = (rows + footer).reduce(CGRect.null) { $0.union($1) }
