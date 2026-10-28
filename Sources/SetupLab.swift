@@ -22,13 +22,16 @@ final class SetupLabController: NSObject, NSWindowDelegate {
     /// Its own, so a run never meets the window a first launch opens.
     private let setup = SetupWindowController()
     private var changes: AnyCancellable?
+    /// Keeps the pickers' Real current while the lab is open.
+    private var poll: Timer?
 
     /// How long macOS takes to answer an Allow…, as the lab plays it.
     private static let beat: TimeInterval = 1
-    private static let width: CGFloat = 400
-    private static let height: CGFloat = 700
-    /// Between the lab and the window it runs.
-    private static let gap: CGFloat = 20
+    private static let width: CGFloat = 440
+    /// Tall enough for every condition without scrolling, where the screen has the room.
+    private static let height: CGFloat = 900
+    /// Between the lab and the window it runs, and the lab and the screen's edge.
+    private static let gap: CGFloat = 12
 
     init(callbacks: @escaping () -> SetupWindowController.Callbacks,
          introduce: @escaping (NSWindow, SetupConditions, Bool, @escaping () -> Void, @escaping () -> Void) -> Bool) {
@@ -44,6 +47,9 @@ final class SetupLabController: NSObject, NSWindowDelegate {
     func show() {
         let p = panel ?? make()
         readThisMac()
+        poll = poll ?? Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.readThisMac() }
+        }
         p.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -61,18 +67,17 @@ final class SetupLabController: NSObject, NSWindowDelegate {
                                                              close: { [weak self] in self?.setup.closeRun {} }))
         // At the right of the screen, with setup's window beside it on the left.
         if let v = NSScreen.main?.visibleFrame {
-            p.setFrameOrigin(NSPoint(x: v.maxX - Self.width - Self.gap, y: v.midY - Self.height / 2))
+            let height = min(Self.height, v.height - 2 * Self.gap)
+            p.setFrame(NSRect(x: v.maxX - Self.width - Self.gap, y: v.midY - height / 2, width: Self.width, height: height), display: false)
         }
         panel = p
         return p
     }
 
-    func windowDidBecomeKey(_ notification: Notification) {
-        readThisMac()
-    }
-
     /// The conditions live only while the lab is open: closing it closes its run and lets them go.
     func windowWillClose(_ notification: Notification) {
+        poll?.invalidate()
+        poll = nil
         setup.closeRun {}
         model.forget()
         DispatchQueue.main.async { FocusReturn.shared.restore(reason: "setup lab closed") }
@@ -205,6 +210,13 @@ final class SetupLabModel: ObservableObject {
         case notProtected
         /// On the Desktop, which macOS protects.
         case protected(FolderAccess)
+
+        var name: String {
+            switch self {
+            case .notProtected: "not-protected"
+            case .protected(let access): "desktop-\(access)"
+            }
+        }
     }
 
     enum Answer: Hashable { case allow, refuse }
@@ -307,7 +319,7 @@ final class SetupLabModel: ObservableObject {
         var parts: [String] = []
         if let trusted { parts.append("accessibility=\(trusted)") }
         if let screenRecording { parts.append("screenRecording=\(screenRecording)") }
-        if let folder { parts.append("folder=\(folder)") }
+        if let folder { parts.append("folder=\(folder.name)") }
         if let hasScreenshots { parts.append("screenshots=\(hasScreenshots)") }
         if let saveTarget { parts.append("saveTo=\(saveTarget)") }
         if let menuBarIcon { parts.append("icon=\(menuBarIcon)") }
@@ -334,23 +346,17 @@ private struct SetupLabView: View {
                 Picker("Start on", selection: $model.start) {
                     ForEach(model.startPages, id: \.self) { Text(Self.name(of: $0)).tag($0) }
                 }
-                HStack {
-                    Spacer()
-                    Button("Close Setup", action: close).disabled(!model.running)
-                    Button(model.running ? "Run Again" : "Run Setup", action: run).keyboardShortcut(.defaultAction)
-                }
+                Toggle("Setup's Open at login", isOn: $model.launchAtLogin)
             } footer: {
-                note("Setup opens as it does for someone new. Closing it plays the menu bar intro and changes nothing on this Mac.")
+                note("Setup opens as it does for someone new and changes nothing on this Mac. The shortcut is your real one, so Try it now works.")
             }
             Section {
                 Picker("Accessibility", selection: $model.trusted) { allowed(real: model.real.trusted) }
                 Picker("Screen Recording", selection: $model.screenRecording) { allowed(real: model.real.screenRecording) }
-            } header: {
-                Text("Permissions")
             } footer: {
-                note("When a permission is set here, Allow… in setup allows it here a second later instead of asking macOS.")
+                note("Allow… in setup allows a permission set here a second later, without asking macOS.")
             }
-            Section("Screenshots") {
+            Section {
                 Picker("Folder", selection: $model.folder) {
                     Text("Real (\(Self.folderName(model.real)))").tag(SetupLabModel.Folder?.none)
                     Text("Not protected").tag(SetupLabModel.Folder?.some(.notProtected))
@@ -358,7 +364,7 @@ private struct SetupLabView: View {
                         Text("Desktop, \(Self.accessName(access))").tag(SetupLabModel.Folder?.some(.protected(access)))
                     }
                 }
-                Picker("Prompt answer", selection: $model.folderAnswer) {
+                Picker("Folder prompt answer", selection: $model.folderAnswer) {
                     Text("Allow").tag(SetupLabModel.Answer.allow)
                     Text("Don't Allow").tag(SetupLabModel.Answer.refuse)
                 }
@@ -372,28 +378,27 @@ private struct SetupLabView: View {
                     Text("Real (\(Self.targetName(model.real.saveTarget)))").tag(String?.none)
                     ForEach(["file", "clipboard", "mail", "preview"], id: \.self) { Text(Self.targetName($0)).tag(String?.some($0)) }
                 }
-            }
-            Section("Agents") {
                 Picker("Claude Code", selection: $model.claude) { agentStates(.claude) }
                 Picker("Codex", selection: $model.codex) { agentStates(.codex) }
-            }
-            Section("Menu Bar") {
-                Picker("Icon", selection: $model.menuBarIcon) {
+                Picker("Menu bar icon", selection: $model.menuBarIcon) {
                     Text("Real (\(model.real.menuBarIconVisible ? "Showing" : "Hidden"))").tag(Bool?.none)
                     Text("Showing").tag(Bool?.some(true))
                     Text("Hidden").tag(Bool?.some(false))
                 }
             }
-            Section {
-                Toggle("Open at login", isOn: $model.launchAtLogin)
-            } header: {
-                Text("Settings")
-            } footer: {
-                note("Open at login in setup changes this switch, not your login item. The shortcut is your real one, so Try it now can fire it.")
-            }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 380, minHeight: 480)
+        // The run's buttons stay in view however far the conditions scroll.
+        .safeAreaInset(edge: .bottom) {
+            HStack {
+                Spacer()
+                Button("Close Setup", action: close).disabled(!model.running)
+                Button(model.running ? "Run Again" : "Run Setup", action: run).keyboardShortcut(.defaultAction)
+            }
+            .padding(12)
+            .background(.bar)
+        }
+        .frame(minWidth: 420, minHeight: 480)
     }
 
     private var folderIsSimulatedProtected: Bool {
