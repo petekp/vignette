@@ -140,13 +140,13 @@ enum LiveAnswerLayout {
         return [best.mark] + (best.label.map { [$0] } ?? [])
     }
 
-    /// Of the ways to point at `target`, the mark and label that cover least, and what they cover. A
-    /// mark and its label are placed together, so a label is not pushed onto another note by where
-    /// its arrow went. `marks` is what nothing may cover and `text` the window's lines; `column` is
-    /// the first arrow's tail, which later arrows from the same side start level with.
+    /// Of the ways to point at `target`, the mark and label that cover least. A mark and its label
+    /// are placed together, so a label is not pushed onto another note by where its arrow went.
+    /// `marks` is what nothing may cover and `text` the window's lines; `column` is the first arrow's
+    /// tail, which later arrows from the same side start level with.
     private static func pointing(_ kind: AnswerMark.Kind, label: String?, at target: CGRect, zoom: Bool,
                                  column: (x: CGFloat, fromRight: Bool)?, scene: Scene, marks: [CGRect], text: [CGRect],
-                                 sizes: Sizes) -> (mark: Mark, label: Mark?, cost: CGFloat)? {
+                                 sizes: Sizes) -> (mark: Mark, label: Mark?)? {
         var best: (mark: Mark, label: Mark?, cost: CGFloat)?
         for mark in pointers(kind, at: target, scene: scene, obstacles: marks + text, column: column?.x, zoom: zoom) {
             guard let extent = mark.shapeExtent else { continue }
@@ -167,7 +167,7 @@ enum LiveAnswerLayout {
             }
             if total < best?.cost ?? .infinity { best = (mark, tag, total) }
         }
-        return best
+        return best.map { ($0.mark, $0.label) }
     }
 
     /// What an arrow from the other side than the answer's first costs, in square points: about a
