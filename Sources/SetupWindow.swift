@@ -364,11 +364,13 @@ final class SetupModel: ObservableObject {
         let now = callbacks.agents()
         guard now != agents else { return }
         let before = Set(agents.filter(\.hasTool).map(\.root))
-        agents = now
         let withTool = Set(now.filter(\.hasTool).map(\.root))
-        chosen.formUnion(withTool.subtracting(before))
-        chosen.formIntersection(withTool)
-        if !pages.contains(page), let last = pages.last { show(last, forward: false, animation: SetupView.slide) }
+        withAnimation(SetupView.spring) {
+            agents = now
+            chosen.formUnion(withTool.subtracting(before))
+            chosen.formIntersection(withTool)
+        }
+        if !pages.contains(page), let last = pages.last { show(last, forward: false, animation: SetupView.spring) }
     }
 
     var claude: AgentPluginStatus? { agents.first { $0.client == .claude } }
@@ -450,7 +452,7 @@ struct SetupView: View {
         _seen = State(initialValue: model.callbacks.conditions())
     }
 
-    static var slide: Animation { Anim.spring(0.45 * Settings.shared.motionScale) }
+    static var spring: Animation { Anim.spring(0.45 * Settings.shared.motionScale) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -483,7 +485,8 @@ struct SetupView: View {
 
     private func look() {
         let before = seen
-        seen = model.callbacks.conditions()
+        let now = model.callbacks.conditions()
+        if now != before { withAnimation(Self.spring) { seen = now } }
         if seen.trusted, !before.trusted { model.granted() }
         if model.page == .liveInkSetup {
             model.inkGuide.point(at: SetupInkGuide.Pointing(trusted: seen.trusted, screenRecording: seen.screenRecording))
@@ -657,11 +660,11 @@ struct SetupView: View {
                 .accessibilityLabel("Page \(model.stepIndex + 1) of \(model.steps.count)")
             }
             HStack {
-                if model.index > 0 { Button("Back") { model.go(by: -1, animation: slide) } }
+                if model.index > 0 { Button("Back") { model.go(by: -1, animation: Self.spring) } }
                 Spacer()
                 if model.page == .liveInk {
-                    Button("Not Now") { model.useLiveInk(false, animation: slide) }
-                    Button("Use Live Ink") { model.useLiveInk(true, animation: slide) }
+                    Button("Not Now") { model.useLiveInk(false, animation: Self.spring) }
+                    Button("Use Live Ink") { model.useLiveInk(true, animation: Self.spring) }
                         .keyboardShortcut(.defaultAction)
                 } else {
                     Button(model.isLast ? "Done" : "Continue", action: next)
@@ -689,7 +692,7 @@ struct SetupView: View {
         // Moving on without Allow still asks: the prompt then comes up over the next page, with
         // the reason still fresh, rather than later over nothing.
         if model.page == .welcome, seen.protectedArea != nil, seen.folder == .ask { askFolder() }
-        if model.isLast { model.done() } else { model.go(by: 1, animation: slide) }
+        if model.isLast { model.done() } else { model.go(by: 1, animation: Self.spring) }
     }
 
     private func askFolder() {
@@ -697,8 +700,6 @@ struct SetupView: View {
         model.callbacks.askFolder()
         look()
     }
-
-    private var slide: Animation { SetupView.slide }
 
     // MARK: Pieces
 
