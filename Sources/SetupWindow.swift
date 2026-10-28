@@ -73,9 +73,8 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         var openScreenRecordingSettings: () -> Void = {}
         /// Sets ⌘⇧5's Save to back to a folder.
         var saveToFolder: () -> Void = {}
-        /// Open at login, which the welcome page shows.
+        /// The Open at login setting as setup opens. The welcome page's switch starts from it.
         var launchAtLogin: () -> Bool = { true }
-        var setLaunchAtLogin: (Bool) -> Void = { _ in }
         var installAgentPlugin: ([URL]) -> Void = { _ in }
         /// Flies the closing window into the menu bar icon, with a popover naming what the conditions
         /// setup saw leave missing for someone who uses live ink or not. Calls `close` once the window
@@ -223,14 +222,18 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         guard !quitting, let model else { return true }
         if introducing { return false }
         introducing = model.callbacks.introduceMenuBar(sender, model.seen, model.usesLiveInk, { sender.close() }) { [weak self] in
-            self?.afterIntro?()
-            self?.afterIntro = nil
+            guard let self, self.loginItemWaitsForIntro else { return }
+            self.loginItemWaitsForIntro = false
+            LoginItem.apply(self.settings.data.launchAtLogin)
         }
         return !introducing
     }
 
     private var introducing = false
-    private var afterIntro: (() -> Void)?
+    /// macOS announces a new login item in the top-right corner, where the intro's popover is, so
+    /// after Done the login item waits for the intro to go. A quit before then loses nothing: every
+    /// later launch registers the item the setting asks for.
+    private(set) var loginItemWaitsForIntro = false
 
     func windowWillClose(_ notification: Notification) {
         guard let model else { return }
@@ -253,7 +256,13 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         }
         // Vignette can't work without the folder, so a window closed before it asked asks now.
         if model.seen.folder == .ask { model.callbacks.askFolder() }
-        settings.update { $0.setup = SetupState.done.rawValue }
+        // Set before the switch is saved, since a change of the setting applies the login item
+        // unless this waits (`AppDelegate.settingsChanged`).
+        loginItemWaitsForIntro = introducing
+        settings.update {
+            $0.setup = SetupState.done.rawValue
+            $0.launchAtLogin = model.launchAtLogin
+        }
         UserDefaults.standard.set(true, forKey: SetupWindowController.doneOnThisMacKey)
         SetupModel.returnsToLiveInkSetup = false
         // The plugin is installed only for someone who saw the page offering it. Closed earlier, the
@@ -269,14 +278,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             skill = roots.isEmpty ? "none" : roots.map(\.lastPathComponent).joined(separator: ",")
         }
         Log.write("[setup] done hotkey=\(settings.data.recentHotkey) trusted=\(ModifierTap.trusted(prompt: false)) launchAtLogin=\(settings.data.launchAtLogin) skill=\(skill)")
-        // macOS announces a new login item in the top-right corner, where the intro's popover is,
-        // so the registration waits for it. A quit before then loses nothing: every later launch
-        // registers the item the setting asks for.
-        if introducing {
-            afterIntro = { LoginItem.apply(Settings.shared.data.launchAtLogin) }
-        } else {
-            LoginItem.apply(settings.data.launchAtLogin)
-        }
+        if !loginItemWaitsForIntro { LoginItem.apply(settings.data.launchAtLogin) }
         DispatchQueue.main.async { FocusReturn.shared.restore(reason: "setup closed") }
     }
 }
@@ -305,6 +307,8 @@ final class SetupModel: ObservableObject {
     let inkGuide = SetupInkGuide()
     /// Use Live Ink was pressed, which brings in the page for its permissions.
     @Published private(set) var usesLiveInk = false
+    /// Open at login. Saved with setup's other choices when the window closes (`record`).
+    @Published var launchAtLogin: Bool
     /// Takes the keyboard focus off the window's controls. A focused button that leaves with its page
     /// keeps its focus ring on the screen, at full strength, until it has faded out.
     var dropFocus: () -> Void = {}
@@ -327,6 +331,7 @@ final class SetupModel: ObservableObject {
         let agents = callbacks.agents()
         self.agents = agents
         usesLiveInk = start == .liveInkSetup
+        launchAtLogin = callbacks.launchAtLogin()
         chosen = Set(agents.filter(\.hasTool).map(\.root))
         page = pages.contains(start) ? start : pages[0]
         if page == .agents { sawAgents = true }
@@ -502,7 +507,7 @@ struct SetupView: View {
                 if let area = model.seen.protectedArea {
                     Section { folderRow(area) }
                 }
-                Section { Toggle("Open at login", isOn: launchAtLogin) }
+                Section { Toggle("Open at login", isOn: $model.launchAtLogin) }
             }
         }
     }
@@ -702,15 +707,6 @@ struct SetupView: View {
     private func chosen(_ root: URL) -> Binding<Bool> {
         Binding(get: { model.chosen.contains(root) },
                 set: { on in if on { model.chosen.insert(root) } else { model.chosen.remove(root) } })
-    }
-
-    /// Through the callbacks, since a test run's switch is the Setup Lab's rather than the person's.
-    /// Changed here, the window draws again whoever holds the value.
-    private var launchAtLogin: Binding<Bool> {
-        Binding(get: model.callbacks.launchAtLogin, set: { on in
-            model.objectWillChange.send()
-            model.callbacks.setLaunchAtLogin(on)
-        })
     }
 }
 
