@@ -245,7 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.usesLiveInk != old.usesLiveInk { liveInk.setOn(new.usesLiveInk) }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem(); showUpdateDot() }
-        if new.launchAtLogin != old.launchAtLogin { LoginItem.apply(new.launchAtLogin) }
+        if new.launchAtLogin != old.launchAtLogin, !setupWindow.loginItemWaitsForIntro { LoginItem.apply(new.launchAtLogin) }
     }
 
     // MARK: The agent plugin
@@ -901,7 +901,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             openScreenRecordingSettings: { ScreenRecording.openSystemSettings() },
             saveToFolder: { Settings.shared.saveCapturesAsFiles() },
             launchAtLogin: { Settings.shared.data.launchAtLogin },
-            setLaunchAtLogin: { on in Settings.shared.update { $0.launchAtLogin = on } },
             installAgentPlugin: { [weak self] roots in self?.installAgentPluginFromSetup(roots) },
             introduceMenuBar: { [weak self] window, conditions, usesLiveInk, close, finished in
                 self?.introduceMenuBar(from: window, conditions: conditions, usesLiveInk: usesLiveInk, close: close, finished: finished) ?? false

@@ -163,11 +163,6 @@ final class SetupLabController: NSObject, NSWindowDelegate {
             self?.allow(\.screenRecording, "Screen Recording", else: mac.openScreenRecordingSettings)
         }
         test.saveToFolder = { [weak self] in self?.saveToFolder(else: mac.saveToFolder) }
-        test.launchAtLogin = { model.launchAtLogin }
-        test.setLaunchAtLogin = { on in
-            model.launchAtLogin = on
-            Log.write("[setup-lab] open at login \(on ? "on" : "off"), in the lab only")
-        }
         test.introduceMenuBar = { [weak run] window, conditions, usesLiveInk, close, finished in
             let flies = mac.introduceMenuBar(window, conditions, usesLiveInk, close, finished)
             if flies { run?.closing = true }
@@ -321,8 +316,6 @@ final class SetupLabModel: ObservableObject {
     @Published var overrides = Overrides() { didSet { keepStart() } }
     /// How macOS's folder prompt is answered, when the folder is simulated.
     @Published var folderAnswer = Answer.allow
-    /// A run's Open at login, on as a new settings file has it.
-    @Published var launchAtLogin = true
     @Published var scope = SetupModel.Scope.whole { didSet { keepStart() } }
     @Published var start = SetupModel.Page.welcome
     @Published var running = false
@@ -355,7 +348,6 @@ final class SetupLabModel: ObservableObject {
     func forget() {
         overrides = Overrides()
         folderAnswer = .allow
-        launchAtLogin = true
     }
 }
 
@@ -376,7 +368,6 @@ private struct SetupLabView: View {
                 Picker("Start on", selection: $model.start) {
                     ForEach(model.startPages, id: \.self) { Text(Self.name(of: $0)).tag($0) }
                 }
-                Toggle("Setup's Open at login", isOn: $model.launchAtLogin)
             } footer: {
                 note("Setup opens as it does for someone new and changes nothing on this Mac. The shortcut is your real one, so Try it now works.")
             }

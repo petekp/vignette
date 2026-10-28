@@ -464,9 +464,10 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   control, shared with the Settings window's General tab: a pop-up of double taps, then Key
   Combination…, which shows a recorder that starts listening at once. A new settings file starts with
   `launchAtLogin` on: first run turns Apple's thumbnail off, so a restart that does not bring
-  Vignette back leaves every capture silent. The window shows the switch, and the login item is
-  registered when it closes, not during the launch it is showing in, and after the menu bar intro
-  when there is one, since macOS announces a new login item in the corner the intro points at. A login item the person
+  Vignette back leaves every capture silent. The window shows the switch and saves it when it
+  closes, with setup's other choices. The login item is registered then too, not as the launch
+  starts. When the menu bar intro plays, the registration waits for the intro to go, since macOS
+  announces a new login item in the corner the intro points at. A login item the person
   removed under Open at Login reads `.notFound` (measured), and a launch then turns
   `launchAtLogin` off instead of registering it again; a copy that moved is told apart by the path
   it registered from (`LoginItem.removedByPerson`). The folder row is a
