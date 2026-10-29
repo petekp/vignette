@@ -175,7 +175,7 @@ final class ThumbnailController: NSObject {
     /// When a lone thumbnail leaves the corner (`leaveCorner(after:)`).
     private var leaveTimer: Timer?
     /// The shortcut's listing while it opens the stack, and its answer.
-    private var recentOpening: (listing: () -> (shots: [Screenshot], detail: String), pressedAt: CFTimeInterval?, result: StackToggle)?
+    private var recentOpening: (listing: () -> (shots: [Screenshot], detail: String), result: StackToggle)?
     private var visible = false {
         didSet {
             // Flight decodes are screen-sized; they are only worth keeping while the stack is up.
@@ -419,11 +419,11 @@ final class ThumbnailController: NSObject {
     /// `listing` names the screenshots and the log's detail; it is asked only when the stack opens,
     /// after the panel has taken the keys, so a key pressed while a large folder is listed reaches it.
     @discardableResult
-    func toggleRecent(by request: StackRequest, pressedAt: CFTimeInterval? = nil,
+    func toggleRecent(by request: StackRequest,
                       listing: @escaping () -> (shots: [Screenshot], detail: String)) -> StackToggle {
-        recentOpening = (listing, pressedAt, .dismissed)
+        recentOpening = (listing, .dismissed)
         defer { recentOpening = nil }
-        keys.send(.shortcut(request, pressedAt: pressedAt))
+        keys.send(.shortcut(request))
         return recentOpening?.result ?? .dismissed
     }
 
@@ -438,13 +438,13 @@ final class ThumbnailController: NSObject {
             present(cards: cards, stack: true)
             Log.write("[stack] shown cards=\(cards.count) \(detail)shown=\(Int((CACurrentMediaTime() - started) * 1000))ms decoding=\(cards.filter { $0.image == nil }.count)")
         }
-        keys.send(.listed(found: !cards.isEmpty, pressedAt: opening.pressedAt))
+        keys.send(.listed(found: !cards.isEmpty))
     }
 
     /// The cards' side of what `CornerPresentation` decided; `CornerKeys` has run the window side.
     private func perform(_ effect: CornerPresentation.Effect) {
         switch effect {
-        case .takeKeys(let focus, _):
+        case .takeKeys(let focus):
             switch focus {
             case .card(let id) where model.cards.contains(where: { $0.id == id }): model.focused = id
             default: if model.focused == nil { model.focused = model.hoveredCard ?? model.cards.first?.id }

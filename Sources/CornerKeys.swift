@@ -59,6 +59,8 @@ final class CornerKeys {
     /// `holdKeys` brought the panel up and the listing has not filled it yet, so letting the keys go
     /// takes it down again.
     private var heldPanelUp = false
+    /// When `holdKeys` took the keys, for the `after=` of the stack taking them once it has cards.
+    private var heldAt: CFTimeInterval?
 
     init(panel: ThumbnailPanel, screen: @escaping () -> NSScreen) {
         self.panel = panel
@@ -80,7 +82,7 @@ final class CornerKeys {
         hold.send(event) { event in
             // While the window the person was in is still key, so closing goes back to it.
             if event == .thumbnailsShown, !panel.isVisible { FocusReturn.shared.sessionStarting() }
-            if case .listed(found: true, _) = event { heldPanelUp = false }
+            if event == .listed(found: true) { heldPanelUp = false }
             let effects = presentation.reduce(event)
             if !effects.isEmpty {
                 Log.write("[corner] \(event) -> \(presentation.mode) effects=\(effects.map { "\($0)" }.joined(separator: " "))")
@@ -95,7 +97,8 @@ final class CornerKeys {
 
     private func runWindowSide(_ effect: CornerPresentation.Effect) {
         switch effect {
-        case .holdKeys(let pressedAt):
+        case .holdKeys:
+            heldAt = CACurrentMediaTime()
             // The corner can be empty with its cards gone, as after a lone thumbnail's editor.
             heldPanelUp = !panel.isVisible
             if heldPanelUp {
@@ -104,11 +107,12 @@ final class CornerKeys {
             }
             panel.acceptsKeys = true
             panel.makeKey()
-            Log.write("[stack] keys held key=\(panel.isKeyWindow)\(Self.after(pressedAt))")
-        case .takeKeys(_, let pressedAt):
+            Log.write("[stack] keys held key=\(panel.isKeyWindow)")
+        case .takeKeys:
             panel.acceptsKeys = true
             panel.makeKey()
-            Log.write("[stack] keys key=\(panel.isKeyWindow)\(Self.after(pressedAt))")
+            Log.write("[stack] keys key=\(panel.isKeyWindow)\(heldAt.map { " after=\(Int((CACurrentMediaTime() - $0) * 1000))ms" } ?? "")")
+            heldAt = nil
             // The panel can refuse key status right after resigning it (a dismissal being reversed),
             // so it asks twice.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
@@ -121,6 +125,7 @@ final class CornerKeys {
             if panel.isKeyWindow { panel.resignKey() }
             if heldPanelUp { panel.orderOut(nil) }
             heldPanelUp = false
+            heldAt = nil
         case .backdrop(let on):
             if on { backdrop.show(on: screen(), below: panel) } else { backdrop.hide() }
         case .watchOutsideClicks(let on):
@@ -130,9 +135,5 @@ final class CornerKeys {
         case .closeEditor, .listRecent, .clearSelection, .slideOut:
             break
         }
-    }
-
-    private static func after(_ pressedAt: CFTimeInterval?) -> String {
-        pressedAt.map { " after=\(Int((CACurrentMediaTime() - $0) * 1000))ms" } ?? ""
     }
 }

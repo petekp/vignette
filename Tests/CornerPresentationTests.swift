@@ -28,55 +28,55 @@ final class CornerPresentationTests: XCTestCase {
 
     func testTheShortcutTakesTheKeysBeforeItListsThenOpensTheRecentStack() {
         var p = P()
-        XCTAssertEqual(p.reduce(.shortcut(.shortcut, pressedAt: 1)), [.holdKeys(pressedAt: 1), .listRecent])
-        XCTAssertEqual(p.reduce(.listed(found: true, pressedAt: 1)),
-                       [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current, pressedAt: 1)])
+        XCTAssertEqual(p.reduce(.shortcut(.shortcut)), [.holdKeys, .listRecent])
+        XCTAssertEqual(p.reduce(.listed(found: true)),
+                       [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current)])
         XCTAssertEqual(p.mode, .stack(recent: true))
         XCTAssertTrue(p.isKeyed)
         XCTAssertFalse(p.leavesOnItsOwn)
     }
 
     func testTheShortcutWithNothingToShowLetsTheKeysGo() {
-        var p = after(.shortcut(.url, pressedAt: nil))
-        XCTAssertEqual(p.reduce(.listed(found: false, pressedAt: nil)), [.releaseKeys])
+        var p = after(.shortcut(.url))
+        XCTAssertEqual(p.reduce(.listed(found: false)), [.releaseKeys])
         XCTAssertEqual(p.mode, .hidden)
     }
 
     func testTheShortcutClosesTheRecentStack() {
-        var p = after(.shortcut(.shortcut, pressedAt: nil), .listed(found: true, pressedAt: nil))
-        XCTAssertEqual(p.reduce(.shortcut(.shortcut, pressedAt: nil)), closes + [.slideOut(.shortcut)])
+        var p = after(.shortcut(.shortcut), .listed(found: true))
+        XCTAssertEqual(p.reduce(.shortcut(.shortcut)), closes + [.slideOut(.shortcut)])
         XCTAssertEqual(p.mode, .hidden)
     }
 
     func testTheShortcutSendsTheCornersEditorHomeAndOpensTheStackWithTheKeys() {
         var p = after(.thumbnailsShown, .editorOpened)
-        XCTAssertEqual(p.reduce(.shortcut(.shortcut, pressedAt: nil)),
-                       [.holdKeys(pressedAt: nil), .closeEditor, .listRecent])
+        XCTAssertEqual(p.reduce(.shortcut(.shortcut)),
+                       [.holdKeys, .closeEditor, .listRecent])
         XCTAssertFalse(p.leavesOnItsOwn, "the card coming home stays for the stack")
         XCTAssertEqual(p.reduce(.editorClosed(.shortcut)), [], "the focus stays for the stack")
-        XCTAssertEqual(p.reduce(.listed(found: true, pressedAt: nil)),
-                       [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current, pressedAt: nil)])
+        XCTAssertEqual(p.reduce(.listed(found: true)),
+                       [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current)])
         XCTAssertEqual(p.mode, .stack(recent: true))
     }
 
     func testSelectingInTheCornerMakesItAKeyedStackOfItsOwnCards() {
         var p = after(.thumbnailsShown)
-        XCTAssertEqual(p.reduce(.selected), [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current, pressedAt: nil)])
+        XCTAssertEqual(p.reduce(.selected), [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current)])
         XCTAssertEqual(p.mode, .stack(recent: false))
         XCTAssertTrue(p.isKeyed)
     }
 
     func testTheShortcutBringsTheOlderCardsIntoAStackMadeFromTheCornerThenClosesIt() {
         var p = after(.thumbnailsShown, .selected)
-        XCTAssertEqual(p.reduce(.shortcut(.shortcut, pressedAt: 2)), [.holdKeys(pressedAt: 2), .listRecent])
-        XCTAssertEqual(p.reduce(.listed(found: true, pressedAt: 2)), [.takeKeys(.current, pressedAt: 2)])
+        XCTAssertEqual(p.reduce(.shortcut(.shortcut)), [.holdKeys, .listRecent])
+        XCTAssertEqual(p.reduce(.listed(found: true)), [.takeKeys(.current)])
         XCTAssertEqual(p.mode, .stack(recent: true))
-        XCTAssertEqual(p.reduce(.shortcut(.shortcut, pressedAt: nil)), closes + [.slideOut(.shortcut)])
+        XCTAssertEqual(p.reduce(.shortcut(.shortcut)), closes + [.slideOut(.shortcut)])
     }
 
     func testTheShortcutClosesAStackMadeFromTheCornerWhileItsEditorIsOpen() {
         var p = after(.thumbnailsShown, .selected, .editorOpened)
-        XCTAssertEqual(p.reduce(.shortcut(.shortcut, pressedAt: nil)), closes + [.slideOut(.shortcut)])
+        XCTAssertEqual(p.reduce(.shortcut(.shortcut)), closes + [.slideOut(.shortcut)])
     }
 
     func testEscFromTheCornersEditorMakesTheCornerAKeyedStackOfItsOwnCards() {
@@ -84,7 +84,7 @@ final class CornerPresentationTests: XCTestCase {
         XCTAssertEqual(p.reduce(.editorOpened), [.releaseKeys])
         XCTAssertEqual(p.reduce(.editorClosed(.back)), [.restoreFocus(reason: "annotator closed")])
         XCTAssertEqual(p.reduce(.cardLanded(card, others: true)),
-                       [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.card(card), pressedAt: nil)])
+                       [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.card(card))])
         XCTAssertEqual(p.mode, .stack(recent: false))
         XCTAssertTrue(p.isKeyed)
         XCTAssertEqual(p.reduce(.esc(selecting: false)), closes + [.slideOut(.esc)])
@@ -113,15 +113,15 @@ final class CornerPresentationTests: XCTestCase {
     }
 
     func testTheStackTakesTheKeysBackWhenTheCardLandsFromTheEditor() {
-        var p = after(.shortcut(.shortcut, pressedAt: nil), .listed(found: true, pressedAt: nil))
+        var p = after(.shortcut(.shortcut), .listed(found: true))
         XCTAssertEqual(p.reduce(.editorOpened), [.releaseKeys])
         XCTAssertFalse(p.isKeyed)
         XCTAssertEqual(p.reduce(.editorClosed(.back)), [.restoreFocus(reason: "annotator closed")])
-        XCTAssertEqual(p.reduce(.cardLanded(card, others: true)), [.takeKeys(.card(card), pressedAt: nil)])
+        XCTAssertEqual(p.reduce(.cardLanded(card, others: true)), [.takeKeys(.card(card))])
     }
 
     func testACardLandingWhileTheNextFileIsOpenLeavesTheKeysWithTheEditor() {
-        var p = after(.shortcut(.shortcut, pressedAt: nil), .listed(found: true, pressedAt: nil), .editorOpened)
+        var p = after(.shortcut(.shortcut), .listed(found: true), .editorOpened)
         XCTAssertEqual(p.reduce(.cardLanded(card, others: true)), [])
     }
 
@@ -163,11 +163,11 @@ final class CornerPresentationTests: XCTestCase {
             for _ in 0..<60 {
                 var choices: [P.Event] = [.cardLanded(card, others: Bool.random(using: &rng)), .clickedOutside, .esc(selecting: Bool.random(using: &rng))]
                 if listing {
-                    choices = [.listed(found: Bool.random(using: &rng), pressedAt: nil)] + (closing ? [.editorClosed(.shortcut)] : [])
+                    choices = [.listed(found: Bool.random(using: &rng))] + (closing ? [.editorClosed(.shortcut)] : [])
                 } else if closing {
                     choices = [.editorClosed(.shortcut)]
                 } else {
-                    choices.append(.shortcut(.shortcut, pressedAt: nil))
+                    choices.append(.shortcut(.shortcut))
                     if p.mode == .hidden { choices.append(.thumbnailsShown) }
                     if p.mode == .thumbnails && !p.editorOpen { choices.append(.selected) }
                     if p.mode != .hidden { choices += [.dismiss(.timeout), .dismiss(.removed), .dismiss(.url)] }

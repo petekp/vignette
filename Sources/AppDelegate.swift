@@ -364,9 +364,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let self else { return }
             Log.write("[hotkey] recent")
             NotificationCenter.default.post(name: .hotKeyFired, object: nil)
-            let pressedAt = CACurrentMediaTime()
             let focused = thumbnail.focusedShot
-            pressDismissed = pressRecent(by: .shortcut, pressedAt: pressedAt) == .dismissed
+            pressDismissed = pressRecent(by: .shortcut) == .dismissed
             holdTarget = pressDismissed ? focused : nil
             if !pressDismissed { sessions.refreshKeptLists() }   // a card from the stack may open next
         }
@@ -1475,9 +1474,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     @objc private func toggleRecent() { _ = pressRecent(by: .menu) }
 
     @discardableResult
-    private func pressRecent(by request: StackRequest,
-                             pressedAt: CFTimeInterval? = nil) -> ThumbnailController.StackToggle {
-        let result = thumbnail.toggleRecent(by: request, pressedAt: pressedAt) { [self] in
+    private func pressRecent(by request: StackRequest) -> ThumbnailController.StackToggle {
+        let result = thumbnail.toggleRecent(by: request) { [self] in
             let index = recentShots(limit: settings.data.recentCount)
             watcher?.rescan(reason: "recent")   // keeps the index honest for the next open; nothing waits for it
             return (index.recent.map(Screenshot.init(key:)), "files=\(index.files) ")

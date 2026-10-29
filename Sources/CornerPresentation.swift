@@ -42,10 +42,10 @@ struct CornerPresentation: Equatable {
     enum Event: Equatable {
         /// Lone thumbnails came up where nothing was.
         case thumbnailsShown
-        /// The shortcut, the menu's Show Recent Screenshots or `recent`, pressed at `pressedAt`.
-        case shortcut(StackRequest, pressedAt: CFTimeInterval?)
+        /// The shortcut, the menu's Show Recent Screenshots or `recent`.
+        case shortcut(StackRequest)
         /// The recent screenshots were listed for the shortcut; `found` when there was any.
-        case listed(found: Bool, pressedAt: CFTimeInterval?)
+        case listed(found: Bool)
         /// A selection began in the corner.
         case selected
         /// The editor took the keys.
@@ -67,8 +67,8 @@ struct CornerPresentation: Equatable {
     enum Effect: Equatable {
         // The window side, which `CornerKeys` runs.
         /// The panel takes the keys before the cards are listed.
-        case holdKeys(pressedAt: CFTimeInterval?)
-        case takeKeys(KeyFocus, pressedAt: CFTimeInterval?)
+        case holdKeys
+        case takeKeys(KeyFocus)
         case releaseKeys
         case backdrop(Bool)
         case watchOutsideClicks(Bool)
@@ -102,17 +102,17 @@ struct CornerPresentation: Equatable {
         case .thumbnailsShown:
             mode = .thumbnails
             return [.releaseKeys]
-        case .shortcut(let request, let pressedAt):
+        case .shortcut(let request):
             stackOnLanding = false
             // A stack made from the corner's own cards brings in the older ones first.
             if isStack, mode != .stack(recent: false) || editorOpen { return dismiss(DismissReason(request)) }
             listing = true
-            return [.holdKeys(pressedAt: pressedAt)] + (editorOpen ? [.closeEditor] : []) + [.listRecent]
-        case .listed(let found, let pressedAt):
+            return [.holdKeys] + (editorOpen ? [.closeEditor] : []) + [.listRecent]
+        case .listed(let found):
             listing = false
             // An editor still closing, while a zoom springs back to the fit, keeps the keys until
             // its card lands in the stack.
-            let takeKeys: [Effect] = editorOpen ? [] : [.takeKeys(.current, pressedAt: pressedAt)]
+            let takeKeys: [Effect] = editorOpen ? [] : [.takeKeys(.current)]
             if isStack {
                 if found { mode = .stack(recent: true) }
                 return takeKeys
@@ -123,7 +123,7 @@ struct CornerPresentation: Equatable {
         case .selected:
             guard mode == .thumbnails, !editorOpen else { return [] }
             mode = .stack(recent: false)
-            return [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current, pressedAt: nil)]
+            return [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current)]
         case .editorOpened:
             editorOpen = true
             stackOnLanding = false
@@ -139,9 +139,9 @@ struct CornerPresentation: Equatable {
             if stackOnLanding, mode == .thumbnails, !editorOpen, others {
                 stackOnLanding = false
                 mode = .stack(recent: false)
-                return [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.card(id), pressedAt: nil)]
+                return [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.card(id))]
             }
-            return isKeyed ? [.takeKeys(.card(id), pressedAt: nil)] : []
+            return isKeyed ? [.takeKeys(.card(id))] : []
         case .esc(let selecting):
             guard isKeyed else { return [] }
             return selecting ? [.clearSelection] : dismiss(.esc)
@@ -182,8 +182,8 @@ extension CornerPresentation.Event: CustomStringConvertible {
     var description: String {
         switch self {
         case .thumbnailsShown: return "thumbnailsShown"
-        case .shortcut(let request, _): return "shortcut(\(request.rawValue))"
-        case .listed(let found, _): return found ? "listed" : "listed(nothing)"
+        case .shortcut(let request): return "shortcut(\(request.rawValue))"
+        case .listed(let found): return found ? "listed" : "listed(nothing)"
         case .selected: return "selected"
         case .editorOpened: return "editorOpened"
         case .editorClosed(let ending): return "editorClosed(\(ending.map { "\($0)" } ?? "no hand"))"
@@ -200,7 +200,7 @@ extension CornerPresentation.Effect: CustomStringConvertible {
     var description: String {
         switch self {
         case .holdKeys: return "holdKeys"
-        case .takeKeys(let focus, _):
+        case .takeKeys(let focus):
             switch focus {
             case .current: return "takeKeys"
             case .card: return "takeKeys(card)"
