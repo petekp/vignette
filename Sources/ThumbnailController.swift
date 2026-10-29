@@ -447,7 +447,6 @@ final class ThumbnailController: NSObject {
         case .takeKeys(let focus, _):
             switch focus {
             case .card(let id) where model.cards.contains(where: { $0.id == id }): model.focused = id
-            case .hovered where model.hoveredCard != nil: model.focused = model.hoveredCard
             default: if model.focused == nil { model.focused = model.hoveredCard ?? model.cards.first?.id }
             }
         case .releaseKeys, .letGoOfHeldKeys:

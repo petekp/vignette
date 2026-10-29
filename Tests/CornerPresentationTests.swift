@@ -61,7 +61,7 @@ final class CornerPresentationTests: XCTestCase {
 
     func testSelectingInTheCornerMakesItAKeyedStackOfItsOwnCards() {
         var p = after(.thumbnailsShown)
-        XCTAssertEqual(p.reduce(.selected), [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.hovered, pressedAt: nil)])
+        XCTAssertEqual(p.reduce(.selected), [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current, pressedAt: nil)])
         XCTAssertEqual(p.mode, .stack(recent: false))
         XCTAssertTrue(p.isKeyed)
     }

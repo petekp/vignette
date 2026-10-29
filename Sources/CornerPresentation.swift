@@ -36,7 +36,6 @@ struct CornerPresentation: Equatable {
     enum KeyFocus: Equatable {
         /// The card focused already, else the hovered one, else the newest.
         case current
-        case hovered
         case card(UUID)
     }
 
@@ -126,7 +125,7 @@ struct CornerPresentation: Equatable {
         case .selected:
             guard mode == .thumbnails, !editorOpen else { return [] }
             mode = .stack(recent: false)
-            return [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.hovered, pressedAt: nil)]
+            return [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current, pressedAt: nil)]
         case .editorOpened:
             editorOpen = true
             stackOnLanding = false
@@ -206,7 +205,6 @@ extension CornerPresentation.Effect: CustomStringConvertible {
         case .takeKeys(let focus, _):
             switch focus {
             case .current: return "takeKeys"
-            case .hovered: return "takeKeys(hovered)"
             case .card: return "takeKeys(card)"
             }
         case .releaseKeys: return "releaseKeys"
