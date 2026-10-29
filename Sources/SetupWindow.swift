@@ -261,7 +261,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         loginItemWaitsForIntro = introducing
         settings.update {
             $0.setup = SetupState.done.rawValue
-            $0.launchAtLogin = model.launchAtLogin
+            if let choice = model.launchAtLoginChoice { $0.launchAtLogin = choice }
         }
         UserDefaults.standard.set(true, forKey: SetupWindowController.doneOnThisMacKey)
         SetupModel.returnsToLiveInkSetup = false
@@ -309,6 +309,10 @@ final class SetupModel: ObservableObject {
     @Published private(set) var usesLiveInk = false
     /// Open at login. Saved with setup's other choices when the window closes (`record`).
     @Published var launchAtLogin: Bool
+    private let launchAtLoginAtOpen: Bool
+    /// The switch's value when the person moved it here, or nil. The Settings window's switch is
+    /// reachable while setup is up and saves at once, so setup saves only a change of its own.
+    var launchAtLoginChoice: Bool? { launchAtLogin == launchAtLoginAtOpen ? nil : launchAtLogin }
     /// Takes the keyboard focus off the window's controls. A focused button that leaves with its page
     /// keeps its focus ring on the screen, at full strength, until it has faded out.
     var dropFocus: () -> Void = {}
@@ -331,7 +335,8 @@ final class SetupModel: ObservableObject {
         let agents = callbacks.agents()
         self.agents = agents
         usesLiveInk = start == .liveInkSetup
-        launchAtLogin = callbacks.launchAtLogin()
+        launchAtLoginAtOpen = callbacks.launchAtLogin()
+        launchAtLogin = launchAtLoginAtOpen
         chosen = Set(agents.filter(\.hasTool).map(\.root))
         page = pages.contains(start) ? start : pages[0]
         if page == .agents { sawAgents = true }
