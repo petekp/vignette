@@ -1,6 +1,7 @@
 # An agent's title above its screenshot (2026-10-28)
 
-An agent that pushes a screenshot can say what it shows: `add?…&title=<text>&description=<text>`.
+An agent that pushes a screenshot can say what it shows: `add?…&title=<text>&description=<text>`,
+or `--title` and `--description` on the reply helper.
 The editor shows the title above the image's frame, in semibold, with the description under it in
 the secondary label colour. Nothing else shows it.
 

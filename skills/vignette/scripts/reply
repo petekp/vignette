@@ -9,7 +9,7 @@
 
 usage() {
   cat <<'USAGE'
-usage: reply --ticket <ticket.json> --marks <marks.json> [--image <your image>]
+usage: reply --ticket <ticket.json> --marks <marks.json> [--image <your image>] [--title <text>] [--description <text>]
        reply --ticket <ticket.json> --answer <answer.json>
        reply --ticket <ticket.json> --retry <bundle folder>
 
@@ -36,7 +36,7 @@ for argument in "$@"; do
   case $argument in
     -h|--help) help=1 ;;
     --ticket=*) ticket=${argument#--ticket=} ;;
-    --ticket|--marks|--image|--answer|--retry) wanted=$argument ;;
+    --ticket|--marks|--image|--answer|--retry|--title|--description) wanted=$argument ;;
   esac
 done
 

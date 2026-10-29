@@ -198,7 +198,8 @@ The steps below have the details.
    (`StackLayout.annotationFrame`'s `above`). Its zoom room ends below the title, so a zoom never
    pushes the title off screen. The title fades in after the flight lands and out before the flight
    home leaves, over `ui.agentTitleFade`. `[state] annotator.title` is its frame, or null when there
-   is none. `docs/agent-title-2026-10-28.md` has the measurements.
+   is none. The reply helper takes the same two as `--title` and `--description`, and the published
+   reply records them as `add` does. `docs/agent-title-2026-10-28.md` has the measurements.
    `[annotate] loaded <ms>ms <name>` reports when the editor has the screen-size decode of the
    image, and `[annotate] takes events after=<n>ms reached=true|false` when its window starts
    taking presses.

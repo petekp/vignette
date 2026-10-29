@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "23"
+  version: "24"
 ---
 
 # Vignette
@@ -119,6 +119,9 @@ sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --marks
 - `--image <your image>` puts them on a picture of your own instead of the one you were sent. It
   is sent as a PNG, so a JPEG or any other image macOS reads works too. With a picture, the marks
   may be `[]`.
+- `--title <text>` and `--description <text>` say what your reply shows, as `&title=` and
+  `&description=` do for `add`, with the same limits. The JSON line names a part that was cut under
+  `cut`. Neither goes with `--answer`.
 - It prints one JSON line and exits **0** accepted, **1** not sent, **2** refused, or
   **3** unconfirmed. Accepted means Vignette has your reply and will keep it, not that the card is
   on screen yet. Not sent means an argument, a file or a mark is wrong, and `error` says which.
