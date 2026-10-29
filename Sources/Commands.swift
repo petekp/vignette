@@ -42,8 +42,8 @@ struct CommandRequest: Equatable {
     /// `agent=` from the query: which agent is pushing the image. Empty when the parameter carried
     /// no name, which still marks the card; nil when it was not given at all.
     let agent: String?
-    /// `session=` from the query, as given: the agent session `add` is pushing from. `Agent.cleanSession`
-    /// decides whether it is one.
+    /// `session=` from the query, as given: the agent session `add` is pushing from.
+    /// `Agent.pushOrigin` reads it as a session of the client `agent=` names.
     var session: String? = nil
     /// `marks=` from the query, as given: a path to a JSON file, or the JSON itself. See `AgentMark.parse`.
     let marks: String?

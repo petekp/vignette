@@ -6,7 +6,7 @@ import AppKit
 /// another volume or through a tool that drops attributes loses it, and the card is then plain.
 enum Agent {
     /// Where the name is stored. Named after the bundle, like everything else a fork renames.
-    static let attribute = Identity.bundleID + ".agent"
+    private static let attribute = Identity.bundleID + ".agent"
     /// Longest name that is stored or shown. A name is a label, not a payload.
     static let maxLength = 64
 
@@ -18,16 +18,30 @@ enum Agent {
         return String(oneLine.trimmingCharacters(in: .whitespaces).prefix(maxLength))
     }
 
-    /// Where `session=` is stored: the agent session the push came from, so Reply on its card goes
-    /// back to that conversation.
-    static let sessionAttribute = Identity.bundleID + ".session"
+    /// Where a Claude Code session a file came from is stored, whether a push or live ink recorded
+    /// it. This name and `threadAttribute` are a contract on files already in people's folders.
+    private static let sessionAttribute = Identity.bundleID + ".session"
+    /// Where a Codex thread a file came from is stored.
+    private static let threadAttribute = Identity.bundleID + ".thread"
 
-    /// The `session=` value as it may be stored: a UUID, which is what a Claude Code session id is,
-    /// in the lowercase herdr reports. Nil for anything else, including the empty value a push sends
-    /// when its client set no id.
+    /// The `session=` value as it may be stored: a UUID, which is what a Claude Code session id and
+    /// a Codex thread id are, in the lowercase herdr reports. Nil for anything else, including the
+    /// empty value a push sends when its client set no id.
     static func cleanSession(_ value: String?) -> String? {
         guard let value, UUID(uuidString: value) != nil else { return nil }
         return value.lowercased()
+    }
+
+    /// The session a push names: `session=` as the address of `agent=`'s client, a Claude Code
+    /// session for `claude` and a Codex thread for `codex`. Nil for another agent, or for a
+    /// `session=` that is not a session id.
+    static func pushOrigin(agent: String?, session: String?) -> AgentAddress? {
+        guard let id = cleanSession(session) else { return nil }
+        switch agent?.lowercased() {
+        case AgentClient.claude.rawValue: return .claudeSession(id)
+        case AgentClient.codex.rawValue: return .codexThread(uuid: id)
+        default: return nil
+        }
     }
 
     /// Records `name` on the file. A failure is logged and otherwise ignored: the badge is a hint,
@@ -36,19 +50,15 @@ enum Agent {
         write(name, attribute, "the agent", on: url)
     }
 
-    /// Where the Codex thread a live ink result card came from is stored. Only Vignette writes it:
-    /// `add` records no thread, so a push's `session=` stays a reply target for Claude Code only.
-    static let threadAttribute = Identity.bundleID + ".thread"
-
-    /// Records the session a push came from. Ignored on failure like the name: without it, Reply
-    /// on the card asks where to send, as for a screenshot of your own.
-    static func record(session: String, on url: URL) {
-        write(session, sessionAttribute, "its session", on: url)
-    }
-
-    /// Records the Codex thread a live ink result card came from, ignored on failure as a session is.
-    static func record(thread: String, on url: URL) {
-        write(thread, threadAttribute, "its thread", on: url)
+    /// Records the session a file came from, with its client as the agent, which is what `origin(of:)`
+    /// reads back. Ignored on failure like the name: without it, Reply on the card asks where to send,
+    /// as for a screenshot of your own.
+    static func record(origin: AgentAddress, on url: URL) {
+        record(origin.client.rawValue, on: url)
+        switch origin {
+        case .claudeSession(let session): write(session, sessionAttribute, "its session", on: url)
+        case .codexThread(let uuid): write(uuid, threadAttribute, "its thread", on: url)
+        }
     }
 
     private static func write(_ value: String, _ attribute: String, _ what: String, on url: URL) {
@@ -63,10 +73,11 @@ enum Agent {
         read(attribute, of: url)
     }
 
-    /// The agent session a file came from: the Claude Code session its push named, or the Codex
-    /// thread whose live ink result it is. A push's session is the pusher's claim, since `add` has no
-    /// authenticated sender. Sending to it still goes through the check that the session is running
-    /// with the plugin's inbox (`ClaudeCodeConnection.submit`), and a thread through `codex queue`.
+    /// The agent session a file came from, as `record(origin:)` wrote it: the Claude Code session or
+    /// Codex thread its push named, or the one whose live ink result it is. A push's session is the
+    /// pusher's claim, since `add` has no authenticated sender. Sending to it still goes through the
+    /// check that the session is running with the plugin's inbox (`ClaudeCodeConnection.submit`), and
+    /// a thread through `codex queue`, which finds the thread in Codex's store or fails.
     static func origin(of url: URL) -> AgentDestination? {
         switch of(url)?.lowercased() {
         case AgentClient.claude.rawValue:

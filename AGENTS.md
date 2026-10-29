@@ -167,11 +167,15 @@ The steps below have the details.
    with the vendor's logo when `Resources/agents/<name>.svg` has one (`Agent.logo(for:)`). A logo
    that is a single black shape, like Codex's, is listed in `Agent.oneColourLogos` and drawn in the
    colour of the text beside it.
-   `&session=<id>` names the Claude Code session pushing it, recorded beside the name as
-   `com.petepetrash.vignette.session`, so the card's bar is Reply and goes back there
-   (`Agent.origin(of:)`). The id is the pusher's claim. Sending to it still checks that a live
-   plugin inbox holds that session (`ClaudeCodeConnection.submit`). Anything but a UUID is not
-   recorded, and `[add]` still answers `ok`.
+   `&session=<id>` names the agent session pushing it. With `agent=claude` it is a Claude Code
+   session, recorded beside the name as `com.petepetrash.vignette.session`. With `agent=codex` it is
+   a Codex thread, recorded as `com.petepetrash.vignette.thread`, the attribute live ink uses for
+   one. The card's bar is then Reply and goes back there. `Agent.record(origin:)` is the one writer
+   of those attributes and `Agent.origin(of:)` the one reader. The id is the pusher's claim. Sending to it
+   still checks that a live plugin inbox holds that Claude Code session
+   (`ClaudeCodeConnection.submit`), or that Codex's thread store has that thread (`codex queue
+   --thread`). Anything but a UUID, or a session from any other agent, is not recorded, and `[add]`
+   still answers `ok` with a warning.
    `&marks=<json file>` pushes the agent's own annotations with the image: they join the
    screenshot's drawing before the card appears (`Drawings.add`), and the command answers once that
    drawing is written. That JSON file may also be anywhere; it is read on the main thread, so it is

@@ -267,26 +267,28 @@ final class AgentTests: XCTestCase {
         XCTAssertNil(Agent.of(dir.appendingPathComponent("gone.png")))
     }
 
-    /// A push that names its Claude Code session is answered with Reply, which goes back to that
-    /// session. Anything that is not a session id, or a push from another agent, names nowhere. A
-    /// live ink result card from a Codex thread names that thread, which only Vignette records.
     func testAPushThatNamesItsSessionIsAReplyTarget() throws {
         let session = "E011FFF1-C791-4934-9E61-9307D840A5EB"
+        let thread = "01a16116-a9f0-71c2-9ec3-fe702ddcb168"
         XCTAssertEqual(Commands.parse(URL(string: "vignette://add?file=/tmp/x.png&agent=claude&session=\(session)")!).session, session)
         XCTAssertEqual(Agent.cleanSession(session), session.lowercased(), "herdr reports ids in lowercase")
+        XCTAssertEqual(Agent.cleanSession(thread), thread, "a Codex thread id is a UUID too")
         XCTAssertNil(Agent.cleanSession(""), "an unset variable sends an empty value")
         XCTAssertNil(Agent.cleanSession("../../etc"))
+        XCTAssertEqual(Agent.pushOrigin(agent: "claude", session: session), .claudeSession(session.lowercased()))
+        XCTAssertEqual(Agent.pushOrigin(agent: "Codex", session: thread), .codexThread(uuid: thread))
+        XCTAssertNil(Agent.pushOrigin(agent: "gemini", session: session), "no other client is addressed by a session id")
+        XCTAssertNil(Agent.pushOrigin(agent: nil, session: session))
 
         let file = dir.appendingPathComponent("Checkout.png")
         try Data("png".utf8).write(to: file)
         Agent.record("claude", on: file)
         XCTAssertNil(Agent.origin(of: file), "a push that did not say which session is not a reply")
-        Agent.record(session: session.lowercased(), on: file)
-        XCTAssertEqual(Agent.origin(of: file)?.address, .claudeSession(session.lowercased()))
-        Agent.record("codex", on: file)
-        XCTAssertNil(Agent.origin(of: file), "a push's session names no Codex thread")
-        Agent.record(thread: session.lowercased(), on: file)
-        XCTAssertEqual(Agent.origin(of: file)?.address, .codexThread(uuid: session.lowercased()))
+        for origin in [AgentAddress.claudeSession(session.lowercased()), .codexThread(uuid: thread)] {
+            Agent.record(origin: origin, on: file)
+            XCTAssertEqual(Agent.origin(of: file)?.address, origin)
+            XCTAssertEqual(Agent.of(file), origin.client.rawValue)
+        }
     }
 
     func testBadgeLabelNamesTheAgent() {

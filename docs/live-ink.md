@@ -405,8 +405,8 @@ The names in brackets are `// MARK:` sections.
   never depends on that measuring, since a reply's stored drawing is checked against the count after
   a relaunch. The card is from the session: `LiveNoteCards` records the
   agent and the session on it as an `add` does, so it wears the agent's tab and Reply on it goes
-  back there (`Agent.origin`). A Codex thread goes in `Agent.threadAttribute`, which `add` never
-  writes. The reply's stage is then `shown`, with no file of its own. A window off the screen,
+  back there (`Agent.origin`). A Codex thread goes in the thread attribute, as a Codex push's does
+  (`Agent.record(origin:)`). The reply's stage is then `shown`, with no file of its own. A window off the screen,
   or a relaunch since the note went, makes the reply a card on the picture the session was sent,
   with a ring or an arrow for each mark that gave a box (`Reply.cardMarks`), laid out the same way
   on that picture (`ScreenshotRequests.Callbacks.cardCanvas`).

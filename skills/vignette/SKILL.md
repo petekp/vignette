@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "21"
+  version: "22"
 ---
 
 # Vignette
@@ -16,15 +16,17 @@ command is a `vignette://` URL. Each one answers with one line in `~/Library/Log
 
 ```sh
 file=$(osascript -l JavaScript -e 'function run(argv) { return encodeURIComponent(argv[0]) }' "/abs/path/Checkout at 390px.png")
-open -g "vignette://add?file=$file&agent=claude&session=$CLAUDE_CODE_SESSION_ID"
+open -g "vignette://add?file=$file&agent=claude&session=$CLAUDE_CODE_SESSION_ID"  # from Claude Code
+open -g "vignette://add?file=$file&agent=codex&session=$CODEX_THREAD_ID"          # from Codex
 ```
 
 - `add` copies the file into the watch folder and shows its thumbnail. It leaves the clipboard
   alone and does not open the editor, whatever the user's capture settings say. Add `&annotate`
   to open the editor instead, only when you are asking for marks right away.
-- `&agent=<name>` says who pushed it. The card gets a tab naming you.
+- `&agent=<name>` says who pushed it: `claude` or `codex`. The card gets a tab naming you.
 - `&session=<id>` names your session, so the user's Reply on the card comes back to you. Claude
-  Code sets `CLAUDE_CODE_SESSION_ID`. Leave it out when your client gives you no session id.
+  Code sets `CLAUDE_CODE_SESSION_ID`, and Codex sets `CODEX_THREAD_ID` to your thread's id. Leave
+  it out when your client gives you no session id.
 - `open -g` keeps the focus where it is. Always percent-encode the path yourself; `open` will not.
 - When the commands here name an app with `-a`, that is the copy of Vignette that installed this
   skill. Name it in every command you send: a bare `open` can start another build of Vignette.
