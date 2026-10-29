@@ -208,7 +208,7 @@ The steps below have the details.
    it when it answers. The wait is for data, not motion, so the motion scale does not shorten it.
    `[annotate] title shown ink=… source=… waited=<ms>ms` logs how long each title waited after the
    landing. `[state] annotator.title` is its frame, or null when there
-   is none, and `annotator.titleInk` its ink and where the ink came from. The reply helper takes the same two as `--title` and `--description`, and the published
+   is none or it has not shown yet, and `annotator.titleInk` its ink and where the ink came from. The reply helper takes the same two as `--title` and `--description`, and the published
    reply records them as `add` does. `docs/agent-title-2026-10-28.md` has the measurements.
    `[annotate] loaded <ms>ms <name>` reports when the editor has the screen-size decode of the
    image, and `[annotate] takes events after=<n>ms reached=true|false` when its window starts
