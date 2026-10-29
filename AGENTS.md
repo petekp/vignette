@@ -626,17 +626,25 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   `ThumbnailController` can only send it events (`keys.send`). `acceptsKeys` can be set only in
   `CornerKeys.swift`. Every event with effects logs one `[corner] <event> -> <mode> effects=…`
   line. `Tests/CornerPresentationTests.swift` has the table and a random-sequence test of the
-  invariants.
+  invariants. Esc and a click outside reach it as dismissals; Esc clears a selection first, in the
+  controller. The editor is open to it exactly while the annotation run is active: the controller
+  sends `editorOpened` and `editorClosed` on that edge, with the run's `RunEnding`.
 
   The rule is that the backdrop goes with the keys. The stack has both, and lone thumbnails have
-  neither. So a card that arrives on its own, from a capture or an agent's push, never takes a key
+  neither. `CornerKeys` shows the backdrop and starts the watch for a click outside whenever an
+  event makes the stack, and stops both whenever one ends it, so no effect can split them. A card that arrives on its own, from a capture or an agent's push, never takes a key
   from the app the person is typing in. Only a hand makes the stack: the shortcut, a selection in
   the corner (`.selected`), or Esc out of the editor while other cards are in the corner. That Esc
-  makes them the stack once the card lands (`cardLanded`).
+  makes them the stack once the card lands (`cardLanded`). Becoming the stack by any of these takes
+  the screen from live ink (`onTakesScreen`), and the corner's own cards becoming it logs
+  `[stack] corner became the stack`.
 
   The shortcut takes the keys at the press, before the folder is listed (`holdKeys`), so an Esc
-  pressed while the stack is still coming closes it. `[stack] keys held … after=<ms>` logs the
-  time from the press. Over lone thumbnails, or over a stack the corner became, the shortcut keeps
+  pressed while the stack is still coming closes it. It brings the panel up when the panel is
+  down, which the corner can be with its mode still lone thumbnails, after a lone card's editor.
+  `[stack] keys held` logs the press, and the next `[stack] keys … after=<ms>` the time from it to
+  the stack taking the keys with its cards. While an editor closed by the shortcut springs back to
+  the fit, it keeps the keys, and the stack takes them when the card lands. Over lone thumbnails, or over a stack the corner became, the shortcut keeps
   the cards on screen and brings the older ones in above them (`StackEntrance`). The next press
   closes it.
 
@@ -657,9 +665,9 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   shrinks back into it, and the selection circle fades in with it.
 - Thumbnails in the corner show the selection circle once there are two or more of them
   (`StackModel.offersSelection`), except while one is in the annotator. Selecting there makes the
-  corner the stack with the cards it holds (`ThumbnailController.becomeStack`, which sends
-  `.selected`): it takes the keys and the backdrop, a click outside closes it, and it stops timing
-  out.
+  corner the stack with the cards it holds: every move of the selecting drag sends `.selected`, and
+  the reducer takes the first. The stack takes the keys and the backdrop, a click outside closes
+  it, and it stops timing out.
 - The panel widens to the left while cards are selected, to hold the selection strip
   (`StackLayout.stripPlacement` places it, `panelSize(viewport:showsStrip:reveal:)` makes the room:
   the icon column, the gap to the cards, and the room the labels grow into, whether they are out or
