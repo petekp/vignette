@@ -49,7 +49,8 @@ open -g vignette://pointer-lab                # the Pointer Lab, for live ink's 
 
 `add` refuses a file that is not a png, jpg, jpeg or heic, a name ending in `-annotated`, and the
 name of an agent reply, with `unsupported-type`. A file already in the screenshots folder is shown
-where it is. Reply on the card needs `agent=claude` or `agent=codex` and a `session=` that is a UUID: a Claude
+where it is. A push with `agent=` replaces the agent and session an earlier push recorded on it,
+so one without `session=` removes the earlier session. Reply on the card needs `agent=claude` or `agent=codex` and a `session=` that is a UUID: a Claude
 Code session id or a Codex thread id. Any other `session=` is not recorded, and `[add]` still
 answers `ok` with a warning.
 

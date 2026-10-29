@@ -170,8 +170,12 @@ The steps below have the details.
    `&session=<id>` names the agent session pushing it. With `agent=claude` it is a Claude Code
    session, recorded beside the name as `com.petepetrash.vignette.session`. With `agent=codex` it is
    a Codex thread, recorded as `com.petepetrash.vignette.thread`, the attribute live ink uses for
-   one. The card's bar is then Reply and goes back there. `Agent.record(origin:)` is the one writer
-   of those attributes and `Agent.origin(of:)` the one reader. The id is the pusher's claim. Sending to it
+   one. The card's bar is then Reply and goes back there. `Agent.record(agent:origin:)` is the one
+   writer of the name and those attributes. It removes a session an earlier push recorded that this
+   one does not name, so a push with `agent=` and no `session=` of a file already in the folder
+   leaves it with no Reply.
+   `ScreenshotRequests.origin(of:)` is the one reader: a reply's request, else the file's
+   attributes (`Agent.origin(of:)`). The id is the pusher's claim. Sending to it
    still checks that a live plugin inbox holds that Claude Code session
    (`ClaudeCodeConnection.submit`), or that Codex's thread store has that thread (`codex queue
    --thread`). Anything but a UUID, or a session from any other agent, is not recorded, and `[add]`
@@ -626,8 +630,8 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   `ThumbnailController` can only send it events (`keys.send`). `acceptsKeys` can be set only in
   `CornerKeys.swift`. Every event with effects logs one `[corner] <event> -> <mode> effects=…`
   line. `Tests/CornerPresentationTests.swift` has the table and a random-sequence test of the
-  invariants. Esc and a click outside reach it as dismissals; Esc clears a selection first, in the
-  controller. The editor is open to it exactly while the annotation run is active: the controller
+  invariants. Esc and a click outside reach it as dismissals. Esc clears a selection first, and the
+  controller does that itself. The editor is open to it exactly while the annotation run is active: the controller
   sends `editorOpened` and `editorClosed` on that edge, with the run's `RunEnding`.
 
   The rule is that the backdrop goes with the keys. The stack has both, and lone thumbnails have
@@ -640,11 +644,12 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   `[stack] corner became the stack`.
 
   The shortcut takes the keys at the press, before the folder is listed (`holdKeys`), so an Esc
-  pressed while the stack is still coming closes it. It brings the panel up when the panel is
-  down, which the corner can be with its mode still lone thumbnails, after a lone card's editor.
-  `[stack] keys held` logs the press, and the next `[stack] keys … after=<ms>` the time from it to
-  the stack taking the keys with its cards. While an editor closed by the shortcut springs back to
-  the fit, it keeps the keys, and the stack takes them when the card lands. Over lone thumbnails, or over a stack the corner became, the shortcut keeps
+  pressed while the stack is still coming closes it. It brings the panel up if the panel is down.
+  The panel can be down while the corner still counts as lone thumbnails, as after a lone card's
+  editor closes. `[stack] keys held` logs the press. The next `[stack] keys … after=<ms>` line gives
+  the time from the press until the stack, with its cards, takes the keys. A zoomed editor springs
+  back to the fit before it closes, so the listing can finish first; the stack then focuses a card
+  only once the opened card lands. Over lone thumbnails, or over a stack the corner became, the shortcut keeps
   the cards on screen and brings the older ones in above them (`StackEntrance`). The next press
   closes it.
 
