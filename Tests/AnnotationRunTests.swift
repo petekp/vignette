@@ -90,12 +90,12 @@ final class AnnotationRunTests: XCTestCase {
     func testADismissalEndsTheRunAndSaysWhetherAHandEndedIt() {
         var quick = R()
         _ = reduce(&quick, .annotate(["a", "b"])); _ = shown(&quick)
-        XCTAssertEqual(reduce(&quick, .dismiss(byHand: true)), [.park(o("a", 1))])
+        XCTAssertEqual(reduce(&quick, .dismiss(.finished)), [.park(o("a", 1))])
         XCTAssertEqual(parked(&quick), [.hideAnnotator, .endRun(.finished)])
 
         var hotkey = R()
         _ = reduce(&hotkey, .annotate(["a", "b"])); _ = shown(&hotkey)
-        _ = reduce(&hotkey, .dismiss(byHand: false))
+        _ = reduce(&hotkey, .dismiss(nil))
         XCTAssertEqual(parked(&hotkey), [.hideAnnotator, .endRun(nil)])
     }
 
@@ -104,7 +104,7 @@ final class AnnotationRunTests: XCTestCase {
         _ = reduce(&r, .annotate(["a", "b"])); _ = shown(&r)
         let hold = EventHold<R.Event>()
         var effects: [R.Effect] = []
-        hold.send(.dismiss(byHand: false)) { event in
+        hold.send(.dismiss(nil)) { event in
             let batch = reduce(&r, event)
             effects += batch
             if batch.contains(.park(o("a", 1))) { hold.send(.parked(o("a", 1))) { _ in } }
@@ -115,7 +115,7 @@ final class AnnotationRunTests: XCTestCase {
     func testAListRequestedDuringADismissalOpensNothing() {
         var r = R()
         _ = reduce(&r, .annotate(["a"])); _ = shown(&r)
-        _ = reduce(&r, .dismiss(byHand: false))
+        _ = reduce(&r, .dismiss(nil))
         XCTAssertEqual(reduce(&r, .annotate(["b", "c"])), [])
         XCTAssertEqual(reduce(&r, .parked(o("a", 1))), [.hideAnnotator, .endRun(nil)])
         XCTAssertEqual(r.queue, [])
@@ -360,7 +360,7 @@ final class AnnotationRunTests: XCTestCase {
                 case 3: events.append(.cancel(.back))
                 case 4: events.append(.sent)
                 case 5: events.append(.finish)
-                case 6: events.append(.dismiss(byHand: Bool.random(using: &rng)))
+                case 6: events.append(.dismiss(Bool.random(using: &rng) ? .finished : nil))
                 case 7: events.append(.remove(some()))
                 case 8: events.append(.newShot(ScreenshotKey(asGiven: "n\(step)")))
                 case 9: events.append(.selectionChanged(added: some().filter { $0 != "x" }, removed: some()))
@@ -376,7 +376,7 @@ final class AnnotationRunTests: XCTestCase {
                 for event in events { hold.send(event) { handle($0, at: step) } }
             }
             // Drain: a dismissal and every answer still owed end the run.
-            hold.send(.dismiss(byHand: false)) { handle($0, at: 40) }
+            hold.send(.dismiss(nil)) { handle($0, at: 40) }
             for step in 41..<60 {
                 let due = pending.filter { $0.due <= step }
                 pending.removeAll { $0.due <= step }

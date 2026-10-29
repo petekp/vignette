@@ -17,7 +17,7 @@ struct AnnotationRun: Equatable {
         case cancel(RunEnding)       // Esc, a click outside, Cmd+W, the shortcut: the run ends
         case sent                    // Send: this image closes without a Copied notice, and the run goes on
         case finish                  // Done or Return: the result is on the clipboard, and the run goes on
-        case dismiss(byHand: Bool)   // the panel is going away, and the run with it
+        case dismiss(RunEnding?)     // the panel is going away, and the run with it; quick Done is `.finished`
         case remove([ScreenshotKey])        // files trashed or deleted
         case newShot(ScreenshotKey)         // a new file arrived
         case renamed(from: ScreenshotKey, to: ScreenshotKey)   // a file was renamed: a queued file and the open one follow it
@@ -125,8 +125,8 @@ struct AnnotationRun: Equatable {
         case .finish:
             endsByHand(.finished)
             return forward(.finish)
-        case .dismiss(let byHand):
-            if byHand { endsByHand(.finished) }   // quick Done
+        case .dismiss(let ending):
+            if let ending { endsByHand(ending) }
             endQueue()
             return forward(.dismiss)
         case .remove(let keys):
@@ -284,7 +284,7 @@ extension AnnotationRun.Event: CustomStringConvertible {
         case .cancel(let how): return how == .back ? "cancel" : "cancel(\(how))"
         case .sent: return "sent"
         case .finish: return "finish"
-        case .dismiss(let byHand): return byHand ? "dismiss(byHand)" : "dismiss"
+        case .dismiss(let ending): return ending.map { "dismiss(\($0))" } ?? "dismiss"
         case .remove(let keys): return "remove(\(keys.map(short).joined(separator: ", ")))"
         case .newShot(let key): return "newShot(\(short(key)))"
         case .renamed(let from, let to): return "renamed(\(short(from)) to \(short(to)))"

@@ -554,7 +554,7 @@ final class ThumbnailController: NSObject {
     /// mode everything closes instead.
     func annotationFinished(quick: Bool) {
         guard quick else { return send(.finish) }
-        if visible { dismiss(by: .quickDone) } else { send(.dismiss(byHand: true)) }
+        if visible { dismiss(by: .quickDone) } else { send(.dismiss(.finished)) }
     }
 
     /// The editor has the screenshot for `opening`.
@@ -844,7 +844,6 @@ final class ThumbnailController: NSObject {
     private func slideOut(_ reason: DismissReason) {
         guard visible else { return }
         Log.write("[stack] dismissed by=\(reason.rawValue) stack=\(model.isStack) cards=\(model.cards.count)")
-        let byHand = reason == .quickDone
         visible = false
         dismissGeneration += 1
         let gen = dismissGeneration
@@ -868,7 +867,7 @@ final class ThumbnailController: NSObject {
         // Before the event: a park that answers in the same turn hides the annotator, and that must
         // leave the flight just aimed offscreen to the slide-out.
         model.slidingOut = true
-        if run.isActive { send(.dismiss(byHand: byHand)) }
+        if run.isActive { send(.dismiss(reason == .quickDone ? .finished : nil)) }
         // Cards leave the way they came, newest first (see CardView). The selection stays in the
         // layout and slides out with them; the block below clears it once gone.
         model.offscreen = Set(model.cards.map(\.id))
