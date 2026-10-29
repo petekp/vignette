@@ -383,13 +383,14 @@ final class TransitionLayer {
         dropped?()
     }
 
-    /// Takes every flight and every swallow rect down.
-    func endAll() {
-        let dropped = model.flights.filter { !arrivedFlights.contains($0.id) }.compactMap(\.dropped)
-        remove { _ in true }
+    /// Takes every flight and every swallow rect down, but the flights of the cards in `kept`.
+    func endAll(except kept: Set<UUID> = []) {
+        let leaving = { (flight: Flight) in !kept.contains(flight.id) }
+        let dropped = model.flights.filter { leaving($0) && !arrivedFlights.contains($0.id) }.compactMap(\.dropped)
+        remove(where: leaving)
         model.swallowRects = []
-        arrivedFlights = []
-        pendingLift = []
+        arrivedFlights.formIntersection(kept)
+        pendingLift.formIntersection(kept)
         orderOutIfIdle()
         for handler in dropped { handler() }
     }

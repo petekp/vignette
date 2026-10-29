@@ -30,6 +30,9 @@ final class StackModel: ObservableObject {
     @Published var offscreen: Set<UUID> = []   // cards parked past the right screen edge
     @Published var entering: UUID? = nil       // the one card joining a visible column, for the length of its entrance
     @Published var lift: [UUID: CGFloat] = [:] // how far below its slot a card shifting up is drawn, springing to 0
+    /// Where each card entering a column that already shows cards falls in the slide-in's stagger,
+    /// so the first to enter goes at once rather than after the cards that stayed (`StackEntrance`).
+    @Published var entranceRanks: [UUID: Int] = [:]
     var slidingOut = false                     // picks the exit stagger order and curve for `offscreen`
     @Published var outCards: Set<UUID> = []    // cards currently in the annotator; their slots stay empty
     @Published var forming: Set<UUID> = []     // cards whose image is in the transition layer, mid-stitch; drawn as nothing
@@ -103,6 +106,28 @@ final class StackModel: ObservableObject {
         selection = ids.filter { seen.insert($0).inserted }
         let added = selection.filter { !was.contains($0) }, removed = was.filter { !selection.contains($0) }
         if !added.isEmpty || !removed.isEmpty { onSelectionChanged(added, removed) }
+    }
+}
+
+/// How the recent stack forms over a column already on screen: every card showing one of the
+/// recent screenshots stays, and only the others enter.
+struct StackEntrance: Equatable {
+    /// For each recent screenshot, newest first: the card on screen that shows it, or nil for one that enters.
+    let kept: [UUID?]
+
+    init(onScreen: [(key: ScreenshotKey, id: UUID)], recent: [ScreenshotKey]) {
+        kept = recent.map { key in onScreen.first { $0.key == key }?.id }
+    }
+
+    /// For each recent screenshot, its place in the slide-in's stagger, counting the entering cards
+    /// from 0, newest first; nil for a card that stays.
+    var ranks: [Int?] {
+        var next = 0
+        return kept.map { id in
+            guard id == nil else { return nil }
+            defer { next += 1 }
+            return next
+        }
     }
 }
 
@@ -1546,30 +1571,55 @@ final class ThumbnailController: NSObject {
         }
         leaveTimer?.invalidate()
         dismissGeneration += 1
-        flights.endAll()
-        model.entering = nil
-        model.hoveredCard = nil
-        model.clearSelection()
-        model.outCards = []
-        model.forming = []
-        model.focused = nil
-        endSweep()
-        let wasStack = model.isStack
-        model.isStack = stack
-        model.slidingOut = false
-        model.scroll = 0
-        model.widthScale = 1
+        // A column on screen becomes part of the new one: every card in it that the new one shows
+        // stays where it is drawn, a flight home included, and only the others enter, above it.
+        let entranceOver = visible ? StackEntrance(onScreen: model.cards.map { ($0.shot.key, $0.id) },
+                                                   recent: cards.map(\.shot.key)) : nil
+        let kept = Set(entranceOver?.kept.compactMap { $0 } ?? [])
+        // The layout changes in one update with animations off, as `shiftUp`'s does: animated, the
+        // panel's top edge moved at once while the cards sprang, and the cards on screen jumped.
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) {
+            flights.endAll(except: kept)
+            model.entering = nil
+            if let hovered = model.hoveredCard, !kept.contains(hovered) { model.hoveredCard = nil }
+            model.clearSelection()
+            model.outCards.formIntersection(kept)
+            model.forming = []
+            model.focused = nil
+            model.entranceRanks = [:]
+            model.lift = [:]
+            endSweep()
+            model.isStack = stack
+            model.slidingOut = false
+            model.scroll = 0
+            model.widthScale = 1
+        }
         if !stack { releaseKeys() }
         // A dismissal in progress is simply reversed: the same cards turn around. `visible` is
         // already false then; the panel stays up until the slide-out ends.
         let reusing = panel.isVisible && !model.cards.isEmpty && Set(cards.map(\.shot.url)) == Set(model.cards.map(\.shot.url))
         if !reusing {
-            // A lone thumbnail that is part of the stack stays where it is; the rest slides in above it.
-            let staying = (visible && !wasStack && stack) ? model.cards.first { existing in cards.contains { $0.shot.url == existing.shot.url } } : nil
-            let next = cards.map { card in card.shot.url == staying?.shot.url ? staying! : card }
-            model.removeCards { card in !next.contains { $0.id == card.id } }
-            model.cards = next
-            model.offscreen = entrance == .inPlace ? [] : Set(next.map(\.id)).subtracting(staying.map { [$0.id] } ?? [])
+            let ids = entranceOver?.kept ?? cards.map { _ in nil }
+            let next = zip(cards, ids).map { card, id in id.flatMap { id in model.cards.first { $0.id == id } } ?? card }
+            let lift = keptLift(from: model.cards, to: next, kept: kept)
+            withTransaction(still) {
+                model.removeCards { card in !next.contains { $0.id == card.id } }
+                model.cards = next
+                model.offscreen = entrance == .inPlace ? [] : Set(next.map(\.id)).subtracting(kept)
+                if let entranceOver {
+                    for (card, rank) in zip(next, entranceOver.ranks) { model.entranceRanks[card.id] = rank }
+                }
+                model.lift = lift
+            }
+            if !lift.isEmpty {
+                shift = (CACurrentMediaTime(), lift)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    withAnimation(Anim.spring(self.ui.shiftUpDuration)) { self.model.lift = [:] }
+                }
+            }
         }
         visible = true
         layoutPanel(shrinkLater: false, animated: false)
@@ -1596,6 +1646,19 @@ final class ThumbnailController: NSObject {
         withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = 0 }
         layoutPanel(shrinkLater: false, animated: true)
         DispatchQueue.main.async { [weak self] in self?.model.offscreen.remove(card.id) }
+    }
+
+    /// How far below its new slot each card in `kept` is drawn, so it starts where it was: a card that
+    /// stays changes slot only when a newer screenshot enters below it. Springs to 0 as `shiftUp`'s does.
+    private func keptLift(from old: [Card], to new: [Card], kept: Set<UUID>) -> [UUID: CGFloat] {
+        let oldSizes = old.map { layout.drawn($0.size) }, newSizes = new.map { layout.drawn($0.size) }
+        var lift: [UUID: CGFloat] = [:]
+        for (index, card) in new.enumerated() where kept.contains(card.id) {
+            guard let was = old.firstIndex(where: { $0.id == card.id }) else { continue }
+            let rise = layout.cardSpan(index: index, cards: newSizes).bottom - layout.cardSpan(index: was, cards: oldSizes).bottom
+            if abs(rise) > 0.5 { lift[card.id] = rise }
+        }
+        return lift
     }
 
     /// When the lifts last sprang to 0, and what they were then, so a card joining while the others

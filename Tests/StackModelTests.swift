@@ -49,4 +49,22 @@ final class StackModelTests: XCTestCase {
         XCTAssertEqual(reports.map(\.added), [[model.cards[2].id, model.cards[0].id], [model.cards[3].id]])
         XCTAssertEqual(reports.map(\.removed), [[], [model.cards[2].id]])
     }
+
+    func testEveryCardOnScreenThatTheStackShowsStaysAndOnlyTheOthersEnter() {
+        let model = model(cards: 3)
+        let onScreen = model.cards.map { ($0.shot.key, $0.id) }
+        let older = (3..<6).map { URL(fileURLWithPath: "/tmp/shot \($0).png").screenshotKey }
+        let recent = model.cards.map(\.shot.key) + older
+        let entrance = StackEntrance(onScreen: onScreen, recent: recent)
+        XCTAssertEqual(entrance.kept, model.cards.map(\.id) + [nil, nil, nil])
+    }
+
+    func testTheFirstCardToEnterGoesAtOnce() {
+        let model = model(cards: 2)
+        let newer = URL(fileURLWithPath: "/tmp/newer.png").screenshotKey
+        let older = URL(fileURLWithPath: "/tmp/older.png").screenshotKey
+        let entrance = StackEntrance(onScreen: model.cards.map { ($0.shot.key, $0.id) },
+                                     recent: [newer] + model.cards.map(\.shot.key) + [older])
+        XCTAssertEqual(entrance.ranks, [0, nil, nil, 1])
+    }
 }
