@@ -286,11 +286,12 @@ struct StackLayout {
         return min(1, max(minWidthScale, free / max(maxCardWidth, 1)))
     }
 
-    /// Where an agent's title above `frame` wraps: at the frame's width, or at `minimum` when the
-    /// frame is narrower, so a narrow image's title is not cramped and hangs past the frame's right
-    /// edge. Never past `room`'s right edge, where the stack's strip begins.
-    static func titleWrapWidth(frame: NSRect, room: NSRect, minimum: CGFloat) -> CGFloat {
-        max(1, min(max(frame.width, minimum), room.maxX - frame.minX))
+    /// Where an agent's title above `frame` wraps. Its text starts `indent` in from the frame's left
+    /// edge and wraps at the frame's right edge, or `minimum` wide when that is narrower, so a narrow
+    /// image's title is not cramped and hangs past the frame's right edge. Never past `room`'s right
+    /// edge, where the stack's strip begins.
+    static func titleWrapWidth(frame: NSRect, room: NSRect, minimum: CGFloat, indent: CGFloat) -> CGFloat {
+        max(1, min(max(frame.width - indent, minimum), room.maxX - frame.minX - indent))
     }
 
     /// Where the annotator goes: the image's exact aspect, centered in the rect it is given, with
@@ -304,7 +305,8 @@ struct StackLayout {
         var reserved: CGFloat = 0
         var frame = annotationFrame(for: image, visibleFrame: visibleFrame, below: below, above: reserved)
         for _ in 0..<Self.titleFits {
-            let needed = above(Self.titleWrapWidth(frame: frame, room: visibleFrame, minimum: ui.agentTitleMinWidth))
+            let needed = above(Self.titleWrapWidth(frame: frame, room: visibleFrame, minimum: ui.agentTitleMinWidth,
+                                                   indent: ui.annotationCornerRadius))
             guard needed > reserved else { break }
             reserved = needed
             frame = annotationFrame(for: image, visibleFrame: visibleFrame, below: below, above: reserved)

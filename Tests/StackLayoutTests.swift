@@ -279,11 +279,11 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertEqual(roomy.midY, plain.midY - 20, accuracy: 1)
     }
 
-    func testATitleWrapsNoNarrowerThanItsMinimumAndNoFurtherThanTheRoom() {
+    func testATitleWrapsAtTheFramesRightEdgeNoNarrowerThanItsMinimumAndNoFurtherThanTheRoom() {
         let room = NSRect(x: 0, y: 0, width: 1000, height: 800)
-        XCTAssertEqual(StackLayout.titleWrapWidth(frame: NSRect(x: 100, y: 0, width: 600, height: 400), room: room, minimum: 300), 600)
-        XCTAssertEqual(StackLayout.titleWrapWidth(frame: NSRect(x: 400, y: 0, width: 200, height: 400), room: room, minimum: 300), 300)
-        XCTAssertEqual(StackLayout.titleWrapWidth(frame: NSRect(x: 800, y: 0, width: 150, height: 400), room: room, minimum: 300), 200)
+        XCTAssertEqual(StackLayout.titleWrapWidth(frame: NSRect(x: 100, y: 0, width: 600, height: 400), room: room, minimum: 300, indent: 16), 584)
+        XCTAssertEqual(StackLayout.titleWrapWidth(frame: NSRect(x: 400, y: 0, width: 200, height: 400), room: room, minimum: 300, indent: 16), 300)
+        XCTAssertEqual(StackLayout.titleWrapWidth(frame: NSRect(x: 800, y: 0, width: 150, height: 400), room: room, minimum: 300, indent: 16), 184)
     }
 
     func testTheAnnotatorsRoomLeavesTheStackItsNarrowestWidth() {

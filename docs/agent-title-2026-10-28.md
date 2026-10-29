@@ -32,8 +32,9 @@ the title to two lines there and the whole block to 122 pt.
 
 - The block is a sibling of the frame in the annotator's window, and `moveFrame` places it, so it
   moves with the frame in the same commit.
-- Its left edge is on the frame's left edge. It is as wide as its longest line.
-- It wraps at the frame's width, or at `ui.agentTitleMinWidth` when the frame is narrower, so a
+- Its left edge is `ui.annotationCornerRadius` in from the frame's left edge, where the frame's top
+  edge comes out of its rounded corner. It is as wide as its longest line.
+- It wraps at the frame's right edge, or `ui.agentTitleMinWidth` wide when that is wider, so a
   narrow image's title hangs past the frame's right edge instead of wrapping every few words. It
   never wraps past the room's right edge, where the stack's strip begins (`StackLayout.titleWrapWidth`).
 - The minimum is 300 pt. 45 characters of the description at 13 pt measured 257 to 276 pt, and
@@ -41,7 +42,9 @@ the title to two lines there and the whole block to 122 pt.
 - Its text keeps its size at any zoom, and it follows the frame's top-left corner. A wider frame
   wraps it onto fewer lines.
 - The room an image opens in keeps the block's height above the frame (`StackLayout.annotationFrame`),
-  and the zoom's room ends below it (`AnnotationController.prepare`), so the frame never grows into it.
+  and the zoom's room ends twice `ui.agentTitleGap` above it (`AgentTitleView.marginAbove`,
+  `AnnotationController.prepare`), so the frame never grows into it and a zoom never presses it
+  against the menu bar. At the fitted frame the margin above it is at least `ui.annotationScreenInset`.
 
 ## Its ink
 

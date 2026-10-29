@@ -166,12 +166,14 @@ final class AnnotationController {
         titleView.show(false, duration: 0)
         titleView.set(title, ui: ui)
         revealTitle(title == nil ? .closed : .opened)
-        // The frame grows no higher than leaves the title on screen. Its height at the fitted frame
-        // is the most it takes, since a wider frame wraps it onto fewer lines.
+        // The frame grows no higher than leaves the title on screen, with its margin above it. Its
+        // height at the fitted frame is the most it takes, since a wider frame wraps it onto fewer lines.
         var room = room
         if let title {
-            let wrap = StackLayout.titleWrapWidth(frame: frame, room: room, minimum: ui.agentTitleMinWidth)
-            let top = max(frame.maxY, room.maxY - AgentTitleView.spaceAbove(title, wrap: wrap, ui: ui))
+            let wrap = StackLayout.titleWrapWidth(frame: frame, room: room, minimum: ui.agentTitleMinWidth,
+                                                  indent: ui.annotationCornerRadius)
+            let above = AgentTitleView.spaceAbove(title, wrap: wrap, ui: ui) + AgentTitleView.marginAbove(ui)
+            let top = max(frame.maxY, room.maxY - above)
             room.size.height = top - room.minY
         }
         zoom.edge = Self.edgePull(ui)
@@ -267,7 +269,8 @@ final class AnnotationController {
     private func placeTitle(frame: NSRect) {
         guard let win = window else { return }
         let ui = Settings.shared.data.ui
-        let wrap = StackLayout.titleWrapWidth(frame: frame, room: zoom.room, minimum: ui.agentTitleMinWidth)
+        let wrap = StackLayout.titleWrapWidth(frame: frame, room: zoom.room, minimum: ui.agentTitleMinWidth,
+                                              indent: ui.annotationCornerRadius)
         titleView.place(above: frame.offsetBy(dx: -win.frame.minX, dy: -win.frame.minY), wrap: wrap, ui: ui)
     }
 
@@ -822,10 +825,11 @@ final class AnnotationWindow: NSWindow {
 /// An agent's title above the image in the editor: the title in semibold, the description under it
 /// in the same colour, fainter, drawn straight on the editor's backdrop, the blur and its dim. Its
 /// ink is white or black, whichever stands out more from that backdrop (`TitleInk`). Its left edge
-/// is on the frame's, and it wraps at `StackLayout.titleWrapWidth`. Its text keeps its size at any
-/// zoom. It lives in the annotator's window beside the frame, and `AnnotationController.moveFrame`
-/// places it, so it moves with the frame in the same commit. It is fileprivate, so nothing outside
-/// the editor can draw it: not a card, a flight, a rendering, a stitch or a send.
+/// is where the frame's top edge comes out of its rounded corner, and it wraps at
+/// `StackLayout.titleWrapWidth`. Its text keeps its size at any zoom. It lives in the annotator's
+/// window beside the frame, and `AnnotationController.moveFrame` places it, so it moves with the
+/// frame in the same commit. It is fileprivate, so nothing outside the editor can draw it: not a
+/// card, a flight, a rendering, a stitch or a send.
 @MainActor
 fileprivate final class AgentTitleView: NSView {
     private let titleField = AgentTitleView.label()
@@ -869,13 +873,15 @@ fileprivate final class AgentTitleView: NSView {
     /// How much fainter the description is than the title.
     private static let descriptionOpacity: CGFloat = 0.72
 
-    /// Puts the block above `frame`, in this view's superview's coordinates: its left edge on the
-    /// frame's, its bottom `ui.agentTitleGap` above the frame's top, and its text wrapping at `wrap`.
+    /// Puts the block above `frame`, in this view's superview's coordinates: its left edge where the
+    /// frame's top edge comes out of its rounded corner, its bottom `ui.agentTitleGap` above the
+    /// frame's top, and its text wrapping at `wrap`.
     func place(above frame: NSRect, wrap: CGFloat, ui: UITweaks) {
         guard let title else { return }
         let parts = Self.parts(of: title, wrap: wrap, ui: ui)
         let size = Self.size(of: parts, ui: ui)
-        self.frame = NSRect(x: frame.minX, y: frame.maxY + ui.agentTitleGap, width: size.width, height: size.height)
+        self.frame = NSRect(x: frame.minX + ui.annotationCornerRadius, y: frame.maxY + ui.agentTitleGap,
+                            width: size.width, height: size.height)
         titleField.isHidden = parts.title == .zero
         descriptionField.isHidden = parts.description == .zero
         var top = bounds.height
@@ -916,6 +922,9 @@ fileprivate final class AgentTitleView: NSView {
     static func spaceAbove(_ title: AgentTitle, wrap: CGFloat, ui: UITweaks) -> CGFloat {
         size(of: parts(of: title, wrap: wrap, ui: ui), ui: ui).height + ui.agentTitleGap
     }
+
+    /// The least room between the block and the top of the zoom's room: twice the gap under it.
+    static func marginAbove(_ ui: UITweaks) -> CGFloat { 2 * ui.agentTitleGap }
 
     /// The block's size: as wide as its longest line, and as tall as its lines.
     private static func size(of parts: (title: NSSize, description: NSSize), ui: UITweaks) -> NSSize {
