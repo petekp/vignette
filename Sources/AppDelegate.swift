@@ -40,7 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let setupWindow = SetupWindowController()
     private lazy var debugPanel = DebugPanelController(previews: .init(
         thumbnail: { [weak self] in self?.openLast() },
-        stack: { [weak self] in _ = self?.pressRecent(by: .menu) },
+        stack: { [weak self] in self?.toggleRecent() },
         annotator: { [weak self] in self?.annotateLast() },
         intro: { [weak self] in self?.introLab.show() },
         pointer: { [weak self] in self?.pointerLab.show() },
