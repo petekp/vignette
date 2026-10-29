@@ -59,7 +59,7 @@ final class AnnotationRunTests: XCTestCase {
         _ = shown(&r); _ = reduce(&r, .finish)
         XCTAssertEqual(parked(&r), [.returnCard(o("b", 2), copied: true), .next("c", place: 3, of: 3), .prepare(o("c", 3))])
         _ = shown(&r); _ = reduce(&r, .finish)
-        XCTAssertEqual(parked(&r), [.returnCard(o("c", 3), copied: true), .endRun(restoreFocus: true)])
+        XCTAssertEqual(parked(&r), [.returnCard(o("c", 3), copied: true), .endRun(.finished)])
         XCTAssertFalse(r.isActive)
         XCTAssertEqual(r.queue, [])
     }
@@ -69,7 +69,7 @@ final class AnnotationRunTests: XCTestCase {
         _ = reduce(&r, .annotate(["a", "b"])); _ = shown(&r)
         XCTAssertEqual(reduce(&r, .cancel), [.park(o("a", 1))])
         XCTAssertEqual(r.queue, [], "the rest of the list is dropped at once")
-        XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .endRun(restoreFocus: true)])
+        XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .endRun(.back)])
     }
 
     func testSendGoesOnToTheNextFile() {
@@ -77,6 +77,8 @@ final class AnnotationRunTests: XCTestCase {
         _ = reduce(&r, .annotate(["a", "b"])); _ = shown(&r)
         XCTAssertEqual(reduce(&r, .sent), [.park(o("a", 1))])
         XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .next("b", place: 2, of: 2), .prepare(o("b", 2))])
+        _ = shown(&r); _ = reduce(&r, .sent)
+        XCTAssertEqual(parked(&r), [.returnCard(o("b", 2), copied: false), .endRun(.sent)])
 
         var early = R()
         _ = reduce(&early, .annotate(["a", "b"]))
@@ -85,16 +87,16 @@ final class AnnotationRunTests: XCTestCase {
                        "a Send before the flight lands goes on too")
     }
 
-    func testADismissalEndsTheRunAndOnlyAHandReturnsTheFocus() {
+    func testADismissalEndsTheRunAndSaysWhetherAHandEndedIt() {
         var quick = R()
         _ = reduce(&quick, .annotate(["a", "b"])); _ = shown(&quick)
         XCTAssertEqual(reduce(&quick, .dismiss(byHand: true)), [.park(o("a", 1))])
-        XCTAssertEqual(parked(&quick), [.hideAnnotator, .endRun(restoreFocus: true)])
+        XCTAssertEqual(parked(&quick), [.hideAnnotator, .endRun(.finished)])
 
         var hotkey = R()
         _ = reduce(&hotkey, .annotate(["a", "b"])); _ = shown(&hotkey)
         _ = reduce(&hotkey, .dismiss(byHand: false))
-        XCTAssertEqual(parked(&hotkey), [.hideAnnotator, .endRun(restoreFocus: false)])
+        XCTAssertEqual(parked(&hotkey), [.hideAnnotator, .endRun(nil)])
     }
 
     func testADismissalWhoseParkAnswersInTheSameTurnOpensNothing() {
@@ -107,7 +109,7 @@ final class AnnotationRunTests: XCTestCase {
             effects += batch
             if batch.contains(.park(o("a", 1))) { hold.send(.parked(o("a", 1))) { _ in } }
         }
-        XCTAssertEqual(effects, [.park(o("a", 1)), .hideAnnotator, .endRun(restoreFocus: false)])
+        XCTAssertEqual(effects, [.park(o("a", 1)), .hideAnnotator, .endRun(nil)])
     }
 
     func testAListRequestedDuringADismissalOpensNothing() {
@@ -115,7 +117,7 @@ final class AnnotationRunTests: XCTestCase {
         _ = reduce(&r, .annotate(["a"])); _ = shown(&r)
         _ = reduce(&r, .dismiss(byHand: false))
         XCTAssertEqual(reduce(&r, .annotate(["b", "c"])), [])
-        XCTAssertEqual(reduce(&r, .parked(o("a", 1))), [.hideAnnotator, .endRun(restoreFocus: false)])
+        XCTAssertEqual(reduce(&r, .parked(o("a", 1))), [.hideAnnotator, .endRun(nil)])
         XCTAssertEqual(r.queue, [])
     }
 
@@ -130,7 +132,7 @@ final class AnnotationRunTests: XCTestCase {
 
         var none = R()
         _ = reduce(&none, .annotate(["a", "b", "c"])); _ = shown(&none); _ = reduce(&none, .finish)
-        XCTAssertEqual(parked(&none, unreadable: ["b", "c"]), [.returnCard(o("a", 1), copied: true), .endRun(restoreFocus: true)],
+        XCTAssertEqual(parked(&none, unreadable: ["b", "c"]), [.returnCard(o("a", 1), copied: true), .endRun(.finished)],
                        "with no file left to open, the run ends rather than staying open with nothing in it")
         XCTAssertFalse(none.isActive)
     }
@@ -148,7 +150,7 @@ final class AnnotationRunTests: XCTestCase {
         _ = reduce(&r, .annotate(["a", "b"])); _ = shown(&r)
         XCTAssertEqual(reduce(&r, .remove(["a"])), [.park(o("a", 1))])
         XCTAssertEqual(r.queue, [])
-        XCTAssertEqual(parked(&r), [.hideAnnotator, .endRun(restoreFocus: false)])
+        XCTAssertEqual(parked(&r), [.hideAnnotator, .endRun(nil)])
     }
 
     func testASelectionQueuesAndUnqueuesFilesButNeverTheOpenOne() {
@@ -179,16 +181,16 @@ final class AnnotationRunTests: XCTestCase {
         var r = R()
         _ = reduce(&r, .annotate(["a"])); _ = shown(&r); _ = reduce(&r, .finish)
         XCTAssertEqual(reduce(&r, .copyFailed(o("a", 1))), [])
-        XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .endRun(restoreFocus: true)])
+        XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .endRun(.finished)])
 
         _ = reduce(&r, .copyFailed(o("a", 1)))
         _ = reduce(&r, .annotate(["a"])); _ = shown(&r); _ = reduce(&r, .finish)
-        XCTAssertEqual(parked(&r), [.returnCard(o("a", 2), copied: true), .endRun(restoreFocus: true)],
+        XCTAssertEqual(parked(&r), [.returnCard(o("a", 2), copied: true), .endRun(.finished)],
                        "a failure reported after the card came home says nothing about its next copy")
 
         _ = reduce(&r, .annotate(["a"])); _ = shown(&r); _ = reduce(&r, .finish)
         XCTAssertEqual(reduce(&r, .copyFailed(o("a", 2))), [])
-        XCTAssertEqual(parked(&r), [.returnCard(o("a", 3), copied: true), .endRun(restoreFocus: true)],
+        XCTAssertEqual(parked(&r), [.returnCard(o("a", 3), copied: true), .endRun(.finished)],
                        "a late failure from the same file's last Done says nothing about this one")
     }
 
@@ -238,7 +240,7 @@ final class AnnotationRunTests: XCTestCase {
         _ = reduce(&r, .finish)
         XCTAssertEqual(reduce(&r, .arrived(a)), [.landed(a), .liftFlight(a)],
                        "Done between the window coming up and the arrival leaves the window up through the park, owed its shadow")
-        XCTAssertEqual(parked(&r), [.returnCard(a, copied: true), .endRun(restoreFocus: true)])
+        XCTAssertEqual(parked(&r), [.returnCard(a, copied: true), .endRun(.finished)])
         XCTAssertEqual(reduce(&r, .arrived(a)), [], "nothing is open once the card is home")
     }
 

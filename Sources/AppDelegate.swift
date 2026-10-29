@@ -1459,7 +1459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     @objc private func toggleRecent() { _ = pressRecent(by: .menu) }
 
     @discardableResult
-    private func pressRecent(by request: ThumbnailController.StackRequest,
+    private func pressRecent(by request: StackRequest,
                              pressedAt: CFTimeInterval? = nil) -> ThumbnailController.StackToggle {
         let result = thumbnail.toggleRecent(by: request, pressedAt: pressedAt) { [self] in
             let index = recentShots(limit: settings.data.recentCount)

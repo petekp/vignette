@@ -165,14 +165,17 @@ final class ThumbnailController: NSObject {
     }
 
     private let panel = ThumbnailPanel()
-    private let backdrop = BackdropPanel()
+    /// Who has the keys, the backdrop, the watch for a click outside and the focus going back: only
+    /// through events sent here (`CornerPresentation`).
+    private lazy var keys = CornerKeys(panel: panel, screen: { [unowned self] in self.screen })
     private let dim = DimPanel()
     private let flights = TransitionLayer()
     private let model = StackModel()
     private var hosting: NSHostingView<StackView>!
     /// When a lone thumbnail leaves the corner (`leaveCorner(after:)`).
     private var leaveTimer: Timer?
-    private let outsideClick = OutsideClick()
+    /// The shortcut's listing while it opens the stack, and its answer.
+    private var recentOpening: (listing: () -> (shots: [Screenshot], detail: String), pressedAt: CFTimeInterval?, result: StackToggle)?
     private var visible = false {
         didSet {
             // Flight decodes are screen-sized; they are only worth keeping while the stack is up.
@@ -215,6 +218,8 @@ final class ThumbnailController: NSObject {
         hosting = NSHostingView(rootView: StackView(model: model))
         panel.contentView = hosting
         panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
+        keys.perform = { [weak self] effect in self?.perform(effect) }
+        keys.changed = { [weak self] presentation in self?.presentationChanged(presentation) }
         flights.onPress = { [weak self] id, event in self?.flightPressed(id, event) }
         panel.onScroll = { [weak self] event in self?.scroll(event) }
         model.onAction = { [weak self] action, cards in
@@ -254,7 +259,7 @@ final class ThumbnailController: NSObject {
             // the pointer last named. Only while the stack holds the keys and nothing is in the
             // annotator: the stack keeps them through the flight out, and a key there is about the
             // card that is flying, not the one the cursor happens to be over.
-            if let id, self.model.isStack, self.panel.acceptsKeys, !self.run.isActive { self.model.focused = id }
+            if let id, self.keys.isKeyed { self.model.focused = id }
         }
         model.onSelectionChanged = { [weak self] added, removed in self?.selectionChanged(added: added, removed: removed) }
     }
@@ -276,7 +281,7 @@ final class ThumbnailController: NSObject {
         if let pinned = pinnedScreen, !NSScreen.screens.contains(pinned) { pinnedScreen = NSScreen.main ?? NSScreen.screens[0] }
         Log.write("[screen] changed; relayout on \(screen.localizedName)")
         relayout()
-        if model.isStack { backdrop.refresh(on: screen) }
+        keys.refreshBackdrop(on: screen)
     }
 
     /// Where the stack is laid out on its screen, and the room a Dock under the column keeps. Read
@@ -378,7 +383,7 @@ final class ThumbnailController: NSObject {
             "transition": ["phase": "\(run.phase)", "annotating": annotating?.shot.key.path as Any, "isActive": run.isActive],
             "screen": ["name": s.localizedName, "frame": StateReport.topLeft(s.frame, primaryHeight: h),
                        "visibleFrame": StateReport.topLeft(s.visibleFrame, primaryHeight: h), "scale": s.backingScaleFactor, "pinned": pinnedScreen != nil],
-            "backdrop": backdrop.stateJSON,
+            "backdrop": keys.backdropState,
             "dim": ["visible": dim.isVisible, "alpha": dim.alphaValue],
         ]
     }
@@ -399,16 +404,8 @@ final class ThumbnailController: NSObject {
     }
 
     enum StackToggle: Equatable { case shown(Int), dismissed, empty }
-    /// What asked for the recent stack: the shortcut, the menu's Show Recent Screenshots, or `vignette://recent`.
-    enum StackRequest: String { case shortcut, menu, url }
-    /// What closed the corner, for the `[stack] dismissed` line.
-    enum DismissReason: String {
-        case esc, shortcut, menu, url, timeout, removed
-        case clickOutside = "click-outside", quickDone = "quick-done"
-        init(_ request: StackRequest) { self = DismissReason(rawValue: request.rawValue)! }
-    }
 
-    var stackShowing: Bool { visible && model.isStack }
+    var stackShowing: Bool { visible && keys.isStack }
 
     /// The stack or the annotator is up, and the screen is theirs: live ink does not draw over them.
     var holdsScreen: Bool { stackShowing || run.isActive }
@@ -420,24 +417,60 @@ final class ThumbnailController: NSObject {
 
     /// The recent stack: toggles. Takes keyboard focus. Stays until Esc, the hotkey, or a click elsewhere.
     /// `listing` names the screenshots and the log's detail; it is asked only when the stack opens,
-    /// after the panel has taken the keys.
+    /// after the panel has taken the keys, so a key pressed while a large folder is listed reaches it.
     @discardableResult
     func toggleRecent(by request: StackRequest, pressedAt: CFTimeInterval? = nil,
-                      listing: () -> (shots: [Screenshot], detail: String)) -> StackToggle {
-        if visible && model.isStack { dismiss(by: DismissReason(request)); return .dismissed }
-        holdKeys(pressedAt: pressedAt)
-        if run.isActive { send(.dismiss(byHand: false)) }   // a lone annotation gives way to the stack
-        let (shots, detail) = listing()
+                      listing: @escaping () -> (shots: [Screenshot], detail: String)) -> StackToggle {
+        recentOpening = (listing, pressedAt, .dismissed)
+        defer { recentOpening = nil }
+        keys.send(.shortcut(request, pressedAt: pressedAt))
+        return recentOpening?.result ?? .dismissed
+    }
+
+    /// Lists the recent screenshots for the shortcut and presents them as the stack.
+    private func openRecent() {
+        guard let opening = recentOpening else { return }
+        let (shots, detail) = opening.listing()
         let started = CACurrentMediaTime()
         let cards = shots.compactMap(makeCard)
-        guard !cards.isEmpty else { letGoOfHeldKeys(); return .empty }
-        present(cards: cards, stack: true)
-        // A click outside this app's windows closes the stack, and the annotator with it.
-        outsideClick.start { [weak self] in self?.dismiss(by: .clickOutside) }
-        backdrop.show(on: screen, below: panel)
-        takeKeys(pressedAt: pressedAt)
-        Log.write("[stack] shown cards=\(cards.count) \(detail)shown=\(Int((CACurrentMediaTime() - started) * 1000))ms decoding=\(cards.filter { $0.image == nil }.count)")
-        return .shown(cards.count)
+        recentOpening?.result = cards.isEmpty ? .empty : .shown(cards.count)
+        if !cards.isEmpty {
+            present(cards: cards, stack: true)
+            Log.write("[stack] shown cards=\(cards.count) \(detail)shown=\(Int((CACurrentMediaTime() - started) * 1000))ms decoding=\(cards.filter { $0.image == nil }.count)")
+        }
+        keys.send(.listed(found: !cards.isEmpty, pressedAt: opening.pressedAt))
+    }
+
+    /// The cards' side of what `CornerPresentation` decided; `CornerKeys` has run the window side.
+    private func perform(_ effect: CornerPresentation.Effect) {
+        switch effect {
+        case .takeKeys(let focus, _):
+            switch focus {
+            case .card(let id) where model.cards.contains(where: { $0.id == id }): model.focused = id
+            case .hovered where model.hoveredCard != nil: model.focused = model.hoveredCard
+            default: if model.focused == nil { model.focused = model.hoveredCard ?? model.cards.first?.id }
+            }
+        case .releaseKeys, .letGoOfHeldKeys:
+            model.focused = nil
+        case .closeEditor:
+            send(.dismiss(byHand: false))
+        case .listRecent:
+            openRecent()
+        case .clearSelection:
+            model.clearSelection()
+            relayout()
+        case .slideOut(let reason):
+            slideOut(reason)
+        case .holdKeys, .backdrop, .watchOutsideClicks, .restoreFocus:
+            break
+        }
+    }
+
+    /// The model follows the presentation: `isStack` is what the column on screen is, kept through
+    /// a slide-out, and a column that does not leave on its own has no timer.
+    private func presentationChanged(_ presentation: CornerPresentation) {
+        if presentation.mode != .hidden { model.isStack = presentation.isStack }
+        if !presentation.leavesOnItsOwn { leaveTimer?.invalidate() }
     }
 
     /// Decodes thumbnails for `shots` in the background so the stack opens without waiting. A
@@ -454,47 +487,6 @@ final class ThumbnailController: NSObject {
             }
         }
         Thumbnailer.warm(items, space: screenSpace)
-    }
-
-    /// The keys at the press, before the folder is listed and the cards are made, which can take a
-    /// while on a large folder. A key pressed meanwhile waits in this app's queue and reaches the
-    /// stack once it is up, instead of the app in front. Nothing is drawn before the stack: the
-    /// panel is empty or shows the corner, and the column is laid out in this same turn.
-    private func holdKeys(pressedAt: CFTimeInterval?) {
-        if !visible {
-            // While the window the person was in is still key, so closing goes back to it.
-            FocusReturn.shared.sessionStarting()
-            panel.orderFrontRegardless()
-        }
-        panel.acceptsKeys = true
-        panel.makeKey()
-        let after = pressedAt.map { " after=\(Int((CACurrentMediaTime() - $0) * 1000))ms" } ?? ""
-        Log.write("[stack] keys held key=\(panel.isKeyWindow)\(after)")
-    }
-
-    /// The shortcut found nothing to show: the keys go back, and the panel with them when nothing was on it.
-    private func letGoOfHeldKeys() {
-        releaseKeys()
-        if !visible { panel.orderOut(nil) }
-    }
-
-    /// The panel can refuse key status right after resigning it (a dismissal being reversed), so try twice.
-    /// The stack has a focused card from the moment it takes keys, so arrows, Space, and Return act
-    /// on the newest card without a click or a first arrow press. `focus` names the card to focus
-    /// instead: the one that just came back from the annotator, which was the last one looked at.
-    /// `pressedAt` is when the shortcut fired, so the `[stack] keys` line says how long the keys took.
-    private func takeKeys(focus: UUID? = nil, pressedAt: CFTimeInterval? = nil) {
-        panel.acceptsKeys = true
-        if let focus, model.cards.contains(where: { $0.id == focus }) { model.focused = focus }
-        else if model.focused == nil { model.focused = model.hoveredCard ?? model.cards.first?.id }
-        panel.makeKey()
-        let after = pressedAt.map { " after=\(Int((CACurrentMediaTime() - $0) * 1000))ms" } ?? ""
-        Log.write("[stack] keys key=\(panel.isKeyWindow)\(after)")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            guard let self, self.visible, self.model.isStack, !self.run.isActive, !self.panel.isKeyWindow else { return }
-            self.panel.makeKey()
-            Log.write("[stack] keys retry key=\(self.panel.isKeyWindow)")
-        }
     }
 
     /// Opens the annotator on the first of `shots` and queues the rest: finishing one opens the
@@ -700,7 +692,7 @@ final class ThumbnailController: NSObject {
             return card.with(size: size).with(image: image)
         }
         relayout()
-        if model.isStack { backdrop.refresh(on: screen) }
+        keys.refreshBackdrop(on: screen)
     }
 
     /// The stitched file is written: the cards it was made from converge into its slot and the new
@@ -839,8 +831,15 @@ final class ThumbnailController: NSObject {
         if seen || comesUp { leaveCorner(after: hold) }
     }
 
-    /// Quick Done closes by hand: the focus goes back to the person's app once the annotator is gone.
+    /// Closes the corner, whatever it shows.
     func dismiss(by reason: DismissReason) {
+        guard visible else { return }
+        keys.send(.dismiss(reason))
+    }
+
+    /// The column leaves. Quick Done closes by hand: the focus goes back to the person's app once the
+    /// annotator is gone.
+    private func slideOut(_ reason: DismissReason) {
         guard visible else { return }
         Log.write("[stack] dismissed by=\(reason.rawValue) stack=\(model.isStack) cards=\(model.cards.count)")
         let byHand = reason == .quickDone
@@ -848,9 +847,6 @@ final class ThumbnailController: NSObject {
         dismissGeneration += 1
         let gen = dismissGeneration
         leaveTimer?.invalidate()
-        outsideClick.stop()
-        releaseKeys()
-        backdrop.hide()
         // A stitch still converging ends with the stack: its pieces stop where they are, and the
         // new card, an empty slot while its image was in the layer, slides out with the column.
         if !model.forming.isEmpty {
@@ -886,7 +882,7 @@ final class ThumbnailController: NSObject {
             self.model.slidingOut = false
             self.model.scroll = 0
             self.pinnedScreen = nil
-            FocusReturn.shared.restore(reason: "stack dismissed")
+            self.keys.send(.slidOut)
         }
     }
 
@@ -966,7 +962,7 @@ final class ThumbnailController: NSObject {
             // After the annotator's window has taken the keys, so they pass from one to the other
             // rather than being nobody's: a tool key or Esc pressed during the flight reaches the
             // editor, and its Esc comes back through `onClosed` as `close`, which turns the card around.
-            releaseKeys()
+            keys.send(.editorOpened)
             var from = slot ?? cardFrame(of: card)
             if model.offscreen.contains(card.id) { from.origin.x += layout.offscreenDistance(cardWidth: from.width) }
             // A capture starts where it was taken, looking like the screen there. The flight is
@@ -1028,11 +1024,11 @@ final class ThumbnailController: NSObject {
             Log.write("[annotate] next \(key.name) \(place) of \(total)")
         case .queued(let key, let place, let total):
             Log.write("[annotate] queued \(key.name) \(place) of \(total)")
-        case .endRun(let restoreFocus):
+        case .endRun(let ending):
             // Only now: between two files of a list the dim stays up and the focus stays here.
             sessionCard = nil
             dim.hide()
-            if restoreFocus { FocusReturn.shared.restore(reason: "annotator closed") }
+            keys.send(.editorClosed(ending))
         case .landed:
             // Also while the image parks: Done or Esc is accepted between `covered` and the
             // arrival, and the window stays up through the park, still owed its shadow.
@@ -1072,7 +1068,7 @@ final class ThumbnailController: NSObject {
             self.flights.dropShadow(id: card.id)   // the card draws it now, in this same commit
             // The card view comes back on SwiftUI's next commit; lift the flight image after it.
             DispatchQueue.main.async { self.flights.lift(id: card.id) }
-            if !self.run.isActive, self.visible, self.model.isStack { self.takeKeys(focus: card.id) }
+            if self.visible { self.keys.send(.cardLanded(card.id)) }
             // A card that lands with a notice left the corner's time to the notice.
             if !self.showsNotice(card) { self.leaveCorner(after: self.ui.thumbnailSeconds) }
         })
@@ -1082,7 +1078,7 @@ final class ThumbnailController: NSObject {
     /// done: it leaves at once rather than waiting out its time there. `copied` is the notice it is
     /// about to take.
     private func leavesAtOnce(_ card: Card, copied: Bool) -> Bool {
-        !model.isStack && !copied && !showsNotice(card) && model.cards.allSatisfy { $0.id == card.id }
+        !keys.isStack && !copied && !showsNotice(card) && model.cards.allSatisfy { $0.id == card.id }
     }
 
     /// A notice is up on `card`. Each one set the corner's time when it went up.
@@ -1284,11 +1280,7 @@ final class ThumbnailController: NSObject {
     /// it takes the keys and the backdrop, a click outside closes it, and it no longer times out.
     private func becomeStack() {
         onTakesScreen?()
-        leaveTimer?.invalidate()
-        model.isStack = true
-        outsideClick.start { [weak self] in self?.dismiss(by: .clickOutside) }
-        backdrop.show(on: screen, below: panel)
-        takeKeys(focus: model.hoveredCard)
+        keys.send(.selected)
         Log.write("[stack] corner became the stack cards=\(model.cards.count)")
     }
 
@@ -1376,7 +1368,7 @@ final class ThumbnailController: NSObject {
     }
 
     private func handleKey(_ event: NSEvent) -> Bool {
-        guard model.isStack else { return false }
+        guard keys.isKeyed else { return false }
         let mods = event.modifierFlags.intersection([.command, .option, .shift, .control])
         // Shift shortcuts arrive uppercase; action keys are declared lowercase.
         let chars = (event.charactersIgnoringModifiers ?? "").lowercased()
@@ -1386,8 +1378,7 @@ final class ThumbnailController: NSObject {
         let isDelete = code == 51 || code == 117
 
         if code == 53 {
-            if model.inSelectionMode { model.clearSelection(); relayout() }
-            else { dismiss(by: .esc) }
+            keys.send(.esc(selecting: model.inSelectionMode))
             return true
         }
         if code == 126 || code == 125 {
@@ -1442,12 +1433,6 @@ final class ThumbnailController: NSObject {
         }
         model.focused = model.cards[next].id
         scrollToReveal(next)
-    }
-
-    private func releaseKeys() {
-        panel.acceptsKeys = false
-        if panel.isKeyWindow { panel.resignKey() }
-        model.focused = nil
     }
 
     // MARK: Scrolling
@@ -1591,12 +1576,11 @@ final class ThumbnailController: NSObject {
             model.entranceRanks = [:]
             model.lift = [:]
             endSweep()
-            model.isStack = stack
             model.slidingOut = false
             model.scroll = 0
             model.widthScale = 1
         }
-        if !stack { releaseKeys() }
+        if !stack { keys.send(.thumbnailsShown) }
         // A dismissal in progress is simply reversed: the same cards turn around. `visible` is
         // already false then; the panel stays up until the slide-out ends.
         let reusing = panel.isVisible && !model.cards.isEmpty && Set(cards.map(\.shot.url)) == Set(model.cards.map(\.shot.url))
@@ -1767,7 +1751,7 @@ final class ThumbnailController: NSObject {
     /// annotator or flying to or from it, or a send waits for its answer, which sets a time of its
     /// own (`hold`). The recent stack stays until it is dismissed.
     private func leaveCorner(after seconds: TimeInterval) {
-        guard !model.isStack else { return }
+        guard keys.leavesOnItsOwn else { return }
         leaveTimer?.invalidate()
         // Fires on the main run loop, like every other Timer here.
         leaveTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
