@@ -54,10 +54,6 @@ struct CornerPresentation: Equatable {
         case editorClosed(RunEnding?)
         /// A card came home from the editor and is in its slot; `others` when other cards share the column.
         case cardLanded(UUID, others: Bool)
-        /// Esc reached the stack; `selecting` while cards are selected.
-        case esc(selecting: Bool)
-        /// A click landed outside this app's windows.
-        case clickedOutside
         /// The column is going.
         case dismiss(DismissReason)
         /// The column has slid off the screen.
@@ -78,7 +74,6 @@ struct CornerPresentation: Equatable {
         case closeEditor
         /// List the recent screenshots and present them as the stack; answer `listed`.
         case listRecent
-        case clearSelection
         case slideOut(DismissReason)
     }
 
@@ -142,11 +137,6 @@ struct CornerPresentation: Equatable {
                 return [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.card(id))]
             }
             return isKeyed ? [.takeKeys(.card(id))] : []
-        case .esc(let selecting):
-            guard isKeyed else { return [] }
-            return selecting ? [.clearSelection] : dismiss(.esc)
-        case .clickedOutside:
-            return isStack ? dismiss(.clickOutside) : []
         case .dismiss(let reason):
             return dismiss(reason)
         case .slidOut:
@@ -188,8 +178,6 @@ extension CornerPresentation.Event: CustomStringConvertible {
         case .editorOpened: return "editorOpened"
         case .editorClosed(let ending): return "editorClosed(\(ending.map { "\($0)" } ?? "no hand"))"
         case .cardLanded: return "cardLanded"
-        case .esc(let selecting): return selecting ? "esc(selecting)" : "esc"
-        case .clickedOutside: return "clickedOutside"
         case .dismiss(let reason): return "dismiss(\(reason.rawValue))"
         case .slidOut: return "slidOut"
         }
@@ -211,7 +199,6 @@ extension CornerPresentation.Effect: CustomStringConvertible {
         case .restoreFocus: return "restoreFocus"
         case .closeEditor: return "closeEditor"
         case .listRecent: return "listRecent"
-        case .clearSelection: return "clearSelection"
         case .slideOut(let reason): return "slideOut(\(reason.rawValue))"
         }
     }

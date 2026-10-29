@@ -20,12 +20,6 @@ final class CornerPresentationTests: XCTestCase {
         XCTAssertTrue(p.leavesOnItsOwn)
     }
 
-    func testEscIsTheFrontAppsWhileOnlyThumbnailsShow() {
-        var p = after(.thumbnailsShown)
-        XCTAssertEqual(p.reduce(.esc(selecting: false)), [])
-        XCTAssertEqual(p.mode, .thumbnails)
-    }
-
     func testTheShortcutTakesTheKeysBeforeItListsThenOpensTheRecentStack() {
         var p = P()
         XCTAssertEqual(p.reduce(.shortcut(.shortcut)), [.holdKeys, .listRecent])
@@ -87,7 +81,7 @@ final class CornerPresentationTests: XCTestCase {
                        [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.card(card))])
         XCTAssertEqual(p.mode, .stack(recent: false))
         XCTAssertTrue(p.isKeyed)
-        XCTAssertEqual(p.reduce(.esc(selecting: false)), closes + [.slideOut(.esc)])
+        XCTAssertEqual(p.reduce(.dismiss(.esc)), closes + [.slideOut(.esc)])
     }
 
     func testEscFromTheEditorOfACardAloneInTheCornerLeavesItLoneThumbnails() {
@@ -125,19 +119,6 @@ final class CornerPresentationTests: XCTestCase {
         XCTAssertEqual(p.reduce(.cardLanded(card, others: true)), [])
     }
 
-    func testEscClearsTheSelectionBeforeItClosesTheStack() {
-        var p = after(.thumbnailsShown, .selected)
-        XCTAssertEqual(p.reduce(.esc(selecting: true)), [.clearSelection])
-        XCTAssertEqual(p.reduce(.esc(selecting: false)), closes + [.slideOut(.esc)])
-    }
-
-    func testAClickOutsideClosesTheStackAndLeavesThumbnails() {
-        var thumbnails = after(.thumbnailsShown)
-        XCTAssertEqual(thumbnails.reduce(.clickedOutside), [])
-        var stack = after(.thumbnailsShown, .selected)
-        XCTAssertEqual(stack.reduce(.clickedOutside), closes + [.slideOut(.clickOutside)])
-    }
-
     func testTheFocusGoesBackOnceTheColumnHasSlidOut() {
         var p = after(.thumbnailsShown)
         XCTAssertEqual(p.reduce(.dismiss(.timeout)), closes + [.slideOut(.timeout)])
@@ -161,7 +142,9 @@ final class CornerPresentationTests: XCTestCase {
             var closing = false
             var trace: [String] = []
             for _ in 0..<60 {
-                var choices: [P.Event] = [.cardLanded(card, others: Bool.random(using: &rng)), .clickedOutside, .esc(selecting: Bool.random(using: &rng))]
+                var choices: [P.Event] = [.cardLanded(card, others: Bool.random(using: &rng))]
+                if p.isStack { choices.append(.dismiss(.clickOutside)) }
+                if p.isKeyed { choices.append(.dismiss(.esc)) }
                 if listing {
                     choices = [.listed(found: Bool.random(using: &rng))] + (closing ? [.editorClosed(.shortcut)] : [])
                 } else if closing {

@@ -455,9 +455,6 @@ final class ThumbnailController: NSObject {
             send(.cancel(.shortcut))
         case .listRecent:
             openRecent()
-        case .clearSelection:
-            model.clearSelection()
-            relayout()
         case .slideOut(let reason):
             slideOut(reason)
         case .holdKeys, .backdrop, .watchOutsideClicks, .restoreFocus:
@@ -1379,8 +1376,14 @@ final class ThumbnailController: NSObject {
         let isReturn = code == 36 || code == 76
         let isDelete = code == 51 || code == 117
 
+        // Esc backs out one level at a time: the selection, then the stack.
         if code == 53 {
-            keys.send(.esc(selecting: model.inSelectionMode))
+            if model.inSelectionMode {
+                model.clearSelection()
+                relayout()
+            } else {
+                keys.send(.dismiss(.esc))
+            }
             return true
         }
         if code == 126 || code == 125 {

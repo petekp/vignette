@@ -129,10 +129,10 @@ final class CornerKeys {
         case .backdrop(let on):
             if on { backdrop.show(on: screen(), below: panel) } else { backdrop.hide() }
         case .watchOutsideClicks(let on):
-            if on { outsideClick.start { [weak self] in self?.send(.clickedOutside) } } else { outsideClick.stop() }
+            if on { outsideClick.start { [weak self] in self?.send(.dismiss(.clickOutside)) } } else { outsideClick.stop() }
         case .restoreFocus(let reason):
             FocusReturn.shared.restore(reason: reason)
-        case .closeEditor, .listRecent, .clearSelection, .slideOut:
+        case .closeEditor, .listRecent, .slideOut:
             break
         }
     }
