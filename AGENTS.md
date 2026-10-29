@@ -609,17 +609,41 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   The stitch is a new image with no drawing of its own. `docs/stitch-2026-09-17.md` has the numbers;
   separate images are better when the model has to read the text.
 - The stack panel is non-activating but can become key (`ThumbnailPanel.acceptsKeys`). Never
-  call `NSApp.activate` for it; the user's app must stay frontmost. Closing the stack or the
-  annotator hands the focus back (`FocusReturn.restore`): to the Vignette window the session began
-  in when that was Settings, setup or the tweaks, and else to the app before Vignette. While a
-  card is in the annotator the panel gives up key status so typing reaches the editor. It gives it
-  up in `perform(.prepare)`, right after the annotator's window has taken it, so the keys pass from one
-  to the other instead of being nobody's for the length of the flight. A `.help` tooltip never
+  call `NSApp.activate` for it; the user's app must stay frontmost. A `.help` tooltip never
   shows in the stack: AppKit shows a window's tooltips only while its app is active, unless the
   window sets `allowsToolTipsWhenApplicationIsInactive`, which the panel does not. Text the user
   must see there is drawn, like a greyed strip row's reason (`UnavailableReason`).
+- `CornerPresentation`, a pure reducer, decides four things about the corner. It decides whether
+  the corner shows lone thumbnails or the stack, and when the panel takes the keys and gives them
+  up. It decides when the backdrop and the watch for a click outside are on. And it decides when
+  the focus goes back (`FocusReturn.restore`): to the Vignette window the session began in, when
+  that was Settings, setup or the tweaks, and otherwise to the app before Vignette. `CornerKeys`
+  runs its effects. It holds the panel's keys, the backdrop and the `OutsideClick` privately, so
+  `ThumbnailController` can only send it events (`keys.send`). `acceptsKeys` can be set only in
+  `CornerKeys.swift`. Every event with effects logs one `[corner] <event> -> <mode> effects=…`
+  line. `Tests/CornerPresentationTests.swift` has the table and a random-sequence test of the
+  invariants.
+
+  The rule is that the backdrop goes with the keys. The stack has both, and lone thumbnails have
+  neither. So a card that arrives on its own, from a capture or an agent's push, never takes a key
+  from the app the person is typing in. Only a hand makes the stack: the shortcut, a selection in
+  the corner (`.selected`), or Esc out of the editor while other cards are in the corner. That Esc
+  makes them the stack once the card lands (`cardLanded`).
+
+  The shortcut takes the keys at the press, before the folder is listed (`holdKeys`), so an Esc
+  pressed while the stack is still coming closes it. `[stack] keys held … after=<ms>` logs the
+  time from the press. Over lone thumbnails, or over a stack the corner became, the shortcut keeps
+  the cards on screen and brings the older ones in above them (`StackEntrance`). The next press
+  closes it.
+
+  While a card is in the annotator the panel gives up the keys so typing reaches the editor. It
+  gives them up at `editorOpened`, which `perform(.prepare)` sends right after the annotator's
+  window has taken them, so the keys pass from one to the other instead of being nobody's for the
+  length of the flight. `RunEnding` says how the run ended, and so where the keys go next. The
+  shortcut keeps them for the stack. Any other hand sends the focus back, and a stack takes the
+  keys again when the card lands.
 - Which card a key acts on is one variable, `model.focused`. The stack focuses the newest card the
-  moment it takes keys (`takeKeys`), or the card that just came back from the annotator, the last one
+  moment it takes keys (the `takeKeys` effect), or the card that just came back from the annotator, the last one
   looked at, so arrows, Space, and Return act on a card without a first click, and the pointer moves
   the focus too: moving onto a card focuses it, and leaving it leaves the focus there. The pointer only
   moves it while the stack holds the keys and no card is in the annotator; while the annotator has
@@ -629,8 +653,9 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   shrinks back into it, and the selection circle fades in with it.
 - Thumbnails in the corner show the selection circle once there are two or more of them
   (`StackModel.offersSelection`), except while one is in the annotator. Selecting there makes the
-  corner the stack with the cards it holds (`ThumbnailController.becomeStack`): it takes the keys
-  and the backdrop, a click outside closes it, and it stops timing out.
+  corner the stack with the cards it holds (`ThumbnailController.becomeStack`, which sends
+  `.selected`): it takes the keys and the backdrop, a click outside closes it, and it stops timing
+  out.
 - The panel widens to the left while cards are selected, to hold the selection strip
   (`StackLayout.stripPlacement` places it, `panelSize(viewport:showsStrip:reveal:)` makes the room:
   the icon column, the gap to the cards, and the room the labels grow into, whether they are out or
@@ -661,8 +686,9 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   every time the annotator's frame moves the stack takes the widest value that still clears it by
   the gap (`widthScale(clearing:visibleFrame:)`). Opening and closing spring it through
   `ui.relayoutDuration`; a zoom sets it straight, in the same turn as the frame. Only the recent
-  stack does this: a lone thumbnail leaves the panel when the annotator opens, and a
-  `vignette://annotate` with no stack showing gets the whole visible frame.
+  stack does this: a lone thumbnail alone in the corner leaves the panel when the annotator opens,
+  one of several keeps its slot and the corner does not narrow, and a `vignette://annotate` with no
+  stack showing gets the whole visible frame.
   `docs/stack-room-2026-09-17.md` has the numbers, and `docs/stack-narrowing-2026-09-23.md` what a
   frame of the narrowing costs and the options for making it cheaper.
 - A card joining the open stack is not animated as a layout change. `ThumbnailController.shiftUp`
@@ -807,7 +833,8 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   what Send and the session listing compare. The moves into and out of the annotator
   are decided by `AnnotatorTransition`, a pure reducer the run holds privately. Done sends
   `finish`: the card returns and takes the Copied notice (`returnCard`'s `copied`), and a lone
-  thumbnail, which left the panel when the annotator opened, comes back to the corner for it. Esc
+  thumbnail that was alone in the corner, and so left the panel when the annotator opened, comes
+  back to the corner for it. Esc
   sends `cancel` and Send sends `sent`, which both reach the transition as `close`: the card returns
   without the Copied notice. A lone thumbnail that comes home with nothing to show, no
   send or failure notice and no other card in the corner, does not land: it flies into the corner and
@@ -846,8 +873,9 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   that same batch (`returnCard(A) next(B) prepare(B)`). So the card flies home with its Copied notice
   while the next flies out, which is a swap's two flights, and the room beside the stack is made
   once for both. Between two files the dim stays up and the focus stays with Vignette. `endRun`
-  comes only when nothing follows: it hides the dim, and hands the focus back when a person's hand
-  ended the run. Opening a card does not clear the selection, so after the last one Cmd+C or Cmd+S
+  comes only when nothing follows: it hides the dim and carries how a person's hand ended the run
+  (`RunEnding`), or nil when no hand did. The run decides nothing about the focus;
+  `CornerPresentation` does, from that ending. Opening a card does not clear the selection, so after the last one Cmd+C or Cmd+S
   still takes all of them. While a card is in the annotator, selecting another card in the stack
   queues it next, in the order picked (`[annotate] queued <name> 3 of 3`), and deselecting it takes
   it back out (`selectionChanged`, from the model's `onSelectionChanged`). Esc, a dismissal, quick

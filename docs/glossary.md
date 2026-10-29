@@ -31,8 +31,17 @@ A card that comes up in the corner after a screenshot arrives, and leaves after 
 _Avoid_: Toast, preview, popup
 
 **Recent stack**:
-The column of the newest cards that the shortcut opens, and that stays until it is dismissed.
+The column of the newest cards that the shortcut opens, and that stays until it is dismissed. Lone
+thumbnails become a recent stack of their own cards when a person selects one, or presses Esc in
+the editor while other cards are in the corner.
 _Avoid_: Gallery, history, list
+
+**Keyed**:
+Holding the keys: the recent stack is keyed when keys pressed reach it rather than the app the
+person was in. Only the recent stack is ever keyed, and never while a card is in the editor. Lone
+thumbnails are never keyed, so a card that arrives on its own never takes a key from the app the
+person is typing in.
+_Avoid_: Focused, active
 
 **Selection**:
 The cards a person has picked in the recent stack, in the order they picked them. Every action

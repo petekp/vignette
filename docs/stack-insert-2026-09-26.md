@@ -51,3 +51,23 @@ Every `ui` key is written to settings.json, so a file written before this change
 instead of 91 ms, and first shows about 300 ms after the cards start to shift instead of 166 ms.
 The key is now `shiftUpDuration`, since it no longer times the card's slide. A file without it
 takes the default, and the app's next rewrite of the file drops `insertDuration`.
+
+## The corner becoming the stack (2026-10-28)
+
+The shortcut pressed over lone thumbnails used to rebuild the column. It kept only the newest card.
+Every other card in the corner was removed and replaced by a copy that slid back in from the
+screen's edge, and the panel's growth animated as a layout change.
+
+Now `ThumbnailController.present` keeps every card already on screen. It changes the layout with
+animations off and lifts the kept cards back to where they were drawn, as `shiftUp` does. Only the
+older cards slide in, above the kept ones, in the order `StackEntrance` ranks them. The first goes
+at once.
+
+This was measured in the VM, on 60 fps recordings of three agent cards in the corner, before and
+after the change. Each number is how far a kept card's centre changed: the mean red, green and blue
+of a 40 by 30 pt patch, summed, from 0.2 s before the shortcut to 1.0 s after it.
+
+| Case | Before | After |
+| --- | --- | --- |
+| Shortcut over lone thumbnails | The middle card changed by up to 78, the top card by up to 227. Both left their slots and slid back in. | No kept card changed in any frame. |
+| Esc out of the editor, then the shortcut | The middle card changed by up to 34. | No kept card changed in any frame. |
