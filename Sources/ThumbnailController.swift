@@ -457,7 +457,7 @@ final class ThumbnailController: NSObject {
             openRecent()
         case .slideOut(let reason):
             slideOut(reason)
-        case .holdKeys, .backdrop, .watchOutsideClicks, .restoreFocus:
+        case .holdKeys, .restoreFocus:
             break
         }
     }

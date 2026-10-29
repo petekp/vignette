@@ -9,7 +9,7 @@ final class CornerPresentationTests: XCTestCase {
         return p
     }
 
-    private let closes: [P.Effect] = [.watchOutsideClicks(false), .releaseKeys, .backdrop(false)]
+    private let closes: [P.Effect] = [.releaseKeys]
     private let card = UUID()
 
     func testLoneThumbnailsNeverTakeTheKeys() {
@@ -24,7 +24,7 @@ final class CornerPresentationTests: XCTestCase {
         var p = P()
         XCTAssertEqual(p.reduce(.shortcut(.shortcut)), [.holdKeys, .listRecent])
         XCTAssertEqual(p.reduce(.listed(found: true)),
-                       [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current)])
+                       [.takeKeys(.current)])
         XCTAssertEqual(p.mode, .stack(recent: true))
         XCTAssertTrue(p.isKeyed)
         XCTAssertFalse(p.leavesOnItsOwn)
@@ -49,13 +49,13 @@ final class CornerPresentationTests: XCTestCase {
         XCTAssertFalse(p.leavesOnItsOwn, "the card coming home stays for the stack")
         XCTAssertEqual(p.reduce(.editorClosed(.shortcut)), [], "the focus stays for the stack")
         XCTAssertEqual(p.reduce(.listed(found: true)),
-                       [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current)])
+                       [.takeKeys(.current)])
         XCTAssertEqual(p.mode, .stack(recent: true))
     }
 
     func testSelectingInTheCornerMakesItAKeyedStackOfItsOwnCards() {
         var p = after(.thumbnailsShown)
-        XCTAssertEqual(p.reduce(.selected), [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current)])
+        XCTAssertEqual(p.reduce(.selected), [.takeKeys(.current)])
         XCTAssertEqual(p.mode, .stack(recent: false))
         XCTAssertTrue(p.isKeyed)
     }
@@ -78,7 +78,7 @@ final class CornerPresentationTests: XCTestCase {
         XCTAssertEqual(p.reduce(.editorOpened), [.releaseKeys])
         XCTAssertEqual(p.reduce(.editorClosed(.back)), [.restoreFocus(reason: "annotator closed")])
         XCTAssertEqual(p.reduce(.cardLanded(card, others: true)),
-                       [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.card(card))])
+                       [.takeKeys(.card(card))])
         XCTAssertEqual(p.mode, .stack(recent: false))
         XCTAssertTrue(p.isKeyed)
         XCTAssertEqual(p.reduce(.dismiss(.esc)), closes + [.slideOut(.esc)])
@@ -133,11 +133,11 @@ final class CornerPresentationTests: XCTestCase {
         XCTAssertEqual(p.reduce(.editorClosed(nil)), [])
     }
 
-    func testRandomSequencesKeepTheBackdropAndTheKeysWithTheStack() {
+    func testRandomSequencesKeepTheKeysWithTheStack() {
         for seed in 0..<500 {
             var rng = SeededGenerator(seed: UInt64(seed))
             var p = P()
-            var accepts = false, backdrop = false, watching = false
+            var accepts = false
             var listing = false, slidingOut = false
             var closing = false
             var trace: [String] = []
@@ -171,13 +171,9 @@ final class CornerPresentationTests: XCTestCase {
                     switch effect {
                     case .holdKeys, .takeKeys: accepts = true
                     case .releaseKeys: accepts = false
-                    case .backdrop(let on): backdrop = on
-                    case .watchOutsideClicks(let on): watching = on
                     default: break
                     }
                 }
-                XCTAssertEqual(backdrop, p.isStack, "the backdrop shows exactly while the column is the stack\n\(context)")
-                XCTAssertEqual(watching, p.isStack, "clicks outside are watched exactly while the column is the stack\n\(context)")
                 if effects.contains(where: { if case .takeKeys = $0 { return true }; return false }) {
                     XCTAssertFalse(p.editorOpen, "the stack takes the keys only once the editor has closed\n\(context)")
                 }

@@ -83,9 +83,21 @@ final class CornerKeys {
             // While the window the person was in is still key, so closing goes back to it.
             if event == .thumbnailsShown, !panel.isVisible { FocusReturn.shared.sessionStarting() }
             if event == .listed(found: true) { heldPanelUp = false }
+            let wasStack = presentation.isStack
             let effects = presentation.reduce(event)
             if !effects.isEmpty {
                 Log.write("[corner] \(event) -> \(presentation.mode) effects=\(effects.map { "\($0)" }.joined(separator: " "))")
+            }
+            // The rule holds by construction: the backdrop and the watch for a click outside go
+            // with the stack, whatever event made or ended it.
+            if presentation.isStack != wasStack {
+                if presentation.isStack {
+                    backdrop.show(on: screen(), below: panel)
+                    outsideClick.start { [weak self] in self?.send(.dismiss(.clickOutside)) }
+                } else {
+                    outsideClick.stop()
+                    backdrop.hide()
+                }
             }
             for effect in effects {
                 runWindowSide(effect)
@@ -126,10 +138,6 @@ final class CornerKeys {
             if heldPanelUp { panel.orderOut(nil) }
             heldPanelUp = false
             heldAt = nil
-        case .backdrop(let on):
-            if on { backdrop.show(on: screen(), below: panel) } else { backdrop.hide() }
-        case .watchOutsideClicks(let on):
-            if on { outsideClick.start { [weak self] in self?.send(.dismiss(.clickOutside)) } } else { outsideClick.stop() }
         case .restoreFocus(let reason):
             FocusReturn.shared.restore(reason: reason)
         case .closeEditor, .listRecent, .slideOut:

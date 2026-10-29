@@ -66,8 +66,6 @@ struct CornerPresentation: Equatable {
         case holdKeys
         case takeKeys(KeyFocus)
         case releaseKeys
-        case backdrop(Bool)
-        case watchOutsideClicks(Bool)
         case restoreFocus(reason: String)
         // The cards' side, which `ThumbnailController` runs.
         /// The editor gives way to the stack.
@@ -114,11 +112,11 @@ struct CornerPresentation: Equatable {
             }
             guard found else { return [.releaseKeys] }
             mode = .stack(recent: true)
-            return [.watchOutsideClicks(true), .backdrop(true)] + takeKeys
+            return takeKeys
         case .selected:
             guard mode == .thumbnails, !editorOpen else { return [] }
             mode = .stack(recent: false)
-            return [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current)]
+            return [.takeKeys(.current)]
         case .editorOpened:
             editorOpen = true
             stackOnLanding = false
@@ -134,7 +132,7 @@ struct CornerPresentation: Equatable {
             if stackOnLanding, mode == .thumbnails, !editorOpen, others {
                 stackOnLanding = false
                 mode = .stack(recent: false)
-                return [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.card(id))]
+                return [.takeKeys(.card(id))]
             }
             return isKeyed ? [.takeKeys(.card(id))] : []
         case .dismiss(let reason):
@@ -148,7 +146,7 @@ struct CornerPresentation: Equatable {
         guard mode != .hidden else { return [] }
         mode = .hidden
         stackOnLanding = false
-        return [.watchOutsideClicks(false), .releaseKeys, .backdrop(false), .slideOut(reason)]
+        return [.releaseKeys, .slideOut(reason)]
     }
 }
 
@@ -194,8 +192,6 @@ extension CornerPresentation.Effect: CustomStringConvertible {
             case .card: return "takeKeys(card)"
             }
         case .releaseKeys: return "releaseKeys"
-        case .backdrop(let on): return on ? "backdrop" : "noBackdrop"
-        case .watchOutsideClicks(let on): return on ? "watchOutsideClicks" : "stopWatchingOutsideClicks"
         case .restoreFocus: return "restoreFocus"
         case .closeEditor: return "closeEditor"
         case .listRecent: return "listRecent"
