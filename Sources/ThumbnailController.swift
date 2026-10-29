@@ -832,8 +832,8 @@ final class ThumbnailController: NSObject {
             for id in model.forming { flights.end(id: id) }
             model.forming = []
         }
-        if let card = annotating, model.isStack {
-            // The image in the annotator leaves with the stack while the annotator parks its drawing.
+        if let card = annotating, model.cards.contains(where: { $0.id == card.id }) {
+            // The image in the annotator leaves with the column while the annotator parks its drawing.
             var slot = cardFrame(of: card)
             slot.origin.x += layout.offscreenDistance(cardWidth: slot.width)
             flights.fly(id: card.id, image: flightImage(for: currentCard(card)), marks: homeFlightMarks(for: currentCard(card)),
@@ -975,7 +975,9 @@ final class ThumbnailController: NSObject {
         case .show:
             onAnnotatorShow?()
             guard let card = sessionCard else { return }
-            if !model.isStack { takeOutOfPanel(card) }
+            // A lone thumbnail alone in the corner leaves it. With other cards there, its slot stays
+            // empty, as the stack's does, so it comes home to the same place.
+            if !model.isStack, model.cards.allSatisfy({ $0.id == card.id }) { takeOutOfPanel(card) }
         case .park(let opening):
             parkedMarks = annotatorMarks()
             onAnnotatorHide? { [weak self] in self?.send(.parked(opening)) }
@@ -987,10 +989,13 @@ final class ThumbnailController: NSObject {
             guard let card = sessionCard, card.shot.key == opening.key else { return }
             returnCard(currentCard(card), copied: copied)
         case .hideAnnotator:
-            // While the stack slides out, the image is flying to its slot's offscreen position
+            // While the column slides out, the image is flying to its slot's offscreen position
             // (see `dismiss`); that flight ends itself, and the slide-out's completion clears the card.
-            // A lone thumbnail's panel has no such flight.
-            if let card = sessionCard, !(model.slidingOut && model.isStack) { model.outCards.remove(card.id); flights.end(id: card.id) }
+            // A lone thumbnail that left the panel has no such flight.
+            if let card = sessionCard, !(model.slidingOut && model.cards.contains(where: { $0.id == card.id })) {
+                model.outCards.remove(card.id)
+                flights.end(id: card.id)
+            }
             parkedMarks = nil
         case .join:
             break   // `show(_:)` inserts the card; the run only confirms the annotator stays open.
@@ -1074,8 +1079,8 @@ final class ThumbnailController: NSObject {
         })
     }
 
-    /// A lone thumbnail has nothing to keep open behind the annotator; cards that joined stay. Its
-    /// marks stay with it, for the flight home.
+    /// A lone thumbnail alone in the corner has nothing to keep open behind the annotator; cards that
+    /// join meanwhile stay. Its marks stay with it, for the flight home.
     private func takeOutOfPanel(_ card: Card) {
         model.cards.removeAll { $0.id == card.id }
         model.outCards.remove(card.id)

@@ -1068,6 +1068,25 @@ def rename_keeps_drawing(app):
 
 
 @needs_input
+def corner_card_keeps_slot(app):
+    """A card opened from a corner of agent cards comes home to its own slot, so the corner keeps
+    its order."""
+    start(app)
+    copies = [push(app, name=f'Agent {c}.png')[0] for c in 'abc']
+    s = app.wait_state(lambda s: s['stack']['visible'] and len(s['stack']['cards']) == 3, 'three cards in the corner')
+    before = [os.path.basename(c['file']) for c in s['stack']['cards']]
+    click_to_open(app, copies[1])
+    close_editor(app)
+    s = app.wait_state(lambda s: s['transition']['phase'] == 'idle' and not any(c['out'] for c in s['stack']['cards']),
+                       'the card back in the corner')
+    after = [os.path.basename(c['file']) for c in s['stack']['cards']]
+    if after != before:
+        raise Failed(f'the corner was {before} and is {after}')
+    app.report.step('the card came home to its slot', detail=', '.join(after))
+    app.command('dismiss')
+
+
+@needs_input
 def stack_esc_at_press(app):
     """Esc pressed right after the shortcut, while the stack is still listing a large folder, closes
     the stack instead of reaching the app in front."""
@@ -1094,4 +1113,4 @@ ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, se
        copy_types, stitch,
        instant_draw, relaunch, settings_repair, draw_and_done, annotate_queue, zoom_keys, send_and_reply, send_message, send_grace,
        send_and_reply_codex, send_codex_thread_gone, send_codex_queued, agent_marks_editable, corner_select, capture_origin,
-       rename_keeps_drawing, stack_esc_at_press]
+       rename_keeps_drawing, stack_esc_at_press, corner_card_keeps_slot]
