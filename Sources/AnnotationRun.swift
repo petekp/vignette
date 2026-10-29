@@ -14,10 +14,10 @@ struct AnnotationRun: Equatable {
         case annotate([ScreenshotKey])      // a list: the first opens and the rest queue; replaces any queue
         case shown(Opening)          // the flight landed and the annotator became visible
         case parked(Opening)         // the editor finished parking
-        case cancel                  // Esc, a click outside, Cmd+W: the run ends
+        case cancel(RunEnding)       // Esc, a click outside, Cmd+W, the shortcut: the run ends
         case sent                    // Send: this image closes without a Copied notice, and the run goes on
         case finish                  // Done or Return: the result is on the clipboard, and the run goes on
-        case dismiss(byHand: Bool)   // the panel is going away, and the run with it
+        case dismiss(RunEnding?)     // the panel is going away, and the run with it; quick Done is `.finished`
         case remove([ScreenshotKey])        // files trashed or deleted
         case newShot(ScreenshotKey)         // a new file arrived
         case renamed(from: ScreenshotKey, to: ScreenshotKey)   // a file was renamed: a queued file and the open one follow it
@@ -38,7 +38,7 @@ struct AnnotationRun: Equatable {
         case join(ScreenshotKey)
         case next(ScreenshotKey, place: Int, of: Int)     // the queue opens its next file
         case queued(ScreenshotKey, place: Int, of: Int)   // a selected card joined the queue
-        case endRun(restoreFocus: Bool)            // nothing follows: the run is over
+        case endRun(RunEnding?)                    // nothing follows: the run is over, ended by a hand or not
         case landed(Opening)                       // the window takes the shadow back from the flight
         case handOverPresses(Opening)              // presses held on the flight go to the editor
         case liftFlight(Opening)                   // the editor is ready and seen: the flight image goes
@@ -73,8 +73,8 @@ struct AnnotationRun: Equatable {
     private var fromQueue: ScreenshotKey?
     /// The opening whose Done failed to copy before its card came home, so the card takes no Copied notice.
     private var uncopied: Opening?
-    /// The run ends by the person's hand, so the focus goes back to their app once the annotator is gone.
-    private var restoreFocus = false
+    /// How the person's hand ended the run, which the run reports and `CornerPresentation` acts on.
+    private var ending: RunEnding?
 
     var phase: AnnotatorTransition.Phase { transition.phase }
     /// The image in the annotator or on its way there, if any.
@@ -115,18 +115,18 @@ struct AnnotationRun: Equatable {
             return forward(.shown(opening))
         case .parked(let opening):
             return forward(.parked(opening))
-        case .cancel:
-            endsByHand()
+        case .cancel(let how):
+            endsByHand(how)
             endQueue()
             return forward(.close)
         case .sent:
-            endsByHand()
+            endsByHand(.sent)
             return forward(.close)
         case .finish:
-            endsByHand()
+            endsByHand(.finished)
             return forward(.finish)
-        case .dismiss(let byHand):
-            if byHand { endsByHand() }
+        case .dismiss(let ending):
+            if let ending { endsByHand(ending) }
             endQueue()
             return forward(.dismiss)
         case .remove(let keys):
@@ -213,9 +213,9 @@ struct AnnotationRun: Equatable {
         guard let next = queue.first else {
             endQueue()
             fromQueue = nil
-            let focus = restoreFocus
-            restoreFocus = false
-            return [.endRun(restoreFocus: focus)]
+            let ended = ending
+            ending = nil
+            return [.endRun(ended)]
         }
         queue.removeFirst()
         opened += 1
@@ -223,10 +223,10 @@ struct AnnotationRun: Equatable {
         return [.next(next, place: opened, of: total)] + forward(.annotate(mint(next)))
     }
 
-    /// A person's hand is ending this run, so their app gets the focus back when it ends. Nothing
-    /// is open to end otherwise, and the flag would outlive the run it was meant for.
-    private mutating func endsByHand() {
-        if transition.isActive { restoreFocus = true }
+    /// A person's hand is ending this run, the way `how` says. Nothing is open to end otherwise, and
+    /// the ending would outlive the run it was meant for.
+    private mutating func endsByHand(_ how: RunEnding) {
+        if transition.isActive { ending = how }
     }
 
     /// While an image is in the annotator, a card selected in the stack is queued next, in the
@@ -281,10 +281,10 @@ extension AnnotationRun.Event: CustomStringConvertible {
         case .annotate(let keys): return "annotate(\(keys.map(short).joined(separator: ", ")))"
         case .shown(let o): return "shown(\(o))"
         case .parked(let o): return "parked(\(o))"
-        case .cancel: return "cancel"
+        case .cancel(let how): return how == .back ? "cancel" : "cancel(\(how))"
         case .sent: return "sent"
         case .finish: return "finish"
-        case .dismiss(let byHand): return byHand ? "dismiss(byHand)" : "dismiss"
+        case .dismiss(let ending): return ending.map { "dismiss(\($0))" } ?? "dismiss"
         case .remove(let keys): return "remove(\(keys.map(short).joined(separator: ", ")))"
         case .newShot(let key): return "newShot(\(short(key)))"
         case .renamed(let from, let to): return "renamed(\(short(from)) to \(short(to)))"
@@ -310,7 +310,7 @@ extension AnnotationRun.Effect: CustomStringConvertible {
         case .join(let k): return "join(\(short(k)))"
         case .next(let k, let place, let total): return "next(\(short(k)) \(place) of \(total))"
         case .queued(let k, let place, let total): return "queued(\(short(k)) \(place) of \(total))"
-        case .endRun(let focus): return focus ? "endRun(restoreFocus)" : "endRun"
+        case .endRun(let ending): return ending.map { "endRun(\($0))" } ?? "endRun"
         case .landed(let o): return "landed(\(o))"
         case .handOverPresses(let o): return "handOverPresses(\(o))"
         case .liftFlight(let o): return "liftFlight(\(o))"

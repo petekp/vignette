@@ -375,21 +375,22 @@ final class TransitionLayer {
 
     /// Removes the flight. Call once whatever it was flying toward is drawn.
     func end(id: UUID) {
-        let dropped = model.flights.first { $0.id == id && !arrivedFlights.contains($0.id) }?.dropped
-        remove { $0.id == id }
-        arrivedFlights.remove(id)
-        pendingLift.remove(id)
-        orderOutIfIdle()
-        dropped?()
+        end { $0 == id }
     }
 
-    /// Takes every flight and every swallow rect down.
-    func endAll() {
-        let dropped = model.flights.filter { !arrivedFlights.contains($0.id) }.compactMap(\.dropped)
-        remove { _ in true }
+    /// Takes every flight and every swallow rect down, but the flights of the cards in `kept`.
+    func endAll(except kept: Set<UUID> = []) {
         model.swallowRects = []
-        arrivedFlights = []
-        pendingLift = []
+        end { !kept.contains($0) }
+    }
+
+    /// Ends the flights whose card `leaves` names. One that had not arrived is told it was dropped,
+    /// once the layer is in order again.
+    private func end(where leaves: (UUID) -> Bool) {
+        let dropped = model.flights.filter { leaves($0.id) && !arrivedFlights.contains($0.id) }.compactMap(\.dropped)
+        remove { leaves($0.id) }
+        arrivedFlights = arrivedFlights.filter { !leaves($0) }
+        pendingLift = pendingLift.filter { !leaves($0) }
         orderOutIfIdle()
         for handler in dropped { handler() }
     }

@@ -6,7 +6,7 @@ import AppKit
 /// another volume or through a tool that drops attributes loses it, and the card is then plain.
 enum Agent {
     /// Where the name is stored. Named after the bundle, like everything else a fork renames.
-    static let attribute = Identity.bundleID + ".agent"
+    private static let attribute = Identity.bundleID + ".agent"
     /// Longest name that is stored or shown. A name is a label, not a payload.
     static let maxLength = 64
 
@@ -18,37 +18,46 @@ enum Agent {
         return String(oneLine.trimmingCharacters(in: .whitespaces).prefix(maxLength))
     }
 
-    /// Where `session=` is stored: the agent session the push came from, so Reply on its card goes
-    /// back to that conversation.
-    static let sessionAttribute = Identity.bundleID + ".session"
+    /// Where the session a file came from is stored, whether a push or live ink recorded it: a
+    /// Claude Code session, or a Codex thread. These names are a contract on files already in
+    /// people's folders.
+    private static func attribute(for client: AgentClient) -> String {
+        switch client {
+        case .claude: return Identity.bundleID + ".session"
+        case .codex: return Identity.bundleID + ".thread"
+        }
+    }
 
-    /// The `session=` value as it may be stored: a UUID, which is what a Claude Code session id is,
-    /// in the lowercase herdr reports. Nil for anything else, including the empty value a push sends
-    /// when its client set no id.
+    /// The `session=` value as it may be stored: a UUID, which is what a Claude Code session id and
+    /// a Codex thread id are, in the lowercase herdr reports. Nil for anything else, including the
+    /// empty value a push sends when its client set no id.
     static func cleanSession(_ value: String?) -> String? {
         guard let value, UUID(uuidString: value) != nil else { return nil }
         return value.lowercased()
     }
 
-    /// Records `name` on the file. A failure is logged and otherwise ignored: the badge is a hint,
-    /// and the push itself has already succeeded.
-    static func record(_ name: String, on url: URL) {
-        write(name, attribute, "the agent", on: url)
+    /// The session a push names: `session=` as the address of `agent=`'s client, a Claude Code
+    /// session for `claude` and a Codex thread for `codex`. Nil for another agent, or for a
+    /// `session=` that is not a session id.
+    static func pushOrigin(agent: String?, session: String?) -> AgentAddress? {
+        guard let id = cleanSession(session), let client = agent.flatMap({ AgentClient(rawValue: $0.lowercased()) }) else { return nil }
+        return AgentAddress(client: client, id: id)
     }
 
-    /// Where the Codex thread a live ink result card came from is stored. Only Vignette writes it:
-    /// `add` records no thread, so a push's `session=` stays a reply target for Claude Code only.
-    static let threadAttribute = Identity.bundleID + ".thread"
-
-    /// Records the session a push came from. Ignored on failure like the name: without it, Reply
-    /// on the card asks where to send, as for a screenshot of your own.
-    static func record(session: String, on url: URL) {
-        write(session, sessionAttribute, "its session", on: url)
-    }
-
-    /// Records the Codex thread a live ink result card came from, ignored on failure as a session is.
-    static func record(thread: String, on url: URL) {
-        write(thread, threadAttribute, "its thread", on: url)
+    /// Records the agent that added the file and the session it came from, which is what
+    /// `origin(of:)` reads back. With an origin, its client is the agent. A session recorded by an
+    /// earlier push and not named by this one is removed, so Reply never goes to it. A failure is
+    /// logged and otherwise ignored: the push itself has already succeeded, and without the session
+    /// Reply on the card asks where to send, as for a screenshot of your own.
+    static func record(agent name: String, origin: AgentAddress?, on url: URL) {
+        write(origin?.client.rawValue ?? name, attribute, "the agent", on: url)
+        for client in AgentClient.allCases {
+            if let origin, origin.client == client {
+                write(origin.id, attribute(for: client), "its session", on: url)
+            } else {
+                removexattr(url.path, attribute(for: client), 0)
+            }
+        }
     }
 
     private static func write(_ value: String, _ attribute: String, _ what: String, on url: URL) {
@@ -63,21 +72,15 @@ enum Agent {
         read(attribute, of: url)
     }
 
-    /// The agent session a file came from: the Claude Code session its push named, or the Codex
-    /// thread whose live ink result it is. A push's session is the pusher's claim, since `add` has no
-    /// authenticated sender. Sending to it still goes through the check that the session is running
-    /// with the plugin's inbox (`ClaudeCodeConnection.submit`), and a thread through `codex queue`.
+    /// The agent session a file came from, as `record(origin:)` wrote it: the Claude Code session or
+    /// Codex thread its push named, or the one whose live ink result it is. A push's session is the
+    /// pusher's claim, since `add` has no authenticated sender. Sending to it still goes through the
+    /// check that the session is running with the plugin's inbox (`ClaudeCodeConnection.submit`), and
+    /// a thread through `codex queue`, which finds the thread in Codex's store or fails.
     static func origin(of url: URL) -> AgentDestination? {
-        switch of(url)?.lowercased() {
-        case AgentClient.claude.rawValue:
-            guard let session = cleanSession(read(sessionAttribute, of: url)) else { return nil }
-            return AgentDestination(id: session, name: AgentClient.claude.label, address: .claudeSession(session))
-        case AgentClient.codex.rawValue:
-            guard let thread = cleanSession(read(threadAttribute, of: url)) else { return nil }
-            return AgentDestination(id: thread, name: AgentClient.codex.label, address: .codexThread(uuid: thread))
-        default:
-            return nil
-        }
+        guard let client = of(url).flatMap({ AgentClient(rawValue: $0.lowercased()) }),
+              let id = cleanSession(read(attribute(for: client), of: url)) else { return nil }
+        return AgentDestination(id: id, name: client.label, address: AgentAddress(client: client, id: id))
     }
 
     private static func read(_ attribute: String, of url: URL) -> String? {

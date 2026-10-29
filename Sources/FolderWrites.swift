@@ -111,23 +111,26 @@ final class FolderWrites {
             }
         }
         writtenAt = now()
-        if let agent = request.agent { Agent.record(agent, on: destination) }
-        if let session = Agent.cleanSession(request.session) {
-            Agent.record(session: session, on: destination)
-        } else if !(request.session ?? "").isEmpty {
+        let origin = Agent.pushOrigin(agent: request.agent, session: request.session)
+        if let agent = request.agent { Agent.record(agent: agent, origin: origin, on: destination) }
+        if origin == nil {
             // Not quoted: the value is the caller's, and the log is not a place for it.
-            Log.write("[add] warning \(name): session= is not a session id; Reply on its card will ask where to send")
+            if Agent.cleanSession(request.session) != nil {
+                Log.write("[add] warning \(name): session= names a session only with agent=claude or agent=codex; Reply on its card will ask where to send")
+            } else if !(request.session ?? "").isEmpty {
+                Log.write("[add] warning \(name): session= is not a session id; Reply on its card will ask where to send")
+            }
         }
         guard !marks.isEmpty else {
             presentAdd(key)
-            Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request))")
+            Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request, origin))")
             return
         }
         callbacks.joinMarks(marks, request.agent, key) { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let joined):
-                Commands.ok("add", "\(name)\(detail(request)) marks=\(joined)")
+                Commands.ok("add", "\(name)\(detail(request, origin)) marks=\(joined)")
             case .failure(let failure):
                 Commands.error("add", failure.code, "\(name): the image is in the folder, its marks are not: \(failure)")
             }
@@ -174,13 +177,7 @@ final class FolderWrites {
                         return done(nil)
                     }
                     self.writtenAt = self.now()
-                    if let destination {
-                        Agent.record(destination.client.rawValue, on: url)
-                        switch destination.address {
-                        case .claudeSession(let session): Agent.record(session: session, on: url)
-                        case .codexThread(let uuid): Agent.record(thread: uuid, on: url)
-                        }
-                    }
+                    if let destination { Agent.record(agent: destination.address.client.rawValue, origin: destination.address, on: url) }
                     done(shot)
                 }
             }
@@ -230,9 +227,8 @@ final class FolderWrites {
     }
 
     /// What an `[add] ok` line says about the request beyond the file name.
-    private func detail(_ request: CommandRequest) -> String {
-        (request.annotate ? " annotate" : "") + (request.agent.map { " agent=\($0)" } ?? "")
-            + (Agent.cleanSession(request.session).map { " session=\($0)" } ?? "")
+    private func detail(_ request: CommandRequest, _ origin: AgentAddress?) -> String {
+        (request.annotate ? " annotate" : "") + (request.agent.map { " agent=\($0)" } ?? "") + (origin.map { " session=\($0.id)" } ?? "")
     }
 
     // MARK: Removals

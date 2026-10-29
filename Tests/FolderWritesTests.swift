@@ -329,12 +329,18 @@ final class FolderWritesTests: XCTestCase {
         XCTAssertEqual(events, [])
         XCTAssertEqual(Agent.of(first), "claude")
         XCTAssertEqual(Agent.origin(of: first)?.id, session.lowercased())
+        writes.add(request(file: first, agent: "claude"))
+        XCTAssertNil(Agent.origin(of: first))
 
         writes.add(request(file: try source(), agent: "claude", session: "not-a-uuid"))
         let second = folder.appendingPathComponent("src 2.png")
         XCTAssertTrue(FileManager.default.fileExists(atPath: second.path))
         XCTAssertEqual(Agent.of(second), "claude")
         XCTAssertNil(Agent.origin(of: second))
+
+        let thread = UUID().uuidString
+        writes.add(request(file: try source(), agent: "codex", session: thread))
+        XCTAssertEqual(Agent.origin(of: folder.appendingPathComponent("src 3.png"))?.address, .codexThread(uuid: thread.lowercased()))
     }
 
     // MARK: Stitches and replies

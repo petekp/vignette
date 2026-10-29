@@ -51,4 +51,15 @@ final class SetupModelTests: XCTestCase {
         XCTAssertEqual(model.page, .liveInkSetup)
         XCTAssertEqual(model.pages, [.welcome, .shortcut, .liveInk, .liveInkSetup])
     }
+
+    func testSetupSavesOpenAtLoginOnlyWhenItsOwnSwitchMoved() {
+        var callbacks = SetupWindowController.Callbacks()
+        callbacks.launchAtLogin = { true }
+        let model = SetupModel(callbacks: callbacks)
+        XCTAssertNil(model.launchAtLoginChoice)
+        model.launchAtLogin = false
+        XCTAssertEqual(model.launchAtLoginChoice, false)
+        model.launchAtLogin = true
+        XCTAssertNil(model.launchAtLoginChoice)
+    }
 }

@@ -107,6 +107,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         // window of ours can take the focus.
         _ = FocusReturn.shared
         thumbnail.actions = self
+        thumbnail.recentListing = { [unowned self] in
+            let index = recentShots(limit: settings.data.recentCount)
+            watcher?.rescan(reason: "recent")   // keeps the index honest for the next open; nothing waits for it
+            return (index.recent.map(Screenshot.init(key:)), "files=\(index.files) ")
+        }
         thumbnail.onAnnotatorPrepare = { [weak self] shot, opening, frame, room in
             guard let self else { return }
             self.annotator.prepare(shot, opening: opening, in: frame, room: room)
@@ -130,7 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         liveInk.unsendNote = { [weak self] request in self?.noteCards.unsend(request: request) }
         annotator.onTakesEvents = { [weak self] opening in self?.thumbnail.annotatorTakesEvents(opening) }
         annotator.onFinished = { [weak self] shot, drawing in self?.finishAnnotation(shot, drawing) }
-        annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }
+        annotator.onClosed = { [weak self] how in self?.thumbnail.annotationEnded(how) }
         annotator.onLoaded = { [weak self] opening in self?.thumbnail.editorLoaded(opening) }
         annotator.storedDrawing = { [weak self] key, pixels in
             guard let self else { return nil }
@@ -168,6 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if setupWindow.isUnasked {
             // The login item and the plugin wait for the window to close, which applies the
             // switches it shows.
+            setupWindow.applyLoginItem = { [weak self] in self?.applyLoginItem() }
             setupWindow.show(callbacks: setupCallbacks(protectedArea: watcherWaitsForSetup ? ScreenshotWatcher.protectedArea(of: watchFolder) : nil))
         } else {
             // The setting is the user's wish; macOS may have lost the registration (the app moved) or kept one the file no longer asks for.
@@ -176,7 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 Log.write("[login] removed in System Settings; Open at login is off")
                 settings.update { $0.launchAtLogin = false }
             } else {
-                LoginItem.apply(settings.data.launchAtLogin)
+                applyLoginItem()
             }
             startAgentPlugin()
         }
@@ -245,8 +251,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.usesLiveInk != old.usesLiveInk { liveInk.setOn(new.usesLiveInk) }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem(); showUpdateDot() }
-        if new.launchAtLogin != old.launchAtLogin, !setupWindow.loginItemWaitsForIntro { LoginItem.apply(new.launchAtLogin) }
+        if new.launchAtLogin != old.launchAtLogin { applyLoginItem() }
     }
+
+    /// Registers or removes the login item as the setting asks. While the menu bar intro plays this
+    /// waits for it to go, since macOS announces a new login item in the corner the intro's popover
+    /// is in. A quit before then loses nothing: every later launch applies the setting.
+    private func applyLoginItem() {
+        guard !menuBarIntro.isPlaying else { loginItemAfterIntro = true; return }
+        LoginItem.apply(settings.data.launchAtLogin)
+    }
+
+    private var loginItemAfterIntro = false
 
     // MARK: The agent plugin
 
@@ -354,7 +370,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Log.write("[hotkey] recent")
             NotificationCenter.default.post(name: .hotKeyFired, object: nil)
             let focused = thumbnail.focusedShot
-            pressDismissed = pressRecent() == .dismissed
+            pressDismissed = pressRecent(by: .shortcut) == .dismissed
             holdTarget = pressDismissed ? focused : nil
             if !pressDismissed { sessions.refreshKeptLists() }   // a card from the stack may open next
         }
@@ -362,7 +378,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let self else { return }
             Log.write("[hotkey] hold")
             NotificationCenter.default.post(name: .hotKeyHeld, object: nil)
-            if pressDismissed { _ = pressRecent() }
+            if pressDismissed { _ = pressRecent(by: .shortcut) }
             if let shot = holdTarget, shot.kind == .image { annotate([shot]) } else { annotateLast() }
         }
         switch HotKeySpec.parse(settings.data.recentHotkey) {
@@ -675,7 +691,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Commands.ok("help", "\(Commands.fixed.count + Config.actions.count) commands; errors end with one of: \(CommandError.allCases.map(\.rawValue).joined(separator: " "))")
         case "last": openLast()
         case "add": folderWrites.add(request)
-        case "recent": toggleRecent()
+        case "recent": pressRecent(by: .url)
         case "state": dumpState(tag: request.tag, section: request.section)
         case "settings": settingsWindow.show(); Commands.ok("settings", "window opened")
         case "install-skill": installSkill(request)
@@ -737,7 +753,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 pointerLab.show()
                 Commands.ok(cmd)
             }
-        case "dismiss": thumbnail.dismiss(); Commands.ok("dismiss")
+        case "dismiss": thumbnail.dismiss(by: .url); Commands.ok("dismiss")
         case "cancel": Commands.ok("cancel", annotator.cancelForDebug() ? "" : "nothing was open")
         default:
             guard let action = Config.action(id: cmd) else { return }
@@ -930,7 +946,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             ?? shortcut.map { .shortcut($0) } ?? .text("Use the shortcut to see your recent screenshots.")
         Log.write("[setup] menu bar intro")
         menuBarIntro.play(from: window, into: button, note: note, duration: settings.motionUI.introDuration,
-                          close: close, finished: finished)
+                          close: close) { [weak self] in
+            finished()
+            guard let self, self.loginItemAfterIntro else { return }
+            self.loginItemAfterIntro = false
+            self.applyLoginItem()
+        }
         return true
     }
 
@@ -1345,23 +1366,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// has not committed. Every listing goes through here rather than through the index directly.
     private func recentShots(limit: Int, where fits: (Screenshot) -> Bool = { _ in true }) -> (recent: [ScreenshotKey], files: Int) {
         watcher?.recent(limit: limit, include: { [weak self] key in
-            (self?.requests.isVisible(key.url) ?? true) && fits(Screenshot(key: key))
+            (self?.isShown(key) ?? true) && fits(Screenshot(key: key))
         }) ?? (recent: [], files: 0)
     }
+
+    /// A file in the folder is shown unless it is an agent's reply that is not published yet.
+    private func isShown(_ key: ScreenshotKey) -> Bool { requests.isVisible(key.url) }
 
     private func newestShot(where fits: (Screenshot) -> Bool = { _ in true }) -> ScreenshotKey? {
         recentShots(limit: 1, where: fits).recent.first
     }
 
     /// Whether anything is there to show, by the same rule as `recentShots`.
-    private var hasScreenshots: Bool { watcher?.contains { requests.isVisible($0.url) } ?? false }
+    private var hasScreenshots: Bool { watcher?.contains(where: isShown) ?? false }
 
     /// Where the bar can send while this image is open, and the session it came from: an agent's
     /// reply to a request, or a push that named its session. Reading the sessions runs
     /// subprocesses, so it answers later; the bar offers Send once it has a session to send to.
     private func refreshDestinations(for shot: Screenshot) {
         guard let opening = annotator.opening else { return }
-        annotator.beginDestinations(replyTo: requests.origin(of: shot.url) ?? Agent.origin(of: shot.url))
+        annotator.beginDestinations(replyTo: requests.origin(of: shot.url))
         let asked = CACurrentMediaTime()
         let app = FocusReturn.shared.previousApp
         guard let client = AgentApp.client(of: app), let pid = app?.processIdentifier else {
@@ -1455,14 +1479,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         self.annotate([shot], from: origin)
     }
 
-    @objc private func toggleRecent() { _ = pressRecent() }
+    @objc private func toggleRecent() { _ = pressRecent(by: .menu) }
 
     @discardableResult
-    private func pressRecent() -> ThumbnailController.StackToggle {
-        if thumbnail.stackShowing { thumbnail.dismiss(); Commands.ok("recent", "dismissed"); return .dismissed }
-        let index = recentShots(limit: settings.data.recentCount)
-        watcher?.rescan(reason: "recent")   // keeps the index honest for the next open; nothing waits for it
-        let result = thumbnail.toggleRecent(index.recent.map(Screenshot.init(key:)), detail: "files=\(index.files) ")
+    private func pressRecent(by request: StackRequest) -> ThumbnailController.StackToggle {
+        let result = thumbnail.toggleRecent(by: request)
         switch result {
         case .shown(let count): Commands.ok("recent", "shown \(count) cards")
         case .dismissed: Commands.ok("recent", "dismissed")

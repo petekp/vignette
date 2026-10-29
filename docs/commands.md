@@ -22,6 +22,7 @@ open -g vignette://last                       # show the newest screenshot or re
 open -g "vignette://add?file=/tmp/agent/x.png" # copy an image in from anywhere and show its thumbnail; &annotate opens the editor
 open -g "vignette://add?file=/tmp/agent/x.png&agent=claude"  # the same, with a tab naming the agent
 open -g "vignette://add?file=/tmp/agent/x.png&agent=claude&session=$CLAUDE_CODE_SESSION_ID"  # the same, and Reply on the card goes back to that Claude Code session
+open -g "vignette://add?file=/tmp/agent/x.png&agent=codex&session=$CODEX_THREAD_ID"  # the same from Codex: Reply goes back to that Codex thread
 open -g "vignette://add?file=/tmp/agent/x.png&marks=/tmp/agent/marks.json"  # the same, with the agent's drawing on it
 open -g vignette://recent                     # toggle the recent stack (same as the shortcut)
 open -g vignette://dismiss                    # close the thumbnail or the stack
@@ -48,8 +49,10 @@ open -g vignette://pointer-lab                # the Pointer Lab, for live ink's 
 
 `add` refuses a file that is not a png, jpg, jpeg or heic, a name ending in `-annotated`, and the
 name of an agent reply, with `unsupported-type`. A file already in the screenshots folder is shown
-where it is. Reply on the card needs `agent=claude` and a `session=` that is a UUID. Any other
-`session=` is not recorded, and `[add]` still answers `ok` with a warning.
+where it is. A push with `agent=` replaces the agent and session an earlier push recorded on it,
+so one without `session=` removes the earlier session. Reply on the card needs `agent=claude` or `agent=codex` and a `session=` that is a UUID: a Claude
+Code session id or a Codex thread id. Any other `session=` is not recorded, and `[add]` still
+answers `ok` with a warning.
 
 `copy-annotated` answers with `files=["<absolute path>", ...]`, followed by how many had drawings.
 The JSON array keeps selection order. A card without a drawing returns its original path. Each

@@ -308,7 +308,8 @@ private struct CardView: View {
     /// delay shrinks for tall stacks so the whole column is never slower than `staggerTotalMax`.
     private var slideDelay: Double {
         if model.entering == card.id { return insertLead }
-        return Double(max(0, index)) * StackView.staggerStep(count: model.cards.count)
+        let place = model.slidingOut ? index : model.entranceRanks[card.id] ?? index
+        return Double(max(0, place)) * StackView.staggerStep(count: model.cards.count)
     }
 
     private var slideAnimation: Animation {

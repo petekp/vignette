@@ -30,6 +30,8 @@ final class MenuBarIntro {
     private var timeout: Timer?
     private var shortcutFired: NSObjectProtocol?
     private var finished: (() -> Void)?
+    /// From `play` until the popover has gone.
+    var isPlaying: Bool { finished != nil }
 
     /// Whether a person can see `button`. macOS still gives a status item a window when the bar
     /// has no room for it, under the notch or past the end of a crowded bar, and nothing is drawn.

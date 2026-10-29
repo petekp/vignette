@@ -11,7 +11,7 @@ final class AnnotationController {
     var onFinished: ((Screenshot, Drawing) -> Void)?
     /// Esc, a click outside, or Cmd+W. The owner decides what happens next and calls `hide` when
     /// it is time; nothing here hides on its own.
-    var onClosed: (() -> Void)?
+    var onClosed: ((RunEnding) -> Void)?
     /// The editor has this opening's screenshot, decoded at the screen's size.
     var onLoaded: ((Opening) -> Void)?
     /// The window server gives this window the presses on its frame now. Once per `show`.
@@ -326,7 +326,7 @@ final class AnnotationController {
         // (measured: 3 of 4 presses landing 14 to 19 ms after this call). Nothing is ignored for
         // long enough to swallow a press that answers the window: it is not on screen until the
         // flight lands on it, and a hand cannot react inside `outsideClickSettling`.
-        outsideClick.start(settling: Self.outsideClickSettling) { [weak self] in self?.cancel() }
+        outsideClick.start(settling: Self.outsideClickSettling) { [weak self] in self?.cancel(.clickedAway) }
         probeEvents()
         windowUp = true
         // A turn later, once the app is active and the bar is up.
@@ -612,10 +612,10 @@ final class AnnotationController {
         return true
     }
 
-    private func cancel() {
+    private func cancel(_ how: RunEnding = .back) {
         guard current != nil else { return }
         Log.write("[annotate] cancelled")
-        onClosed?()
+        onClosed?(how)
     }
 
     /// The drawing in the editor, stored before the app quits. The editor parks for it.

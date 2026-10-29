@@ -34,10 +34,25 @@ enum AgentAddress: Equatable, Codable {
     /// else to say: the UUID is the whole address.
     case codexThread(uuid: String)
 
+    init(client: AgentClient, id: String) {
+        switch client {
+        case .claude: self = .claudeSession(id)
+        case .codex: self = .codexThread(uuid: id)
+        }
+    }
+
     var client: AgentClient {
         switch self {
         case .claudeSession: return .claude
         case .codexThread: return .codex
+        }
+    }
+
+    /// The session id or thread UUID.
+    var id: String {
+        switch self {
+        case .claudeSession(let id): return id
+        case .codexThread(let uuid): return uuid
         }
     }
 

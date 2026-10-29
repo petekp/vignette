@@ -88,8 +88,8 @@ when the turn ends.
 
 A result card that Vignette makes, with no reply behind it, carries the agent and the session as a
 card pushed with `add` does. So it shows the "From Claude" tab, and Reply on it goes back to that
-session. A Codex thread is recorded in an attribute of its own, `<bundle id>.thread`, which `add`
-never writes, so a push's `session=` still names a Claude Code session only. It is named `Live ink result <date> at <time>.png`. A note card that is not on screen when
+session. A Codex thread is recorded in an attribute of its own, `<bundle id>.thread`, where `add` also
+records a Codex push's `session=`. It is named `Live ink result <date> at <time>.png`. A note card that is not on screen when
 it says Done comes up as the lone thumbnail, as a result card would.
 
 ### When one turn answers several notes
