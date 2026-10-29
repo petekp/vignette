@@ -12,7 +12,7 @@ struct ScreenshotKey: Hashable, Sendable, Comparable {
 
     /// The watcher's spelling of `name` listed in `folder`.
     init(folder: URL, name: String) {
-        path = folder.appendingPathComponent(name).path
+        path = folder.appending(path: name, directoryHint: .notDirectory).path
     }
 
     /// The key of a file named from outside the folder (a URL command, an agent's push, a request
