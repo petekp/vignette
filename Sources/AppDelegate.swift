@@ -1353,9 +1353,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         recentShots(limit: 1, where: fits).recent.first
     }
 
-    /// Whether anything is there to show. The count comes from the watcher's in-memory index, so
-    /// this is cheap enough to ask every time the menu opens.
-    private var hasScreenshots: Bool { recentShots(limit: 0).files > 0 }
+    /// Whether anything is there to show, by the same rule as `recentShots`.
+    private var hasScreenshots: Bool { watcher?.contains { requests.isVisible($0.url) } ?? false }
 
     /// Where the bar can send while this image is open, and the session it came from: an agent's
     /// reply to a request, or a push that named its session. Reading the sessions runs
