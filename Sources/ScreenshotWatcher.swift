@@ -511,14 +511,26 @@ final class ScreenshotWatcher: @unchecked Sendable {
         try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
     }
 
-    /// The newest `limit` of `files`, newest first, plus the candidate count. Ties fall to the name,
-    /// which carries the capture time for a screenshot.
+    /// The newest `limit` of `files` that `include` takes, newest first, plus the count of `files`.
+    /// Ties fall to the name, which carries the capture time for a screenshot. Only the files it
+    /// reaches are made keys, since making one costs about 3 µs and a folder can hold thousands.
     static func recent(from files: [String: Date], in folder: URL, limit: Int,
                        include: (ScreenshotKey) -> Bool = { _ in true }) -> (recent: [ScreenshotKey], files: Int) {
-        let visible = files
-            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key > $1.key }
-            .map { ScreenshotKey(folder: folder, name: $0.key) }
-            .filter(include)
-        return (Array(visible.prefix(max(0, limit))), visible.count)   // prefix traps on a negative count
+        guard limit > 0 else { return ([], files.count) }
+        func newer(_ a: (key: String, value: Date), _ b: (key: String, value: Date)) -> Bool {
+            a.value != b.value ? a.value > b.value : a.key > b.key
+        }
+        if limit == 1, let newest = files.max(by: { newer($1, $0) }) {
+            let key = ScreenshotKey(folder: folder, name: newest.key)
+            if include(key) { return ([key], files.count) }
+        }
+        var recent: [ScreenshotKey] = []
+        for file in files.sorted(by: newer) {
+            let key = ScreenshotKey(folder: folder, name: file.key)
+            guard include(key) else { continue }
+            recent.append(key)
+            if recent.count == limit { break }
+        }
+        return (recent, files.count)
     }
 }
