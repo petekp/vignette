@@ -394,14 +394,18 @@ final class ThumbnailController: NSObject {
     var focusedShot: Screenshot? { model.cards.first { $0.id == model.focused }?.shot }
 
     /// The recent stack: toggles. Takes keyboard focus. Stays until Esc, the hotkey, or a click elsewhere.
+    /// `listing` names the screenshots and the log's detail; it is asked only when the stack opens,
+    /// after the panel has taken the keys.
     @discardableResult
-    func toggleRecent(_ shots: [Screenshot], detail: String = "", by request: StackRequest = .shortcut,
-                      pressedAt: CFTimeInterval? = nil) -> StackToggle {
+    func toggleRecent(by request: StackRequest, pressedAt: CFTimeInterval? = nil,
+                      listing: () -> (shots: [Screenshot], detail: String)) -> StackToggle {
         if visible && model.isStack { dismiss(by: DismissReason(request)); return .dismissed }
+        holdKeys(pressedAt: pressedAt)
         if run.isActive { send(.dismiss(byHand: false)) }   // a lone annotation gives way to the stack
+        let (shots, detail) = listing()
         let started = CACurrentMediaTime()
         let cards = shots.compactMap(makeCard)
-        guard !cards.isEmpty else { return .empty }
+        guard !cards.isEmpty else { letGoOfHeldKeys(); return .empty }
         present(cards: cards, stack: true)
         // A click outside this app's windows closes the stack, and the annotator with it.
         outsideClick.start { [weak self] in self?.dismiss(by: .clickOutside) }
@@ -425,6 +429,28 @@ final class ThumbnailController: NSObject {
             }
         }
         Thumbnailer.warm(items, space: screenSpace)
+    }
+
+    /// The keys at the press, before the folder is listed and the cards are made, which can take a
+    /// while on a large folder. A key pressed meanwhile waits in this app's queue and reaches the
+    /// stack once it is up, instead of the app in front. Nothing is drawn before the stack: the
+    /// panel is empty or shows the corner, and the column is laid out in this same turn.
+    private func holdKeys(pressedAt: CFTimeInterval?) {
+        if !visible {
+            // While the window the person was in is still key, so closing goes back to it.
+            FocusReturn.shared.sessionStarting()
+            panel.orderFrontRegardless()
+        }
+        panel.acceptsKeys = true
+        panel.makeKey()
+        let after = pressedAt.map { " after=\(Int((CACurrentMediaTime() - $0) * 1000))ms" } ?? ""
+        Log.write("[stack] keys held key=\(panel.isKeyWindow)\(after)")
+    }
+
+    /// The shortcut found nothing to show: the keys go back, and the panel with them when nothing was on it.
+    private func letGoOfHeldKeys() {
+        releaseKeys()
+        if !visible { panel.orderOut(nil) }
     }
 
     /// The panel can refuse key status right after resigning it (a dismissal being reversed), so try twice.

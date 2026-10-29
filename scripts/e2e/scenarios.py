@@ -1067,8 +1067,31 @@ def rename_keeps_drawing(app):
     app.command('dismiss')
 
 
+@needs_input
+def stack_esc_at_press(app):
+    """Esc pressed right after the shortcut, while the stack is still listing a large folder, closes
+    the stack instead of reaching the app in front."""
+    source = app.image('Screenshot source.png', 400, 250)
+    for i in range(2500):
+        shutil.copy(source, os.path.join(app.watch, f'Screenshot {i:04}.png'))
+    start(app)
+    s = app.state()
+    if s['stack']['visible']:
+        raise Failed('the corner is up before the shortcut')
+    offset = app.log_size()
+    app.input('hotkey', 'ctrl+opt+cmd+9')
+    time.sleep(0.03)
+    app.input('key', 53)
+    line = app.wait_log('[stack] dismissed', offset, timeout=5)
+    if 'by=esc' not in line:
+        raise Failed(f'the stack closed some other way: {line}')
+    app.wait_state(lambda s: not s['stack']['visible'], 'the stack closing')
+    held = app.wait_log('[stack] keys held', offset)
+    app.report.step('Esc at the press closed the stack', detail=held.split('] ', 1)[1])
+
+
 ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, send_target_codex, send_offers_start, send_starts_session,
        copy_types, stitch,
        instant_draw, relaunch, settings_repair, draw_and_done, annotate_queue, zoom_keys, send_and_reply, send_message, send_grace,
        send_and_reply_codex, send_codex_thread_gone, send_codex_queued, agent_marks_editable, corner_select, capture_origin,
-       rename_keeps_drawing]
+       rename_keeps_drawing, stack_esc_at_press]

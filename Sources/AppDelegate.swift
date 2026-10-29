@@ -1461,15 +1461,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     @discardableResult
     private func pressRecent(by request: ThumbnailController.StackRequest,
                              pressedAt: CFTimeInterval? = nil) -> ThumbnailController.StackToggle {
-        if thumbnail.stackShowing {
-            thumbnail.dismiss(by: .init(request))
-            Commands.ok("recent", "dismissed")
-            return .dismissed
+        let result = thumbnail.toggleRecent(by: request, pressedAt: pressedAt) { [self] in
+            let index = recentShots(limit: settings.data.recentCount)
+            watcher?.rescan(reason: "recent")   // keeps the index honest for the next open; nothing waits for it
+            return (index.recent.map(Screenshot.init(key:)), "files=\(index.files) ")
         }
-        let index = recentShots(limit: settings.data.recentCount)
-        watcher?.rescan(reason: "recent")   // keeps the index honest for the next open; nothing waits for it
-        let result = thumbnail.toggleRecent(index.recent.map(Screenshot.init(key:)), detail: "files=\(index.files) ",
-                                            by: request, pressedAt: pressedAt)
         switch result {
         case .shown(let count): Commands.ok("recent", "shown \(count) cards")
         case .dismissed: Commands.ok("recent", "dismissed")
