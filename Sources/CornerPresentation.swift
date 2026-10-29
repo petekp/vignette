@@ -113,13 +113,16 @@ struct CornerPresentation: Equatable {
             return [.holdKeys(pressedAt: pressedAt, orderIn: mode == .hidden)] + (editorOpen ? [.closeEditor] : []) + [.listRecent]
         case .listed(let found, let pressedAt):
             listing = false
+            // An editor still closing, while a zoom springs back to the fit, keeps the keys until
+            // its card lands in the stack.
+            let takeKeys: [Effect] = editorOpen ? [] : [.takeKeys(.current, pressedAt: pressedAt)]
             if isStack {
                 if found { mode = .stack(recent: true) }
-                return [.takeKeys(.current, pressedAt: pressedAt)]
+                return takeKeys
             }
             guard found else { return [.letGoOfHeldKeys(orderOut: mode == .hidden)] }
             mode = .stack(recent: true)
-            return [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current, pressedAt: pressedAt)]
+            return [.watchOutsideClicks(true), .backdrop(true)] + takeKeys
         case .selected:
             guard mode == .thumbnails, !editorOpen else { return [] }
             mode = .stack(recent: false)

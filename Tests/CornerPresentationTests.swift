@@ -163,14 +163,14 @@ final class CornerPresentationTests: XCTestCase {
             var p = P()
             var accepts = false, backdrop = false, watching = false
             var listing = false, slidingOut = false
-            var forced: [P.Event] = []
+            var closing = false
             var trace: [String] = []
             for _ in 0..<60 {
                 var choices: [P.Event] = [.cardLanded(card, others: Bool.random(using: &rng)), .clickedOutside, .esc(selecting: Bool.random(using: &rng))]
-                if !forced.isEmpty {
-                    choices = [forced.removeFirst()]
-                } else if listing {
-                    choices = [.listed(found: Bool.random(using: &rng), pressedAt: nil)]
+                if listing {
+                    choices = [.listed(found: Bool.random(using: &rng), pressedAt: nil)] + (closing ? [.editorClosed(.shortcut)] : [])
+                } else if closing {
+                    choices = [.editorClosed(.shortcut)]
                 } else {
                     choices.append(.shortcut(.shortcut, pressedAt: nil))
                     if p.mode == .hidden { choices.append(.thumbnailsShown) }
@@ -184,7 +184,8 @@ final class CornerPresentationTests: XCTestCase {
                 trace.append("\(event) -> \(p.mode) \(effects)")
                 let context = "seed \(seed)\n" + trace.joined(separator: "\n")
                 if case .shortcut = event { listing = effects.contains(.listRecent) }
-                if effects.contains(.closeEditor) { forced.append(.editorClosed(.shortcut)) }
+                if effects.contains(.closeEditor) { closing = true }
+                if case .editorClosed = event { closing = false }
                 if case .listed = event { listing = false }
                 if case .slidOut = event { slidingOut = false }
                 if effects.contains(where: { if case .slideOut = $0 { return true }; return false }) { slidingOut = true }
@@ -199,7 +200,10 @@ final class CornerPresentationTests: XCTestCase {
                 }
                 XCTAssertEqual(backdrop, p.isStack, "the backdrop shows exactly while the column is the stack\n\(context)")
                 XCTAssertEqual(watching, p.isStack, "clicks outside are watched exactly while the column is the stack\n\(context)")
-                if accepts && !listing {
+                if effects.contains(where: { if case .takeKeys = $0 { return true }; return false }) {
+                    XCTAssertFalse(p.editorOpen, "the stack takes the keys only once the editor has closed\n\(context)")
+                }
+                if accepts && !listing && !closing {
                     XCTAssertTrue(p.isKeyed, "the panel takes keys only as the keyed stack\n\(context)")
                 }
                 let unasked: Bool
