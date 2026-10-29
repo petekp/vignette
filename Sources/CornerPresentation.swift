@@ -172,7 +172,13 @@ enum StackRequest: String { case shortcut, menu, url }
 enum DismissReason: String {
     case esc, shortcut, menu, url, timeout, removed
     case clickOutside = "click-outside", quickDone = "quick-done"
-    init(_ request: StackRequest) { self = DismissReason(rawValue: request.rawValue)! }
+    init(_ request: StackRequest) {
+        switch request {
+        case .shortcut: self = .shortcut
+        case .menu: self = .menu
+        case .url: self = .url
+        }
+    }
 }
 
 extension CornerPresentation.Event: CustomStringConvertible {
