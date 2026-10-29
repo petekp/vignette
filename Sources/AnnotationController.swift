@@ -1,4 +1,5 @@
 import AppKit
+import ScreenCaptureKit
 
 /// Hosts the drawing editor in a borderless window. Lifecycle: `prepare` opens the image in the
 /// window, ordered in invisible, and gives it the keys; `show` reveals it once the card's flight
@@ -69,16 +70,21 @@ final class AnnotationController {
     /// Room the annotator needs below its window: the toolbar and its gap.
     var spaceBelow: CGFloat { AnnotatorToolbar.height + Settings.shared.data.ui.annotationToolbarGap }
 
-    /// Room the annotator needs above its window for `shot` at a frame `width` wide: its agent's
-    /// title and the gap under it, or nothing for a screenshot without one.
-    func spaceAbove(for shot: Screenshot, width: CGFloat) -> CGFloat {
+    /// Room the annotator needs above its window for `shot` when its title wraps at `wrap`
+    /// (`StackLayout.titleWrapWidth`): its agent's title and the gap under it, or nothing for a
+    /// screenshot without one.
+    func spaceAbove(for shot: Screenshot, wrap: CGFloat) -> CGFloat {
         guard let title = Agent.title(of: shot.url) else { return 0 }
-        return AgentTitleView.spaceAbove(title, width: width, ui: Settings.shared.data.ui)
+        return AgentTitleView.spaceAbove(title, wrap: wrap, ui: Settings.shared.data.ui)
     }
 
     /// The zoom's rules and where they put the frame and the picture. The spring is `zoomTween`.
     private var zoom = AnnotatorZoom()
     private lazy var zoomTween = Tween(initial: 1) { [weak self] level in self?.run(.tick(level)) }
+    /// Counts the title's ink measurements, so an answer for a block that has moved since is dropped.
+    private var inkMeasurement = 0
+    /// Where the title's ink came from, for `[state]`.
+    private var inkSource: String?
 
     init() {
         toolbar.onTool = { [weak self] tool in self?.editor.setTool(tool) }
@@ -157,17 +163,19 @@ final class AnnotationController {
         let title = Agent.title(of: shot.url)
         titleView.show(false, duration: 0)
         titleView.set(title, ui: ui)
-        // The frame grows no higher than leaves the title on screen. Its height at the fitted width
+        // The frame grows no higher than leaves the title on screen. Its height at the fitted frame
         // is the most it takes, since a wider frame wraps it onto fewer lines.
         var room = room
         if let title {
-            let top = max(frame.maxY, room.maxY - AgentTitleView.spaceAbove(title, width: frame.width, ui: ui))
+            let wrap = StackLayout.titleWrapWidth(frame: frame, room: room, minimum: ui.agentTitleMinWidth)
+            let top = max(frame.maxY, room.maxY - AgentTitleView.spaceAbove(title, wrap: wrap, ui: ui))
             room.size.height = top - room.minY
         }
         zoom.edge = Self.edgePull(ui)
         run(.prepare(fitted: frame, room: room))
         zoomTween.set(1)
         place(win, frame: frame)
+        measureTitleInk()
         applyCornerRadius()
         toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         editorUntouched = true
@@ -242,7 +250,7 @@ final class AnnotationController {
         let r = Settings.shared.data.ui.annotationCornerRadius
         frameView.layer?.shadowPath = CGPath(roundedRect: frameView.bounds, cornerWidth: r, cornerHeight: r, transform: nil)
         editor.setSize(container.bounds.size, picture: picture)
-        titleView.place(above: frameView.frame, ui: Settings.shared.data.ui)
+        placeTitle(frame: frame)
         onFrame?(frame)
     }
 
@@ -250,6 +258,50 @@ final class AnnotationController {
     var titleFrameOnScreen: NSRect? {
         guard let win = window, let frame = titleView.shownFrame else { return nil }
         return win.convertToScreen(frame)
+    }
+
+    /// Puts the title above `frame`, in screen coordinates, wrapping where `StackLayout` says.
+    private func placeTitle(frame: NSRect) {
+        guard let win = window else { return }
+        let ui = Settings.shared.data.ui
+        let wrap = StackLayout.titleWrapWidth(frame: frame, room: zoom.room, minimum: ui.agentTitleMinWidth)
+        titleView.place(above: frame.offsetBy(dx: -win.frame.minX, dy: -win.frame.minY), wrap: wrap, ui: ui)
+    }
+
+    /// Picks the title's ink for where the block is now. With Screen Recording, from the screen
+    /// behind the block, read off the main thread, under the dim. Without it, from the system
+    /// appearance: Vignette cannot see other apps' windows then, and a light appearance mostly
+    /// means light windows. An answer for a block that has moved since, or an image that has gone,
+    /// is dropped.
+    private func measureTitleInk() {
+        guard titleView.title != nil, current != nil, let win = window else { inkSource = nil; return }
+        inkMeasurement += 1
+        let measurement = inkMeasurement
+        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        guard CGPreflightScreenCaptureAccess() else {
+            applyInk(dark ? .white : .black, source: "appearance", detail: "no screen recording")
+            return
+        }
+        let screen = win.convertToScreen(titleView.frame)
+        let primary = StateReport.primaryHeight
+        let rect = CGRect(x: screen.minX, y: primary - screen.maxY, width: screen.width, height: screen.height)
+        let ui = Settings.shared.data.ui
+        Task { [weak self] in
+            let cells = await TitleBackdrop.brightness(in: rect, cell: max(ui.dimBlurRadius, 8))
+            guard let self, inkMeasurement == measurement else { return }
+            let luminances = (cells ?? []).map { TitleInk.luminance(encoded: $0, dim: ui.dimOpacity) }
+            guard let ink = TitleInk.choose(behind: luminances), let low = luminances.min(), let high = luminances.max() else {
+                applyInk(dark ? .white : .black, source: "appearance", detail: "the screen could not be read")
+                return
+            }
+            applyInk(ink, source: "backdrop", detail: String(format: "luminance=%.3f...%.3f", low, high))
+        }
+    }
+
+    private func applyInk(_ ink: TitleInk, source: String, detail: String) {
+        titleView.set(ink: ink)
+        inkSource = source
+        Log.write("[annotate] title ink=\(ink.rawValue) source=\(source) \(detail)")
     }
 
     /// The visible frame in screen coordinates.
@@ -265,7 +317,11 @@ final class AnnotationController {
     private func run(_ input: AnnotatorZoom.Input) {
         switch zoom.reduce(input) {
         case .spring(let level, let seconds)?:
-            zoomTween.animate(to: level, duration: motionScaled(seconds)) { [weak self] in self?.run(.arrived) }
+            // The title sits over another part of the screen once a step has moved the frame.
+            zoomTween.animate(to: level, duration: motionScaled(seconds)) { [weak self] in
+                self?.run(.arrived)
+                self?.measureTitleInk()
+            }
         case .place(let frame, let picture)?:
             guard window != nil else { return }
             moveFrame(to: frame, picture: picture)
@@ -594,7 +650,8 @@ final class AnnotationController {
         markScaleRule = ui.markScaleRule
         editor.applyTweaks(style: textStyle, metrics: ui.editorMetrics, markStyle: ui.markStyle, scale: scale)
         titleView.set(titleView.title, ui: ui)
-        if let frameView { titleView.place(above: frameView.frame, ui: ui) }
+        if let frame = frameOnScreen { placeTitle(frame: frame) }
+        measureTitleInk()
         editor.noteSettleDuration = Settings.shared.motionUI.noteSettleDuration
     }
 
@@ -680,6 +737,7 @@ final class AnnotationController {
             "frame": frameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
             "toolbar": (toolbar.panel.isVisible ? StateReport.topLeft(toolbar.barFrame, primaryHeight: StateReport.primaryHeight) : nil) as Any,
             "title": titleFrameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
+            "titleInk": (titleFrameOnScreen == nil ? nil : ["ink": titleView.ink.rawValue, "source": inkSource as Any]) as Any,
             "toolbarFocus": toolbar.model.focus?.name as Any,
             "toolbarKey": toolbar.panel.isKeyWindow,
             "tool": toolbar.model.tool?.rawValue as Any,
@@ -728,86 +786,72 @@ final class AnnotationWindow: NSWindow {
 }
 
 /// An agent's title above the image in the editor: the title in semibold, the description under it
-/// in the secondary label colour, on the toolbar's glass, left-aligned on the frame and wrapping at
-/// its width. Its text keeps its size at any zoom. It lives in the annotator's window beside the
-/// frame, and `AnnotationController.moveFrame` places it, so it moves with the frame in the same
-/// commit. It is fileprivate, so nothing outside the editor can draw it: not a card, a flight, a
-/// rendering, a stitch or a send.
+/// in the same colour, fainter, drawn straight on the editor's backdrop, the blur and its dim. Its
+/// ink is white or black, whichever stands out more from that backdrop (`TitleInk`). Its left edge
+/// is on the frame's, and it wraps at `StackLayout.titleWrapWidth`. Its text keeps its size at any
+/// zoom. It lives in the annotator's window beside the frame, and `AnnotationController.moveFrame`
+/// places it, so it moves with the frame in the same commit. It is fileprivate, so nothing outside
+/// the editor can draw it: not a card, a flight, a rendering, a stitch or a send.
 @MainActor
 fileprivate final class AgentTitleView: NSView {
-    private let glass = NSVisualEffectView()
-    private let tint = NSView()
     private let titleField = AgentTitleView.label()
     private let descriptionField = AgentTitleView.label()
     private(set) var title: AgentTitle?
+    private(set) var ink = TitleInk.white
+    private var ui = UITweaks()
     private var visible = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
         alphaValue = 0
-        // The toolbar's glass: a blur of what is behind the window under a neutral grey, so the
-        // text reads over a light picture behind the dim as well as a dark one.
-        glass.material = .popover
-        glass.blendingMode = .behindWindow
-        glass.state = .active
-        glass.wantsLayer = true
-        glass.layer?.cornerRadius = Self.cornerRadius
-        glass.layer?.cornerCurve = .continuous
-        glass.layer?.masksToBounds = true
-        glass.layer?.borderWidth = 0.5
-        tint.wantsLayer = true
-        addSubview(glass)
-        glass.addSubview(tint)
-        glass.addSubview(titleField)
-        glass.addSubview(descriptionField)
-        applyAppearance()
+        addSubview(titleField)
+        addSubview(descriptionField)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        applyAppearance()
-    }
-
-    private func applyAppearance() {
-        let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        tint.layer?.backgroundColor = NSColor(white: dark ? 0.14 : 0.95, alpha: 0.72).cgColor
-        glass.layer?.borderColor = NSColor.black.withAlphaComponent(dark ? 0.35 : 0.12).cgColor
-    }
-
-    /// The toolbar's corner, so the two read as one set.
-    private static let cornerRadius: CGFloat = 12
-
     /// The image's title, or nil for an image without one, which hides the block at once.
     func set(_ title: AgentTitle?, ui: UITweaks) {
         self.title = title
-        titleField.attributedStringValue = Self.text(title?.title, Self.titleFont(ui), .labelColor)
-        descriptionField.attributedStringValue = Self.text(title?.description, Self.descriptionFont(ui), .secondaryLabelColor)
+        self.ui = ui
         if title == nil { show(false, duration: 0) }
+        applyText()
     }
 
+    /// Draws the text in `ink`.
+    func set(ink: TitleInk) {
+        self.ink = ink
+        applyText()
+    }
+
+    private func applyText() {
+        let colour = ink == .white ? NSColor.white : NSColor.black
+        titleField.attributedStringValue = Self.text(title?.title, Self.titleFont(ui), colour)
+        descriptionField.attributedStringValue = Self.text(title?.description, Self.descriptionFont(ui),
+                                                           colour.withAlphaComponent(Self.descriptionOpacity))
+    }
+
+    /// How much fainter the description is than the title.
+    private static let descriptionOpacity: CGFloat = 0.72
+
     /// Puts the block above `frame`, in this view's superview's coordinates: its left edge on the
-    /// frame's, its bottom `ui.agentTitleGap` above the frame's top, and its text wrapping at the
-    /// frame's width.
-    func place(above frame: NSRect, ui: UITweaks) {
+    /// frame's, its bottom `ui.agentTitleGap` above the frame's top, and its text wrapping at `wrap`.
+    func place(above frame: NSRect, wrap: CGFloat, ui: UITweaks) {
         guard let title else { return }
-        let size = Self.size(of: title, width: frame.width, ui: ui)
+        let parts = Self.parts(of: title, wrap: wrap, ui: ui)
+        let size = Self.size(of: parts, ui: ui)
         self.frame = NSRect(x: frame.minX, y: frame.maxY + ui.agentTitleGap, width: size.width, height: size.height)
-        glass.frame = bounds
-        tint.frame = glass.bounds
-        let parts = Self.parts(of: title, width: frame.width, ui: ui)
-        var top = bounds.height - ui.agentTitlePaddingY
         titleField.isHidden = parts.title == .zero
         descriptionField.isHidden = parts.description == .zero
+        var top = bounds.height
         if parts.title != .zero {
             top -= parts.title.height
-            titleField.frame = NSRect(x: ui.agentTitlePaddingX, y: top, width: parts.title.width, height: parts.title.height)
+            titleField.frame = NSRect(x: 0, y: top, width: parts.title.width, height: parts.title.height)
             top -= ui.agentTitleLineGap
         }
         if parts.description != .zero {
-            descriptionField.frame = NSRect(x: ui.agentTitlePaddingX, y: top - parts.description.height,
+            descriptionField.frame = NSRect(x: 0, y: top - parts.description.height,
                                             width: parts.description.width, height: parts.description.height)
         }
     }
@@ -832,26 +876,23 @@ fileprivate final class AgentTitleView: NSView {
 
     // MARK: Measuring
 
-    /// How much room the block takes above a frame `width` wide: its own height and the gap under
-    /// it. What the editor's room keeps for it (`StackLayout.annotationFrame`, `AnnotationController.prepare`).
-    static func spaceAbove(_ title: AgentTitle, width: CGFloat, ui: UITweaks) -> CGFloat {
-        size(of: title, width: width, ui: ui).height + ui.agentTitleGap
+    /// How much room the block takes above the frame when it wraps at `wrap`: its own height and the
+    /// gap under it. What the editor's room keeps for it (`StackLayout.annotationFrame`,
+    /// `AnnotationController.prepare`).
+    static func spaceAbove(_ title: AgentTitle, wrap: CGFloat, ui: UITweaks) -> CGFloat {
+        size(of: parts(of: title, wrap: wrap, ui: ui), ui: ui).height + ui.agentTitleGap
     }
 
-    /// The block's size when it wraps at a frame `width` wide: as wide as its longest line, padding
-    /// included, and never wider than the frame.
-    static func size(of title: AgentTitle, width: CGFloat, ui: UITweaks) -> NSSize {
-        let parts = parts(of: title, width: width, ui: ui)
+    /// The block's size: as wide as its longest line, and as tall as its lines.
+    private static func size(of parts: (title: NSSize, description: NSSize), ui: UITweaks) -> NSSize {
         let both = parts.title != .zero && parts.description != .zero
-        let text = NSSize(width: max(parts.title.width, parts.description.width),
-                          height: parts.title.height + parts.description.height + (both ? ui.agentTitleLineGap : 0))
-        return NSSize(width: ceil(text.width + 2 * ui.agentTitlePaddingX), height: ceil(text.height + 2 * ui.agentTitlePaddingY))
+        return NSSize(width: ceil(max(parts.title.width, parts.description.width)),
+                      height: ceil(parts.title.height + parts.description.height + (both ? ui.agentTitleLineGap : 0)))
     }
 
-    /// Each part's size as its label draws it, wrapping at the frame's width less the padding.
-    /// `.zero` for a part the title lacks.
-    private static func parts(of title: AgentTitle, width: CGFloat, ui: UITweaks) -> (title: NSSize, description: NSSize) {
-        let wrap = max(1, width - 2 * ui.agentTitlePaddingX)
+    /// Each part's size as its label draws it, wrapping at `wrap`. `.zero` for a part the title lacks.
+    private static func parts(of title: AgentTitle, wrap: CGFloat, ui: UITweaks) -> (title: NSSize, description: NSSize) {
+        let wrap = max(1, wrap)
         func measure(_ string: String?, _ font: NSFont) -> NSSize {
             guard let string else { return .zero }
             measuring.attributedStringValue = text(string, font, .labelColor)
@@ -876,5 +917,30 @@ fileprivate final class AgentTitleView: NSView {
 
     private static func text(_ string: String?, _ font: NSFont, _ colour: NSColor) -> NSAttributedString {
         NSAttributedString(string: string ?? "", attributes: [.font: font, .foregroundColor: colour])
+    }
+}
+
+/// The screen behind an agent's title, for its ink. Needs Screen Recording, which the caller checks
+/// first: asked without it, ScreenCaptureKit raises macOS's prompt.
+fileprivate enum TitleBackdrop {
+    /// The brightness, sRGB encoded from 0 to 1, of each `cell`-wide part of the screen under `rect`,
+    /// in global top-left points, with Vignette's own windows left out, so the dim is not in it. Nil
+    /// when the screen could not be read.
+    static func brightness(in rect: CGRect, cell: CGFloat) async -> [Double]? {
+        guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
+              let display = content.displays.first(where: { $0.frame.intersects(rect) }) else { return nil }
+        let part = rect.intersection(display.frame)
+        guard !part.isNull, part.width >= 1, part.height >= 1 else { return nil }
+        let own = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
+        let filter = SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
+        let configuration = SCStreamConfiguration()
+        configuration.sourceRect = part.offsetBy(dx: -display.frame.minX, dy: -display.frame.minY)
+        // A pixel every two points, as live ink reads the screen.
+        configuration.width = max(1, Int(part.width / 2))
+        configuration.height = max(1, Int(part.height / 2))
+        configuration.showsCursor = false
+        guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration),
+              let luminance = LivePacket.Luminance(image, frame: part, columns: max(1, Int(part.width / cell))) else { return nil }
+        return luminance.cells.map { Double($0) / 255 }
     }
 }

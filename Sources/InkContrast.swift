@@ -35,9 +35,11 @@ struct InkContrast: Equatable {
                                 : mixed + (1 - mixed) * smoothstep(0.8, 0.95, deepShare)
     }
 
-    private static func ratio(_ a: Double, _ b: Double) -> Double { (max(a, b) + 0.05) / (min(a, b) + 0.05) }
+    /// The WCAG 2 contrast ratio between two relative luminances.
+    static func ratio(_ a: Double, _ b: Double) -> Double { (max(a, b) + 0.05) / (min(a, b) + 0.05) }
 
-    private static func linear(_ c: Double) -> Double { c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+    /// An sRGB-encoded value, 0 to 1, as linear light.
+    static func linear(_ c: Double) -> Double { c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
 
     private static func luminance(of colour: CGColor) -> Double {
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),

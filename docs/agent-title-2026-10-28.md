@@ -3,7 +3,7 @@
 An agent that pushes a screenshot can say what it shows: `add?…&title=<text>&description=<text>`,
 or `--title` and `--description` on the reply helper.
 The editor shows the title above the image's frame, in semibold, with the description under it in
-the secondary label colour. Nothing else shows it.
+the same colour, fainter. Nothing else shows it.
 
 ## Limits
 
@@ -32,16 +32,40 @@ the title to two lines there and the whole block to 122 pt.
 
 - The block is a sibling of the frame in the annotator's window, and `moveFrame` places it, so it
   moves with the frame in the same commit.
-- Its left edge is on the frame's left edge, and it wraps at the frame's width less its padding. It
-  is as wide as its longest line.
+- Its left edge is on the frame's left edge. It is as wide as its longest line.
+- It wraps at the frame's width, or at `ui.agentTitleMinWidth` when the frame is narrower, so a
+  narrow image's title hangs past the frame's right edge instead of wrapping every few words. It
+  never wraps past the room's right edge, where the stack's strip begins (`StackLayout.titleWrapWidth`).
+- The minimum is 300 pt. 45 characters of the description at 13 pt measured 257 to 276 pt, and
+  wrapping at a word needs some slack, so 300 pt gives a line of about 45 characters.
 - Its text keeps its size at any zoom, and it follows the frame's top-left corner. A wider frame
   wraps it onto fewer lines.
 - The room an image opens in keeps the block's height above the frame (`StackLayout.annotationFrame`),
   and the zoom's room ends below it (`AnnotationController.prepare`), so the frame never grows into it.
-- It sits on the toolbar's glass, a behind-window blur under a neutral grey. The dim behind the
-  editor is 30% black over a blur of whatever is on screen, so a light page behind it stays light:
-  white text there is unreadable, and black text is unreadable over a dark one. The glass makes the
-  label colours read over either, in light and dark mode.
+
+## Its ink
+
+The text sits straight on the editor's backdrop: a 17 pt blur of the screen under 30% black. A light
+page behind it stays light grey and a dark one stays dark, so no one colour reads over both.
+
+- **The rule.** `TitleInk.choose` takes the relative luminance of each part of the backdrop behind
+  the block and picks white or black by the WCAG 2 contrast ratio. White's worst part is the
+  lightest and black's the darkest, so a block over light and dark parts is chosen for the part
+  least like it. The two tie at a luminance of about 0.179.
+- **With Screen Recording.** ScreenCaptureKit captures the screen under the block, with Vignette's
+  own windows left out, at a pixel every two points, in cells as wide as the blur's radius.
+  `TitleInk.luminance` lays the dim's black over each cell, then makes it linear. The capture is not
+  blurred, so its lightest and darkest cells are a little more extreme than what is shown, which
+  errs toward the safer pick. It runs off the main thread when the editor opens, and again when a
+  zoom step lands. The answer usually comes before the flight lands. When it comes later, the ink
+  changes at once.
+- **Without it.** Vignette cannot see other apps' windows, so the ink follows the system
+  appearance: black in light mode, white in dark mode. A window nearly always covers the top of the
+  screen behind the editor, and a light appearance mostly means light windows. Over a dark page in
+  light mode, or a light page in dark mode, this picks the wrong ink. The wallpaper was not used:
+  it is seldom what is behind the editor.
+- `[annotate] title ink=<white or black> source=<backdrop or appearance> …` logs each pick, with the
+  luminances measured.
 
 ## Checked in the VM
 

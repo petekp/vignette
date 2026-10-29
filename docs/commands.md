@@ -56,7 +56,8 @@ Code session id or a Codex thread id. Any other `session=` is not recorded, and 
 answers `ok` with a warning.
 
 `title=` and `description=` say what the image shows. The editor shows the title above the image's
-frame, with the description under it in the secondary label colour. Each is one line of up to 60
+frame, with the description under it in fainter text. The text is white or black, whichever
+stands out more from the screen behind it. Each is one line of up to 60
 and 140 characters. Longer text is cut at a word with an ellipsis, and `[add]` still answers `ok`,
 with a warning naming the part that was cut. The card, a copy, a stitch and a send leave them out.
 

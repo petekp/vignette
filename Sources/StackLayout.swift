@@ -286,18 +286,25 @@ struct StackLayout {
         return min(1, max(minWidthScale, free / max(maxCardWidth, 1)))
     }
 
+    /// Where an agent's title above `frame` wraps: at the frame's width, or at `minimum` when the
+    /// frame is narrower, so a narrow image's title is not cramped and hangs past the frame's right
+    /// edge. Never past `room`'s right edge, where the stack's strip begins.
+    static func titleWrapWidth(frame: NSRect, room: NSRect, minimum: CGFloat) -> CGFloat {
+        max(1, min(max(frame.width, minimum), room.maxX - frame.minX))
+    }
+
     /// Where the annotator goes: the image's exact aspect, centered in the rect it is given, with
-    /// room below for the toolbar and above for what `above` says it needs at a frame's width, an
-    /// agent's title (`AgentTitleView`). Small crops scale up until the toolbar fits.
+    /// room below for the toolbar and above for what `above` says it needs when it wraps at a given
+    /// width, an agent's title (`titleWrapWidth`). Small crops scale up until the toolbar fits.
     func annotationFrame(for image: NSSize, visibleFrame: NSRect, below: CGFloat = 0,
-                         above: (_ width: CGFloat) -> CGFloat = { _ in 0 }) -> NSRect {
+                         above: (_ wrap: CGFloat) -> CGFloat = { _ in 0 }) -> NSRect {
         // The room above takes height, so the frame can come out narrower, and a narrower title
         // wraps onto more lines. Each fit keeps room for the lines at the width before it, until
         // the lines stop growing.
         var reserved: CGFloat = 0
         var frame = annotationFrame(for: image, visibleFrame: visibleFrame, below: below, above: reserved)
         for _ in 0..<Self.titleFits {
-            let needed = above(frame.width)
+            let needed = above(Self.titleWrapWidth(frame: frame, room: visibleFrame, minimum: ui.agentTitleMinWidth))
             guard needed > reserved else { break }
             reserved = needed
             frame = annotationFrame(for: image, visibleFrame: visibleFrame, below: below, above: reserved)

@@ -320,6 +320,17 @@ final class AgentTests: XCTestCase {
         XCTAssertNil(AgentTitle.validated(title: nil, description: nil).value)
     }
 
+    func testATitlesInkIsTheColourThatStandsOutMoreFromItsWorstPart() {
+        let crossover = (1.05 * 0.05).squareRoot() - 0.05
+        XCTAssertEqual(TitleInk.choose(behind: [crossover - 0.001]), .white)
+        XCTAssertEqual(TitleInk.choose(behind: [crossover + 0.001]), .black)
+        XCTAssertEqual(TitleInk.choose(behind: [0.05, 0.12]), .white)
+        XCTAssertEqual(TitleInk.choose(behind: [0.02, 0.6]), .white)
+        XCTAssertEqual(TitleInk.choose(behind: [0.12, 0.6]), .black)
+        XCTAssertNil(TitleInk.choose(behind: []))
+        XCTAssertEqual(TitleInk.luminance(encoded: 1, dim: 0.3), InkContrast.linear(0.7))
+    }
+
     func testARecordedTitleReadsBackAndFollowsTheFile() throws {
         let file = dir.appendingPathComponent("Checkout.png")
         try Data("png".utf8).write(to: file)

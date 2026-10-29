@@ -77,3 +77,24 @@ extension AgentTitle: Codable {
         self = value
     }
 }
+
+/// The colour of an agent's title in the editor: white or black, whichever stands out more from the
+/// backdrop behind it.
+enum TitleInk: String {
+    case white, black
+
+    /// The ink for a backdrop whose parts have these relative luminances, 0 to 1: the one whose
+    /// contrast ratio (WCAG 2) with its worst part is higher. White's worst part is the lightest and
+    /// black's the darkest, so over a backdrop with light and dark parts no word is lost on the part
+    /// least like it. Nil with no parts.
+    static func choose(behind luminances: [Double]) -> TitleInk? {
+        guard let darkest = luminances.min(), let lightest = luminances.max() else { return nil }
+        return InkContrast.ratio(1, lightest) >= InkContrast.ratio(0, darkest) ? .white : .black
+    }
+
+    /// The relative luminance of a part of the screen under the editor's dim: `encoded` is its
+    /// brightness as captured, sRGB encoded from 0 to 1, and the dim lays black over it at `dim`.
+    static func luminance(encoded: Double, dim: Double) -> Double {
+        InkContrast.linear(encoded * (1 - dim))
+    }
+}

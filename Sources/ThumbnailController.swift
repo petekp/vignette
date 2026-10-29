@@ -163,9 +163,9 @@ final class ThumbnailController: NSObject {
     var onAnnotatorAbandon: (() -> Void)?
     /// Space the annotator needs below its window, for the toolbar.
     var annotatorBelow: () -> CGFloat = { 0 }
-    /// Space the annotator needs above its window for this screenshot at a frame's width: its
-    /// agent's title, or nothing.
-    var annotatorAbove: (Screenshot, _ width: CGFloat) -> CGFloat = { _, _ in 0 }
+    /// Space the annotator needs above its window for this screenshot when its title wraps at a
+    /// width: its agent's title, or nothing.
+    var annotatorAbove: (Screenshot, _ wrap: CGFloat) -> CGFloat = { _, _ in 0 }
     /// The editor's marks, whose text bitmaps a flight to or from the annotator takes.
     var annotatorMarks: () -> MarkLayers? = { nil }
     /// A press begun on the card flying into the editor, for the image with this key; see `FlightPress`.

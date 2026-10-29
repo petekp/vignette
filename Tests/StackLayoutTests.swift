@@ -268,10 +268,22 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(titled.maxY + lines(titled.width), screen.maxY - 60)
         XCTAssertGreaterThanOrEqual(titled.minY, 60 + 60)
 
+        var minimum = ui
+        minimum.agentTitleMinWidth = 400
+        let floored = StackLayout(ui: minimum).annotationFrame(for: tall, visibleFrame: screen, below: 60, above: lines)
+        XCTAssertGreaterThan(floored.height, titled.height)
+
         let roomy = layout.annotationFrame(for: wide, visibleFrame: screen, below: 60) { _ in 40 }
         let plain = layout.annotationFrame(for: wide, visibleFrame: screen, below: 60)
         XCTAssertEqual(roomy.size, plain.size)
         XCTAssertEqual(roomy.midY, plain.midY - 20, accuracy: 1)
+    }
+
+    func testATitleWrapsNoNarrowerThanItsMinimumAndNoFurtherThanTheRoom() {
+        let room = NSRect(x: 0, y: 0, width: 1000, height: 800)
+        XCTAssertEqual(StackLayout.titleWrapWidth(frame: NSRect(x: 100, y: 0, width: 600, height: 400), room: room, minimum: 300), 600)
+        XCTAssertEqual(StackLayout.titleWrapWidth(frame: NSRect(x: 400, y: 0, width: 200, height: 400), room: room, minimum: 300), 300)
+        XCTAssertEqual(StackLayout.titleWrapWidth(frame: NSRect(x: 800, y: 0, width: 150, height: 400), room: room, minimum: 300), 200)
     }
 
     func testTheAnnotatorsRoomLeavesTheStackItsNarrowestWidth() {

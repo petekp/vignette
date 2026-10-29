@@ -192,13 +192,18 @@ The steps below have the details.
    characters. A cut logs an `[add] warning` line, and `[add]` still answers `ok`.
    `Agent.record(title:on:)` writes the two parts as extended attributes beside the agent's name,
    and `Agent.title(of:)` reads them back through the same `AgentTitle` check. Only the editor shows
-   them, above the frame (`AgentTitleView`). The block's left edge sits on the frame's, it wraps at
-   the frame's width, and its text keeps its size at any zoom. Cards, flights, renderings, stitches
-   and sends do not draw it. An image with a title opens with room above the frame for it
+   them, above the frame (`AgentTitleView`, fileprivate to `AnnotationController.swift`). The text
+   sits on the editor's blur with no background. Its left edge sits on the frame's, and it wraps at
+   the frame's width or `ui.agentTitleMinWidth`, whichever is wider, never past the room's right
+   edge (`StackLayout.titleWrapWidth`). Its text keeps its size at any zoom. Its ink is white or
+   black, whichever has the higher contrast with the lightest or darkest part of the screen behind
+   it (`TitleInk.choose`). With Screen Recording that is read off the main thread at open and after
+   each zoom step. Without it, the ink follows the system appearance. `[annotate] title ink=… source=…`
+   logs which. Cards, flights, renderings, stitches and sends do not draw it. An image with a title opens with room above the frame for it
    (`StackLayout.annotationFrame`'s `above`). Its zoom room ends below the title, so a zoom never
    pushes the title off screen. The title fades in after the flight lands and out before the flight
    home leaves, over `ui.agentTitleFade`. `[state] annotator.title` is its frame, or null when there
-   is none. The reply helper takes the same two as `--title` and `--description`, and the published
+   is none, and `annotator.titleInk` its ink and where the ink came from. The reply helper takes the same two as `--title` and `--description`, and the published
    reply records them as `add` does. `docs/agent-title-2026-10-28.md` has the measurements.
    `[annotate] loaded <ms>ms <name>` reports when the editor has the screen-size decode of the
    image, and `[annotate] takes events after=<n>ms reached=true|false` when its window starts
