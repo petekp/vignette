@@ -27,6 +27,12 @@ final class ScreenshotKeyTests: XCTestCase {
         XCTAssertEqual(key.path, link.appendingPathComponent("a.png").path)
     }
 
+    func testACaptureKeepsTheNarrowNoBreakSpaceMacOSWritesBeforePM() {
+        let folder = root.appendingPathComponent("Screenshots")
+        let name = "Screenshot 2026-10-28 at 9.41.07\u{202F}PM.png"
+        XCTAssertEqual(Array(ScreenshotKey(folder: folder, name: name).path.utf8), Array((folder.path + "/" + name).utf8))
+    }
+
     func testAFileThatDoesNotExistYetIsPlacedByItsFolder() throws {
         let folder = root.appendingPathComponent("Screenshots")
         let real = URL(fileURLWithPath: "/private" + folder.path)

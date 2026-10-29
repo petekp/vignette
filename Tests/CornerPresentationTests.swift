@@ -90,15 +90,8 @@ final class CornerPresentationTests: XCTestCase {
         XCTAssertEqual(p.mode, .thumbnails)
     }
 
-    func testAClickOutsideTheCornersEditorLeavesTheKeysWhereTheClickWent() {
-        var p = after(.cardsShown, .editorOpened)
-        XCTAssertEqual(p.reduce(.editorClosed(.clickedAway)), [.restoreFocus(reason: "annotator closed")])
-        XCTAssertEqual(p.reduce(.cardLanded(card, others: true)), [])
-        XCTAssertEqual(p.mode, .thumbnails)
-    }
-
-    func testDoneAndSendFromTheCornerHandTheKeysBackToTheFrontApp() {
-        for ending in [RunEnding.finished, .sent] {
+    func testAClickOutsideDoneAndSendFromTheCornerHandTheKeysBackToTheFrontApp() {
+        for ending in [RunEnding.clickedAway, .finished, .sent] {
             var p = after(.cardsShown, .editorOpened)
             XCTAssertEqual(p.reduce(.editorClosed(ending)), [.restoreFocus(reason: "annotator closed")])
             XCTAssertEqual(p.reduce(.cardLanded(card, others: true)), [])
@@ -138,14 +131,14 @@ final class CornerPresentationTests: XCTestCase {
             var rng = SeededGenerator(seed: UInt64(seed))
             var p = P()
             var accepts = false
-            var listing = false, slidingOut = false
+            var slidingOut = false
             var closing = false
             var trace: [String] = []
             for _ in 0..<60 {
                 var choices: [P.Event] = [.cardLanded(card, others: Bool.random(using: &rng))]
                 if p.isStack { choices.append(.dismiss(.clickOutside)) }
                 if p.isKeyed { choices.append(.dismiss(.esc)) }
-                if listing {
+                if p.listing {
                     choices = [.listed(found: Bool.random(using: &rng))] + (closing ? [.editorClosed(.shortcut)] : [])
                 } else if closing {
                     choices = [.editorClosed(.shortcut)]
@@ -161,10 +154,8 @@ final class CornerPresentationTests: XCTestCase {
                 let effects = p.reduce(event)
                 trace.append("\(event) -> \(p.mode) \(effects)")
                 let context = "seed \(seed)\n" + trace.joined(separator: "\n")
-                if case .shortcut = event { listing = effects.contains(.listRecent) }
                 if effects.contains(.closeEditor) { closing = true }
                 if case .editorClosed = event { closing = false }
-                if case .listed = event { listing = false }
                 if case .slidOut = event { slidingOut = false }
                 if effects.contains(where: { if case .slideOut = $0 { return true }; return false }) { slidingOut = true }
                 for effect in effects {
@@ -177,7 +168,7 @@ final class CornerPresentationTests: XCTestCase {
                 if effects.contains(where: { if case .takeKeys = $0 { return true }; return false }) {
                     XCTAssertFalse(p.editorOpen, "the stack takes the keys only once the editor has closed\n\(context)")
                 }
-                if accepts && !listing && !closing {
+                if accepts && !p.listing && !closing {
                     XCTAssertTrue(p.isKeyed, "the panel takes keys only as the keyed stack\n\(context)")
                 }
                 let unasked: Bool
@@ -199,7 +190,7 @@ final class CornerPresentationTests: XCTestCase {
                     }
                     XCTAssertTrue(byHandOrSlidOut, "the focus goes back only after a hand closed the editor or the column left\n\(context)")
                 }
-                if p.mode == .hidden && !listing { XCTAssertFalse(accepts, "nothing shown holds no keys\n\(context)") }
+                if p.mode == .hidden && !p.listing { XCTAssertFalse(accepts, "nothing shown holds no keys\n\(context)") }
             }
         }
     }
