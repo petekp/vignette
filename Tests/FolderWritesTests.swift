@@ -335,6 +335,10 @@ final class FolderWritesTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: second.path))
         XCTAssertEqual(Agent.of(second), "claude")
         XCTAssertNil(Agent.origin(of: second))
+
+        let thread = UUID().uuidString
+        writes.add(request(file: try source(), agent: "codex", session: thread))
+        XCTAssertEqual(Agent.origin(of: folder.appendingPathComponent("src 3.png"))?.address, .codexThread(uuid: thread.lowercased()))
     }
 
     // MARK: Stitches and replies

@@ -111,12 +111,16 @@ final class FolderWrites {
             }
         }
         writtenAt = now()
-        if let agent = request.agent { Agent.record(agent, on: destination) }
-        if let session = Agent.cleanSession(request.session) {
-            Agent.record(session: session, on: destination)
-        } else if !(request.session ?? "").isEmpty {
+        if let origin = Agent.pushOrigin(agent: request.agent, session: request.session) {
+            Agent.record(origin: origin, on: destination)
+        } else {
+            if let agent = request.agent { Agent.record(agent, on: destination) }
             // Not quoted: the value is the caller's, and the log is not a place for it.
-            Log.write("[add] warning \(name): session= is not a session id; Reply on its card will ask where to send")
+            if Agent.cleanSession(request.session) != nil {
+                Log.write("[add] warning \(name): session= names a session only with agent=claude or agent=codex; Reply on its card will ask where to send")
+            } else if !(request.session ?? "").isEmpty {
+                Log.write("[add] warning \(name): session= is not a session id; Reply on its card will ask where to send")
+            }
         }
         guard !marks.isEmpty else {
             presentAdd(key)
@@ -174,13 +178,7 @@ final class FolderWrites {
                         return done(nil)
                     }
                     self.writtenAt = self.now()
-                    if let destination {
-                        Agent.record(destination.client.rawValue, on: url)
-                        switch destination.address {
-                        case .claudeSession(let session): Agent.record(session: session, on: url)
-                        case .codexThread(let uuid): Agent.record(thread: uuid, on: url)
-                        }
-                    }
+                    if let destination { Agent.record(origin: destination.address, on: url) }
                     done(shot)
                 }
             }
@@ -232,7 +230,7 @@ final class FolderWrites {
     /// What an `[add] ok` line says about the request beyond the file name.
     private func detail(_ request: CommandRequest) -> String {
         (request.annotate ? " annotate" : "") + (request.agent.map { " agent=\($0)" } ?? "")
-            + (Agent.cleanSession(request.session).map { " session=\($0)" } ?? "")
+            + (Agent.pushOrigin(agent: request.agent, session: request.session) == nil ? "" : " session=\(Agent.cleanSession(request.session) ?? "")")
     }
 
     // MARK: Removals
