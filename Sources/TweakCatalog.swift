@@ -197,6 +197,15 @@ enum TweakCatalog {
                 .number("zoomEdgeBandPoints", "Zoom edge band", \.zoomEdgeBandPoints, 0...400, step: 5, unit: "pt", safe: 0...2000),
                 .number("zoomEdgePull", "Zoom edge pull", \.zoomEdgePull, 0...1, step: 0.05, safe: 0...1),
             ]),
+            TweakGroup("Agent title", [
+                .number("agentTitleSize", "Title size", \.agentTitleSize, 11...32, step: 0.5, unit: "pt", safe: 1...200),
+                .number("agentDescriptionSize", "Description size", \.agentDescriptionSize, 9...24, step: 0.5, unit: "pt", safe: 1...200),
+                .number("agentTitleLineGap", "Line gap", \.agentTitleLineGap, 0...16, step: 0.5, unit: "pt", safe: 0...200),
+                .number("agentTitleGap", "Gap to image", \.agentTitleGap, 0...40, unit: "pt", safe: 0...1000),
+                .number("agentTitlePaddingX", "Padding across", \.agentTitlePaddingX, 0...32, unit: "pt", safe: 0...1000),
+                .number("agentTitlePaddingY", "Padding down", \.agentTitlePaddingY, 0...32, unit: "pt", safe: 0...1000),
+                .number("agentTitleFade", "Fade", \.agentTitleFade, 0...1, step: 0.05, unit: "s", safe: 0...60),
+            ]),
         ]),
         TweakSection("Editor", [
             TweakGroup(nil, [

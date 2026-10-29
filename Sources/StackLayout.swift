@@ -287,11 +287,30 @@ struct StackLayout {
     }
 
     /// Where the annotator goes: the image's exact aspect, centered in the rect it is given, with
-    /// room below for the toolbar. Small crops scale up until the toolbar fits.
-    func annotationFrame(for image: NSSize, visibleFrame: NSRect, below: CGFloat = 0) -> NSRect {
+    /// room below for the toolbar and above for what `above` says it needs at a frame's width, an
+    /// agent's title (`AgentTitleView`). Small crops scale up until the toolbar fits.
+    func annotationFrame(for image: NSSize, visibleFrame: NSRect, below: CGFloat = 0,
+                         above: (_ width: CGFloat) -> CGFloat = { _ in 0 }) -> NSRect {
+        // The room above takes height, so the frame can come out narrower, and a narrower title
+        // wraps onto more lines. Each fit keeps room for the lines at the width before it, until
+        // the lines stop growing.
+        var reserved: CGFloat = 0
+        var frame = annotationFrame(for: image, visibleFrame: visibleFrame, below: below, above: reserved)
+        for _ in 0..<Self.titleFits {
+            let needed = above(frame.width)
+            guard needed > reserved else { break }
+            reserved = needed
+            frame = annotationFrame(for: image, visibleFrame: visibleFrame, below: below, above: reserved)
+        }
+        return frame
+    }
+
+    private static let titleFits = 4
+
+    private func annotationFrame(for image: NSSize, visibleFrame: NSRect, below: CGFloat, above: CGFloat) -> NSRect {
         var v = visibleFrame.insetBy(dx: ui.annotationScreenInset, dy: ui.annotationScreenInset)
         v.origin.y += below
-        v.size.height -= below
+        v.size.height -= below + above
         let w0 = max(image.width, 1), h0 = max(image.height, 1)
         let fit = min(v.width / w0, v.height / h0)
         let floor = max(1, ui.annotationMinWidth / w0, ui.annotationMinHeight / h0)

@@ -270,6 +270,14 @@ struct UITweaks: Codable, Equatable {
     var annotationCornerRadius = 16.0
     var annotationToolbarGap = 9.0
     var annotationScreenInset = 60.0
+    // An agent's title above the image (`AgentTitleView`): screen pt, the same size at any zoom
+    var agentTitleSize = 17.0
+    var agentDescriptionSize = 13.0
+    var agentTitleLineGap = 2.0      // between the title and the description under it
+    var agentTitleGap = 10.0         // between the block and the image's frame
+    var agentTitlePaddingX = 12.0
+    var agentTitlePaddingY = 8.0
+    var agentTitleFade = 0.15        // in after the flight lands, out before it leaves
     var zoomEdgeBandPoints = 250.0   // how far from each edge of the picture a zoom holds that edge
     var zoomEdgePull = 0.6           // the part of that band in which the edge is held exactly
     // The editor (`EditorMetrics`): screen pt, the same size at any zoom, unless it says otherwise
@@ -423,6 +431,7 @@ struct UITweaks: Codable, Equatable {
         u.introDuration *= scale
         u.checkSpinDuration *= scale; u.checkSpinDelay *= scale
         u.noteSettleDuration *= scale
+        u.agentTitleFade *= scale
         u.liveInkFieldFade *= scale; u.liveInkDrawOn *= scale
         u.liveInkFieldFollow *= scale
         u.liveInkHideFade *= scale; u.liveInkShowFade *= scale

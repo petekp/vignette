@@ -60,6 +60,32 @@ enum Agent {
         }
     }
 
+    /// Where each part of an agent's title for the file is stored.
+    private static func attribute(for part: AgentTitle.Part) -> String {
+        Identity.bundleID + "." + part.rawValue
+    }
+
+    /// Records what the agent says the file shows, which the editor shows above it. A part this push
+    /// does not give, or every part for a push with no title, is removed, so a second push of a file
+    /// already in the folder leaves no stale line. A failure is logged and otherwise ignored, as for
+    /// the name.
+    static func record(title: AgentTitle?, on url: URL) {
+        for (part, value) in [(AgentTitle.Part.title, title?.title), (.description, title?.description)] {
+            if let value { write(value, attribute(for: part), "its \(part.rawValue)", on: url) } else { removexattr(url.path, attribute(for: part), 0) }
+        }
+    }
+
+    /// The title `record(title:on:)` wrote, read back through `AgentTitle.validated`, or nil when
+    /// the file has none.
+    static func title(of url: URL) -> AgentTitle? {
+        AgentTitle.validated(title: read(attribute(for: .title), of: url, upTo: titleBytes),
+                             description: read(attribute(for: .description), of: url, upTo: titleBytes)).value
+    }
+
+    /// The most bytes a title's part is read with. A character's bytes have no fixed bound, since
+    /// combining marks can stack on one letter, so this is generous and `validated` cuts what it reads.
+    private static let titleBytes = 64 * 1024
+
     private static func write(_ value: String, _ attribute: String, _ what: String, on url: URL) {
         let bytes = Array(value.utf8)
         guard setxattr(url.path, attribute, bytes, bytes.count, 0, 0) != 0 else { return }
@@ -83,8 +109,8 @@ enum Agent {
         return AgentDestination(id: id, name: client.label, address: AgentAddress(client: client, id: id))
     }
 
-    private static func read(_ attribute: String, of url: URL) -> String? {
-        var buffer = [UInt8](repeating: 0, count: maxLength * 4)
+    private static func read(_ attribute: String, of url: URL, upTo limit: Int = maxLength * 4) -> String? {
+        var buffer = [UInt8](repeating: 0, count: limit)
         let size = getxattr(url.path, attribute, &buffer, buffer.count, 0, 0)
         guard size >= 0 else { return nil }
         return String(decoding: buffer.prefix(size), as: UTF8.self)

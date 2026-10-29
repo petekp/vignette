@@ -88,9 +88,9 @@ final class FolderWritesTests: XCTestCase {
     }
 
     private func request(file: URL, annotate: Bool = false, agent: String? = nil, session: String? = nil,
-                         marks: String? = nil) -> CommandRequest {
+                         marks: String? = nil, title: String? = nil, description: String? = nil) -> CommandRequest {
         CommandRequest(name: "add", files: [file], tag: nil, annotate: annotate, agent: agent, session: session,
-                       marks: marks, root: nil, clear: nil)
+                       marks: marks, title: title, description: description, root: nil, clear: nil)
     }
 
     private func listing() throws -> Set<String> {
@@ -324,19 +324,24 @@ final class FolderWritesTests: XCTestCase {
     /// or a push from outside the folder presenting before the watcher has reported its copy.
     func testAnAddRecordsItsAgentAndSessionOnTheCopy() throws {
         let session = UUID().uuidString
-        writes.add(request(file: try source(), agent: "claude", session: session))
+        writes.add(request(file: try source(), agent: "claude", session: session,
+                           title: "Checkout", description: String(repeating: "after the fix ", count: 20)))
         let first = folder.appendingPathComponent("src.png")
         XCTAssertEqual(events, [])
         XCTAssertEqual(Agent.of(first), "claude")
         XCTAssertEqual(Agent.origin(of: first)?.id, session.lowercased())
+        XCTAssertEqual(Agent.title(of: first)?.title, "Checkout")
+        XCTAssertEqual(Agent.title(of: first)?.description?.hasSuffix(" fix…"), true)
         writes.add(request(file: first, agent: "claude"))
         XCTAssertNil(Agent.origin(of: first))
+        XCTAssertNil(Agent.title(of: first))
 
         writes.add(request(file: try source(), agent: "claude", session: "not-a-uuid"))
         let second = folder.appendingPathComponent("src 2.png")
         XCTAssertTrue(FileManager.default.fileExists(atPath: second.path))
         XCTAssertEqual(Agent.of(second), "claude")
         XCTAssertNil(Agent.origin(of: second))
+        XCTAssertNil(Agent.title(of: second))
 
         let thread = UUID().uuidString
         writes.add(request(file: try source(), agent: "codex", session: thread))

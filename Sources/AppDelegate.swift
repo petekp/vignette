@@ -122,6 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.onAnnotatorShow = { [weak self] in self?.annotator.show() }
         thumbnail.onAnnotatorLanded = { [weak self] in self?.annotator.landed() }
         thumbnail.annotatorBelow = { [weak self] in self?.annotator.spaceBelow ?? 0 }
+        thumbnail.annotatorAbove = { [weak self] shot, width in self?.annotator.spaceAbove(for: shot, width: width) ?? 0 }
         thumbnail.annotatorMarks = { [weak self] in self?.annotator.editor.marks }
         thumbnail.onAnnotatorHide = { [weak self] hidden in self?.annotator.hide { hidden() } }
         thumbnail.onAnnotatorAbandon = { [weak self] in self?.annotator.abandon() }

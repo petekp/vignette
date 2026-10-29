@@ -33,6 +33,7 @@ final class AnnotationController {
     /// The editor, the whole content of the frame. The state report reads its core.
     let editor = EditorView()
     private let toolbar = AnnotatorToolbar()
+    private let titleView = AgentTitleView()
     private var window: AnnotationWindow?
     /// The window spans the screen's visible frame and stays put. The visible frame is `frameView`
     /// inside it (shadow) with `container` (clip, corner, ring, editor), so a zoom step moves the
@@ -67,6 +68,13 @@ final class AnnotationController {
 
     /// Room the annotator needs below its window: the toolbar and its gap.
     var spaceBelow: CGFloat { AnnotatorToolbar.height + Settings.shared.data.ui.annotationToolbarGap }
+
+    /// Room the annotator needs above its window for `shot` at a frame `width` wide: its agent's
+    /// title and the gap under it, or nothing for a screenshot without one.
+    func spaceAbove(for shot: Screenshot, width: CGFloat) -> CGFloat {
+        guard let title = Agent.title(of: shot.url) else { return 0 }
+        return AgentTitleView.spaceAbove(title, width: width, ui: Settings.shared.data.ui)
+    }
 
     /// The zoom's rules and where they put the frame and the picture. The spring is `zoomTween`.
     private var zoom = AnnotatorZoom()
@@ -145,7 +153,18 @@ final class AnnotationController {
         removal.cancel()
         let win = window ?? makeWindow()
         frameView?.isHidden = false
-        zoom.edge = Self.edgePull(Settings.shared.data.ui)
+        let ui = Settings.shared.data.ui
+        let title = Agent.title(of: shot.url)
+        titleView.show(false, duration: 0)
+        titleView.set(title, ui: ui)
+        // The frame grows no higher than leaves the title on screen. Its height at the fitted width
+        // is the most it takes, since a wider frame wraps it onto fewer lines.
+        var room = room
+        if let title {
+            let top = max(frame.maxY, room.maxY - AgentTitleView.spaceAbove(title, width: frame.width, ui: ui))
+            room.size.height = top - room.minY
+        }
+        zoom.edge = Self.edgePull(ui)
         run(.prepare(fitted: frame, room: room))
         zoomTween.set(1)
         place(win, frame: frame)
@@ -223,7 +242,14 @@ final class AnnotationController {
         let r = Settings.shared.data.ui.annotationCornerRadius
         frameView.layer?.shadowPath = CGPath(roundedRect: frameView.bounds, cornerWidth: r, cornerHeight: r, transform: nil)
         editor.setSize(container.bounds.size, picture: picture)
+        titleView.place(above: frameView.frame, ui: Settings.shared.data.ui)
         onFrame?(frame)
+    }
+
+    /// The agent's title above the frame in screen coordinates, while it is shown.
+    var titleFrameOnScreen: NSRect? {
+        guard let win = window, let frame = titleView.shownFrame else { return nil }
+        return win.convertToScreen(frame)
     }
 
     /// The visible frame in screen coordinates.
@@ -403,6 +429,7 @@ final class AnnotationController {
     func landed() {
         run(.landed)
         frameView?.layer?.shadowOpacity = Float(TransitionLayer.Look.annotator(Settings.shared.data.ui).shadowOpacity)
+        titleView.show(true, duration: Settings.shared.motionUI.agentTitleFade)
     }
 
     /// The file in the editor was renamed. The editor's drawing follows through `Drawings.rename`.
@@ -435,10 +462,20 @@ final class AnnotationController {
         stopProbe()
         current = nil
         park()
-        fitBeforeHide { [weak self] in
+        // The title fades out while the zoom fits, and the flight leaves once both are done, so the
+        // title never flies or hangs over the stack.
+        var faded = false, fitted = false, answered = false
+        let next = { [weak self] in
+            guard faded, fitted, !answered else { return }
+            answered = true
             self?.hideWindows()
             completion?()
         }
+        let fade = Settings.shared.motionUI.agentTitleFade
+        titleView.show(false, duration: fade) { faded = true; next() }
+        // A fade that never reports arriving still lets the window come down.
+        if !faded { DispatchQueue.main.asyncAfter(deadline: .now() + fade + 0.3) { faded = true; next() } }
+        fitBeforeHide { fitted = true; next() }
     }
 
     private func stopProbe() {
@@ -474,6 +511,7 @@ final class AnnotationController {
         // frame is hidden in the commit that starts the flight moving, and the window goes once the
         // display has shown it. The flight casts the shadow from this turn, so it is never doubled.
         frameView?.layer?.shadowOpacity = 0
+        titleView.show(false, duration: 0)
         removal.start(on: window?.screen, hide: { [weak self] in self?.frameView?.isHidden = true }) { [weak self] in
             guard let self else { return }
             window?.orderOut(nil)
@@ -518,6 +556,7 @@ final class AnnotationController {
         container.addSubview(editor)
         frameView.addSubview(container)
         root.addSubview(frameView)
+        root.addSubview(titleView)
         win.contentView = root
         self.frameView = frameView
         self.container = container
@@ -554,6 +593,8 @@ final class AnnotationController {
         }
         markScaleRule = ui.markScaleRule
         editor.applyTweaks(style: textStyle, metrics: ui.editorMetrics, markStyle: ui.markStyle, scale: scale)
+        titleView.set(titleView.title, ui: ui)
+        if let frameView { titleView.place(above: frameView.frame, ui: ui) }
         editor.noteSettleDuration = Settings.shared.motionUI.noteSettleDuration
     }
 
@@ -638,6 +679,7 @@ final class AnnotationController {
             "room": StateReport.topLeft(zoom.room, primaryHeight: StateReport.primaryHeight),
             "frame": frameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
             "toolbar": (toolbar.panel.isVisible ? StateReport.topLeft(toolbar.barFrame, primaryHeight: StateReport.primaryHeight) : nil) as Any,
+            "title": titleFrameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
             "toolbarFocus": toolbar.model.focus?.name as Any,
             "toolbarKey": toolbar.panel.isKeyWindow,
             "tool": toolbar.model.tool?.rawValue as Any,

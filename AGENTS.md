@@ -187,6 +187,18 @@ The steps below have the details.
    said. A text too long to fit even across the whole picture is cut at the edge and named in a
    `[marks] text too long for <name>` line, which is the only thing that says so, since `[add]`
    still answers `ok`. `docs/commands.md` has the format and the rest.
+   `&title=<text>` and `&description=<text>` say what the pushed image shows. Both go through one
+   type, `AgentTitle`. It makes each part one line and cuts it at a word to its limit, 60 and 140
+   characters. A cut logs an `[add] warning` line, and `[add]` still answers `ok`.
+   `Agent.record(title:on:)` writes the two parts as extended attributes beside the agent's name,
+   and `Agent.title(of:)` reads them back through the same `AgentTitle` check. Only the editor shows
+   them, above the frame (`AgentTitleView`). The block's left edge sits on the frame's, it wraps at
+   the frame's width, and its text keeps its size at any zoom. Cards, flights, renderings, stitches
+   and sends do not draw it. An image with a title opens with room above the frame for it
+   (`StackLayout.annotationFrame`'s `above`). Its zoom room ends below the title, so a zoom never
+   pushes the title off screen. The title fades in after the flight lands and out before the flight
+   home leaves, over `ui.agentTitleFade`. `[state] annotator.title` is its frame, or null when there
+   is none. `docs/agent-title-2026-10-28.md` has the measurements.
    `[annotate] loaded <ms>ms <name>` reports when the editor has the screen-size decode of the
    image, and `[annotate] takes events after=<n>ms reached=true|false` when its window starts
    taking presses.
