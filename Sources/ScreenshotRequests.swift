@@ -299,8 +299,13 @@ final class ScreenshotRequests {
         importNext()
     }
 
-    /// The destination a reply's card came from, so Reply goes back to the same conversation.
+    /// The agent session a card came from, so Reply goes back to the same conversation: the
+    /// request a reply answers, else the session a push or live ink recorded on the file.
     func origin(of url: URL) -> AgentDestination? {
+        replyOrigin(of: url) ?? Agent.origin(of: url)
+    }
+
+    private func replyOrigin(of url: URL) -> AgentDestination? {
         let url = url.standardizedFileURL
         let named = ReplyProtocol.replyID(fromFileName: url.lastPathComponent).flatMap { replies[$0] }
             .flatMap { $0.destination == nil || $0.publishedURL == url ? $0 : nil }

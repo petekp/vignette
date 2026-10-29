@@ -1385,7 +1385,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// subprocesses, so it answers later; the bar offers Send once it has a session to send to.
     private func refreshDestinations(for shot: Screenshot) {
         guard let opening = annotator.opening else { return }
-        annotator.beginDestinations(replyTo: requests.origin(of: shot.url) ?? Agent.origin(of: shot.url))
+        annotator.beginDestinations(replyTo: requests.origin(of: shot.url))
         let asked = CACurrentMediaTime()
         let app = FocusReturn.shared.previousApp
         guard let client = AgentApp.client(of: app), let pid = app?.processIdentifier else {
