@@ -168,6 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if setupWindow.isUnasked {
             // The login item and the plugin wait for the window to close, which applies the
             // switches it shows.
+            setupWindow.applyLoginItem = { [weak self] in self?.applyLoginItem() }
             setupWindow.show(callbacks: setupCallbacks(protectedArea: watcherWaitsForSetup ? ScreenshotWatcher.protectedArea(of: watchFolder) : nil))
         } else {
             // The setting is the user's wish; macOS may have lost the registration (the app moved) or kept one the file no longer asks for.
@@ -176,7 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 Log.write("[login] removed in System Settings; Open at login is off")
                 settings.update { $0.launchAtLogin = false }
             } else {
-                LoginItem.apply(settings.data.launchAtLogin)
+                applyLoginItem()
             }
             startAgentPlugin()
         }
@@ -245,8 +246,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.usesLiveInk != old.usesLiveInk { liveInk.setOn(new.usesLiveInk) }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem(); showUpdateDot() }
-        if new.launchAtLogin != old.launchAtLogin, !setupWindow.loginItemWaitsForIntro { LoginItem.apply(new.launchAtLogin) }
+        if new.launchAtLogin != old.launchAtLogin { applyLoginItem() }
     }
+
+    /// Registers or removes the login item as the setting asks. While the menu bar intro plays this
+    /// waits for it to go, since macOS announces a new login item in the corner the intro's popover
+    /// is in. A quit before then loses nothing: every later launch applies the setting.
+    private func applyLoginItem() {
+        guard !menuBarIntro.isPlaying else { loginItemAfterIntro = true; return }
+        LoginItem.apply(settings.data.launchAtLogin)
+    }
+
+    private var loginItemAfterIntro = false
 
     // MARK: The agent plugin
 
@@ -931,7 +942,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             ?? shortcut.map { .shortcut($0) } ?? .text("Use the shortcut to see your recent screenshots.")
         Log.write("[setup] menu bar intro")
         menuBarIntro.play(from: window, into: button, note: note, duration: settings.motionUI.introDuration,
-                          close: close, finished: finished)
+                          close: close) { [weak self] in
+            finished()
+            guard let self, self.loginItemAfterIntro else { return }
+            self.loginItemAfterIntro = false
+            self.applyLoginItem()
+        }
         return true
     }
 

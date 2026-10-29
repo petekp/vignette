@@ -221,19 +221,14 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard !quitting, let model else { return true }
         if introducing { return false }
-        introducing = model.callbacks.introduceMenuBar(sender, model.seen, model.usesLiveInk, { sender.close() }) { [weak self] in
-            guard let self, self.loginItemWaitsForIntro else { return }
-            self.loginItemWaitsForIntro = false
-            LoginItem.apply(self.settings.data.launchAtLogin)
-        }
+        introducing = model.callbacks.introduceMenuBar(sender, model.seen, model.usesLiveInk, { sender.close() }) {}
         return !introducing
     }
 
     private var introducing = false
-    /// macOS announces a new login item in the top-right corner, where the intro's popover is, so
-    /// after Done the login item waits for the intro to go. A quit before then loses nothing: every
-    /// later launch registers the item the setting asks for.
-    private(set) var loginItemWaitsForIntro = false
+    /// Registers the login item as the setting asks. Setup's close calls it whether or not the switch
+    /// moved, since the launch left the login item alone while setup was unasked.
+    var applyLoginItem: () -> Void = {}
 
     func windowWillClose(_ notification: Notification) {
         guard let model else { return }
@@ -256,9 +251,6 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         }
         // Vignette can't work without the folder, so a window closed before it asked asks now.
         if model.seen.folder == .ask { model.callbacks.askFolder() }
-        // Set before the switch is saved, since a change of the setting applies the login item
-        // unless this waits (`AppDelegate.settingsChanged`).
-        loginItemWaitsForIntro = introducing
         settings.update {
             $0.setup = SetupState.done.rawValue
             if let choice = model.launchAtLoginChoice { $0.launchAtLogin = choice }
@@ -278,7 +270,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             skill = roots.isEmpty ? "none" : roots.map(\.lastPathComponent).joined(separator: ",")
         }
         Log.write("[setup] done hotkey=\(settings.data.recentHotkey) trusted=\(ModifierTap.trusted(prompt: false)) launchAtLogin=\(settings.data.launchAtLogin) skill=\(skill)")
-        if !loginItemWaitsForIntro { LoginItem.apply(settings.data.launchAtLogin) }
+        applyLoginItem()
         DispatchQueue.main.async { FocusReturn.shared.restore(reason: "setup closed") }
     }
 }
