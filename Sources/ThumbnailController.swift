@@ -374,6 +374,14 @@ final class ThumbnailController: NSObject {
     }
 
     enum StackToggle: Equatable { case shown(Int), dismissed, empty }
+    /// What asked for the recent stack: the shortcut, the menu's Show Recent Screenshots, or `vignette://recent`.
+    enum StackRequest: String { case shortcut, menu, url }
+    /// What closed the corner, for the `[stack] dismissed` line.
+    enum DismissReason: String {
+        case esc, shortcut, menu, url, timeout, removed
+        case clickOutside = "click-outside", quickDone = "quick-done"
+        init(_ request: StackRequest) { self = DismissReason(rawValue: request.rawValue)! }
+    }
 
     var stackShowing: Bool { visible && model.isStack }
 
@@ -387,17 +395,18 @@ final class ThumbnailController: NSObject {
 
     /// The recent stack: toggles. Takes keyboard focus. Stays until Esc, the hotkey, or a click elsewhere.
     @discardableResult
-    func toggleRecent(_ shots: [Screenshot], detail: String = "") -> StackToggle {
-        if visible && model.isStack { dismiss(); return .dismissed }
+    func toggleRecent(_ shots: [Screenshot], detail: String = "", by request: StackRequest = .shortcut,
+                      pressedAt: CFTimeInterval? = nil) -> StackToggle {
+        if visible && model.isStack { dismiss(by: DismissReason(request)); return .dismissed }
         if run.isActive { send(.dismiss(byHand: false)) }   // a lone annotation gives way to the stack
         let started = CACurrentMediaTime()
         let cards = shots.compactMap(makeCard)
         guard !cards.isEmpty else { return .empty }
         present(cards: cards, stack: true)
         // A click outside this app's windows closes the stack, and the annotator with it.
-        outsideClick.start { [weak self] in self?.dismiss() }
+        outsideClick.start { [weak self] in self?.dismiss(by: .clickOutside) }
         backdrop.show(on: screen, below: panel)
-        takeKeys()
+        takeKeys(pressedAt: pressedAt)
         Log.write("[stack] shown cards=\(cards.count) \(detail)shown=\(Int((CACurrentMediaTime() - started) * 1000))ms decoding=\(cards.filter { $0.image == nil }.count)")
         return .shown(cards.count)
     }
@@ -422,14 +431,18 @@ final class ThumbnailController: NSObject {
     /// The stack has a focused card from the moment it takes keys, so arrows, Space, and Return act
     /// on the newest card without a click or a first arrow press. `focus` names the card to focus
     /// instead: the one that just came back from the annotator, which was the last one looked at.
-    private func takeKeys(focus: UUID? = nil) {
+    /// `pressedAt` is when the shortcut fired, so the `[stack] keys` line says how long the keys took.
+    private func takeKeys(focus: UUID? = nil, pressedAt: CFTimeInterval? = nil) {
         panel.acceptsKeys = true
         if let focus, model.cards.contains(where: { $0.id == focus }) { model.focused = focus }
         else if model.focused == nil { model.focused = model.hoveredCard ?? model.cards.first?.id }
         panel.makeKey()
+        let after = pressedAt.map { " after=\(Int((CACurrentMediaTime() - $0) * 1000))ms" } ?? ""
+        Log.write("[stack] keys key=\(panel.isKeyWindow)\(after)")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self, self.visible, self.model.isStack, !self.run.isActive, !self.panel.isKeyWindow else { return }
             self.panel.makeKey()
+            Log.write("[stack] keys retry key=\(self.panel.isKeyWindow)")
         }
     }
 
@@ -496,7 +509,7 @@ final class ThumbnailController: NSObject {
     /// mode everything closes instead.
     func annotationFinished(quick: Bool) {
         guard quick else { return send(.finish) }
-        if visible { dismiss(byHand: true) } else { send(.dismiss(byHand: true)) }
+        if visible { dismiss(by: .quickDone) } else { send(.dismiss(byHand: true)) }
     }
 
     /// The editor has the screenshot for `opening`.
@@ -587,7 +600,7 @@ final class ThumbnailController: NSObject {
         endSweep()
         // When no card would be left, they slide out with the panel rather than vanish, and the
         // slide-out's end takes them out. A panel already sliding out is left to that end too.
-        if !visible || model.cards.allSatisfy({ urls.contains($0.shot.url) }) { dismiss(); return }
+        if !visible || model.cards.allSatisfy({ urls.contains($0.shot.url) }) { dismiss(by: .removed); return }
         model.removeCards { urls.contains($0.shot.url) }
         model.setSelection(model.selection.filter { id in model.cards.contains { $0.id == id } })
         // The focused card is where keys act; when its file goes, the newest takes the focus.
@@ -775,10 +788,11 @@ final class ThumbnailController: NSObject {
         if seen || comesUp { leaveCorner(after: hold) }
     }
 
-    /// `byHand` when the person closed it, as quick Done does: the focus goes back to their app
-    /// once the annotator is gone.
-    func dismiss(byHand: Bool = false) {
+    /// Quick Done closes by hand: the focus goes back to the person's app once the annotator is gone.
+    func dismiss(by reason: DismissReason) {
         guard visible else { return }
+        Log.write("[stack] dismissed by=\(reason.rawValue) stack=\(model.isStack) cards=\(model.cards.count)")
+        let byHand = reason == .quickDone
         visible = false
         dismissGeneration += 1
         let gen = dismissGeneration
@@ -1216,7 +1230,7 @@ final class ThumbnailController: NSObject {
         onTakesScreen?()
         leaveTimer?.invalidate()
         model.isStack = true
-        outsideClick.start { [weak self] in self?.dismiss() }
+        outsideClick.start { [weak self] in self?.dismiss(by: .clickOutside) }
         backdrop.show(on: screen, below: panel)
         takeKeys(focus: model.hoveredCard)
         Log.write("[stack] corner became the stack cards=\(model.cards.count)")
@@ -1317,7 +1331,7 @@ final class ThumbnailController: NSObject {
 
         if code == 53 {
             if model.inSelectionMode { model.clearSelection(); relayout() }
-            else { dismiss() }
+            else { dismiss(by: .esc) }
             return true
         }
         if code == 126 || code == 125 {
@@ -1667,7 +1681,7 @@ final class ThumbnailController: NSObject {
                 guard let self else { return }
                 let delivering = self.model.notices.awaitsAnswer(on: self.model.cards.map(\.shot.key))
                 if self.model.hoveredCard != nil || self.run.isActive || delivering { self.leaveCorner(after: 1.5); return }
-                self.dismiss()
+                self.dismiss(by: .timeout)
             }
         }
     }

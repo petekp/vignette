@@ -40,7 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let setupWindow = SetupWindowController()
     private lazy var debugPanel = DebugPanelController(previews: .init(
         thumbnail: { [weak self] in self?.openLast() },
-        stack: { [weak self] in self?.toggleRecent() },
+        stack: { [weak self] in _ = self?.pressRecent(by: .menu) },
         annotator: { [weak self] in self?.annotateLast() },
         intro: { [weak self] in self?.introLab.show() },
         pointer: { [weak self] in self?.pointerLab.show() },
@@ -353,8 +353,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let self else { return }
             Log.write("[hotkey] recent")
             NotificationCenter.default.post(name: .hotKeyFired, object: nil)
+            let pressedAt = CACurrentMediaTime()
             let focused = thumbnail.focusedShot
-            pressDismissed = pressRecent() == .dismissed
+            pressDismissed = pressRecent(by: .shortcut, pressedAt: pressedAt) == .dismissed
             holdTarget = pressDismissed ? focused : nil
             if !pressDismissed { sessions.refreshKeptLists() }   // a card from the stack may open next
         }
@@ -362,7 +363,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let self else { return }
             Log.write("[hotkey] hold")
             NotificationCenter.default.post(name: .hotKeyHeld, object: nil)
-            if pressDismissed { _ = pressRecent() }
+            if pressDismissed { _ = pressRecent(by: .shortcut) }
             if let shot = holdTarget, shot.kind == .image { annotate([shot]) } else { annotateLast() }
         }
         switch HotKeySpec.parse(settings.data.recentHotkey) {
@@ -675,7 +676,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Commands.ok("help", "\(Commands.fixed.count + Config.actions.count) commands; errors end with one of: \(CommandError.allCases.map(\.rawValue).joined(separator: " "))")
         case "last": openLast()
         case "add": folderWrites.add(request)
-        case "recent": toggleRecent()
+        case "recent": pressRecent(by: .url)
         case "state": dumpState(tag: request.tag, section: request.section)
         case "settings": settingsWindow.show(); Commands.ok("settings", "window opened")
         case "install-skill": installSkill(request)
@@ -737,7 +738,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 pointerLab.show()
                 Commands.ok(cmd)
             }
-        case "dismiss": thumbnail.dismiss(); Commands.ok("dismiss")
+        case "dismiss": thumbnail.dismiss(by: .url); Commands.ok("dismiss")
         case "cancel": Commands.ok("cancel", annotator.cancelForDebug() ? "" : "nothing was open")
         default:
             guard let action = Config.action(id: cmd) else { return }
@@ -1455,14 +1456,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         self.annotate([shot], from: origin)
     }
 
-    @objc private func toggleRecent() { _ = pressRecent() }
+    @objc private func toggleRecent() { _ = pressRecent(by: .menu) }
 
     @discardableResult
-    private func pressRecent() -> ThumbnailController.StackToggle {
-        if thumbnail.stackShowing { thumbnail.dismiss(); Commands.ok("recent", "dismissed"); return .dismissed }
+    private func pressRecent(by request: ThumbnailController.StackRequest,
+                             pressedAt: CFTimeInterval? = nil) -> ThumbnailController.StackToggle {
+        if thumbnail.stackShowing {
+            thumbnail.dismiss(by: .init(request))
+            Commands.ok("recent", "dismissed")
+            return .dismissed
+        }
         let index = recentShots(limit: settings.data.recentCount)
         watcher?.rescan(reason: "recent")   // keeps the index honest for the next open; nothing waits for it
-        let result = thumbnail.toggleRecent(index.recent.map(Screenshot.init(key:)), detail: "files=\(index.files) ")
+        let result = thumbnail.toggleRecent(index.recent.map(Screenshot.init(key:)), detail: "files=\(index.files) ",
+                                            by: request, pressedAt: pressedAt)
         switch result {
         case .shown(let count): Commands.ok("recent", "shown \(count) cards")
         case .dismissed: Commands.ok("recent", "dismissed")
