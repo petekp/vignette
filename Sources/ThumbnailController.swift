@@ -1591,7 +1591,8 @@ final class ThumbnailController: NSObject {
         if !reusing {
             let ids = entranceOver?.kept ?? cards.map { _ in nil }
             let next = zip(cards, ids).map { card, id in id.flatMap { id in model.cards.first { $0.id == id } } ?? card }
-            let lift = keptLift(from: model.cards, to: next, kept: kept)
+            let now = CACurrentMediaTime()
+            let lift = keptLift(to: next, kept: kept, at: now)
             withTransaction(still) {
                 model.removeCards { card in !next.contains { $0.id == card.id } }
                 model.cards = next
@@ -1601,13 +1602,7 @@ final class ThumbnailController: NSObject {
                 }
                 model.lift = lift
             }
-            if !lift.isEmpty {
-                shift = (CACurrentMediaTime(), lift)
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    withAnimation(Anim.spring(self.ui.shiftUpDuration)) { self.model.lift = [:] }
-                }
-            }
+            if !lift.isEmpty { springLifts(lift, from: now) }
         }
         visible = true
         layoutPanel(shrinkLater: false, animated: false)
@@ -1636,17 +1631,34 @@ final class ThumbnailController: NSObject {
         DispatchQueue.main.async { [weak self] in self?.model.offscreen.remove(card.id) }
     }
 
-    /// How far below its new slot each card in `kept` is drawn, so it starts where it was: a card that
-    /// stays changes slot only when a newer screenshot enters below it. Springs to 0 as `shiftUp`'s does.
-    private func keptLift(from old: [Card], to new: [Card], kept: Set<UUID>) -> [UUID: CGFloat] {
-        let oldSizes = old.map { layout.drawn($0.size) }, newSizes = new.map { layout.drawn($0.size) }
+    /// How far below its slot in `new` each card in `kept` is drawn at `time`, so it starts where it
+    /// is: a card that stays changes slot only when a newer screenshot enters below it, and one
+    /// still rising from an insert carries on from there.
+    private func keptLift(to new: [Card], kept: Set<UUID>, at time: CFTimeInterval) -> [UUID: CGFloat] {
+        let newSizes = new.map { layout.drawn($0.size) }
         var lift: [UUID: CGFloat] = [:]
         for (index, card) in new.enumerated() where kept.contains(card.id) {
-            guard let was = old.firstIndex(where: { $0.id == card.id }) else { continue }
-            let rise = layout.cardSpan(index: index, cards: newSizes).bottom - layout.cardSpan(index: was, cards: oldSizes).bottom
-            if abs(rise) > 0.5 { lift[card.id] = rise }
+            guard let was = model.cards.firstIndex(where: { $0.id == card.id }) else { continue }
+            let rise = layout.cardSpan(index: index, cards: newSizes).bottom - layout.cardSpan(index: was, cards: cardSizes).bottom
+            let drawn = liftLeft(card.id, at: time) + rise
+            if abs(drawn) > 0.5 { lift[card.id] = drawn }
         }
         return lift
+    }
+
+    /// The lifts just set spring to 0 on the next turn, on `ui.shiftUpDuration`'s spring. `first`
+    /// runs before the spring starts and `alongside` inside it.
+    private func springLifts(_ lift: [UUID: CGFloat], from time: CFTimeInterval,
+                             first: @escaping () -> Void = {}, alongside: @escaping () -> Void = {}) {
+        shift = (time, lift)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            first()
+            withAnimation(Anim.spring(self.ui.shiftUpDuration)) {
+                self.model.lift = [:]
+                alongside()
+            }
+        }
     }
 
     /// When the lifts last sprang to 0, and what they were then, so a card joining while the others
@@ -1675,15 +1687,10 @@ final class ThumbnailController: NSObject {
             model.scroll = 0
         }
         layoutPanel(shrinkLater: false, animated: false)
-        shift = (now, lift)
-        DispatchQueue.main.async { [weak self] in
+        springLifts(lift, from: now, first: { [weak self] in self?.model.offscreen.remove(card.id) }) { [weak self] in
+            // The oldest card leaves the top with its transition, once the column is moving.
             guard let self else { return }
-            self.model.offscreen.remove(card.id)
-            withAnimation(Anim.spring(self.ui.shiftUpDuration)) {
-                self.model.lift = [:]
-                // The oldest card leaves the top with its transition, once the column is moving.
-                if self.removeOverflow() { self.relayout() }
-            }
+            if self.removeOverflow() { self.relayout() }
         }
         // The card's slide reads `entering` when it starts, on the next turn.
         DispatchQueue.main.asyncAfter(deadline: .now() + ui.shiftUpDuration) { [weak self] in
