@@ -180,8 +180,10 @@ final class ThumbnailController: NSObject {
     private var hosting: NSHostingView<StackView>!
     /// When a lone thumbnail leaves the corner (`leaveCorner(after:)`).
     private var leaveTimer: Timer?
-    /// The shortcut's listing while it opens the stack, and its answer.
-    private var recentOpening: (listing: () -> (shots: [Screenshot], detail: String), result: StackToggle)?
+    /// Names the recent screenshots, and the log's detail about them, for the stack the shortcut
+    /// opens. Asked only then, after the panel has taken the keys, so a key pressed while a large
+    /// folder is listed reaches it.
+    var recentListing: () -> (shots: [Screenshot], detail: String) = { ([], "") }
     private var visible = false {
         didSet {
             // Flight decodes are screen-sized; they are only worth keeping while the stack is up.
@@ -422,24 +424,19 @@ final class ThumbnailController: NSObject {
     var focusedShot: Screenshot? { model.cards.first { $0.id == model.focused }?.shot }
 
     /// The recent stack: toggles. Takes keyboard focus. Stays until Esc, the hotkey, or a click elsewhere.
-    /// `listing` names the screenshots and the log's detail; it is asked only when the stack opens,
-    /// after the panel has taken the keys, so a key pressed while a large folder is listed reaches it.
     @discardableResult
-    func toggleRecent(by request: StackRequest,
-                      listing: @escaping () -> (shots: [Screenshot], detail: String)) -> StackToggle {
-        recentOpening = (listing, .dismissed)
-        defer { recentOpening = nil }
+    func toggleRecent(by request: StackRequest) -> StackToggle {
+        let wasStack = keys.isStack
         keys.send(.shortcut(request))
-        return recentOpening?.result ?? .dismissed
+        if keys.isStack { return .shown(model.cards.count) }
+        return wasStack ? .dismissed : .empty
     }
 
     /// Lists the recent screenshots for the shortcut and presents them as the stack.
     private func openRecent() {
-        guard let opening = recentOpening else { return }
-        let (shots, detail) = opening.listing()
+        let (shots, detail) = recentListing()
         let started = CACurrentMediaTime()
         let cards = shots.compactMap(makeCard)
-        recentOpening?.result = cards.isEmpty ? .empty : .shown(cards.count)
         if !cards.isEmpty {
             present(cards: cards)
             Log.write("[stack] shown cards=\(cards.count) \(detail)shown=\(Int((CACurrentMediaTime() - started) * 1000))ms decoding=\(cards.filter { $0.image == nil }.count)")

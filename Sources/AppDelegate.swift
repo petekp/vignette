@@ -107,6 +107,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         // window of ours can take the focus.
         _ = FocusReturn.shared
         thumbnail.actions = self
+        thumbnail.recentListing = { [unowned self] in
+            let index = recentShots(limit: settings.data.recentCount)
+            watcher?.rescan(reason: "recent")   // keeps the index honest for the next open; nothing waits for it
+            return (index.recent.map(Screenshot.init(key:)), "files=\(index.files) ")
+        }
         thumbnail.onAnnotatorPrepare = { [weak self] shot, opening, frame, room in
             guard let self else { return }
             self.annotator.prepare(shot, opening: opening, in: frame, room: room)
@@ -1475,11 +1480,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     @discardableResult
     private func pressRecent(by request: StackRequest) -> ThumbnailController.StackToggle {
-        let result = thumbnail.toggleRecent(by: request) { [self] in
-            let index = recentShots(limit: settings.data.recentCount)
-            watcher?.rescan(reason: "recent")   // keeps the index honest for the next open; nothing waits for it
-            return (index.recent.map(Screenshot.init(key:)), "files=\(index.files) ")
-        }
+        let result = thumbnail.toggleRecent(by: request)
         switch result {
         case .shown(let count): Commands.ok("recent", "shown \(count) cards")
         case .dismissed: Commands.ok("recent", "dismissed")
