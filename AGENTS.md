@@ -193,15 +193,17 @@ The steps below have the details.
    `Agent.record(title:on:)` writes the two parts as extended attributes beside the agent's name,
    and `Agent.title(of:)` reads them back through the same `AgentTitle` check. Only the editor shows
    them, above the frame (`AgentTitleView`, fileprivate to `AnnotationController.swift`). The text
-   sits on the editor's blur with no background. Its left edge sits on the frame's, and it wraps at
-   the frame's width or `ui.agentTitleMinWidth`, whichever is wider, never past the room's right
-   edge (`StackLayout.titleWrapWidth`). Its text keeps its size at any zoom. Its ink is white or
+   sits on the editor's blur with no background. Its left edge sits `ui.annotationCornerRadius` in
+   from the frame's, where the frame's top edge comes out of its rounded corner. It wraps at the
+   frame's right edge, or `ui.agentTitleMinWidth` wide when that is wider, never past the room's
+   right edge (`StackLayout.titleWrapWidth`). Its text keeps its size at any zoom. Its ink is white or
    black, whichever has the higher contrast with the lightest or darkest part of the screen behind
    it (`TitleInk.choose`). With Screen Recording that is read off the main thread at open and after
    each zoom step. Without it, the ink follows the system appearance. `[annotate] title ink=… source=…`
    logs which. Cards, flights, renderings, stitches and sends do not draw it. An image with a title opens with room above the frame for it
-   (`StackLayout.annotationFrame`'s `above`). Its zoom room ends below the title, so a zoom never
-   pushes the title off screen. The title fades in over `ui.agentTitleFade` once the flight has
+   (`StackLayout.annotationFrame`'s `above`). Its zoom room ends twice `ui.agentTitleGap` above the
+   title (`AgentTitleView.marginAbove`), so a zoom never pushes the title off screen or against the
+   menu bar. The title fades in over `ui.agentTitleFade` once the flight has
    landed and its ink is known, whichever comes second (`TitleReveal`), and fades out before the
    flight home leaves. When the ink is still unknown 0.5 s after the landing
    (`TitleReveal.inkWait`), the title shows in the appearance's ink, and the measured ink replaces
