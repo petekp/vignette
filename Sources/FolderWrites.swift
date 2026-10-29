@@ -128,14 +128,14 @@ final class FolderWrites {
         }
         guard !marks.isEmpty else {
             presentAdd(key)
-            Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request, origin))")
+            Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request, origin, titled: title.value != nil))")
             return
         }
         callbacks.joinMarks(marks, request.agent, key) { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let joined):
-                Commands.ok("add", "\(name)\(detail(request, origin)) marks=\(joined)")
+                Commands.ok("add", "\(name)\(detail(request, origin, titled: title.value != nil)) marks=\(joined)")
             case .failure(let failure):
                 Commands.error("add", failure.code, "\(name): the image is in the folder, its marks are not: \(failure)")
             }
@@ -232,9 +232,8 @@ final class FolderWrites {
     }
 
     /// What an `[add] ok` line says about the request beyond the file name.
-    private func detail(_ request: CommandRequest, _ origin: AgentAddress?) -> String {
-        (request.annotate ? " annotate" : "") + (request.agent.map { " agent=\($0)" } ?? "")
-            + (AgentTitle.validated(title: request.title, description: request.description).value == nil ? "" : " title")
+    private func detail(_ request: CommandRequest, _ origin: AgentAddress?, titled: Bool) -> String {
+        (request.annotate ? " annotate" : "") + (request.agent.map { " agent=\($0)" } ?? "") + (titled ? " title" : "")
             + (origin.map { " session=\($0.id)" } ?? "")
     }
 
