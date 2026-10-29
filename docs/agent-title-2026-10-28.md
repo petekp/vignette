@@ -42,3 +42,18 @@ the title to two lines there and the whole block to 122 pt.
   editor is 30% black over a blur of whatever is on screen, so a light page behind it stays light:
   white text there is unreadable, and black text is unreadable over a dark one. The glass makes the
   label colours read over either, in light and dark mode.
+
+## Checked in the VM
+
+On a 1024 by 768 screen in `vignette-e2e`, in light and dark mode, driven through the end-to-end
+suite's runner:
+
+- A wide image without a title opened at `[100, 85, 824, 515]`, as before. With a title it opened
+  at `[151, 149, 722, 451]`, with the block at `[151, 85, 618, 54]`, 10 pt above it.
+- A tall image's block wrapped to six lines at 174 pt, 138 pt high.
+- After three zoom steps the wide frame filled the room, `[0, 89, 1024, 624]`, and the block sat at
+  `[0, 25, 618, 54]`, just under the menu bar. Cmd+0 put both back where they opened.
+- Following the frame was kept: the room stops the frame below the block, so following never takes
+  the block off screen. Pinning the block to the room's top was not built.
+- Text past both limits logged two `[add] warning` lines, and `add` answered `ok`.
+- A Send carried no title, and a reply with `--title` opened with its block.
