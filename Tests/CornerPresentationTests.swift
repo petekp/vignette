@@ -14,7 +14,7 @@ final class CornerPresentationTests: XCTestCase {
 
     func testLoneThumbnailsNeverTakeTheKeys() {
         var p = P()
-        XCTAssertEqual(p.reduce(.thumbnailsShown), [.releaseKeys])
+        XCTAssertEqual(p.reduce(.cardsShown), [.releaseKeys])
         XCTAssertEqual(p.mode, .thumbnails)
         XCTAssertFalse(p.isKeyed)
         XCTAssertTrue(p.leavesOnItsOwn)
@@ -43,7 +43,7 @@ final class CornerPresentationTests: XCTestCase {
     }
 
     func testTheShortcutSendsTheCornersEditorHomeAndOpensTheStackWithTheKeys() {
-        var p = after(.thumbnailsShown, .editorOpened)
+        var p = after(.cardsShown, .editorOpened)
         XCTAssertEqual(p.reduce(.shortcut(.shortcut)),
                        [.holdKeys, .closeEditor, .listRecent])
         XCTAssertFalse(p.leavesOnItsOwn, "the card coming home stays for the stack")
@@ -54,14 +54,14 @@ final class CornerPresentationTests: XCTestCase {
     }
 
     func testSelectingInTheCornerMakesItAKeyedStackOfItsOwnCards() {
-        var p = after(.thumbnailsShown)
+        var p = after(.cardsShown)
         XCTAssertEqual(p.reduce(.selected), [.takeKeys(.current)])
         XCTAssertEqual(p.mode, .stack(recent: false))
         XCTAssertTrue(p.isKeyed)
     }
 
     func testTheShortcutBringsTheOlderCardsIntoAStackMadeFromTheCornerThenClosesIt() {
-        var p = after(.thumbnailsShown, .selected)
+        var p = after(.cardsShown, .selected)
         XCTAssertEqual(p.reduce(.shortcut(.shortcut)), [.holdKeys, .listRecent])
         XCTAssertEqual(p.reduce(.listed(found: true)), [.takeKeys(.current)])
         XCTAssertEqual(p.mode, .stack(recent: true))
@@ -69,12 +69,12 @@ final class CornerPresentationTests: XCTestCase {
     }
 
     func testTheShortcutClosesAStackMadeFromTheCornerWhileItsEditorIsOpen() {
-        var p = after(.thumbnailsShown, .selected, .editorOpened)
+        var p = after(.cardsShown, .selected, .editorOpened)
         XCTAssertEqual(p.reduce(.shortcut(.shortcut)), closes + [.slideOut(.shortcut)])
     }
 
     func testEscFromTheCornersEditorMakesTheCornerAKeyedStackOfItsOwnCards() {
-        var p = after(.thumbnailsShown)
+        var p = after(.cardsShown)
         XCTAssertEqual(p.reduce(.editorOpened), [.releaseKeys])
         XCTAssertEqual(p.reduce(.editorClosed(.back)), [.restoreFocus(reason: "annotator closed")])
         XCTAssertEqual(p.reduce(.cardLanded(card, others: true)),
@@ -85,13 +85,13 @@ final class CornerPresentationTests: XCTestCase {
     }
 
     func testEscFromTheEditorOfACardAloneInTheCornerLeavesItLoneThumbnails() {
-        var p = after(.thumbnailsShown, .editorOpened, .editorClosed(.back))
+        var p = after(.cardsShown, .editorOpened, .editorClosed(.back))
         XCTAssertEqual(p.reduce(.cardLanded(card, others: false)), [])
         XCTAssertEqual(p.mode, .thumbnails)
     }
 
     func testAClickOutsideTheCornersEditorLeavesTheKeysWhereTheClickWent() {
-        var p = after(.thumbnailsShown, .editorOpened)
+        var p = after(.cardsShown, .editorOpened)
         XCTAssertEqual(p.reduce(.editorClosed(.clickedAway)), [.restoreFocus(reason: "annotator closed")])
         XCTAssertEqual(p.reduce(.cardLanded(card, others: true)), [])
         XCTAssertEqual(p.mode, .thumbnails)
@@ -99,7 +99,7 @@ final class CornerPresentationTests: XCTestCase {
 
     func testDoneAndSendFromTheCornerHandTheKeysBackToTheFrontApp() {
         for ending in [RunEnding.finished, .sent] {
-            var p = after(.thumbnailsShown, .editorOpened)
+            var p = after(.cardsShown, .editorOpened)
             XCTAssertEqual(p.reduce(.editorClosed(ending)), [.restoreFocus(reason: "annotator closed")])
             XCTAssertEqual(p.reduce(.cardLanded(card, others: true)), [])
             XCTAssertEqual(p.mode, .thumbnails)
@@ -120,16 +120,16 @@ final class CornerPresentationTests: XCTestCase {
     }
 
     func testTheFocusGoesBackOnceTheColumnHasSlidOut() {
-        var p = after(.thumbnailsShown)
+        var p = after(.cardsShown)
         XCTAssertEqual(p.reduce(.dismiss(.timeout)), closes + [.slideOut(.timeout)])
         XCTAssertEqual(p.reduce(.slidOut), [.restoreFocus(reason: "stack dismissed")])
         _ = p.reduce(.dismiss(.timeout))
-        _ = p.reduce(.thumbnailsShown)
+        _ = p.reduce(.cardsShown)
         XCTAssertEqual(p.reduce(.slidOut), [], "a column that came back before the slide-out ended keeps the focus")
     }
 
     func testAnEditorClosedWithoutAHandLeavesTheFocusAlone() {
-        var p = after(.thumbnailsShown, .editorOpened)
+        var p = after(.cardsShown, .editorOpened)
         XCTAssertEqual(p.reduce(.editorClosed(nil)), [])
     }
 
@@ -151,7 +151,7 @@ final class CornerPresentationTests: XCTestCase {
                     choices = [.editorClosed(.shortcut)]
                 } else {
                     choices.append(.shortcut(.shortcut))
-                    if p.mode == .hidden { choices.append(.thumbnailsShown) }
+                    if p.mode == .hidden { choices.append(.cardsShown) }
                     if p.mode == .thumbnails && !p.editorOpen { choices.append(.selected) }
                     if p.mode != .hidden { choices += [.dismiss(.timeout), .dismiss(.removed), .dismiss(.url)] }
                     choices.append(p.editorOpen ? .editorClosed([nil, .back, .clickedAway, .finished, .sent].randomElement(using: &rng)!) : .editorOpened)
@@ -182,7 +182,7 @@ final class CornerPresentationTests: XCTestCase {
                 }
                 let unasked: Bool
                 switch event {
-                case .thumbnailsShown, .editorClosed(nil), .slidOut, .dismiss: unasked = true
+                case .cardsShown, .editorClosed(nil), .slidOut, .dismiss: unasked = true
                 default: unasked = false
                 }
                 if unasked {

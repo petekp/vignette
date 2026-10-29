@@ -48,8 +48,8 @@ final class CornerKeys {
     private(set) var presentation = CornerPresentation()
     /// Runs each effect's part on the cards' side, after this has run its window side.
     var perform: (CornerPresentation.Effect) -> Void = { _ in }
-    /// Called after every event, with the presentation as it now is.
-    var changed: (CornerPresentation) -> Void = { _ in }
+    /// Called after every event, with the presentation as it was and as it now is.
+    var changed: (_ old: CornerPresentation, _ new: CornerPresentation) -> Void = { _, _ in }
 
     private let panel: ThumbnailPanel
     private let screen: () -> NSScreen
@@ -81,16 +81,16 @@ final class CornerKeys {
     func send(_ event: CornerPresentation.Event) {
         hold.send(event) { event in
             // While the window the person was in is still key, so closing goes back to it.
-            if event == .thumbnailsShown, !panel.isVisible { FocusReturn.shared.sessionStarting() }
+            if event == .cardsShown, !panel.isVisible { FocusReturn.shared.sessionStarting() }
             if event == .listed(found: true) { heldPanelUp = false }
-            let wasStack = presentation.isStack
+            let old = presentation
             let effects = presentation.reduce(event)
             if !effects.isEmpty {
                 Log.write("[corner] \(event) -> \(presentation.mode) effects=\(effects.map { "\($0)" }.joined(separator: " "))")
             }
             // The rule holds by construction: the backdrop and the watch for a click outside go
             // with the stack, whatever event made or ended it.
-            if presentation.isStack != wasStack {
+            if presentation.isStack != old.isStack {
                 if presentation.isStack {
                     backdrop.show(on: screen(), below: panel)
                     outsideClick.start { [weak self] in self?.send(.dismiss(.clickOutside)) }
@@ -103,7 +103,7 @@ final class CornerKeys {
                 runWindowSide(effect)
                 perform(effect)
             }
-            changed(presentation)
+            changed(old, presentation)
         }
     }
 

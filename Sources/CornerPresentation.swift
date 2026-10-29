@@ -40,8 +40,9 @@ struct CornerPresentation: Equatable {
     }
 
     enum Event: Equatable {
-        /// Lone thumbnails came up where nothing was.
-        case thumbnailsShown
+        /// A column of cards came up. While the shortcut lists, it is the stack's; otherwise it is
+        /// lone thumbnails, which nobody asked for.
+        case cardsShown
         /// The shortcut, the menu's Show Recent Screenshots or `recent`.
         case shortcut(StackRequest)
         /// The recent screenshots were listed for the shortcut; `found` when there was any.
@@ -92,7 +93,8 @@ struct CornerPresentation: Equatable {
 
     mutating func reduce(_ event: Event) -> [Effect] {
         switch event {
-        case .thumbnailsShown:
+        case .cardsShown:
+            guard !listing else { return [] }
             mode = .thumbnails
             return [.releaseKeys]
         case .shortcut(let request):
@@ -169,7 +171,7 @@ enum DismissReason: String {
 extension CornerPresentation.Event: CustomStringConvertible {
     var description: String {
         switch self {
-        case .thumbnailsShown: return "thumbnailsShown"
+        case .cardsShown: return "cardsShown"
         case .shortcut(let request): return "shortcut(\(request.rawValue))"
         case .listed(let found): return found ? "listed" : "listed(nothing)"
         case .selected: return "selected"

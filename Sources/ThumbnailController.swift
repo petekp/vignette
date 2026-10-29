@@ -49,7 +49,9 @@ final class StackModel: ObservableObject {
     /// them in this order, and a card's circle shows its place here.
     @Published private(set) var selection: [UUID] = []
     @Published var focused: UUID? = nil        // keyboard focus ring
-    @Published var isStack = false             // the recent stack, as against thumbnails in the corner
+    /// The recent stack, as against thumbnails in the corner. It stays through a slide-out, which
+    /// the view draws as the column it was.
+    @Published private(set) var isStack = false
     @Published var scroll: CGFloat = 0         // how far the column is pulled down to show older cards
     @Published var viewport: CGFloat = 0       // visible height of the column, at the stack's full width
     /// The room the Dock keeps at the bottom of the panel when the column is over it. The column
@@ -59,10 +61,14 @@ final class StackModel: ObservableObject {
     /// it; the column keeps its right edge, so the cards stay in their corner. See `StackLayout`.
     @Published var widthScale: CGFloat = 1
 
+    func follow(_ presentation: CornerPresentation) {
+        if presentation.mode != .hidden, isStack != presentation.isStack { isStack = presentation.isStack }
+    }
+
     var inSelectionMode: Bool { !selection.isEmpty }
     /// Cards show the selection circle. A corner holding two or more cards offers it too, and
-    /// selecting there makes the corner the stack (`ThumbnailController.becomeStack`). Not while
-    /// a corner card is in the annotator: the corner's session takes the card out of the panel.
+    /// selecting there makes the corner the stack (`CornerPresentation`'s `.selected`). Not while
+    /// a corner card is in the annotator, when the corner cannot become the stack.
     var offersSelection: Bool { isStack || (cards.count > 1 && !annotating) }
     var onAction: (ShotAction, [Card]) -> Void = { _, _ in }
     var onSweep: (CGFloat) -> Void = { _ in }       // y from the column top, during a drag from a circle
@@ -219,7 +225,7 @@ final class ThumbnailController: NSObject {
         panel.contentView = hosting
         panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
         keys.perform = { [weak self] effect in self?.perform(effect) }
-        keys.changed = { [weak self] presentation in self?.presentationChanged(presentation) }
+        keys.changed = { [weak self] old, new in self?.presentationChanged(from: old, to: new) }
         flights.onPress = { [weak self] id, event in self?.flightPressed(id, event) }
         panel.onScroll = { [weak self] event in self?.scroll(event) }
         model.onAction = { [weak self] action, cards in
@@ -398,7 +404,7 @@ final class ThumbnailController: NSObject {
         if let drawing { card.marks = marks(drawing, on: card) }
         // A new shot never closes an open annotator: the reducer answers `join` and the card joins the panel.
         send(.newShot(shot.key))
-        if visible { insert(card) } else { present(cards: [card], stack: false) }
+        if visible { insert(card) } else { present(cards: [card]) }
         // An agent's card is something to read, not the echo of a capture the person just made.
         leaveCorner(after: ui.thumbnailSeconds * (card.agent == nil ? 1 : 2))
     }
@@ -435,7 +441,7 @@ final class ThumbnailController: NSObject {
         let cards = shots.compactMap(makeCard)
         recentOpening?.result = cards.isEmpty ? .empty : .shown(cards.count)
         if !cards.isEmpty {
-            present(cards: cards, stack: true)
+            present(cards: cards)
             Log.write("[stack] shown cards=\(cards.count) \(detail)shown=\(Int((CACurrentMediaTime() - started) * 1000))ms decoding=\(cards.filter { $0.image == nil }.count)")
         }
         keys.send(.listed(found: !cards.isEmpty))
@@ -462,11 +468,14 @@ final class ThumbnailController: NSObject {
         }
     }
 
-    /// The model follows the presentation: `isStack` is what the column on screen is, kept through
-    /// a slide-out, and a column that does not leave on its own has no timer.
-    private func presentationChanged(_ presentation: CornerPresentation) {
-        if presentation.mode != .hidden { model.isStack = presentation.isStack }
-        if !presentation.leavesOnItsOwn { leaveTimer?.invalidate() }
+    /// The model follows the presentation, and a column that does not leave on its own has no
+    /// timer. Becoming the stack, by any hand, takes the screen from live ink.
+    private func presentationChanged(from old: CornerPresentation, to new: CornerPresentation) {
+        model.follow(new)
+        if !new.leavesOnItsOwn { leaveTimer?.invalidate() }
+        guard new.isStack, !old.isStack else { return }
+        onTakesScreen?()
+        if new.mode == .stack(recent: false) { Log.write("[stack] corner became the stack cards=\(model.cards.count)") }
     }
 
     /// Decodes thumbnails for `shots` in the background so the stack opens without waiting. A
@@ -523,7 +532,7 @@ final class ThumbnailController: NSObject {
             if let card = card(for: shot) { return card }
         } else if let card = makeCard(shot) {
             // Not on screen: the card flies straight from its offscreen slot, so nothing waits for a slide-in.
-            present(cards: [card], stack: false, entrance: .stayOffscreen)
+            present(cards: [card], entrance: .stayOffscreen)
             return card
         }
         Log.write("[annotate] error \(CommandError.unreadableImage.rawValue) \(shot.url.lastPathComponent)")
@@ -1048,7 +1057,7 @@ final class ThumbnailController: NSObject {
         if !model.cards.contains(where: { $0.id == card.id }) {
             // A lone thumbnail left the panel when the annotator opened (see `.show`); it comes back
             // to the corner as an empty slot the flight lands on. No slide-in: the flight is the entrance.
-            if visible { insert(card, entrance: .inPlace) } else { present(cards: [card], stack: false, entrance: .inPlace) }
+            if visible { insert(card, entrance: .inPlace) } else { present(cards: [card], entrance: .inPlace) }
             _ = model.outCards.insert(card.id)
         }
         // Shown when the card lands, like every notice on a card still on its way back.
@@ -1275,14 +1284,6 @@ final class ThumbnailController: NSObject {
         scrollToReveal(index)
     }
 
-    /// A selection begun in the corner turns the corner into the stack, with the cards it holds:
-    /// it takes the keys and the backdrop, a click outside closes it, and it no longer times out.
-    private func becomeStack() {
-        onTakesScreen?()
-        keys.send(.selected)
-        Log.write("[stack] corner became the stack cards=\(model.cards.count)")
-    }
-
     /// The drag is over: it ended, or the cards it was sweeping changed under it, which makes the
     /// anchor point at another card. The selection stays as it is.
     private func endSweep() {
@@ -1294,7 +1295,8 @@ final class ThumbnailController: NSObject {
     /// The drag moved. Its place in the column is kept as a distance from the top of what is on
     /// screen, so the auto-scroll can keep selecting from the same point while the cards move under it.
     private func sweep(toYFromTop y: CGFloat) {
-        if !model.isStack { becomeStack() }
+        // A selection begun in the corner turns the corner into the stack, with the cards it holds.
+        keys.send(.selected)
         sweepFromTop = y - drawnContentHeight + model.viewport + model.scroll
         select(toYFromTop: y)
         updateAutoScroll()
@@ -1549,8 +1551,7 @@ final class ThumbnailController: NSObject {
     /// start from, or already in place because a flight lands on them.
     enum Entrance { case slide, stayOffscreen, inPlace }
 
-    private func present(cards: [Card], stack: Bool, entrance: Entrance = .slide) {
-        if stack { onTakesScreen?() }
+    private func present(cards: [Card], entrance: Entrance = .slide) {
         if !visible {
             // A capture opening in the editor shows on the screen it was taken on, where its flight starts.
             pinnedScreen = captureOrigin.flatMap { origin in
@@ -1584,7 +1585,7 @@ final class ThumbnailController: NSObject {
             model.scroll = 0
             model.widthScale = 1
         }
-        if !stack { keys.send(.thumbnailsShown) }
+        keys.send(.cardsShown)
         // A dismissal in progress is simply reversed: the same cards turn around. `visible` is
         // already false then; the panel stays up until the slide-out ends.
         let reusing = panel.isVisible && !model.cards.isEmpty && Set(cards.map(\.shot.url)) == Set(model.cards.map(\.shot.url))
