@@ -85,7 +85,7 @@ final class CornerKeys {
             if event == .listed(found: true) { heldPanelUp = false }
             let old = presentation
             let effects = presentation.reduce(event)
-            if !effects.isEmpty {
+            if !effects.isEmpty || presentation.mode != old.mode {
                 Log.write("[corner] \(event) -> \(presentation.mode) effects=\(effects.map { "\($0)" }.joined(separator: " "))")
             }
             // The rule holds by construction: the backdrop and the watch for a click outside go
