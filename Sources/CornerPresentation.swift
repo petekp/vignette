@@ -70,8 +70,6 @@ struct CornerPresentation: Equatable {
         case holdKeys(pressedAt: CFTimeInterval?)
         case takeKeys(KeyFocus, pressedAt: CFTimeInterval?)
         case releaseKeys
-        /// The shortcut found nothing: the keys go back, and the panel with them when they brought it up.
-        case letGoOfHeldKeys
         case backdrop(Bool)
         case watchOutsideClicks(Bool)
         case restoreFocus(reason: String)
@@ -119,7 +117,7 @@ struct CornerPresentation: Equatable {
                 if found { mode = .stack(recent: true) }
                 return takeKeys
             }
-            guard found else { return [.letGoOfHeldKeys] }
+            guard found else { return [.releaseKeys] }
             mode = .stack(recent: true)
             return [.watchOutsideClicks(true), .backdrop(true)] + takeKeys
         case .selected:
@@ -208,7 +206,6 @@ extension CornerPresentation.Effect: CustomStringConvertible {
             case .card: return "takeKeys(card)"
             }
         case .releaseKeys: return "releaseKeys"
-        case .letGoOfHeldKeys: return "letGoOfHeldKeys"
         case .backdrop(let on): return on ? "backdrop" : "noBackdrop"
         case .watchOutsideClicks(let on): return on ? "watchOutsideClicks" : "stopWatchingOutsideClicks"
         case .restoreFocus: return "restoreFocus"

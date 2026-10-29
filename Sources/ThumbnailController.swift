@@ -449,7 +449,7 @@ final class ThumbnailController: NSObject {
             case .card(let id) where model.cards.contains(where: { $0.id == id }): model.focused = id
             default: if model.focused == nil { model.focused = model.hoveredCard ?? model.cards.first?.id }
             }
-        case .releaseKeys, .letGoOfHeldKeys:
+        case .releaseKeys:
             model.focused = nil
         case .closeEditor:
             send(.cancel(.shortcut))

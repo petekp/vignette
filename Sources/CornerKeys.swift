@@ -56,7 +56,8 @@ final class CornerKeys {
     private let backdrop = BackdropPanel()
     private let outsideClick = OutsideClick()
     private let hold = EventHold<CornerPresentation.Event>()
-    /// `holdKeys` brought the panel up, so a shortcut that finds nothing takes it down again.
+    /// `holdKeys` brought the panel up and no card has taken the keys since, so letting them go
+    /// takes it down again: the shortcut found nothing, or was dismissed while it listed.
     private var heldPanelUp = false
 
     init(panel: ThumbnailPanel, screen: @escaping () -> NSScreen) {
@@ -104,6 +105,7 @@ final class CornerKeys {
             panel.makeKey()
             Log.write("[stack] keys held key=\(panel.isKeyWindow)\(Self.after(pressedAt))")
         case .takeKeys(_, let pressedAt):
+            heldPanelUp = false
             panel.acceptsKeys = true
             panel.makeKey()
             Log.write("[stack] keys key=\(panel.isKeyWindow)\(Self.after(pressedAt))")
@@ -117,10 +119,8 @@ final class CornerKeys {
         case .releaseKeys:
             panel.acceptsKeys = false
             if panel.isKeyWindow { panel.resignKey() }
-        case .letGoOfHeldKeys:
-            panel.acceptsKeys = false
-            if panel.isKeyWindow { panel.resignKey() }
             if heldPanelUp { panel.orderOut(nil) }
+            heldPanelUp = false
         case .backdrop(let on):
             if on { backdrop.show(on: screen(), below: panel) } else { backdrop.hide() }
         case .watchOutsideClicks(let on):

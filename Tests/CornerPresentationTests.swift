@@ -38,7 +38,7 @@ final class CornerPresentationTests: XCTestCase {
 
     func testTheShortcutWithNothingToShowLetsTheKeysGo() {
         var p = after(.shortcut(.url, pressedAt: nil))
-        XCTAssertEqual(p.reduce(.listed(found: false, pressedAt: nil)), [.letGoOfHeldKeys])
+        XCTAssertEqual(p.reduce(.listed(found: false, pressedAt: nil)), [.releaseKeys])
         XCTAssertEqual(p.mode, .hidden)
     }
 
@@ -187,7 +187,7 @@ final class CornerPresentationTests: XCTestCase {
                 for effect in effects {
                     switch effect {
                     case .holdKeys, .takeKeys: accepts = true
-                    case .releaseKeys, .letGoOfHeldKeys: accepts = false
+                    case .releaseKeys: accepts = false
                     case .backdrop(let on): backdrop = on
                     case .watchOutsideClicks(let on): watching = on
                     default: break
