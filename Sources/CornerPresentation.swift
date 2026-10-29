@@ -189,3 +189,36 @@ extension CornerPresentation.Event: CustomStringConvertible {
         }
     }
 }
+
+extension CornerPresentation.Effect: CustomStringConvertible {
+    var description: String {
+        switch self {
+        case .holdKeys(_, let orderIn): return orderIn ? "holdKeys(orderIn)" : "holdKeys"
+        case .takeKeys(let focus, _):
+            switch focus {
+            case .current: return "takeKeys"
+            case .hovered: return "takeKeys(hovered)"
+            case .card: return "takeKeys(card)"
+            }
+        case .releaseKeys: return "releaseKeys"
+        case .letGoOfHeldKeys(let orderOut): return orderOut ? "letGoOfHeldKeys(orderOut)" : "letGoOfHeldKeys"
+        case .backdrop(let on): return on ? "backdrop" : "noBackdrop"
+        case .watchOutsideClicks(let on): return on ? "watchOutsideClicks" : "stopWatchingOutsideClicks"
+        case .restoreFocus: return "restoreFocus"
+        case .closeEditor: return "closeEditor"
+        case .listRecent: return "listRecent"
+        case .clearSelection: return "clearSelection"
+        case .slideOut(let reason): return "slideOut(\(reason.rawValue))"
+        }
+    }
+}
+
+extension CornerPresentation.Mode: CustomStringConvertible {
+    var description: String {
+        switch self {
+        case .hidden: return "hidden"
+        case .thumbnails: return "thumbnails"
+        case .stack(let recent): return recent ? "stack" : "stack(ownCards)"
+        }
+    }
+}
