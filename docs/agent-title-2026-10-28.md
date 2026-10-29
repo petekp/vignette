@@ -57,8 +57,11 @@ page behind it stays light grey and a dark one stays dark, so no one colour read
   `TitleInk.luminance` lays the dim's black over each cell, then makes it linear. The capture is not
   blurred, so its lightest and darkest cells are a little more extreme than what is shown, which
   errs toward the safer pick. It runs off the main thread when the editor opens, and again when a
-  zoom step lands. The answer usually comes before the flight lands. When it comes later, the ink
-  changes at once.
+  zoom step lands. In the VM, five of eight answers came 0.46 to 0.54 s after the editor opened, and
+  three, the first opening among them, took 1.8 to 2 s. Those three came after the flight landed,
+  by 0.4 to 0.7 s. Until the answer, the block keeps the ink of the editor's last image, which
+  starts as white. So a light page opened first shows white text until the answer, then black. The
+  time on a Mac outside a VM is not measured.
 - **Without it.** Vignette cannot see other apps' windows, so the ink follows the system
   appearance: black in light mode, white in dark mode. A window nearly always covers the top of the
   screen behind the editor, and a light appearance mostly means light windows. Over a dark page in
@@ -69,15 +72,26 @@ page behind it stays light grey and a dark one stays dark, so no one colour read
 
 ## Checked in the VM
 
-On a 1024 by 768 screen in `vignette-e2e`, in light and dark mode, driven through the end-to-end
-suite's runner:
+On a 1024 by 768 screen in `vignette-e2e`, in dark mode, driven through the end-to-end suite's
+runner. Each backdrop was set as the wallpaper.
 
-- A wide image without a title opened at `[100, 85, 824, 515]`, as before. With a title it opened
-  at `[151, 149, 722, 451]`, with the block at `[151, 85, 618, 54]`, 10 pt above it.
-- A tall image's block wrapped to six lines at 174 pt, 138 pt high.
-- After three zoom steps the wide frame filled the room, `[0, 89, 1024, 624]`, and the block sat at
-  `[0, 25, 618, 54]`, just under the menu bar. Cmd+0 put both back where they opened.
-- Following the frame was kept: the room stops the frame below the block, so following never takes
-  the block off screen. Pinning the block to the room's top was not built.
+- With Screen Recording, a light page measured 0.43 after the dim and took black. A dark page
+  measured 0.006 and took white. A busy page, light on the left and dark on the right, measured
+  0.009 to 0.45 and took white.
+- A copy without Screen Recording took white over all three, from the dark appearance, and logged
+  `source=appearance no screen recording`.
+- A wide image with a title opened at `[138, 133, 748, 467]`, with the block at
+  `[138, 85, 594, 38]`, 10 pt above it.
+- A tall image's block was 289 pt wide with the 300 pt minimum, and 186 pt without it, inside a
+  frame 189 pt wide. With the minimum the frame was 206 pt wide, because the shorter block leaves
+  more height.
+- A small image opened scaled up to 719 pt, wider than the minimum, so the minimum did not change it.
+- After three zoom steps the frame filled the room and the block sat just under the menu bar. Each
+  step measured the ink again. Cmd+0 put both back.
+- Over the recent stack, Esc closed the titled image and the stack took the keys back. A second Esc
+  closed the stack.
+
+A run before the ink change also checked the rest of the loop:
+
 - Text past both limits logged two `[add] warning` lines, and `add` answered `ok`.
 - A Send carried no title, and a reply with `--title` opened with its block.
