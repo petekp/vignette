@@ -61,6 +61,9 @@ final class StackModel: ObservableObject {
     /// it; the column keeps its right edge, so the cards stay in their corner. See `StackLayout`.
     @Published var widthScale: CGFloat = 1
 
+    /// No other card is in the column. The card itself may be out of it, as one in the annotator is.
+    func isAlone(_ id: UUID) -> Bool { cards.allSatisfy { $0.id == id } }
+
     func follow(_ presentation: CornerPresentation) {
         if presentation.mode != .hidden, isStack != presentation.isStack { isStack = presentation.isStack }
     }
@@ -1003,7 +1006,7 @@ final class ThumbnailController: NSObject {
             guard let card = sessionCard else { return }
             // A lone thumbnail alone in the corner leaves it. With other cards there, its slot stays
             // empty, as the stack's does, so it comes home to the same place.
-            if !model.isStack, model.cards.allSatisfy({ $0.id == card.id }) { takeOutOfPanel(card) }
+            if !model.isStack, model.isAlone(card.id) { takeOutOfPanel(card) }
         case .park(let opening):
             parkedMarks = annotatorMarks()
             onAnnotatorHide? { [weak self] in self?.send(.parked(opening)) }
@@ -1072,7 +1075,7 @@ final class ThumbnailController: NSObject {
             self.flights.dropShadow(id: card.id)   // the card draws it now, in this same commit
             // The card view comes back on SwiftUI's next commit; lift the flight image after it.
             DispatchQueue.main.async { self.flights.lift(id: card.id) }
-            if self.visible { self.keys.send(.cardLanded(card.id, others: self.model.cards.contains { $0.id != card.id })) }
+            if self.visible { self.keys.send(.cardLanded(card.id, others: !self.model.isAlone(card.id))) }
             // A card that lands with a notice left the corner's time to the notice.
             if !self.showsNotice(card) { self.leaveCorner(after: self.ui.thumbnailSeconds) }
         })
@@ -1082,7 +1085,7 @@ final class ThumbnailController: NSObject {
     /// done: it leaves at once rather than waiting out its time there. `copied` is the notice it is
     /// about to take.
     private func leavesAtOnce(_ card: Card, copied: Bool) -> Bool {
-        keys.leavesOnItsOwn && !copied && !showsNotice(card) && model.cards.allSatisfy { $0.id == card.id }
+        keys.leavesOnItsOwn && !copied && !showsNotice(card) && model.isAlone(card.id)
     }
 
     /// A notice is up on `card`. Each one set the corner's time when it went up.
