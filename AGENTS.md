@@ -233,8 +233,8 @@ The steps below have the details.
    with `date=YYYY-MM-DD`; at 5 MB the file rotates to `Vignette.log.1`, replacing the previous
    one. Drawing events: `[drawing] saved|parked|built|removed|swept|dropped <file>`, and
    `[drawings] <n>` after every change to the set.
-   `[stack] shown cards=… files=… shown=…ms decoding=…` counts the watch folder from the
-   watcher's index.
+   `[stack] shown cards=… files=… listed=…ms shown=…ms decoding=…` counts the watch folder from
+   the watcher's index, and times the listing and then the cards' presentation.
 
 A fake screenshot for testing: `screencapture -x -R 200,200,900,560 "<watch folder>/Screenshot test.png"`.
 Delete test files afterwards; the watch folder is the user's real screenshot folder. Never retype a

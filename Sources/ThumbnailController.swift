@@ -437,12 +437,13 @@ final class ThumbnailController: NSObject {
 
     /// Lists the recent screenshots for the shortcut and presents them as the stack.
     private func openRecent() {
+        let asked = CACurrentMediaTime()
         let (shots, detail) = recentListing()
         let started = CACurrentMediaTime()
         let cards = shots.compactMap(makeCard)
         if !cards.isEmpty {
             present(cards: cards)
-            Log.write("[stack] shown cards=\(cards.count) \(detail)shown=\(Int((CACurrentMediaTime() - started) * 1000))ms decoding=\(cards.filter { $0.image == nil }.count)")
+            Log.write("[stack] shown cards=\(cards.count) \(detail)listed=\(Int((started - asked) * 1000))ms shown=\(Int((CACurrentMediaTime() - started) * 1000))ms decoding=\(cards.filter { $0.image == nil }.count)")
         }
         keys.send(.listed(found: !cards.isEmpty))
     }
