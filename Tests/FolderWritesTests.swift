@@ -329,6 +329,8 @@ final class FolderWritesTests: XCTestCase {
         XCTAssertEqual(events, [])
         XCTAssertEqual(Agent.of(first), "claude")
         XCTAssertEqual(Agent.origin(of: first)?.id, session.lowercased())
+        writes.add(request(file: first, agent: "claude"))
+        XCTAssertNil(Agent.origin(of: first))
 
         writes.add(request(file: try source(), agent: "claude", session: "not-a-uuid"))
         let second = folder.appendingPathComponent("src 2.png")

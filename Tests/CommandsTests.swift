@@ -259,7 +259,7 @@ final class AgentTests: XCTestCase {
         let file = dir.appendingPathComponent("Screenshot.png")
         try Data("png".utf8).write(to: file)
         XCTAssertNil(Agent.of(file), "a capture has no agent")
-        Agent.record("claude", on: file)
+        Agent.record(agent: "claude", origin: nil, on: file)
         XCTAssertEqual(Agent.of(file), "claude")
         let renamed = dir.appendingPathComponent("Screenshot 2.png")
         try FileManager.default.moveItem(at: file, to: renamed)
@@ -282,10 +282,10 @@ final class AgentTests: XCTestCase {
 
         let file = dir.appendingPathComponent("Checkout.png")
         try Data("png".utf8).write(to: file)
-        Agent.record("claude", on: file)
+        Agent.record(agent: "claude", origin: nil, on: file)
         XCTAssertNil(Agent.origin(of: file), "a push that did not say which session is not a reply")
         for origin in [AgentAddress.claudeSession(session.lowercased()), .codexThread(uuid: thread)] {
-            Agent.record(origin: origin, on: file)
+            Agent.record(agent: origin.client.rawValue, origin: origin, on: file)
             XCTAssertEqual(Agent.origin(of: file)?.address, origin)
             XCTAssertEqual(Agent.of(file), origin.client.rawValue)
         }

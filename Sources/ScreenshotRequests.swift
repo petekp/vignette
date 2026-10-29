@@ -808,7 +808,7 @@ final class ScreenshotRequests {
         guard (try? write(reply)) != nil else { fail(reply.id, stage: .failed, code: "publish-failed"); return done() }
         replies[reply.id] = reply
         publishedAt[reply.id] = ProcessInfo.processInfo.systemUptime
-        if let client = requests[reply.requestID]?.address.client { Agent.record(client.rawValue, on: url) }
+        if let client = requests[reply.requestID]?.address.client { Agent.record(agent: client.rawValue, origin: nil, on: url) }
         Log.write("[reply] published \(reply.fileName) marks=\(reply.cardMarks(on: nil).count)")
         callbacks.present(shot(at: url))
         done()
