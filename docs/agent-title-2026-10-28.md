@@ -57,11 +57,15 @@ page behind it stays light grey and a dark one stays dark, so no one colour read
   `TitleInk.luminance` lays the dim's black over each cell, then makes it linear. The capture is not
   blurred, so its lightest and darkest cells are a little more extreme than what is shown, which
   errs toward the safer pick. It runs off the main thread when the editor opens, and again when a
-  zoom step lands. In the VM, five of eight answers came 0.46 to 0.54 s after the editor opened, and
-  three, the first opening among them, took 1.8 to 2 s. Those three came after the flight landed,
-  by 0.4 to 0.7 s. Until the answer, the block keeps the ink of the editor's last image, which
-  starts as white. So a light page opened first shows white text until the answer, then black. The
-  time on a Mac outside a VM is not measured.
+  zoom step lands. In the VM, five of eight answers came 0.46 to 0.54 s after the editor opened.
+  Three, the first opening among them, took 1.8 to 2 s, up to 0.7 s after the flight landed. That
+  is why the title waits for its ink.
+- **When it shows.** The title fades in once the flight has landed and its ink is known, whichever
+  comes second (`TitleReveal`). When the ink is still unknown 0.5 s after the landing
+  (`TitleReveal.inkWait`), the title shows in the appearance's ink, and the measured ink replaces
+  it when it answers. The wait is for data, so the motion scale does not shorten it, and motion 0
+  still waits. `[annotate] title shown ink=… source=… waited=<ms>ms` logs how long each title
+  waited.
 - **Without it.** Vignette cannot see other apps' windows, so the ink follows the system
   appearance: black in light mode, white in dark mode. A window nearly always covers the top of the
   screen behind the editor, and a light appearance mostly means light windows. Over a dark page in
@@ -90,6 +94,11 @@ runner. Each backdrop was set as the wallpaper.
   step measured the ink again. Cmd+0 put both back.
 - Over the recent stack, Esc closed the titled image and the stack took the keys back. A second Esc
   closed the stack.
+- With the wait, over two runs, 15 of 16 openings with Screen Recording had their ink before the
+  flight landed and showed at once. One waited 335 ms. No wait ran out. Without Screen Recording
+  the ink is known at opening, so the title never waits. A build that held each measurement back
+  1 s ran the wait out on six of eight openings, at 501 to 515 ms. Each showed white from the
+  appearance, then took the measured ink when it came: black on the light page.
 
 A run before the ink change also checked the rest of the loop:
 

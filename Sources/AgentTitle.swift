@@ -98,3 +98,64 @@ enum TitleInk: String {
         InkContrast.linear(encoded * (1 - dim))
     }
 }
+
+/// When an agent's title shows in the editor: once the flight has landed and the opening's ink is
+/// known, whichever comes second, so the title never shows in an ink it is about to lose. An ink
+/// still unknown `inkWait` after the landing shows the title in the appearance's ink, and the
+/// measured ink replaces it when it answers.
+struct TitleReveal {
+    /// How long a landed title waits for its ink. A wait for data, not motion, so the motion scale
+    /// does not touch it.
+    static let inkWait: TimeInterval = 0.5
+
+    enum Input {
+        /// A titled image opened. Its ink is unknown, whatever the last image's was.
+        case opened
+        case inkKnown(at: TimeInterval)
+        case landed(at: TimeInterval)
+        case waitEnded(at: TimeInterval)
+        /// The image has no title, or is closing.
+        case closed
+    }
+
+    enum Effect: Equatable {
+        case waitForInk
+        /// `waited` is the time from the landing.
+        case show(waited: TimeInterval)
+        case showInAppearanceInk(waited: TimeInterval)
+    }
+
+    private enum Phase {
+        case flying(inkKnown: Bool)
+        case waiting(since: TimeInterval)
+        case shown, closed
+    }
+
+    private var phase = Phase.closed
+
+    mutating func reduce(_ input: Input) -> Effect? {
+        switch (input, phase) {
+        case (.opened, _):
+            phase = .flying(inkKnown: false)
+        case (.closed, _):
+            phase = .closed
+        case (.inkKnown, .flying):
+            phase = .flying(inkKnown: true)
+        case (.inkKnown(let now), .waiting(let since)):
+            phase = .shown
+            return .show(waited: now - since)
+        case (.landed, .flying(inkKnown: true)):
+            phase = .shown
+            return .show(waited: 0)
+        case (.landed(let now), .flying(inkKnown: false)):
+            phase = .waiting(since: now)
+            return .waitForInk
+        case (.waitEnded(let now), .waiting(let since)):
+            phase = .shown
+            return .showInAppearanceInk(waited: now - since)
+        default:
+            break
+        }
+        return nil
+    }
+}

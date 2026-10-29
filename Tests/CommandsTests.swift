@@ -331,6 +331,45 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(TitleInk.luminance(encoded: 1, dim: 0.3), InkContrast.linear(0.7))
     }
 
+    func testATitleShowsOnceItHasLandedAndKnowsItsInkOrOnceTheWaitForItEnds() {
+        var inkFirst = TitleReveal()
+        XCTAssertNil(inkFirst.reduce(.opened))
+        XCTAssertNil(inkFirst.reduce(.inkKnown(at: 1)))
+        XCTAssertEqual(inkFirst.reduce(.landed(at: 2)), .show(waited: 0))
+        XCTAssertNil(inkFirst.reduce(.inkKnown(at: 3)))
+
+        var landedFirst = TitleReveal()
+        _ = landedFirst.reduce(.opened)
+        XCTAssertEqual(landedFirst.reduce(.landed(at: 2)), .waitForInk)
+        XCTAssertEqual(landedFirst.reduce(.inkKnown(at: 2.25)), .show(waited: 0.25))
+        XCTAssertNil(landedFirst.reduce(.waitEnded(at: 2.5)))
+
+        var waitedOut = TitleReveal()
+        _ = waitedOut.reduce(.opened)
+        _ = waitedOut.reduce(.landed(at: 2))
+        XCTAssertEqual(waitedOut.reduce(.waitEnded(at: 2.5)), .showInAppearanceInk(waited: 0.5))
+        XCTAssertNil(waitedOut.reduce(.inkKnown(at: 3)))
+
+        var reopened = TitleReveal()
+        _ = reopened.reduce(.opened)
+        _ = reopened.reduce(.inkKnown(at: 1))
+        _ = reopened.reduce(.landed(at: 2))
+        XCTAssertNil(reopened.reduce(.opened))
+        XCTAssertEqual(reopened.reduce(.landed(at: 4)), .waitForInk)
+
+        var closedDuringTheWait = TitleReveal()
+        _ = closedDuringTheWait.reduce(.opened)
+        _ = closedDuringTheWait.reduce(.landed(at: 2))
+        XCTAssertNil(closedDuringTheWait.reduce(.closed))
+        XCTAssertNil(closedDuringTheWait.reduce(.waitEnded(at: 2.5)))
+        XCTAssertNil(closedDuringTheWait.reduce(.inkKnown(at: 2.6)))
+
+        var untitled = TitleReveal()
+        XCTAssertNil(untitled.reduce(.closed))
+        XCTAssertNil(untitled.reduce(.inkKnown(at: 1)))
+        XCTAssertNil(untitled.reduce(.landed(at: 2)))
+    }
+
     func testARecordedTitleReadsBackAndFollowsTheFile() throws {
         let file = dir.appendingPathComponent("Checkout.png")
         try Data("png".utf8).write(to: file)

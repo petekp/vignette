@@ -201,9 +201,14 @@ The steps below have the details.
    each zoom step. Without it, the ink follows the system appearance. `[annotate] title ink=… source=…`
    logs which. Cards, flights, renderings, stitches and sends do not draw it. An image with a title opens with room above the frame for it
    (`StackLayout.annotationFrame`'s `above`). Its zoom room ends below the title, so a zoom never
-   pushes the title off screen. The title fades in after the flight lands and out before the flight
-   home leaves, over `ui.agentTitleFade`. `[state] annotator.title` is its frame, or null when there
-   is none, and `annotator.titleInk` its ink and where the ink came from. The reply helper takes the same two as `--title` and `--description`, and the published
+   pushes the title off screen. The title fades in over `ui.agentTitleFade` once the flight has
+   landed and its ink is known, whichever comes second (`TitleReveal`), and fades out before the
+   flight home leaves. When the ink is still unknown 0.5 s after the landing
+   (`TitleReveal.inkWait`), the title shows in the appearance's ink, and the measured ink replaces
+   it when it answers. The wait is for data, not motion, so the motion scale does not shorten it.
+   `[annotate] title shown ink=… source=… waited=<ms>ms` logs how long each title waited after the
+   landing. `[state] annotator.title` is its frame, or null when there
+   is none or it has not shown yet, and `annotator.titleInk` its ink and where the ink came from. The reply helper takes the same two as `--title` and `--description`, and the published
    reply records them as `add` does. `docs/agent-title-2026-10-28.md` has the measurements.
    `[annotate] loaded <ms>ms <name>` reports when the editor has the screen-size decode of the
    image, and `[annotate] takes events after=<n>ms reached=true|false` when its window starts

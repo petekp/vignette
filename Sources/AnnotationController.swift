@@ -85,6 +85,8 @@ final class AnnotationController {
     private var inkMeasurement = 0
     /// Where the title's ink came from, for `[state]`.
     private var inkSource: String?
+    /// When the title shows: after the landing, once its ink is known.
+    private var titleReveal = TitleReveal()
 
     init() {
         toolbar.onTool = { [weak self] tool in self?.editor.setTool(tool) }
@@ -163,6 +165,7 @@ final class AnnotationController {
         let title = Agent.title(of: shot.url)
         titleView.show(false, duration: 0)
         titleView.set(title, ui: ui)
+        revealTitle(title == nil ? .closed : .opened)
         // The frame grows no higher than leaves the title on screen. Its height at the fitted frame
         // is the most it takes, since a wider frame wraps it onto fewer lines.
         var room = room
@@ -277,9 +280,8 @@ final class AnnotationController {
         guard titleView.title != nil, current != nil, let win = window else { inkSource = nil; return }
         inkMeasurement += 1
         let measurement = inkMeasurement
-        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         guard CGPreflightScreenCaptureAccess() else {
-            applyInk(dark ? .white : .black, source: "appearance", detail: "no screen recording")
+            applyInk(appearanceInk, source: "appearance", detail: "no screen recording")
             return
         }
         let screen = win.convertToScreen(titleView.frame)
@@ -288,21 +290,51 @@ final class AnnotationController {
         let ui = Settings.shared.data.ui
         Task { [weak self] in
             let cells = await TitleBackdrop.brightness(in: rect, cell: max(ui.dimBlurRadius, 8))
-            guard let self, inkMeasurement == measurement else { return }
+            guard let self, inkMeasurement == measurement, current != nil else { return }
             let luminances = (cells ?? []).map { TitleInk.luminance(encoded: $0, dim: ui.dimOpacity) }
             guard let ink = TitleInk.choose(behind: luminances), let low = luminances.min(), let high = luminances.max() else {
-                applyInk(dark ? .white : .black, source: "appearance", detail: "the screen could not be read")
+                applyInk(appearanceInk, source: "appearance", detail: "the screen could not be read")
                 return
             }
             applyInk(ink, source: "backdrop", detail: String(format: "luminance=%.3f...%.3f", low, high))
         }
     }
 
+    private var appearanceInk: TitleInk {
+        NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
+    }
+
     private func applyInk(_ ink: TitleInk, source: String, detail: String) {
         titleView.set(ink: ink)
         inkSource = source
         Log.write("[annotate] title ink=\(ink.rawValue) source=\(source) \(detail)")
+        revealTitle(.inkKnown(at: CACurrentMediaTime()))
     }
+
+    private func revealTitle(_ input: TitleReveal.Input) {
+        switch titleReveal.reduce(input) {
+        case .waitForInk?:
+            guard let opening = opened else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + TitleReveal.inkWait) { [weak self] in
+                guard let self, opened == opening, current != nil else { return }
+                revealTitle(.waitEnded(at: CACurrentMediaTime()))
+            }
+        case .show(let waited)?:
+            showTitle(waited: waited)
+        case .showInAppearanceInk(let waited)?:
+            applyInk(appearanceInk, source: "appearance", detail: "no answer from the screen after \(Self.milliseconds(waited))ms")
+            showTitle(waited: waited)
+        case nil:
+            break
+        }
+    }
+
+    private func showTitle(waited: TimeInterval) {
+        titleView.show(true, duration: Settings.shared.motionUI.agentTitleFade)
+        Log.write("[annotate] title shown ink=\(titleView.ink.rawValue) source=\(inkSource ?? "none") waited=\(Self.milliseconds(waited))ms")
+    }
+
+    private static func milliseconds(_ seconds: TimeInterval) -> Int { Int((seconds * 1000).rounded()) }
 
     /// The visible frame in screen coordinates.
     var frameOnScreen: NSRect? {
@@ -485,7 +517,7 @@ final class AnnotationController {
     func landed() {
         run(.landed)
         frameView?.layer?.shadowOpacity = Float(TransitionLayer.Look.annotator(Settings.shared.data.ui).shadowOpacity)
-        titleView.show(true, duration: Settings.shared.motionUI.agentTitleFade)
+        revealTitle(.landed(at: CACurrentMediaTime()))
     }
 
     /// The file in the editor was renamed. The editor's drawing follows through `Drawings.rename`.
@@ -502,6 +534,7 @@ final class AnnotationController {
         guard current != nil else { return }
         // Nothing zooms before the landing, so there is no fit to wait for.
         _ = zoom.reduce(.close)
+        revealTitle(.closed)
         outsideClick.stop()
         stopProbe()
         current = nil
@@ -514,6 +547,7 @@ final class AnnotationController {
     /// runs at the fitted frame, in the turn that starts the removal, so the flight home it starts
     /// covers the frame before it goes (`hideWindows`). Called once per `prepare`, by the reducer.
     func hide(then completion: (() -> Void)? = nil) {
+        revealTitle(.closed)
         outsideClick.stop()
         stopProbe()
         current = nil
