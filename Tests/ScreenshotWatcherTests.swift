@@ -65,6 +65,8 @@ final class ScreenshotWatcherTests: XCTestCase {
         XCTAssertEqual(watcher.recent(limit: 2).recent, [same, new].map(\.screenshotKey))
         XCTAssertEqual(watcher.recent(limit: 2).files, 4, "the count is every candidate, past the limit")
         XCTAssertEqual(watcher.recent(limit: -1).recent, [], "a negative limit yields nothing instead of trapping")
+        XCTAssertTrue(watcher.contains { $0 == old.screenshotKey })
+        XCTAssertFalse(watcher.contains { _ in false }, "a folder of files that are all hidden holds nothing")
     }
 
     func testDiffReportsAddedAndRemovedSorted() {
@@ -235,12 +237,14 @@ final class ScreenshotWatcherTests: XCTestCase {
         var reported: Set<ScreenshotKey> = []
         let watcher = ScreenshotWatcher(folder: later, onNew: { reported.insert($0); newSeen.fulfill() }, onRemoved: { _, _ in })
         XCTAssertNil(watcher.newest())
+        XCTAssertFalse(watcher.contains { _ in true })
         try FileManager.default.createDirectory(at: later, withIntermediateDirectories: true)
         // A volume mounting brings files older than the watcher, which are not new captures.
         _ = try png("later/old.png", mtime: Date().addingTimeInterval(-3600))
         let first = try png("later/first.png")
         XCTAssertEqual(watcher.newest(), first.screenshotKey, "an unwatched folder is listed on every read")
         XCTAssertEqual(watcher.recent(limit: 10).files, 2)
+        XCTAssertTrue(watcher.contains { $0 == first.screenshotKey }, "the check lists an unwatched folder as recent does")
         watcher.rescan(reason: "test")   // retries the watch; the file that arrived meanwhile is reported too
         let second = try png("later/second.png")
         wait(for: [newSeen], timeout: 5)

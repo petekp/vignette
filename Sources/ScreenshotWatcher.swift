@@ -243,11 +243,20 @@ final class ScreenshotWatcher: @unchecked Sendable {
     /// with it on the main thread. `include` filters before the limit is taken, so a file the app
     /// is hiding does not cost the stack one of its cards.
     func recent(limit: Int, include: (ScreenshotKey) -> Bool = { _ in true }) -> (recent: [ScreenshotKey], files: Int) {
+        Self.recent(from: candidates(), in: folder, limit: limit, include: include)
+    }
+
+    /// Whether any candidate passes `include`, read as `recent` reads them. It stops at the first.
+    func contains(where include: (ScreenshotKey) -> Bool) -> Bool {
+        candidates().keys.contains { include(ScreenshotKey(folder: folder, name: $0)) }
+    }
+
+    private func candidates() -> [String: Date] {
         let snapshot = state.withLock { ($0.files, $0.watching || !$0.indexed) }
         if !snapshot.1, case .available(let inventory) = Self.read(folder) {
-            return Self.recent(from: inventory.candidates(retaining: snapshot.0), in: folder, limit: limit, include: include)
+            return inventory.candidates(retaining: snapshot.0)
         }
-        return Self.recent(from: snapshot.0, in: folder, limit: limit, include: include)
+        return snapshot.0
     }
 
     func newest(include: (ScreenshotKey) -> Bool = { _ in true }) -> ScreenshotKey? {
