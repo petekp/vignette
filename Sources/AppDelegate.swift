@@ -130,7 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         liveInk.unsendNote = { [weak self] request in self?.noteCards.unsend(request: request) }
         annotator.onTakesEvents = { [weak self] opening in self?.thumbnail.annotatorTakesEvents(opening) }
         annotator.onFinished = { [weak self] shot, drawing in self?.finishAnnotation(shot, drawing) }
-        annotator.onClosed = { [weak self] in self?.thumbnail.annotationEnded() }
+        annotator.onClosed = { [weak self] how in self?.thumbnail.annotationEnded(how) }
         annotator.onLoaded = { [weak self] opening in self?.thumbnail.editorLoaded(opening) }
         annotator.storedDrawing = { [weak self] key, pixels in
             guard let self else { return nil }

@@ -14,7 +14,7 @@ struct AnnotationRun: Equatable {
         case annotate([ScreenshotKey])      // a list: the first opens and the rest queue; replaces any queue
         case shown(Opening)          // the flight landed and the annotator became visible
         case parked(Opening)         // the editor finished parking
-        case cancel                  // Esc, a click outside, Cmd+W: the run ends
+        case cancel(RunEnding)       // Esc, a click outside, Cmd+W, the shortcut: the run ends
         case sent                    // Send: this image closes without a Copied notice, and the run goes on
         case finish                  // Done or Return: the result is on the clipboard, and the run goes on
         case dismiss(byHand: Bool)   // the panel is going away, and the run with it
@@ -115,8 +115,8 @@ struct AnnotationRun: Equatable {
             return forward(.shown(opening))
         case .parked(let opening):
             return forward(.parked(opening))
-        case .cancel:
-            endsByHand(.back)
+        case .cancel(let how):
+            endsByHand(how)
             endQueue()
             return forward(.close)
         case .sent:
@@ -281,7 +281,7 @@ extension AnnotationRun.Event: CustomStringConvertible {
         case .annotate(let keys): return "annotate(\(keys.map(short).joined(separator: ", ")))"
         case .shown(let o): return "shown(\(o))"
         case .parked(let o): return "parked(\(o))"
-        case .cancel: return "cancel"
+        case .cancel(let how): return how == .back ? "cancel" : "cancel(\(how))"
         case .sent: return "sent"
         case .finish: return "finish"
         case .dismiss(let byHand): return byHand ? "dismiss(byHand)" : "dismiss"

@@ -67,7 +67,7 @@ final class AnnotationRunTests: XCTestCase {
     func testEscEndsTheRun() {
         var r = R()
         _ = reduce(&r, .annotate(["a", "b"])); _ = shown(&r)
-        XCTAssertEqual(reduce(&r, .cancel), [.park(o("a", 1))])
+        XCTAssertEqual(reduce(&r, .cancel(.back)), [.park(o("a", 1))])
         XCTAssertEqual(r.queue, [], "the rest of the list is dropped at once")
         XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .endRun(.back)])
     }
@@ -207,7 +207,7 @@ final class AnnotationRunTests: XCTestCase {
 
     func testTheSameFileOpenedAgainTakesNoAnswerFromTheFirstOpening() {
         var r = R()
-        _ = reduce(&r, .annotate(["a"])); _ = shown(&r); _ = reduce(&r, .cancel); _ = parked(&r)
+        _ = reduce(&r, .annotate(["a"])); _ = shown(&r); _ = reduce(&r, .cancel(.back)); _ = parked(&r)
         XCTAssertEqual(reduce(&r, .annotate(["a"])), [.prepare(o("a", 2))])
         XCTAssertEqual(reduce(&r, .loaded(o("a", 1))), [])
         XCTAssertEqual(reduce(&r, .arrived(o("a", 1))), [])
@@ -357,7 +357,7 @@ final class AnnotationRunTests: XCTestCase {
                     // A person's request starts with a file that reads, as the controller checks;
                     // the rest of the list may not.
                     events.append(.annotate([keys.randomElement(using: &rng)!] + some()))
-                case 3: events.append(.cancel)
+                case 3: events.append(.cancel(.back))
                 case 4: events.append(.sent)
                 case 5: events.append(.finish)
                 case 6: events.append(.dismiss(byHand: Bool.random(using: &rng)))

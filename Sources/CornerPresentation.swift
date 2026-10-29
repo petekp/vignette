@@ -5,6 +5,10 @@ import Foundation
 enum RunEnding: Equatable {
     /// Esc, Cmd+W or the bar's close: back out of the editor.
     case back
+    /// A click outside the editor, which the app clicked in takes.
+    case clickedAway
+    /// The shortcut, which opens the stack as the editor closes.
+    case shortcut
     /// Done, or quick Done: the result is on the clipboard.
     case finished
     /// Send: the drawing went to an agent session.
@@ -49,8 +53,8 @@ struct CornerPresentation: Equatable {
         case editorOpened
         /// The annotation run is over.
         case editorClosed(RunEnding?)
-        /// A card came home from the editor and is in its slot.
-        case cardLanded(UUID)
+        /// A card came home from the editor and is in its slot; `others` when other cards share the column.
+        case cardLanded(UUID, others: Bool)
         /// Esc reached the stack; `selecting` while cards are selected.
         case esc(selecting: Bool)
         /// A click landed outside this app's windows.
@@ -84,12 +88,17 @@ struct CornerPresentation: Equatable {
     private(set) var mode: Mode = .hidden
     /// The editor has the keys, from its opening until the run is over.
     private(set) var editorOpen = false
+    /// The shortcut is listing the recent screenshots: a card coming home stays for the stack.
+    private(set) var listing = false
+    /// Esc closed the editor over lone thumbnails: the card coming home makes them the stack.
+    private var stackOnLanding = false
 
     var isStack: Bool { if case .stack = mode { return true }; return false }
     /// Keys pressed reach the stack.
     var isKeyed: Bool { isStack && !editorOpen }
-    /// Lone thumbnails leave on their own after a while; the stack stays until it is dismissed.
-    var leavesOnItsOwn: Bool { mode == .thumbnails }
+    /// Lone thumbnails leave on their own after a while, unless the stack is opening over them; the
+    /// stack stays until it is dismissed.
+    var leavesOnItsOwn: Bool { mode == .thumbnails && !listing }
 
     mutating func reduce(_ event: Event) -> [Effect] {
         switch event {
@@ -97,9 +106,17 @@ struct CornerPresentation: Equatable {
             mode = .thumbnails
             return [.releaseKeys]
         case .shortcut(let request, let pressedAt):
-            if isStack { return dismiss(DismissReason(request)) }
+            stackOnLanding = false
+            // A stack made from the corner's own cards brings in the older ones first.
+            if isStack, mode != .stack(recent: false) || editorOpen { return dismiss(DismissReason(request)) }
+            listing = true
             return [.holdKeys(pressedAt: pressedAt, orderIn: mode == .hidden)] + (editorOpen ? [.closeEditor] : []) + [.listRecent]
         case .listed(let found, let pressedAt):
+            listing = false
+            if isStack {
+                if found { mode = .stack(recent: true) }
+                return [.takeKeys(.current, pressedAt: pressedAt)]
+            }
             guard found else { return [.letGoOfHeldKeys(orderOut: mode == .hidden)] }
             mode = .stack(recent: true)
             return [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current, pressedAt: pressedAt)]
@@ -109,11 +126,21 @@ struct CornerPresentation: Equatable {
             return [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.hovered, pressedAt: nil)]
         case .editorOpened:
             editorOpen = true
+            stackOnLanding = false
             return [.releaseKeys]
         case .editorClosed(let ending):
             editorOpen = false
-            return ending == nil ? [] : [.restoreFocus(reason: "annotator closed")]
-        case .cardLanded(let id):
+            stackOnLanding = ending == .back && mode == .thumbnails
+            // The shortcut's stack takes the keys from the editor; any other hand hands them back,
+            // and the stack, or the corner Esc made the stack, takes them again when the card lands.
+            guard let ending, ending != .shortcut else { return [] }
+            return [.restoreFocus(reason: "annotator closed")]
+        case .cardLanded(let id, let others):
+            if stackOnLanding, mode == .thumbnails, !editorOpen, others {
+                stackOnLanding = false
+                mode = .stack(recent: false)
+                return [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.card(id), pressedAt: nil)]
+            }
             return isKeyed ? [.takeKeys(.card(id), pressedAt: nil)] : []
         case .esc(let selecting):
             guard isKeyed else { return [] }
@@ -130,6 +157,7 @@ struct CornerPresentation: Equatable {
     private mutating func dismiss(_ reason: DismissReason) -> [Effect] {
         guard mode != .hidden else { return [] }
         mode = .hidden
+        stackOnLanding = false
         return [.watchOutsideClicks(false), .releaseKeys, .backdrop(false), .slideOut(reason)]
     }
 }

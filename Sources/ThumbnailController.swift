@@ -453,7 +453,7 @@ final class ThumbnailController: NSObject {
         case .releaseKeys, .letGoOfHeldKeys:
             model.focused = nil
         case .closeEditor:
-            send(.dismiss(byHand: false))
+            send(.cancel(.shortcut))
         case .listRecent:
             openRecent()
         case .clearSelection:
@@ -536,8 +536,8 @@ final class ThumbnailController: NSObject {
 
     /// The editor asked to close (Esc, click outside, Cmd+W). The run decides what returns, and
     /// drops the rest of its list.
-    func annotationEnded() {
-        send(.cancel)
+    func annotationEnded(_ how: RunEnding) {
+        send(.cancel(how))
     }
 
     /// Send: the drawing is stored as a request and the card comes home without a Copied notice.
@@ -1068,7 +1068,7 @@ final class ThumbnailController: NSObject {
             self.flights.dropShadow(id: card.id)   // the card draws it now, in this same commit
             // The card view comes back on SwiftUI's next commit; lift the flight image after it.
             DispatchQueue.main.async { self.flights.lift(id: card.id) }
-            if self.visible { self.keys.send(.cardLanded(card.id)) }
+            if self.visible { self.keys.send(.cardLanded(card.id, others: self.model.cards.contains { $0.id != card.id })) }
             // A card that lands with a notice left the corner's time to the notice.
             if !self.showsNotice(card) { self.leaveCorner(after: self.ui.thumbnailSeconds) }
         })
@@ -1078,7 +1078,7 @@ final class ThumbnailController: NSObject {
     /// done: it leaves at once rather than waiting out its time there. `copied` is the notice it is
     /// about to take.
     private func leavesAtOnce(_ card: Card, copied: Bool) -> Bool {
-        !keys.isStack && !copied && !showsNotice(card) && model.cards.allSatisfy { $0.id == card.id }
+        keys.leavesOnItsOwn && !copied && !showsNotice(card) && model.cards.allSatisfy { $0.id == card.id }
     }
 
     /// A notice is up on `card`. Each one set the corner's time when it went up.
