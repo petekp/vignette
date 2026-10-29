@@ -56,6 +56,8 @@ final class CornerKeys {
     private let backdrop = BackdropPanel()
     private let outsideClick = OutsideClick()
     private let hold = EventHold<CornerPresentation.Event>()
+    /// `holdKeys` brought the panel up, so a shortcut that finds nothing takes it down again.
+    private var heldPanelUp = false
 
     init(panel: ThumbnailPanel, screen: @escaping () -> NSScreen) {
         self.panel = panel
@@ -91,8 +93,10 @@ final class CornerKeys {
 
     private func runWindowSide(_ effect: CornerPresentation.Effect) {
         switch effect {
-        case .holdKeys(let pressedAt, let orderIn):
-            if orderIn {
+        case .holdKeys(let pressedAt):
+            // The corner can be empty with its cards gone, as after a lone thumbnail's editor.
+            heldPanelUp = !panel.isVisible
+            if heldPanelUp {
                 FocusReturn.shared.sessionStarting()
                 panel.orderFrontRegardless()
             }
@@ -113,10 +117,10 @@ final class CornerKeys {
         case .releaseKeys:
             panel.acceptsKeys = false
             if panel.isKeyWindow { panel.resignKey() }
-        case .letGoOfHeldKeys(let orderOut):
+        case .letGoOfHeldKeys:
             panel.acceptsKeys = false
             if panel.isKeyWindow { panel.resignKey() }
-            if orderOut { panel.orderOut(nil) }
+            if heldPanelUp { panel.orderOut(nil) }
         case .backdrop(let on):
             if on { backdrop.show(on: screen(), below: panel) } else { backdrop.hide() }
         case .watchOutsideClicks(let on):

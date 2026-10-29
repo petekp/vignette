@@ -67,12 +67,12 @@ struct CornerPresentation: Equatable {
 
     enum Effect: Equatable {
         // The window side, which `CornerKeys` runs.
-        /// The panel takes the keys before the cards are listed; `orderIn` when nothing was on screen.
-        case holdKeys(pressedAt: CFTimeInterval?, orderIn: Bool)
+        /// The panel takes the keys before the cards are listed.
+        case holdKeys(pressedAt: CFTimeInterval?)
         case takeKeys(KeyFocus, pressedAt: CFTimeInterval?)
         case releaseKeys
-        /// The shortcut found nothing: the keys go back, and the panel with them when it held nothing.
-        case letGoOfHeldKeys(orderOut: Bool)
+        /// The shortcut found nothing: the keys go back, and the panel with them when they brought it up.
+        case letGoOfHeldKeys
         case backdrop(Bool)
         case watchOutsideClicks(Bool)
         case restoreFocus(reason: String)
@@ -110,7 +110,7 @@ struct CornerPresentation: Equatable {
             // A stack made from the corner's own cards brings in the older ones first.
             if isStack, mode != .stack(recent: false) || editorOpen { return dismiss(DismissReason(request)) }
             listing = true
-            return [.holdKeys(pressedAt: pressedAt, orderIn: mode == .hidden)] + (editorOpen ? [.closeEditor] : []) + [.listRecent]
+            return [.holdKeys(pressedAt: pressedAt)] + (editorOpen ? [.closeEditor] : []) + [.listRecent]
         case .listed(let found, let pressedAt):
             listing = false
             // An editor still closing, while a zoom springs back to the fit, keeps the keys until
@@ -120,7 +120,7 @@ struct CornerPresentation: Equatable {
                 if found { mode = .stack(recent: true) }
                 return takeKeys
             }
-            guard found else { return [.letGoOfHeldKeys(orderOut: mode == .hidden)] }
+            guard found else { return [.letGoOfHeldKeys] }
             mode = .stack(recent: true)
             return [.watchOutsideClicks(true), .backdrop(true)] + takeKeys
         case .selected:
@@ -202,7 +202,7 @@ extension CornerPresentation.Event: CustomStringConvertible {
 extension CornerPresentation.Effect: CustomStringConvertible {
     var description: String {
         switch self {
-        case .holdKeys(_, let orderIn): return orderIn ? "holdKeys(orderIn)" : "holdKeys"
+        case .holdKeys: return "holdKeys"
         case .takeKeys(let focus, _):
             switch focus {
             case .current: return "takeKeys"
@@ -210,7 +210,7 @@ extension CornerPresentation.Effect: CustomStringConvertible {
             case .card: return "takeKeys(card)"
             }
         case .releaseKeys: return "releaseKeys"
-        case .letGoOfHeldKeys(let orderOut): return orderOut ? "letGoOfHeldKeys(orderOut)" : "letGoOfHeldKeys"
+        case .letGoOfHeldKeys: return "letGoOfHeldKeys"
         case .backdrop(let on): return on ? "backdrop" : "noBackdrop"
         case .watchOutsideClicks(let on): return on ? "watchOutsideClicks" : "stopWatchingOutsideClicks"
         case .restoreFocus: return "restoreFocus"

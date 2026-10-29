@@ -28,7 +28,7 @@ final class CornerPresentationTests: XCTestCase {
 
     func testTheShortcutTakesTheKeysBeforeItListsThenOpensTheRecentStack() {
         var p = P()
-        XCTAssertEqual(p.reduce(.shortcut(.shortcut, pressedAt: 1)), [.holdKeys(pressedAt: 1, orderIn: true), .listRecent])
+        XCTAssertEqual(p.reduce(.shortcut(.shortcut, pressedAt: 1)), [.holdKeys(pressedAt: 1), .listRecent])
         XCTAssertEqual(p.reduce(.listed(found: true, pressedAt: 1)),
                        [.watchOutsideClicks(true), .backdrop(true), .takeKeys(.current, pressedAt: 1)])
         XCTAssertEqual(p.mode, .stack(recent: true))
@@ -36,14 +36,9 @@ final class CornerPresentationTests: XCTestCase {
         XCTAssertFalse(p.leavesOnItsOwn)
     }
 
-    func testTheShortcutOverTheCornerKeepsItsPanelUp() {
-        var p = after(.thumbnailsShown)
-        XCTAssertEqual(p.reduce(.shortcut(.menu, pressedAt: nil)), [.holdKeys(pressedAt: nil, orderIn: false), .listRecent])
-    }
-
     func testTheShortcutWithNothingToShowLetsTheKeysGo() {
         var p = after(.shortcut(.url, pressedAt: nil))
-        XCTAssertEqual(p.reduce(.listed(found: false, pressedAt: nil)), [.letGoOfHeldKeys(orderOut: true)])
+        XCTAssertEqual(p.reduce(.listed(found: false, pressedAt: nil)), [.letGoOfHeldKeys])
         XCTAssertEqual(p.mode, .hidden)
     }
 
@@ -56,7 +51,7 @@ final class CornerPresentationTests: XCTestCase {
     func testTheShortcutSendsTheCornersEditorHomeAndOpensTheStackWithTheKeys() {
         var p = after(.thumbnailsShown, .editorOpened)
         XCTAssertEqual(p.reduce(.shortcut(.shortcut, pressedAt: nil)),
-                       [.holdKeys(pressedAt: nil, orderIn: false), .closeEditor, .listRecent])
+                       [.holdKeys(pressedAt: nil), .closeEditor, .listRecent])
         XCTAssertFalse(p.leavesOnItsOwn, "the card coming home stays for the stack")
         XCTAssertEqual(p.reduce(.editorClosed(.shortcut)), [], "the focus stays for the stack")
         XCTAssertEqual(p.reduce(.listed(found: true, pressedAt: nil)),
@@ -73,7 +68,7 @@ final class CornerPresentationTests: XCTestCase {
 
     func testTheShortcutBringsTheOlderCardsIntoAStackMadeFromTheCornerThenClosesIt() {
         var p = after(.thumbnailsShown, .selected)
-        XCTAssertEqual(p.reduce(.shortcut(.shortcut, pressedAt: 2)), [.holdKeys(pressedAt: 2, orderIn: false), .listRecent])
+        XCTAssertEqual(p.reduce(.shortcut(.shortcut, pressedAt: 2)), [.holdKeys(pressedAt: 2), .listRecent])
         XCTAssertEqual(p.reduce(.listed(found: true, pressedAt: 2)), [.takeKeys(.current, pressedAt: 2)])
         XCTAssertEqual(p.mode, .stack(recent: true))
         XCTAssertEqual(p.reduce(.shortcut(.shortcut, pressedAt: nil)), closes + [.slideOut(.shortcut)])
