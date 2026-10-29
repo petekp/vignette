@@ -915,7 +915,15 @@ final class ThumbnailController: NSObject {
         if let key = flightPress.key, key != keyInEditor {
             flightPress.ended(key)
         }
-        if model.annotating != run.isActive { model.annotating = run.isActive }
+        // The editor is open exactly while the run is: from its first `prepare`, after the
+        // annotator's window has taken the keys, so they pass from one to the other rather than
+        // being nobody's, to its `endRun`.
+        if model.annotating != run.isActive {
+            model.annotating = run.isActive
+            var ending: RunEnding?
+            for case .endRun(let how) in effects { ending = how }
+            keys.send(run.isActive ? .editorOpened : .editorClosed(ending))
+        }
     }
 
     /// While an image is in the annotator, a card selected in the stack is queued to be annotated
@@ -959,10 +967,6 @@ final class ThumbnailController: NSObject {
             dim.show(on: screen)
             parkedMarks = nil
             onAnnotatorPrepare?(card.shot, opening, target, annotatorRoom)
-            // After the annotator's window has taken the keys, so they pass from one to the other
-            // rather than being nobody's: a tool key or Esc pressed during the flight reaches the
-            // editor, and its Esc comes back through `onClosed` as `close`, which turns the card around.
-            keys.send(.editorOpened)
             var from = slot ?? cardFrame(of: card)
             if model.offscreen.contains(card.id) { from.origin.x += layout.offscreenDistance(cardWidth: from.width) }
             // A capture starts where it was taken, looking like the screen there. The flight is
@@ -1024,11 +1028,10 @@ final class ThumbnailController: NSObject {
             Log.write("[annotate] next \(key.name) \(place) of \(total)")
         case .queued(let key, let place, let total):
             Log.write("[annotate] queued \(key.name) \(place) of \(total)")
-        case .endRun(let ending):
+        case .endRun:
             // Only now: between two files of a list the dim stays up and the focus stays here.
             sessionCard = nil
             dim.hide()
-            keys.send(.editorClosed(ending))
         case .landed:
             // Also while the image parks: Done or Esc is accepted between `covered` and the
             // arrival, and the window stays up through the park, still owed its shadow.
@@ -1552,7 +1555,6 @@ final class ThumbnailController: NSObject {
                 NSScreen.screens.first { $0.frame.contains(CGPoint(x: origin.rect.midX, y: origin.rect.midY)) }
             }
                 ?? NSScreen.main ?? NSScreen.screens[0]
-            FocusReturn.shared.sessionStarting()
         }
         leaveTimer?.invalidate()
         dismissGeneration += 1

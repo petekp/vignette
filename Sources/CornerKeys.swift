@@ -75,6 +75,8 @@ final class CornerKeys {
     /// An event sent while another is being handled runs right after it, in order.
     func send(_ event: CornerPresentation.Event) {
         hold.send(event) { event in
+            // While the window the person was in is still key, so closing goes back to it.
+            if event == .thumbnailsShown, !panel.isVisible { FocusReturn.shared.sessionStarting() }
             let effects = presentation.reduce(event)
             if !effects.isEmpty {
                 Log.write("[corner] \(event) -> \(presentation.mode) effects=\(effects.map { "\($0)" }.joined(separator: " "))")
@@ -91,7 +93,6 @@ final class CornerKeys {
         switch effect {
         case .holdKeys(let pressedAt, let orderIn):
             if orderIn {
-                // While the window the person was in is still key, so closing goes back to it.
                 FocusReturn.shared.sessionStarting()
                 panel.orderFrontRegardless()
             }
