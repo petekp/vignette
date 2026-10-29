@@ -1366,16 +1366,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// has not committed. Every listing goes through here rather than through the index directly.
     private func recentShots(limit: Int, where fits: (Screenshot) -> Bool = { _ in true }) -> (recent: [ScreenshotKey], files: Int) {
         watcher?.recent(limit: limit, include: { [weak self] key in
-            (self?.requests.isVisible(key.url) ?? true) && fits(Screenshot(key: key))
+            (self?.isShown(key) ?? true) && fits(Screenshot(key: key))
         }) ?? (recent: [], files: 0)
     }
+
+    /// A file in the folder is shown unless it is an agent's reply that is not published yet.
+    private func isShown(_ key: ScreenshotKey) -> Bool { requests.isVisible(key.url) }
 
     private func newestShot(where fits: (Screenshot) -> Bool = { _ in true }) -> ScreenshotKey? {
         recentShots(limit: 1, where: fits).recent.first
     }
 
     /// Whether anything is there to show, by the same rule as `recentShots`.
-    private var hasScreenshots: Bool { watcher?.contains { requests.isVisible($0.url) } ?? false }
+    private var hasScreenshots: Bool { watcher?.contains(where: isShown) ?? false }
 
     /// Where the bar can send while this image is open, and the session it came from: an agent's
     /// reply to a request, or a push that named its session. Reading the sessions runs
