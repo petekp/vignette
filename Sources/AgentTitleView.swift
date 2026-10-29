@@ -84,8 +84,8 @@ final class AgentTitleView: NSView {
         }
     }
 
-    /// Fades the block in or out over `duration`, then answers, also when a later fade takes over.
-    /// At 0, or with nothing to fade, it answers at once.
+    /// Fades the block in or out over `duration`, then answers. At 0, or with nothing to fade, it
+    /// answers at once. A later call takes over the fade, and this one never answers.
     func show(_ shown: Bool, duration: Double, then done: (() -> Void)? = nil) {
         let target: CGFloat = shown && title != nil ? 1 : 0
         visible = target == 1

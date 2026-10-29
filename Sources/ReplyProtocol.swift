@@ -111,7 +111,7 @@ enum ReplyProtocol {
 
     /// A frozen reply: the drawing the agent means to send back, with a new reply id, written
     /// once. A retry submits this same bundle again rather than reading the agent's files a second
-    /// time. A drawing carries no words beyond its marks and its title: an agent answers in its own
+    /// time. A reply carries no words beyond its marks and its title: an agent answers in its own
     /// session, where the person is looking. An answer to live ink is the exception, since the
     /// person is looking at the window.
     struct Bundle: Equatable {
