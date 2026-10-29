@@ -148,6 +148,8 @@ final class ScreenshotRequests {
         let marks: [AgentMark]
         /// An answer to live ink, which comes without marks or an image (`ReplyProtocol.Bundle`).
         var answer: LiveAnswer? = nil
+        /// What the agent says the reply shows, recorded on the published file (`Agent.record(title:on:)`).
+        var title: AgentTitle? = nil
         var stage: Stage
         var destination: URL?
         /// Where the person renamed the published file to, inside the watch folder. Nil while it
@@ -651,7 +653,7 @@ final class ScreenshotRequests {
         // committed before anything is acknowledged, so an accepted reply survives the helper
         // deleting all of its files.
         let reply = Reply(id: bundle.replyID, requestID: request.id, digest: digest,
-                          hasImage: bundle.hasImage, marks: bundle.marks, answer: bundle.answer, stage: .accepted)
+                          hasImage: bundle.hasImage, marks: bundle.marks, answer: bundle.answer, title: bundle.title, stage: .accepted)
         do {
             if let image {
                 let url = payloadImageURL(reply)
@@ -814,6 +816,7 @@ final class ScreenshotRequests {
         replies[reply.id] = reply
         publishedAt[reply.id] = ProcessInfo.processInfo.systemUptime
         if let client = requests[reply.requestID]?.address.client { Agent.record(agent: client.rawValue, origin: nil, on: url) }
+        Agent.record(title: reply.title, on: url)
         Log.write("[reply] published \(reply.fileName) marks=\(reply.cardMarks(on: nil).count)")
         callbacks.present(shot(at: url))
         done()

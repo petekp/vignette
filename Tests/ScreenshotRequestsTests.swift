@@ -90,10 +90,10 @@ final class ScreenshotRequestsTests: XCTestCase {
     private func stageReply(_ record: ScreenshotRequests.Record, replyID: String = UUID().uuidString.lowercased(),
                             attemptID: String = UUID().uuidString.lowercased(), secret: String? = nil,
                             marks: String = #"[{"type":"ellipse","x":0.1,"y":0.1,"w":0.2,"h":0.2}]"#,
-                            image: Data? = nil, answer: String? = nil) throws -> URL {
+                            image: Data? = nil, answer: String? = nil, title: String? = nil) throws -> URL {
         let directory = ReplyProtocol.submissionDirectory(root: root, requestID: record.id, replyID: replyID)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let bundle = Data(#"{"protocolVersion":\#(ReplyProtocol.version),"hasImage":\#(image != nil),"marks":\#(answer == nil ? marks : "[]"),\#(answer.map { #""answer":\#($0),"# } ?? "")"replyId":"\#(replyID)","requestId":"\#(record.id)"}"#.utf8)
+        let bundle = Data(#"{"protocolVersion":\#(ReplyProtocol.version),"hasImage":\#(image != nil),"marks":\#(answer == nil ? marks : "[]"),\#(answer.map { #""answer":\#($0),"# } ?? "")\#(title.map { #""title":"\#($0)","# } ?? "")"replyId":"\#(replyID)","requestId":"\#(record.id)"}"#.utf8)
         try bundle.write(to: directory.appendingPathComponent("bundle.json"))
         if let image { try image.write(to: directory.appendingPathComponent("image.png")) }
         let digest = ReplyProtocol.payloadDigest(bundle: bundle, image: image)
@@ -259,12 +259,14 @@ final class ScreenshotRequestsTests: XCTestCase {
         let marksFile = root.deletingLastPathComponent().appendingPathComponent("marks.json")
         try Data(#"[{"type":"arrow","x":0.5,"y":0.9,"x2":0.4,"y2":0.6},{"type":"text","x":0.2,"y":0.1,"text":"a \"quoted\" word"}]"#.utf8)
             .write(to: marksFile)
-        let prepared = try ReplyCommand.prepare(ticket: ticket, marks: ReplyCommand.loadMarks(marksFile.path), image: nil)
+        let title = AgentTitle.validated(title: "Checkout", description: String(repeating: "after the fix ", count: 20)).value
+        let prepared = try ReplyCommand.prepare(ticket: ticket, marks: ReplyCommand.loadMarks(marksFile.path), image: nil, title: title)
 
         let first = try ReplyCommand.writeAttempt(ticket: ticket, prepared: prepared)
         requests.receiveReply(envelope: first.envelope)
         let receipt = try XCTUnwrap(self.receipt(record, first.id))
         XCTAssertEqual(receipt.acceptance, .accepted, receipt.errorCode ?? "")
+        XCTAssertEqual(Agent.title(of: folder.appendingPathComponent(ReplyProtocol.replyFileName(prepared.replyID))), title)
         XCTAssertTrue(ReplyCommand.answers(receipt, ticket: ticket, prepared: prepared, attemptID: first.id))
         let cards = presented.count
 
@@ -431,7 +433,7 @@ final class ScreenshotRequestsTests: XCTestCase {
     func testALaunchPublishesTheRepliesStillWaitingOnce() throws {
         heldAdd = { _ in }             // the import stops before publication, as a quit would leave it
         let record = try makeRequest()
-        try requests.receiveReply(envelope: stageReply(record))
+        try requests.receiveReply(envelope: stageReply(record, title: "Checkout"))
         let id = try replyID(in: record)
         let file = folder.appendingPathComponent(ReplyProtocol.replyFileName(id))
         XCTAssertEqual(requests.stateJSON["pendingImports"] as? [String], [id])
@@ -447,6 +449,7 @@ final class ScreenshotRequestsTests: XCTestCase {
         XCTAssertEqual(presented, [file])
         XCTAssertEqual((reopened.stateJSON["pendingImports"] as? [String])?.count, 0)
         XCTAssertTrue(reopened.isVisible(file))
+        XCTAssertEqual(Agent.title(of: file)?.title, "Checkout")
     }
 
     // MARK: Clearing

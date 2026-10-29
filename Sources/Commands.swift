@@ -47,6 +47,10 @@ struct CommandRequest: Equatable {
     var session: String? = nil
     /// `marks=` from the query, as given: a path to a JSON file, or the JSON itself. See `AgentMark.parse`.
     let marks: String?
+    /// `title=` and `description=` from the query, as given: what the pushing agent says the image
+    /// shows. `AgentTitle.validated` reads them.
+    var title: String? = nil
+    var description: String? = nil
     /// `root=` from the query: the one directory `install-skill` writes into instead of the agent
     /// directories. Needs `debug`, so a live check points it at a scratch directory.
     let root: URL?
@@ -76,7 +80,7 @@ enum Commands {
         Fixed(name: "help", summary: "list every command and action in the log"),
         Fixed(name: "state", summary: "dump app state to the log; &section=<name> reports only that section and app"),
         Fixed(name: "last", summary: "show the thumbnail for the newest screenshot"),
-        Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; &agent=<name> marks the card as an agent's; &session=<id> names the Claude Code session it came from, which Reply on the card goes back to; &marks=<json file> draws on it, as marks the user can edit; ignores copyOnCapture and annotateOnCapture"),
+        Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; &agent=<name> marks the card as an agent's; &session=<id> names the Claude Code session it came from, which Reply on the card goes back to; &marks=<json file> draws on it, as marks the user can edit; &title=<text> and &description=<text> say what it shows, above the image in the annotator (at most \(AgentTitle.maxTitle) and \(AgentTitle.maxDescription) characters); ignores copyOnCapture and annotateOnCapture"),
         Fixed(name: "recent", summary: "toggle the recent stack"),
         Fixed(name: "dismiss", summary: "close the thumbnail or the stack"),
         Fixed(name: "cancel", summary: "close the annotator without copying, as Esc would"),
@@ -108,6 +112,8 @@ enum Commands {
                               agent: Agent.clean(items.first { $0.name == "agent" }.map { $0.value ?? "" }),
                               session: items.first { $0.name == "session" }?.value,
                               marks: items.first { $0.name == "marks" }?.value,
+                              title: items.first { $0.name == "title" }?.value,
+                              description: items.first { $0.name == "description" }?.value,
                               root: items.first { $0.name == "root" }?.value.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) },
                               clear: items.first { $0.name == "clear" }?.value,
                               points: items.first { $0.name == "points" }?.value,

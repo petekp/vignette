@@ -291,6 +291,63 @@ final class AgentTests: XCTestCase {
         }
     }
 
+    func testAnAgentTitleIsOneLineCutAtAWordToItsLimit() {
+        let parsed = Commands.parse(URL(string: "vignette://add?file=/tmp/x.png&title=Checkout%20page&description=After%20the%20fix")!)
+        XCTAssertEqual(parsed.title, "Checkout page")
+        XCTAssertEqual(parsed.description, "After the fix")
+
+        let spaced = AgentTitle.validated(title: "  Checkout\npage \t", description: "one\r\ntwo\u{7}three")
+        XCTAssertEqual(spaced.value?.title, "Checkout page")
+        XCTAssertEqual(spaced.value?.description, "one two three")
+        XCTAssertEqual(spaced.cut, [])
+
+        let exact = String(repeating: "x", count: AgentTitle.maxTitle)
+        XCTAssertEqual(AgentTitle.validated(title: exact, description: nil).value?.title, exact)
+
+        let words = AgentTitle.maxTitle / 5
+        let cut = AgentTitle.validated(title: String(repeating: "word ", count: 2 * words), description: nil)
+        XCTAssertEqual(cut.cut, [.title])
+        XCTAssertEqual(cut.value?.title, String(repeating: "word ", count: words).trimmingCharacters(in: .whitespaces) + "…")
+        XCTAssertEqual(AgentTitle.validated(title: String(repeating: "word ", count: words - 1) + "abcdefghij", description: nil).value?.title,
+                       String(repeating: "word ", count: words - 1).trimmingCharacters(in: .whitespaces) + "…")
+
+        let unbroken = AgentTitle.validated(title: nil, description: String(repeating: "x", count: 300))
+        XCTAssertEqual(unbroken.cut, [.description])
+        XCTAssertEqual(unbroken.value?.description, String(repeating: "x", count: AgentTitle.maxDescription - 1) + "…")
+        XCTAssertNil(unbroken.value?.title)
+
+        XCTAssertNil(AgentTitle.validated(title: " \n ", description: "").value)
+        XCTAssertNil(AgentTitle.validated(title: nil, description: nil).value)
+    }
+
+    func testATitlesInkIsTheColourThatStandsOutMoreFromItsWorstPart() {
+        let crossover = (1.05 * 0.05).squareRoot() - 0.05
+        XCTAssertEqual(TitleInk.choose(behind: [crossover - 0.001]), .white)
+        XCTAssertEqual(TitleInk.choose(behind: [crossover + 0.001]), .black)
+        XCTAssertEqual(TitleInk.choose(behind: [0.05, 0.12]), .white)
+        XCTAssertEqual(TitleInk.choose(behind: [0.02, 0.6]), .white)
+        XCTAssertEqual(TitleInk.choose(behind: [0.12, 0.6]), .black)
+        XCTAssertNil(TitleInk.choose(behind: []))
+        XCTAssertEqual(TitleInk.luminance(encoded: 1, dim: 0.3), InkContrast.linear(0.7))
+    }
+
+    func testARecordedTitleReadsBackAndFollowsTheFile() throws {
+        let file = dir.appendingPathComponent("Checkout.png")
+        try Data("png".utf8).write(to: file)
+        XCTAssertNil(Agent.title(of: file))
+        let description = String(String(repeating: "Écran 日本語 🧑🏽‍💻 ", count: 30).prefix(AgentTitle.maxDescription))
+        let title = try XCTUnwrap(AgentTitle.validated(title: "Checkout", description: description).value)
+        XCTAssertGreaterThan(description.utf8.count, 4 * Agent.maxLength)
+        Agent.record(title: title, on: file)
+        let renamed = dir.appendingPathComponent("Checkout 2.png")
+        try FileManager.default.moveItem(at: file, to: renamed)
+        XCTAssertEqual(Agent.title(of: renamed), title)
+
+        let titleOnly = try XCTUnwrap(AgentTitle.validated(title: "Cart", description: nil).value)
+        Agent.record(title: titleOnly, on: renamed)
+        XCTAssertEqual(Agent.title(of: renamed), titleOnly)
+    }
+
     func testBadgeLabelNamesTheAgent() {
         XCTAssertEqual(Agent.label(for: "claude"), "From Claude")
         XCTAssertEqual(Agent.label(for: ""), "From an agent")

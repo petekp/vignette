@@ -68,10 +68,10 @@ final class FolderWrites {
 
     // MARK: Writes
 
-    /// `add?file=<path>[&annotate][&agent=<name>][&session=<id>][&marks=<json>]`: a copy of an image
+    /// `add?file=<path>[&annotate][&agent=<name>][&session=<id>][&marks=<json>][&title=…][&description=…]`: a copy of an image
     /// from anywhere lands in the watch folder, where the watcher reports it like a capture;
     /// `pendingAdds` makes that report skip the capture toggles. `agent=` is recorded on the copy,
-    /// which is what puts the badge on its card, and `session=` beside it, which is where Reply goes. `marks=` joins the screenshot's drawing before the card appears, so the
+    /// which is what puts the badge on its card, and `session=` beside it, which is where Reply goes, and `title=` and `description=` beside them. `marks=` joins the screenshot's drawing before the card appears, so the
     /// user opens the agent's drawing and edits it like their own.
     func add(_ request: CommandRequest) {
         let watchFolder = callbacks.folder()
@@ -121,16 +121,21 @@ final class FolderWrites {
                 Log.write("[add] warning \(name): session= is not a session id; Reply on its card will ask where to send")
             }
         }
+        let title = AgentTitle.validated(title: request.title, description: request.description)
+        Agent.record(title: title.value, on: destination)
+        for part in title.cut {
+            Log.write("[add] warning \(name): its \(part.rawValue) is longer than \(part.limit) characters and was cut")
+        }
         guard !marks.isEmpty else {
             presentAdd(key)
-            Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request, origin))")
+            Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request, origin, titled: title.value != nil))")
             return
         }
         callbacks.joinMarks(marks, request.agent, key) { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let joined):
-                Commands.ok("add", "\(name)\(detail(request, origin)) marks=\(joined)")
+                Commands.ok("add", "\(name)\(detail(request, origin, titled: title.value != nil)) marks=\(joined)")
             case .failure(let failure):
                 Commands.error("add", failure.code, "\(name): the image is in the folder, its marks are not: \(failure)")
             }
@@ -227,8 +232,9 @@ final class FolderWrites {
     }
 
     /// What an `[add] ok` line says about the request beyond the file name.
-    private func detail(_ request: CommandRequest, _ origin: AgentAddress?) -> String {
-        (request.annotate ? " annotate" : "") + (request.agent.map { " agent=\($0)" } ?? "") + (origin.map { " session=\($0.id)" } ?? "")
+    private func detail(_ request: CommandRequest, _ origin: AgentAddress?, titled: Bool) -> String {
+        (request.annotate ? " annotate" : "") + (request.agent.map { " agent=\($0)" } ?? "") + (titled ? " title" : "")
+            + (origin.map { " session=\($0.id)" } ?? "")
     }
 
     // MARK: Removals

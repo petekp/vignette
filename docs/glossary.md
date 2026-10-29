@@ -215,3 +215,8 @@ An accepted reply that has become a card.
 A screenshot an agent adds to the screenshots folder through Vignette, with optional marks. Its
 card says which agent sent it.
 _Avoid_: Upload, import
+
+**Agent title**:
+What an agent says its screenshot shows: a title, and a description under it. The editor shows it
+above the image. It is not part of the drawing.
+_Avoid_: Caption, header, label

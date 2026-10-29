@@ -24,6 +24,7 @@ open -g "vignette://add?file=/tmp/agent/x.png&agent=claude"  # the same, with a 
 open -g "vignette://add?file=/tmp/agent/x.png&agent=claude&session=$CLAUDE_CODE_SESSION_ID"  # the same, and Reply on the card goes back to that Claude Code session
 open -g "vignette://add?file=/tmp/agent/x.png&agent=codex&session=$CODEX_THREAD_ID"  # the same from Codex: Reply goes back to that Codex thread
 open -g "vignette://add?file=/tmp/agent/x.png&marks=/tmp/agent/marks.json"  # the same, with the agent's drawing on it
+open -g "vignette://add?file=/tmp/agent/x.png&title=Checkout%20at%20390%20px&description=After%20the%20fix"  # the same, with a title above it in the editor
 open -g vignette://recent                     # toggle the recent stack (same as the shortcut)
 open -g vignette://dismiss                    # close the thumbnail or the stack
 open -g vignette://cancel                     # close the annotator without copying, as Esc would
@@ -53,6 +54,12 @@ where it is. A push with `agent=` replaces the agent and session an earlier push
 so one without `session=` removes the earlier session. Reply on the card needs `agent=claude` or `agent=codex` and a `session=` that is a UUID: a Claude
 Code session id or a Codex thread id. Any other `session=` is not recorded, and `[add]` still
 answers `ok` with a warning.
+
+`title=` and `description=` say what the image shows. The editor shows the title above the image's
+frame, with the description under it in fainter text. The text is white or black, whichever
+stands out more from the screen behind it. Each is one line of up to 60
+and 140 characters. Longer text is cut at a word with an ellipsis, and `[add]` still answers `ok`,
+with a warning naming the part that was cut. The card, a copy, a stitch and a send leave them out.
 
 `copy-annotated` answers with `files=["<absolute path>", ...]`, followed by how many had drawings.
 The JSON array keeps selection order. A card without a drawing returns its original path. Each

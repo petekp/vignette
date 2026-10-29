@@ -254,6 +254,38 @@ final class StackLayoutTests: XCTestCase {
         XCTAssertEqual(small.width, 480, "a small crop scales up to the minimum width")
     }
 
+    func testAnAgentsTitleTakesRoomAboveTheFrame() {
+        let wide = NSSize(width: 1600, height: 800), tall = NSSize(width: 800, height: 1600)
+        for image in [wide, tall] {
+            XCTAssertEqual(layout.annotationFrame(for: image, visibleFrame: screen, below: 60) { _ in 0 },
+                           layout.annotationFrame(for: image, visibleFrame: screen, below: 60))
+        }
+        let untitled = layout.annotationFrame(for: tall, visibleFrame: screen, below: 60)
+        let lines = { (width: CGFloat) -> CGFloat in width < 380 ? 90 : 60 }
+        let titled = layout.annotationFrame(for: tall, visibleFrame: screen, below: 60, above: lines)
+        XCTAssertLessThan(titled.height, untitled.height)
+        XCTAssertLessThan(titled.width, 380)
+        XCTAssertLessThanOrEqual(titled.maxY + lines(titled.width), screen.maxY - 60)
+        XCTAssertGreaterThanOrEqual(titled.minY, 60 + 60)
+
+        var minimum = ui
+        minimum.agentTitleMinWidth = 400
+        let floored = StackLayout(ui: minimum).annotationFrame(for: tall, visibleFrame: screen, below: 60, above: lines)
+        XCTAssertGreaterThan(floored.height, titled.height)
+
+        let roomy = layout.annotationFrame(for: wide, visibleFrame: screen, below: 60) { _ in 40 }
+        let plain = layout.annotationFrame(for: wide, visibleFrame: screen, below: 60)
+        XCTAssertEqual(roomy.size, plain.size)
+        XCTAssertEqual(roomy.midY, plain.midY - 20, accuracy: 1)
+    }
+
+    func testATitleWrapsNoNarrowerThanItsMinimumAndNoFurtherThanTheRoom() {
+        let room = NSRect(x: 0, y: 0, width: 1000, height: 800)
+        XCTAssertEqual(StackLayout.titleWrapWidth(frame: NSRect(x: 100, y: 0, width: 600, height: 400), room: room, minimum: 300), 600)
+        XCTAssertEqual(StackLayout.titleWrapWidth(frame: NSRect(x: 400, y: 0, width: 200, height: 400), room: room, minimum: 300), 300)
+        XCTAssertEqual(StackLayout.titleWrapWidth(frame: NSRect(x: 800, y: 0, width: 150, height: 400), room: room, minimum: 300), 200)
+    }
+
     func testTheAnnotatorsRoomLeavesTheStackItsNarrowestWidth() {
         let room = layout.annotatorRoom(visibleFrame: screen)
         XCTAssertEqual(room.maxX, screen.maxX - 16 - 100 - 20, "the margin, the stack at half width, and the gap")
