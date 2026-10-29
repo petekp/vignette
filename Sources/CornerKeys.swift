@@ -56,8 +56,8 @@ final class CornerKeys {
     private let backdrop = BackdropPanel()
     private let outsideClick = OutsideClick()
     private let hold = EventHold<CornerPresentation.Event>()
-    /// `holdKeys` brought the panel up and no card has taken the keys since, so letting them go
-    /// takes it down again: the shortcut found nothing, or was dismissed while it listed.
+    /// `holdKeys` brought the panel up and the listing has not filled it yet, so letting the keys go
+    /// takes it down again.
     private var heldPanelUp = false
 
     init(panel: ThumbnailPanel, screen: @escaping () -> NSScreen) {
@@ -80,6 +80,7 @@ final class CornerKeys {
         hold.send(event) { event in
             // While the window the person was in is still key, so closing goes back to it.
             if event == .thumbnailsShown, !panel.isVisible { FocusReturn.shared.sessionStarting() }
+            if case .listed(found: true, _) = event { heldPanelUp = false }
             let effects = presentation.reduce(event)
             if !effects.isEmpty {
                 Log.write("[corner] \(event) -> \(presentation.mode) effects=\(effects.map { "\($0)" }.joined(separator: " "))")
@@ -105,7 +106,6 @@ final class CornerKeys {
             panel.makeKey()
             Log.write("[stack] keys held key=\(panel.isKeyWindow)\(Self.after(pressedAt))")
         case .takeKeys(_, let pressedAt):
-            heldPanelUp = false
             panel.acceptsKeys = true
             panel.makeKey()
             Log.write("[stack] keys key=\(panel.isKeyWindow)\(Self.after(pressedAt))")
