@@ -25,15 +25,20 @@ final class LiveInkTests: XCTestCase {
 
     // MARK: Which pair holds live ink
 
-    func testAChordTheStackDoubleTapsIsRefused() {
-        XCTAssertNotNil(LiveInkChord.controlShift.refusal(against: .doubleTap(keyCode: 60)), "the right Shift is in ⌃⇧")
-        XCTAssertNil(LiveInkChord.controlOption.refusal(against: .doubleTap(keyCode: 60)), "⌃⌥ does not hold Shift")
+    @MainActor func testEveryPairCanSitBesideADoubleTap() {
+        for chord in LiveInkChord.allCases {
+            for tap in ShortcutSetting.doubleTaps {
+                XCTAssertNil(chord.refusal(against: HotKeySpec.parse(tap)), "\(chord.glyphs) beside \(tap)")
+            }
+        }
     }
 
-    func testAChordInsideTheStacksKeyCombinationIsRefused() {
+    func testAPairInsideTheStacksKeyCombinationIsRefusedFromEitherSide() {
         let controlOptionS = HotKeySpec.key(keyCode: 1, modifiers: UInt32(controlKey | optionKey | cmdKey))
-        XCTAssertNotNil(LiveInkChord.controlOption.refusal(against: controlOptionS), "holding ⌃⌥ would start ⌃⌥⌘S")
+        XCTAssertNotNil(LiveInkChord.controlOption.refusal(against: controlOptionS), "pressing ⌃⌥⌘S holds ⌃⌥ first")
+        XCTAssertNotNil(LiveInkChord.controlOption.refusal(ofStackShortcut: controlOptionS))
         XCTAssertNil(LiveInkChord.controlShift.refusal(against: controlOptionS), "⌃⇧ is not part of ⌃⌥⌘S")
+        XCTAssertNil(LiveInkChord.controlShift.refusal(ofStackShortcut: controlOptionS))
     }
 
     // MARK: How long a note card's turn is waited on

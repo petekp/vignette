@@ -126,7 +126,7 @@ extension HotKeySpec {
         return mods
     }
 
-    private static func eventModifiers(_ modifiers: UInt32) -> NSEvent.ModifierFlags {
+    static func eventModifiers(_ modifiers: UInt32) -> NSEvent.ModifierFlags {
         var flags: NSEvent.ModifierFlags = []
         if modifiers & UInt32(cmdKey) != 0 { flags.insert(.command) }
         if modifiers & UInt32(shiftKey) != 0 { flags.insert(.shift) }
@@ -135,7 +135,7 @@ extension HotKeySpec {
         return flags
     }
 
-    private static func modifierGlyphs(_ modifiers: UInt32) -> String {
+    static func modifierGlyphs(_ modifiers: UInt32) -> String {
         var text = ""
         if modifiers & UInt32(controlKey) != 0 { text += "⌃" }
         if modifiers & UInt32(optionKey) != 0 { text += "⌥" }

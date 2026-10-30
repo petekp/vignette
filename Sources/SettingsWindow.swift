@@ -797,7 +797,10 @@ private final class ShortcutRecorderView: NSView {
             stop()
             return
         }
-        if let reason = HotKeySpec.refusal(keyCode: UInt32(event.keyCode), modifiers: HotKeySpec.carbonModifiers(flags)) {
+        let modifiers = HotKeySpec.carbonModifiers(flags)
+        let liveInk = Settings.shared.data.liveInk ? Settings.shared.data.liveInkChordChoice : nil
+        if let reason = HotKeySpec.refusal(keyCode: UInt32(event.keyCode), modifiers: modifiers)
+            ?? liveInk?.refusal(ofStackShortcut: .key(keyCode: UInt32(event.keyCode), modifiers: modifiers)) {
             NSSound.beep()
             refused = true
             onRefusal(reason)
