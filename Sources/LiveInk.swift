@@ -856,6 +856,9 @@ final class LiveInk {
         let trimmed = words.trimmingCharacters(in: .whitespacesAndNewlines)
         // A follow-up is not about the note's ink, and leaves the note, its words and what was said for it.
         let noteIDs = reply == nil ? [] : asks.noteInk
+        // A follow-up goes to the agent that answered.
+        let agent = responder ?? reply.flatMap { AgentClient(rawValue: $0.agentName ?? "") } ?? self.note?.target.responder ?? responders.conversing
+            ?? responders.offers.first { $0.canPick && $0.problem == nil }?.client ?? .claude
         if reply == nil { closeNote() }
         // The words as they were said, unless the person changed them in the note.
         let said = reply != nil ? nil : spoken.flatMap { LiveListening.text(of: $0.words).trimmingCharacters(in: .whitespacesAndNewlines) == trimmed ? $0 : nil }
@@ -876,9 +879,6 @@ final class LiveInk {
             point = centre
             run(effects)
         }
-        // A follow-up goes to the agent that answered, and an ask with no agent to the conversation's.
-        let agent = responder ?? reply.flatMap { AgentClient(rawValue: $0.agentName ?? "") } ?? responders.conversing
-            ?? responders.offers.first { $0.canPick && $0.problem == nil }?.client ?? .claude
         let answerer = (agent: session?.destination.client.rawValue ?? agent.rawValue, name: session?.title)
         answerers[id] = answerer
         if let note { handing[id] = note.panel }
