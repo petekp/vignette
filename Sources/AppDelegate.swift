@@ -37,7 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let annotator = AnnotationController()
     private lazy var liveInk = LiveInk(mayInk: { [weak self] in !(self?.thumbnail.holdsScreen ?? true) })
     let settingsWindow = SettingsWindowController()
-    /// Whether the Settings window is showing live ink's one-time offer (`offerLiveInk`).
+    /// Whether the Settings window is showing live ink's one-time offer.
     var liveInkOfferOpen = false
     private let setupWindow = SetupWindowController()
     private lazy var debugPanel = DebugPanelController(previews: .init(
@@ -254,7 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.liveInk != old.liveInk { liveInk.setOn(new.liveInk) }
-        if new.liveInk, !new.liveInkOffered { liveInkOfferOpen = false; settings.update { $0.liveInkOffered = true } }
+        if new.liveInk { liveInkOfferOpen = false; if !new.liveInkOffered { settings.update { $0.liveInkOffered = true } } }
         if new.liveInkChord != old.liveInkChord { liveInk.takeChord() }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem(); showUpdateDot() }
         if new.launchAtLogin != old.launchAtLogin { applyLoginItem() }
