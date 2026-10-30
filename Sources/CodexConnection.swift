@@ -8,7 +8,7 @@ struct CodexConnection: AgentConnection {
     let client = AgentClient.codex
     /// The threads change only when one is used, and a discovery starts a process of its own.
     let keepsList = true
-    var binary: () -> String? = { AgentTools.forSessions("VIGNETTE_CODEX") { CodexConnection.binary() } }
+    var binary: () -> String? = CodexConnection.binaryToRun
     var run: @Sendable (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
         Subprocess.run($0, $1, timeout: $2)
     }
@@ -35,6 +35,12 @@ struct CodexConnection: AgentConnection {
 
     static func binary(exists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }) -> String? {
         AgentTools.path("codex", fixed: binaryPaths, exists: exists)
+    }
+
+    /// The codex Vignette runs, for Send and for live ink alike: the Codex app's own first. In a test
+    /// launch it is only what `VIGNETTE_CODEX` names.
+    static func binaryToRun() -> String? {
+        AgentTools.forSessions("VIGNETTE_CODEX") { binary() }
     }
 
     /// Every Codex session the machine knows about. `thread/list` reads the store all of them

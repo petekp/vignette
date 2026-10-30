@@ -76,7 +76,7 @@ final class CodexLogin {
     private var loginID: String?
     private var limit: Timer?
 
-    init(binary: @escaping () -> String? = LiveResponder.codexBinary, home: URL? = CodexSignIn.defaultHome,
+    init(binary: @escaping () -> String? = CodexConnection.binaryToRun, home: URL? = CodexSignIn.defaultHome,
          open: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) }) {
         self.binary = binary
         self.home = home

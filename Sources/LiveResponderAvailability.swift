@@ -36,12 +36,6 @@ extension LiveResponder {
         AgentTools.forSessions("VIGNETTE_CLAUDE") { PluginHost.binary(for: .claude) }
     }
 
-    /// The `codex` that answers live ink, the Codex app's own first. In a test launch it is only what
-    /// `VIGNETTE_CODEX` names.
-    nonisolated static func codexBinary() -> String? {
-        AgentTools.forSessions("VIGNETTE_CODEX") { CodexConnection.binary() }
-    }
-
     /// Whether `client` is installed and signed in. Claude Code's check runs `claude auth status`,
     /// which sends no message and costs nothing; a `claude` whose answer cannot be read counts as
     /// ready, and the first ask then reports what the process says. Codex's reads whether
@@ -56,7 +50,7 @@ extension LiveResponder {
                 }
             }
         case .codex:
-            guard codexBinary() != nil, CodexSignIn.defaultHome != nil else { return .notInstalled }
+            guard CodexConnection.binaryToRun() != nil, CodexSignIn.defaultHome != nil else { return .notInstalled }
             return await withCheckedContinuation { continuation in
                 DispatchQueue.global(qos: .utility).async {
                     continuation.resume(returning: CodexSignIn.isSignedIn() ? .ready : .signedOut)

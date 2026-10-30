@@ -51,8 +51,8 @@ final class CodexDriver: ResponderDriver {
     /// start of that same file answers with the refusal and runs nothing.
     private var refused: (file: CodexIsolation.Stamp, refusal: ResponderRefusal)?
 
-    /// `binary` finds `codex` (`LiveResponder.codexBinary`).
-    init(binary: @escaping () -> String? = LiveResponder.codexBinary, home: URL) {
+    /// `binary` finds `codex` (`CodexConnection.binaryToRun`).
+    init(binary: @escaping () -> String? = CodexConnection.binaryToRun, home: URL) {
         self.binary = binary
         self.home = home
     }

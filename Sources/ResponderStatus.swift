@@ -102,7 +102,7 @@ final class ResponderStatus: ObservableObject {
     func signOut() {
         guard live, signIn != .signingOut else { return }
         signIn = .signingOut
-        CodexLogin.signOut(binary: LiveResponder.codexBinary()) { [weak self] in
+        CodexLogin.signOut(binary: CodexConnection.binaryToRun()) { [weak self] in
             self?.signIn = .idle
             self?.changed(signedIn: false)
         }
