@@ -207,8 +207,3 @@ final class CodexLogin {
 
     nonisolated static let probeLimit: TimeInterval = 0.25
 }
-
-extension Notification.Name {
-    /// Vignette's Codex home was signed in or out: `userInfo["signedIn"]` says which.
-    static let codexSignInChanged = Notification.Name("CodexSignInChanged")
-}

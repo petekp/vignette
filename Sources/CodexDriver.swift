@@ -25,7 +25,7 @@ final class CodexDriver: ResponderDriver {
     static let checkProvider = "vignette_check"
 
     let binary: @Sendable () -> String?
-    let notFound = ResponderRefusal(reason: LiveResponder.Availability.notInstalled.problem(for: .codex) ?? "", detail: "no codex")
+    let notFound = ResponderRefusal(reason: CodexDriver.problem(.notInstalled) ?? "", detail: "no codex")
     let couldNotStart = "Vignette couldn't start Codex."
     let couldNotAnswer = "Codex couldn't answer. You can ask again."
     private let home: URL
@@ -73,6 +73,23 @@ final class CodexDriver: ResponderDriver {
     }
 
     nonisolated static let signedOut = "Codex isn't signed in for live ink. You can sign in in Settings."
+
+    /// A note offers Codex only where it is installed.
+    static let alwaysOffered = false
+
+    /// Whether Vignette's own Codex home holds a sign-in (`CodexSignIn.isSignedIn`).
+    nonisolated static func availability() -> LiveResponder.Availability {
+        guard CodexConnection.binaryToRun() != nil, let home = CodexSignIn.defaultHome else { return .notInstalled }
+        return CodexSignIn.isSignedIn(home: home) ? .ready : .signedOut
+    }
+
+    nonisolated static func problem(_ availability: LiveResponder.Availability) -> String? {
+        switch availability {
+        case .checking, .ready: nil
+        case .notInstalled: "Vignette couldn't find Codex. You can send your ink to a session."
+        case .signedOut: signedOut
+        }
+    }
 
     /// The strict schema as the object `turn/start` takes.
     fileprivate static let schema: Any = (try? JSONSerialization.jsonObject(with: Data(LiveAnswer.strictSchema.utf8))) ?? [String: Any]()

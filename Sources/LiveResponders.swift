@@ -9,7 +9,7 @@ import Foundation
 final class LiveResponders {
     private var all: [AgentClient: LiveResponder]
     /// Whether each agent is installed and signed in, as the last check found (`check`).
-    private(set) var availability: [AgentClient: LiveResponder.Availability] = [.claude: .checking, .codex: .checking]
+    private let status: ResponderStatus
     /// The agent the asks since the screen was last cleared went to.
     private(set) var conversing: AgentClient?
     /// The picture each agent's conversation has, and the ids of the text lines sent with it, so a
@@ -17,18 +17,18 @@ final class LiveResponders {
     /// near its ink not sent yet.
     private var pictures: [AgentClient: (conversation: Int, subject: LivePacket.Subject, text: String, lines: Set<String>)] = [:]
 
-    init(drivers: [any ResponderDriver] = [ClaudeDriver()] + (CodexSignIn.defaultHome.map { [CodexDriver(home: $0)] } ?? [])) {
+    init(drivers: [any ResponderDriver] = [ClaudeDriver()] + (CodexSignIn.defaultHome.map { [CodexDriver(home: $0)] } ?? []),
+         status: ResponderStatus = .shared) {
         all = Dictionary(uniqueKeysWithValues: drivers.map { ($0.client, LiveResponder(driver: $0)) })
-        NotificationCenter.default.addObserver(forName: .codexSignInChanged, object: nil, queue: .main) { [weak self] note in
-            MainActor.assumeIsolated { self?.codexSignInChanged(signedIn: note.userInfo?["signedIn"] as? Bool ?? false) }
-        }
+        self.status = status
+        status.onCodexSignIn = { [weak self] _ in self?.codexSignInChanged() }
     }
 
-    /// Vignette's Codex home was signed in or out in Settings or setup, so neither its last check nor
-    /// why its process last failed holds any more, and its process has the old sign-in.
-    private func codexSignInChanged(signedIn: Bool) {
-        availability[.codex] = signedIn ? .ready : .signedOut
-        Log.write("[live-ink] responder \(signedIn ? "ready" : "signedOut") agent=codex source=signIn")
+    private var availability: [AgentClient: LiveResponder.Availability] { status.availability }
+
+    /// Vignette's Codex home was signed in or out in Settings or setup, so why its process last
+    /// failed no longer holds, and its process has the old sign-in.
+    private func codexSignInChanged() {
         codexSignInChangedSince = true
         replaceCodexAfterSignIn()
     }
@@ -46,18 +46,20 @@ final class LiveResponders {
         pictures[.codex] = nil
     }
 
-    /// The agents a note offers, Claude first: Claude always, and Codex unless its check found no
-    /// codex. Each says why it cannot answer: its check's answer, else why its process stopped. Only
-    /// one that is not installed or not signed in cannot be picked; one that stopped starts again
-    /// at the next ask.
+    /// The agents a note offers, Claude first: each one installed, and one not installed that is
+    /// always offered (`ResponderDriver.alwaysOffered`), to say so. Each says why it cannot answer:
+    /// its check's answer, else why its process stopped. Only one that is not installed or not signed
+    /// in cannot be picked; one that stopped starts again at the next ask.
     var offers: [LiveNotePopover.Responder] {
         AgentClient.allCases.compactMap { client in
             let checked = availability[client] ?? .checking
-            guard let responder = all[client], client == .claude || checked != .notInstalled else { return nil }
+            guard let responder = all[client] else { return nil }
+            let driver = type(of: responder.driver)
+            guard driver.alwaysOffered || checked != .notInstalled else { return nil }
             var stopped: String?
             if case .failed(let reason) = responder.state { stopped = reason }
             return LiveNotePopover.Responder(client: client, name: responder.driver.name,
-                                             problem: checked.problem(for: client) ?? stopped, canPick: checked.canAnswer)
+                                             problem: driver.problem(checked) ?? stopped, canPick: checked.canAnswer)
         }
     }
 
@@ -68,15 +70,7 @@ final class LiveResponders {
     /// Asks each of `clients` whether it can answer: every agent when live ink turns on, and those
     /// that could not when a note opens. `changed` runs after each answer.
     func check(_ clients: [AgentClient] = AgentClient.allCases, then changed: @escaping () -> Void) {
-        for client in clients {
-            Task { @MainActor [weak self] in
-                let found = await LiveResponder.availability(of: client)
-                guard let self else { return }
-                availability[client] = found
-                Log.write("[live-ink] responder \(found) agent=\(client.rawValue)")
-                changed()
-            }
-        }
+        status.check(clients, then: changed)
     }
 
     /// Starts `client`'s process ahead of an ask, so its first answer does not wait for a cold start.
@@ -90,13 +84,14 @@ final class LiveResponders {
     /// answer.
     func ask(_ ask: LiveResponder.Ask, to client: AgentClient) -> LiveResponder.Failure? {
         let checked = availability[client] ?? .checking
-        guard checked.canAnswer, all[client] != nil else {
+        guard checked.canAnswer, let responder = all[client] else {
             Log.write("[live-ink] not asking: \(client.rawValue) cannot answer")
-            return LiveResponder.Failure(reason: checked.problem(for: client) ?? "", detail: "\(client.rawValue) \(checked)")
+            let problem = all[client].flatMap { type(of: $0.driver).problem(checked) }
+            return LiveResponder.Failure(reason: problem ?? "", detail: "\(client.rawValue) \(checked)")
         }
         conversing = client
         if client == .codex { replaceCodexAfterSignIn() }
-        all[client]?.ask(ask)
+        responder.ask(ask)
         guard !Self.asked(client) else { return nil }
         Settings.shared.update {
             switch client {

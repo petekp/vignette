@@ -8,7 +8,7 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
 | --- | --- |
 | The pair and its refusals | `LiveInkChord.swift`, `LiveInk.takeChord` |
 | The offer | `AppDelegate.offerLiveInk` (`AppDelegate+LiveInkOffer.swift`), `LiveInkOfferSection` |
-| Whether Claude Code and Codex can answer | `LiveResponderAvailability.swift`, `LiveResponders.check` |
+| Whether Claude Code and Codex can answer | `ResponderStatus.check`, from `ClaudeDriver.availability` and `CodexDriver.availability` |
 | What Settings and setup show about them, Codex's sign-in included | `ResponderStatus.swift` |
 | A notice beside the pointer | `LiveNotice.swift`, `LiveInkOverlay.showNotice` |
 

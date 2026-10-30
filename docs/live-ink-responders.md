@@ -11,6 +11,7 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
 | What both share: one ask at a time, the limits, the idle stop, stopping one turn | `LiveResponder.swift` |
 | Claude Code's process | `ClaudeDriver.swift` |
 | Codex's process, its switches and its isolation check | `CodexDriver.swift`, `CodexIsolation.swift` |
+| Whether each can answer, which live ink, Settings and setup all read | `ResponderStatus.swift`, from each driver's `availability()` and `problem(_:)` |
 | Codex's sign-in | `CodexSignIn.swift`, and its row in Settings and setup in `ResponderStatus.swift` |
 | The note's target and its menu | `LiveNoteTarget.swift`, `LiveNotePopover.swift` |
 
@@ -115,9 +116,9 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
 - Sign Out runs Codex's own `account/logout` in that home. It asks OpenAI to revoke the tokens,
   waiting up to 10 s, then deletes the sign-in. `CodexLogin.signOut` gives Codex 15 s, then removes
   `auth.json` itself if it is still there, since the folder is Vignette's.
-- A sign-in or a sign-out posts `codexSignInChanged`. `LiveResponders` takes Codex's availability
-  from it, and starts Codex's process afresh, so neither the old sign-in nor a failure from before
-  holds. A process in the middle of an ask or a start is left to finish it and replaced at the next
+- A sign-in or a sign-out sets Codex's availability in `ResponderStatus` and tells `LiveResponders`
+  (`onCodexSignIn`), which starts Codex's process afresh, so neither the old sign-in nor a failure
+  from before holds. A process in the middle of an ask or a start is left to finish it and replaced at the next
   ask or stroke. The new conversation has seen no picture, so its first ask sends one.
 
 ## In `[state]`

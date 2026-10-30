@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// What Settings and setup show about live ink's responders: whether Claude Code and Codex can
-/// answer, and Codex's sign-in, which they start and end (docs/live-ink-responders.md). Live ink's
-/// own checks are `LiveResponders`'; a sign-in or sign-out here reaches them as
-/// `codexSignInChanged`.
+/// Whether Claude Code and Codex can answer live ink, as their last checks found, and Codex's
+/// sign-in, which Settings and setup start and end (docs/live-ink-responders.md). Live ink, Settings
+/// and setup all read it, and a sign-in or sign-out writes it.
 @MainActor
 final class ResponderStatus: ObservableObject {
     enum SignIn: Equatable {
@@ -23,9 +22,13 @@ final class ResponderStatus: ObservableObject {
     /// How often Claude Code is asked again while a window shows this: asking it starts `claude`.
     static let claudeRecheck: TimeInterval = 30
 
-    @Published private(set) var claude = LiveResponder.Availability.checking
-    @Published private(set) var codex = LiveResponder.Availability.checking
+    @Published private(set) var availability: [AgentClient: LiveResponder.Availability] = [.claude: .checking, .codex: .checking]
     @Published private(set) var signIn = SignIn.idle
+    /// Hears Codex's home signed in or out, which leaves its process on the old sign-in.
+    var onCodexSignIn: ((_ signedIn: Bool) -> Void)?
+
+    /// The driver whose check and words each agent has.
+    static let drivers: [AgentClient: any ResponderDriver.Type] = [.claude: ClaudeDriver.self, .codex: CodexDriver.self]
 
     private let live: Bool
     private var login: CodexLogin?
@@ -33,8 +36,11 @@ final class ResponderStatus: ObservableObject {
 
     private init(live: Bool) {
         self.live = live
-        if !live { codex = .notInstalled }
+        if !live { availability[.codex] = .notInstalled }
     }
+
+    var claude: LiveResponder.Availability { availability[.claude] ?? .checking }
+    var codex: LiveResponder.Availability { availability[.codex] ?? .checking }
 
     /// Whether Codex is installed, once its check has answered.
     var codexInstalled: Bool { codex == .ready || codex == .signedOut }
@@ -56,23 +62,31 @@ final class ResponderStatus: ObservableObject {
     /// Setup's live ink page's line after the one about drawing: who to ask, or why Claude cannot
     /// answer when neither agent can.
     var askLine: String {
-        claude.canAnswer || codexAlone ? SetupInkCopy.askLine(codex: codexAlone) : claude.problem ?? ""
+        claude.canAnswer || codexAlone ? SetupInkCopy.askLine(codex: codexAlone) : ClaudeDriver.problem(claude) ?? ""
     }
 
-    /// Looks again: Codex each time, since its check reads one file, and Claude Code at most every
-    /// `claudeRecheck`.
-    func look() {
+    /// Asks each of `clients` whether it can answer, off the main thread, and runs `changed` after
+    /// each answer.
+    func check(_ clients: [AgentClient] = AgentClient.allCases, then changed: @escaping () -> Void = {}) {
         guard live else { return }
-        Task { [weak self] in
-            let found = await LiveResponder.availability(of: .codex)
-            if let self, found != codex { codex = found }
+        for client in clients {
+            guard let driver = Self.drivers[client] else { continue }
+            Task { [weak self] in
+                let found = await Task.detached(priority: .utility) { driver.availability() }.value
+                guard let self else { return }
+                if availability[client] != found { availability[client] = found }
+                Log.write("[live-ink] responder \(found) agent=\(client.rawValue)")
+                changed()
+            }
         }
-        guard claudeAsked.map({ Date().timeIntervalSince($0) >= Self.claudeRecheck }) ?? true else { return }
-        claudeAsked = Date()
-        Task { [weak self] in
-            let found = await LiveResponder.availability(of: .claude)
-            if let self, found != claude { claude = found }
-        }
+    }
+
+    /// Looks again for a window: Codex each time, since its check reads one file, and Claude Code at
+    /// most every `claudeRecheck`, since its check runs `claude`.
+    func look() {
+        let claudeDue = claudeAsked.map { Date().timeIntervalSince($0) >= Self.claudeRecheck } ?? true
+        if claudeDue, live { claudeAsked = Date() }
+        check(claudeDue ? [.codex, .claude] : [.codex])
     }
 
     func startSignIn() {
@@ -109,8 +123,9 @@ final class ResponderStatus: ObservableObject {
     }
 
     private func changed(signedIn: Bool) {
-        codex = signedIn ? .ready : .signedOut
-        NotificationCenter.default.post(name: .codexSignInChanged, object: nil, userInfo: ["signedIn": signedIn])
+        availability[.codex] = signedIn ? .ready : .signedOut
+        Log.write("[live-ink] responder \(signedIn ? "ready" : "signedOut") agent=codex source=signIn")
+        onCodexSignIn?(signedIn)
     }
 }
 

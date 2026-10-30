@@ -18,9 +18,9 @@ The menu bar menu names the switch as the General tab does.
 | The note's placeholder, with Claude or Codex as its target (`NoteContent.askPlaceholder`) | Ask about this |
 | The same, until the first ask to that agent (`NoteContent.firstAskPlaceholder`) | Ask about this. *agent* sees the window's picture, title and URL. |
 | The note's placeholder, with a session as its target (`NoteContent.sendPlaceholder`) | Send to session |
-| The note's placeholder with Claude as its target, Claude's row in the target menu under its name, and setup's live ink page in place of its line about asking Claude, when Claude Code is not found (`LiveResponder.Availability.problem`) | Vignette couldn't find Claude Code. You can send your ink to a session. |
+| The note's placeholder with Claude as its target, Claude's row in the target menu under its name, and setup's live ink page in place of its line about asking Claude, when Claude Code is not found (`ClaudeDriver.problem`) | Vignette couldn't find Claude Code. You can send your ink to a session. |
 | The same, when Claude Code is signed out | Claude Code isn't signed in. You can sign in by running claude in Terminal. |
-| The note's placeholder with Codex as its target, and Codex's row in the target menu, greyed out, under its name, when Codex is not found | Vignette couldn't find Codex. You can send your ink to a session. |
+| The note's placeholder with Codex as its target, and Codex's row in the target menu, greyed out, under its name, when Codex is not found (`CodexDriver.problem`) | Vignette couldn't find Codex. You can send your ink to a session. |
 | The same, when Vignette's Codex home is not signed in (`CodexDriver.signedOut`) | Codex isn't signed in for live ink. You can sign in in Settings. |
 | The same, when Codex's process could not start | Vignette couldn't start Codex. |
 | The same, when the isolation check found tools | This version of Codex starts with tools, so live ink can't use it. |

@@ -90,4 +90,11 @@ protocol ResponderDriver: AnyObject {
     /// Words for the person when the agent's error text names a cause they can act on, else nil.
     /// The text is not an interface: a match only picks a clearer sentence.
     func reason(forError text: String) -> String?
+    /// Whether the agent can answer, as its own tools report it, without sending a message. It reads
+    /// the disk and may run the agent's command, so it runs off the main thread.
+    nonisolated static func availability() -> LiveResponder.Availability
+    /// For the person: why the agent cannot answer, or nil when it can.
+    nonisolated static func problem(_ availability: LiveResponder.Availability) -> String?
+    /// Whether a note offers the agent even when it is not installed, to say so.
+    static var alwaysOffered: Bool { get }
 }

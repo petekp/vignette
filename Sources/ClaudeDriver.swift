@@ -30,8 +30,64 @@ final class ClaudeDriver: ResponderDriver {
 
     /// `binary` finds `claude`. In a test launch it is only what `VIGNETTE_CLAUDE` names, since any
     /// other found on the Mac runs on the person's own account.
-    init(binary: @escaping @Sendable () -> String? = { LiveResponder.claudeBinary() }) {
+    init(binary: @escaping @Sendable () -> String? = { ClaudeDriver.findBinary() }) {
         self.binary = binary
+    }
+
+    /// A note offers Claude even when it is not installed, to say so.
+    static let alwaysOffered = true
+
+    /// The `claude` that answers live ink. In a test launch it is only what `VIGNETTE_CLAUDE` names.
+    nonisolated static func findBinary() -> String? {
+        AgentTools.forSessions("VIGNETTE_CLAUDE") { PluginHost.binary(for: .claude) }
+    }
+
+    /// `claude auth status`, which sends no message and costs nothing. A `claude` whose answer cannot
+    /// be read counts as ready, and the first ask then reports what the process says.
+    nonisolated static func availability() -> LiveResponder.Availability {
+        findBinary().map(authStatus(binary:)) ?? .notInstalled
+    }
+
+    nonisolated static func problem(_ availability: LiveResponder.Availability) -> String? {
+        switch availability {
+        case .checking, .ready: nil
+        case .notInstalled: "Vignette couldn't find Claude Code. You can send your ink to a session."
+        case .signedOut: "Claude Code isn't signed in. You can sign in by running claude in Terminal."
+        }
+    }
+
+    /// How long `claude auth status` may take before the check counts as ready.
+    nonisolated static let authStatusLimit: TimeInterval = 10
+
+    /// The answer of `claude auth status --json`. A check that does not answer within
+    /// `authStatusLimit` stops the process and counts as ready.
+    nonisolated private static func authStatus(binary: String) -> LiveResponder.Availability {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: binary)
+        process.arguments = ["auth", "status", "--json"]
+        process.standardInput = FileHandle.nullDevice
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            Log.write("[live-ink] responder check could not run \(binary): \(error)")
+            return .ready
+        }
+        let exited = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            process.waitUntilExit()
+            exited.signal()
+        }
+        guard exited.wait(timeout: .now() + authStatusLimit) == .success else {
+            process.terminate()
+            Log.write("[live-ink] responder check timed out")
+            return .ready
+        }
+        let answer = (try? JSONSerialization.jsonObject(with: output.fileHandleForReading.readDataToEndOfFile())) as? [String: Any]
+        guard let loggedIn = answer?["loggedIn"] as? Bool else { return .ready }
+        return loggedIn ? .ready : .signedOut
     }
 
     func start(binary: String, askWaiting: @escaping () -> Bool, report: @escaping (ResponderEvent) -> Void) -> String? {
@@ -147,9 +203,7 @@ final class ClaudeDriver: ResponderDriver {
 
     func reason(forError text: String) -> String? {
         let lower = text.lowercased()
-        if ["log in", "login", "authenticat", "api key"].contains(where: lower.contains) {
-            return "Claude Code isn't signed in. You can sign in by running claude in Terminal."
-        }
+        if ["log in", "login", "authenticat", "api key"].contains(where: lower.contains) { return Self.problem(.signedOut) }
         if lower.contains("limit") { return "Claude's usage limit is reached for now." }
         return nil
     }
