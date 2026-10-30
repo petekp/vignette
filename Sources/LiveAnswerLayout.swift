@@ -131,12 +131,12 @@ enum LiveAnswerLayout {
     }
 
     /// A mark pointing at `target`, with `label` beside it, placed as an answer's mark is but with no
-    /// reply to make room for: the mark, then its label when it has room.
+    /// reply to make room for: the mark, then its label when it has room. A ring keeps off the notes.
     static func pointer(_ kind: AnswerMark.Kind, label: String?, at target: CGRect, scene: Scene, sizes: Sizes) -> [Mark] {
         let marks = personsMarks(in: scene) + [target.insetBy(dx: -4, dy: -4)]
         let text = scene.text.map { $0.insetBy(dx: -2, dy: -2) } + enclosed(in: scene)
         guard let best = pointing(kind, label: label, at: target, zoom: false, column: nil, scene: scene, marks: marks, text: text,
-                                  sizes: sizes) else { return [] }
+                                  sizes: sizes, keepingOff: scene.notes) else { return [] }
         return [best.mark] + (best.label.map { [$0] } ?? [])
     }
 
@@ -146,9 +146,9 @@ enum LiveAnswerLayout {
     /// tail, which later arrows from the same side start level with.
     private static func pointing(_ kind: AnswerMark.Kind, label: String?, at target: CGRect, zoom: Bool,
                                  column: (x: CGFloat, fromRight: Bool)?, scene: Scene, marks: [CGRect], text: [CGRect],
-                                 sizes: Sizes) -> (mark: Mark, label: Mark?)? {
+                                 sizes: Sizes, keepingOff: [CGRect] = []) -> (mark: Mark, label: Mark?)? {
         var best: (mark: Mark, label: Mark?, cost: CGFloat)?
-        for mark in pointers(kind, at: target, scene: scene, obstacles: marks + text, column: column?.x, zoom: zoom) {
+        for mark in pointers(kind, at: target, scene: scene, obstacles: marks + text, column: column?.x, zoom: zoom, keepingOff: keepingOff) {
             guard let extent = mark.shapeExtent else { continue }
             var total = cost(extent, room: scene.room, obstacles: marks + text)
             if case .arrow(let arrow) = mark.geometry {
@@ -200,9 +200,6 @@ enum LiveAnswerLayout {
 
     // MARK: Pointing
 
-    /// A line this many times wider than tall is boxed rather than circled: an ellipse round it
-    /// would cover the lines above and below.
-    static let longLine: CGFloat = 8
     /// An arrow's length, and its gap from what it points at, in pt.
     static let arrowLength: CGFloat = 64
     static let arrowGap: CGFloat = 6
@@ -220,9 +217,9 @@ enum LiveAnswerLayout {
     /// one thing read as one. A circle is kept inside the room, so one round something at the
     /// window's edge is not cut off. `column` adds arrows from either side whose tails stand at that x.
     /// A focus is a rectangle that draws no stroke: the sharp spot round the target, or with `zoom`
-    /// the lens over it, which the rest of the answer keeps clear of.
+    /// the lens over it, which the rest of the answer keeps clear of. A circle keeps off `keepingOff`.
     static func pointers(_ kind: AnswerMark.Kind, at target: CGRect, scene: Scene, obstacles: [CGRect], column: CGFloat? = nil,
-                         zoom: Bool = false) -> [Mark] {
+                         zoom: Bool = false, keepingOff: [CGRect] = []) -> [Mark] {
         if kind == .focus {
             var mark = Mark(geometry: .rectangle(zoom ? Focus.lens(over: target, in: scene.room) : Focus.spot(around: target)),
                             agent: true, agentName: agentName)
@@ -230,7 +227,7 @@ enum LiveAnswerLayout {
             return [mark]
         }
         if kind == .circle {
-            let round = inside(circle(around: target), scene.room)
+            let round = inside(circle(around: target, keepingOff: keepingOff), scene.room)
             let frame: CGRect = switch round {
             case .ellipse(let frame), .rectangle(let frame): frame
             default: target
@@ -250,17 +247,6 @@ enum LiveAnswerLayout {
         case .rectangle(let frame) where !frame.intersection(room).isNull: .rectangle(frame.intersection(room))
         default: geometry
         }
-    }
-
-    /// An ellipse padded round `target`, or a box round a long line.
-    static func circle(around target: CGRect) -> Mark.Geometry {
-        let height = max(target.height, 8)
-        if target.width > height * longLine {
-            return .rectangle(target.insetBy(dx: -max(4, height * 0.3), dy: -max(3, height * 0.25)))
-        }
-        // An ellipse through a rect's corners is √2 its size; a little less keeps it off the
-        // neighbouring lines while the words stay inside.
-        return .ellipse(target.insetBy(dx: -max(8, target.width * 0.18), dy: -max(6, height * 0.4)))
     }
 
     /// Whether `mark` is a loop of the person's that covers most of `frame`, or most of which `frame` covers.

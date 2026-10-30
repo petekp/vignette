@@ -23,9 +23,12 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
   counts as offered (`Settings.migrate`), since the switch in it was set by the person or by setup.
 - Setup's permissions page offers Codex's sign-in while Codex is installed and Claude Code can't
   answer (`CodexSetupSection`). `docs/live-ink-responders.md` has the sign-in. The page's height is
-  fixed, so while the row shows, the title starts higher and the cost line sits closer to the row
-  (`LiveInkSetupTop`, `LiveInkSetupFooter`). That keeps room under the cost line for the guide's
-  note, which keeps off the title and the row. With both permissions allowed, Sign In to Codex… is
+  fixed, so while the row shows, the title starts higher (`LiveInkSetupTop`). While the row shows
+  Sign In to Codex…, the room above the cost line holds the guide's label beside it. Once Codex is
+  signed in or signing in, the cost line sits closer to the row (`LiveInkSetupFooter`), which keeps
+  room under it for the guide's note. The note keeps off the title and the row. The guide's ring
+  keeps off the words of its own row (`LiveAnswerLayout.circle(around:keepingOff:)`). With both
+  permissions allowed, Sign In to Codex… is
   the next step: the guide's Then this points at it and it is the default button, and nothing is
   pointed at while the sign-in waits in the browser (`SetupInkGuide.Pointing`). On that Mac the
   guide's note, Screen Recording's reason, the cost line, the live ink page's line, the demo's

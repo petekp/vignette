@@ -47,6 +47,10 @@ final class ResponderStatus: ObservableObject {
     /// Whether setup's permissions page still asks for Codex's sign-in.
     var codexSignInLeft: Bool { codexAlone && codex != .ready }
 
+    /// Whether setup's Codex row shows Sign In to Codex…, which it does while the sign-in is left and
+    /// not waiting in the browser.
+    var offersCodexSignIn: Bool { codexSignInLeft && signIn != .waiting }
+
     var costNote: String { SetupInkCopy.costNote(claude: claude.canAnswer, codex: codex == .ready || codexAlone) }
 
     /// Setup's live ink page's line after the one about drawing: who to ask, or why Claude cannot
@@ -195,9 +199,10 @@ struct LiveInkSetupFooter: View {
     let spots: ScreenSpots
     let reopens: Bool
 
-    /// Room under the rows for the label pointing at the next Allow button. Codex's row stands in
-    /// that room when it shows, and the guide's note needs the room under these lines instead.
-    private var roomAbove: CGFloat { status.codexAlone ? 8 : 30 }
+    /// Room under the rows for the label beside the next button: an Allow button, or Sign In to
+    /// Codex… while Codex's row shows it. Once Codex is signed in or signing in, the guide's note
+    /// needs the room under these lines instead.
+    private var roomAbove: CGFloat { !status.codexAlone || status.offersCodexSignIn ? 30 : 8 }
 
     var body: some View {
         Section {} footer: {
