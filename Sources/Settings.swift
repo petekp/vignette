@@ -242,7 +242,7 @@ struct UITweaks: Codable, Equatable {
     var agentTitleLineGap = 2.0      // between the title and the description under it
     var agentTitleGap = 10.0         // between the block and the image's frame
     var agentTitleMinWidth = 300.0   // the narrowest it wraps at: about 45 characters of the description
-    var agentTitleFade = 0.15        // in after the flight lands, out before it leaves
+    var agentTitleFade = 0.15        // in after the flight lands, out as it flies home
     var zoomEdgeBandPoints = 250.0   // how far from each edge of the picture a zoom holds that edge
     var zoomEdgePull = 0.6           // the part of that band in which the edge is held exactly
     // The editor (`EditorMetrics`): screen pt, the same size at any zoom, unless it says otherwise

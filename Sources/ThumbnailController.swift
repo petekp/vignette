@@ -1,28 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// How the recent stack forms over a column already on screen: every card showing one of the
-/// recent screenshots stays, and only the others enter.
-struct StackEntrance: Equatable {
-    /// For each recent screenshot, newest first: the card on screen that shows it, or nil for one that enters.
-    let kept: [UUID?]
-
-    init(onScreen: [(key: ScreenshotKey, id: UUID)], recent: [ScreenshotKey]) {
-        kept = recent.map { key in onScreen.first { $0.key == key }?.id }
-    }
-
-    /// For each recent screenshot, its place in the slide-in's stagger, counting the entering cards
-    /// from 0, newest first; nil for a card that stays.
-    var ranks: [Int?] {
-        var next = 0
-        return kept.map { id in
-            guard id == nil else { return nil }
-            defer { next += 1 }
-            return next
-        }
-    }
-}
-
 /// Owns the bottom-right panel: fresh-screenshot thumbnails, the recent stack, the marks on cards,
 /// and the transitions into and out of the annotator. An NSObject because the drag-select's
 /// auto-scroll takes its ticks from a display link, which calls a target and a selector.
@@ -51,6 +29,8 @@ final class ThumbnailController: NSObject {
     var annotatorAbove: (Screenshot, _ wrap: CGFloat) -> CGFloat = { _, _ in 0 }
     /// The editor's marks, whose text bitmaps a flight to or from the annotator takes.
     var annotatorMarks: () -> MarkLayers? = { nil }
+    /// The agent's title above the editor, for the flight taking that image home, which carries it.
+    var annotatorTitle: (ScreenshotKey) -> TransitionLayer.Caption? = { _ in nil }
     /// A press begun on the card flying into the editor, for the image with this key; see `FlightPress`.
     var onAnnotatorPress: ((FlightPress.Event, ScreenshotKey) -> Void)?
     /// What the cards a drag out of the stack carries drop; see `StackModel.dragItems`.
@@ -751,7 +731,7 @@ final class ThumbnailController: NSObject {
             var slot = cardFrame(of: card)
             slot.origin.x += layout.offscreenDistance(cardWidth: slot.width)
             flights.fly(id: card.id, image: flightImage(for: currentCard(card)), marks: homeFlightMarks(for: currentCard(card)),
-                        from: annotationFrame, to: slot,
+                        caption: annotatorTitle(card.shot.key), from: annotationFrame, to: slot,
                         lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
                 self?.flights.end(id: card.id)
             })
@@ -956,8 +936,8 @@ final class ThumbnailController: NSObject {
         // The card takes its slot back only once the flight has settled on it: the card draws at the
         // exact slot, so a card and a shadow put there while the flight still had a few points to
         // go would both step. Nothing is visible before then; the flight covers the slot.
-        flights.fly(id: card.id, image: flightImage(for: card), marks: homeFlightMarks(for: card), from: annotationFrame, to: cardFrame(of: card),
-                    lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
+        flights.fly(id: card.id, image: flightImage(for: card), marks: homeFlightMarks(for: card), caption: annotatorTitle(card.shot.key),
+                    from: annotationFrame, to: cardFrame(of: card), lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
             guard let self else { return }
             self.model.outCards.remove(card.id)
             self.hover(landing: card)
@@ -989,8 +969,8 @@ final class ThumbnailController: NSObject {
         readArea()
         var slot = layout.loneCardFrame(size: card.size, area: area)
         slot.origin.x += layout.offscreenDistance(cardWidth: slot.width)
-        flights.fly(id: card.id, image: flightImage(for: card), marks: homeFlightMarks(for: card), from: annotationFrame, to: slot,
-                    lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
+        flights.fly(id: card.id, image: flightImage(for: card), marks: homeFlightMarks(for: card), caption: annotatorTitle(card.shot.key),
+                    from: annotationFrame, to: slot, lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
             self?.flights.end(id: card.id)
             card.marks?.clear()   // the card is gone for good, as `removeCards` would have it
         })

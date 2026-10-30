@@ -41,6 +41,16 @@ final class TransitionLayer {
         static let screen = Look(corner: 0, shadowOpacity: 0, shadowRadius: 0, shadowY: 0, ring: 0, matte: 0)
     }
 
+    /// An agent's title leaving the annotator with its image: the block as the annotator drew it,
+    /// above the flight's picture, scaled with the flight's frame from `frameWidth`.
+    struct Caption {
+        var image: NSImage
+        /// Its top-left corner from the frame's, in points, y down, at `frameWidth`.
+        var offset: CGPoint
+        var frameWidth: CGFloat
+        var opacity: Double
+    }
+
     struct Flight: Identifiable {
         let id: UUID
         var image: NSImage
@@ -49,6 +59,7 @@ final class TransitionLayer {
         var frame: CGRect      // top-left origin, in the layer's own coordinates
         var look: Look
         var opacity: Double = 1
+        var caption: Caption?
         /// The path this flight is on, and the one it was on before it was aimed again.
         var path = Path()
         var previousPath = Path()
@@ -205,13 +216,16 @@ final class TransitionLayer {
     /// covers the target rect on every side and something put there without a shadow is hidden
     /// behind it. `arrived` runs when the spring has really settled on the target; whatever takes
     /// the flight's place draws at the exact target, so it has to appear then or it steps by what
-    /// the spring still had to go.
-    func fly(id: UUID, image: NSImage, marks: MarkLayers? = nil, from: NSRect, to: NSRect, lookFrom: Look, lookTo: Look,
-             on screen: NSScreen, covered: @escaping () -> Void = {}, arrived: @escaping () -> Void = {},
-             dropped: (() -> Void)? = nil) {
+    /// the spring still had to go. A `caption` fades out from the flight's start.
+    func fly(id: UUID, image: NSImage, marks: MarkLayers? = nil, caption: Caption? = nil, from: NSRect, to: NSRect,
+             lookFrom: Look, lookTo: Look, on screen: NSScreen, covered: @escaping () -> Void = {},
+             arrived: @escaping () -> Void = {}, dropped: (() -> Void)? = nil) {
         let ui = Settings.shared.motionUI
         showPanel(on: screen)
-        let gen = start(id: id, image: image, marks: marks, from: from, to: to, look: lookFrom, ui: ui, dropped: dropped)
+        // At most half the flight, so the title is gone well before the card lands over the stack.
+        let fade = min(ui.agentTitleFade, ui.expandDuration / 2)
+        let gen = start(id: id, image: image, marks: marks, caption: fade > 0 ? caption : nil, from: from, to: to,
+                        look: lookFrom, ui: ui, dropped: dropped)
         let travel = max(abs(to.minX - from.minX), abs(to.minY - from.minY),
                          abs(to.width - from.width), abs(to.height - from.height))
         let settleTime = Anim.settle(ui.expandDuration, bounce: Anim.flightBounce, distance: travel, within: Self.arrivalTolerance)
@@ -229,6 +243,7 @@ final class TransitionLayer {
                 self.model.flights[i].opacity = 1
                 self.model.flights[i].blend = 1
             }
+            withAnimation(Anim.spring(fade)) { self.model.flights[i].caption?.opacity = 0 }
             // Scheduled before the arrival, so a duration of 0 runs the two in this order.
             DispatchQueue.main.asyncAfter(deadline: .now() + coverTime) { [weak self] in
                 guard let self, self.isCurrent(id, gen) else { return }
@@ -317,8 +332,8 @@ final class TransitionLayer {
     /// Adds the flight, or aims an existing one down a new path, and returns its generation.
     /// The curve is fixed when the path is, so a flight keeps the motion scale it started with.
     /// Aiming again keeps the old path and resets `blend`, which `fly` then animates back to 1.
-    private func start(id: UUID, image: NSImage, marks: MarkLayers?, from: NSRect, to: NSRect, look: Look, ui: UITweaks,
-                       dropped: (() -> Void)? = nil) -> Int {
+    private func start(id: UUID, image: NSImage, marks: MarkLayers?, caption: Caption? = nil, from: NSRect, to: NSRect,
+                       look: Look, ui: UITweaks, dropped: (() -> Void)? = nil) -> Int {
         let path = Path(from: center(local(from)), to: center(local(to)), curve: FlightCurve(ui: ui))
         // It is going somewhere else now, so it has not arrived and any lift waits for the new end.
         arrivedFlights.remove(id)
@@ -332,13 +347,14 @@ final class TransitionLayer {
             model.flights[i].image = image
             if let old = model.flights[i].marks, old !== marks { old.clear() }
             model.flights[i].marks = marks
+            if let caption { model.flights[i].caption = caption }
             model.flights[i].previousPath = model.flights[i].path
             model.flights[i].path = path
             model.flights[i].blend = 0
             model.flights[i].dropped = dropped
             return gen
         }
-        model.flights.append(Flight(id: id, image: image, marks: marks, frame: local(from), look: look,
+        model.flights.append(Flight(id: id, image: image, marks: marks, frame: local(from), look: look, caption: caption,
                                     path: path, previousPath: path, generation: gen, dropped: dropped))
         return gen
     }
@@ -467,6 +483,15 @@ private struct FlightsView: View {
                     .overlay(RoundedRectangle(cornerRadius: f.look.corner, style: .continuous).stroke(.white.opacity(ui.cardBorderOpacity * f.look.ring), lineWidth: ui.cardBorderWidth))
                     // Before the bow, so the spot is where the picture is on screen, swell and all.
                     .overlay(FlightSpot(id: f.id, picture: f.image.size))
+                    // The agent's title, pinned to the picture's top-left corner, so it bows and swells with it.
+                    .overlay(alignment: .topLeading) {
+                        if let caption = f.caption {
+                            Image(nsImage: caption.image)
+                                .offset(x: caption.offset.x, y: caption.offset.y)
+                                .scaleEffect(f.frame.width / max(caption.frameWidth, 1), anchor: .topLeading)
+                                .opacity(caption.opacity)
+                        }
+                    }
                     .modifier(Bow(center: CGPoint(x: f.frame.midX, y: f.frame.midY), path: f.path, previous: f.previousPath, blend: f.blend))
                     .opacity(f.opacity)
                     .position(x: f.frame.midX, y: f.frame.midY)
@@ -517,43 +542,4 @@ private final class PressCatcher: NSView {
     override func mouseDown(with event: NSEvent) { onEvent?(event) }
     override func mouseDragged(with event: NSEvent) { onEvent?(event) }
     override func mouseUp(with event: NSEvent) { onEvent?(event) }
-}
-
-/// Marks where a flight's picture is. SwiftUI lays this view out with the flight, the bow's offset
-/// and swell included, so AppKit's own conversion finds a press's place on the picture.
-private struct FlightSpot: NSViewRepresentable {
-    let id: UUID
-    let picture: CGSize
-
-    func makeNSView(context: Context) -> FlightSpotView { FlightSpotView(id: id, picture: picture) }
-    func updateNSView(_ view: FlightSpotView, context: Context) {
-        view.picture = picture
-    }
-}
-
-final class FlightSpotView: NSView {
-    let id: UUID
-    /// The picture's shape: the flight fills its frame with it, cropping any excess.
-    var picture: CGSize
-
-    init(id: UUID, picture: CGSize) {
-        self.id = id
-        self.picture = picture
-        super.init(frame: .zero)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-    override var isFlipped: Bool { true }
-
-    /// `point` from the top-left of a frame of `size` that a picture of shape `picture` fills,
-    /// cropping any excess, as a fraction of the picture from its top-left corner.
-    nonisolated static func fraction(of point: CGPoint, in size: CGSize, picture: CGSize) -> CGPoint? {
-        guard picture.width > 0, picture.height > 0, size.width > 0, size.height > 0 else { return nil }
-        let scale = max(size.width / picture.width, size.height / picture.height)
-        let filled = CGSize(width: picture.width * scale, height: picture.height * scale)
-        return CGPoint(x: (point.x - (size.width - filled.width) / 2) / filled.width,
-                       y: (point.y - (size.height - filled.height) / 2) / filled.height)
-    }
 }

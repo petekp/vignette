@@ -200,12 +200,12 @@ The steps below have the details.
    black, whichever has the higher contrast with the lightest or darkest part of the screen behind
    it (`TitleInk.choose`). With Screen Recording that is read off the main thread at open and after
    each zoom step. Without it, the ink follows the system appearance. `[annotate] title ink=… source=…`
-   logs which. Cards, flights, renderings, stitches and sends do not draw it. An image with a title opens with room above the frame for it
+   logs which. No card, rendering, stitch or send draws it. An image with a title opens with room above the frame for it
    (`StackLayout.annotationFrame`'s `above`). Its zoom room ends twice `ui.agentTitleGap` above the
    title (`AgentTitleView.marginAbove`), so a zoom never pushes the title off screen or against the
    menu bar. The title fades in over `ui.agentTitleFade` once the flight has
-   landed and its ink is known, whichever comes second (`TitleReveal`), and fades out before the
-   flight home leaves. When the ink is still unknown 0.5 s after the landing
+   landed and its ink is known, whichever comes second (`TitleReveal`), and fades out on the
+   flight home (`TransitionLayer.Caption`). When the ink is still unknown 0.5 s after the landing
    (`TitleReveal.inkWait`), the title shows in the appearance's ink, and the measured ink replaces
    it when it answers. The wait is for data, not motion, so the motion scale does not shorten it.
    `[annotate] title shown ink=… source=… waited=<ms>ms` logs how long each title waited after the
