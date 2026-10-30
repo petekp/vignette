@@ -290,9 +290,10 @@ struct InputTool {
         }
     }
 
-    /// Trackpad-style pixel deltas. Negative dy pulls the content down, which is what reveals
-    /// the older cards above in the stack (measured against it; CGEvent's sign is the other way
-    /// round from the `scrollingDeltaY` the app reads).
+    /// Trackpad-style pixel deltas. A positive dy reaches the app as a positive `scrollingDeltaY`,
+    /// which reveals the older cards above in the stack. A tool that rewrites scroll events, such as
+    /// Scroll Reverser, can flip the sign on the Mac it runs on, so read `stack.scroll` in `[state]`
+    /// after the first step.
     static func scroll(_ dy: Double, steps: Int) {
         for _ in 0..<max(steps, 1) {
             post(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
