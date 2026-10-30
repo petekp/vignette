@@ -4,8 +4,8 @@
 folder. `<folder>/threads.json` holds the threads it lists. `<folder>/calls.jsonl` gets one line per
 call, with its arguments, and one per request `app-server` answers, written before the answer:
 Vignette ends the server once it has its answers, so nothing after the last one is sure to run.
-Each line carries its process and the time it was written, and an exception is a line of its own,
-since Vignette drops codex's standard error.
+Each line carries its arguments, its process and the time it was written, and an exception is a
+line of its own, since Vignette drops codex's standard error.
 
 It speaks only what Vignette asks of codex: `app-server` answers `initialize`, `thread/list` and
 `thread/read` (`AppServer.swift`), and `queue --thread <id> --message <line>` succeeds, as the real
@@ -75,7 +75,6 @@ def take_turn(folder, thread, line):
     end = json.dumps({'type': 'event_msg', 'payload': {'type': 'task_complete', 'turn_id': turn, 'last_agent_message': 'Done.'}})
     subprocess.Popen(['/bin/sh', '-c', f'sleep {shlex.quote(seconds)}; printf "%s\\n" {shlex.quote(end)} >> {shlex.quote(path)}'],
                      start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    record(folder, {'turn': turn, 'thread': thread, 'endsAfter': seconds})
 
 
 def gone(folder):
@@ -115,7 +114,7 @@ def serve(folder, args):
             answer = {'id': message['id'], 'result': {'account': {'type': 'chatgpt', 'email': 'e2e@example.invalid'} if signed_in else None,
                                                       'requiresOpenaiAuth': True}}
         elif method == 'account/login/start':
-            record(folder, {'login': params.get('type')})
+            record(folder, {'args': args, 'login': params.get('type')})
             if os.path.exists(os.path.join(folder, 'login-port-busy')):
                 answer = {'id': message['id'], 'error': {'code': -32603, 'message': 'failed to start login server: Port 127.0.0.1:1457 is already in use'}}
             else:
@@ -132,7 +131,7 @@ def serve(folder, args):
         elif method == 'thread/start':
             thread = f'thread-{len(started) + 1}'
             started[thread] = params
-            record(folder, {'thread': thread, 'provider': params.get('modelProvider'), 'model': params.get('model')})
+            record(folder, {'args': args, 'thread': thread, 'provider': params.get('modelProvider'), 'model': params.get('model')})
             answer = {'id': message['id'], 'result': {'thread': {'id': thread}}}
         elif method == 'turn/start':
             print(json.dumps({'id': message['id'], 'result': {}}), flush=True)
@@ -140,7 +139,7 @@ def serve(folder, args):
             emit('turn/started', {'threadId': turn['thread'], 'turn': {'id': turn['id']}})
             asks = any(part.get('type') == 'image' for part in turn['input'])
             if started.get(turn['thread'], {}).get('modelProvider') == 'vignette_check':
-                post_check(folder, provider, started[turn['thread']], turn)
+                post_check(folder, args, provider, started[turn['thread']], turn)
                 complete(turn, '{"say":"Ready.","marks":[],"steps":null,"actions":null}')
             else:
                 complete(turn, answer_text(folder, asks))
@@ -159,7 +158,7 @@ def check_provider(args):
     return None
 
 
-def post_check(folder, provider, thread, turn):
+def post_check(folder, args, provider, thread, turn):
     """Posts the check's provider what the real codex sends: the base instructions as a developer
     message, the turn's text as the user's, and no tools."""
     text = ''.join(part.get('text', '') for part in turn['input'] if part.get('type') == 'text')
@@ -170,7 +169,7 @@ def post_check(folder, provider, thread, turn):
     request = urllib.request.Request(provider + '/responses', data=json.dumps(body).encode(), method='POST',
                                      headers={'content-type': 'application/json'})
     with urllib.request.urlopen(request, timeout=10) as answer:
-        record(folder, {'checkPosted': answer.status, 'tools': len(tools)})
+        record(folder, {'args': args, 'checkPosted': answer.status, 'tools': len(tools)})
         answer.read()
 
 
