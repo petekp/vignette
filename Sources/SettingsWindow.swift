@@ -201,6 +201,7 @@ struct SettingsView: View {
     let callbacks: SettingsWindowController.Callbacks
 
     @ObservedObject private var settings = Settings.shared
+    @ObservedObject private var responders = ResponderStatus.shared
     /// What is on disk for each agent, read on show and after every switch.
     @State private var agentRows = AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser)
     /// Why the last install or removal failed, by agent directory. The switch shows what the agent's
@@ -247,6 +248,7 @@ struct SettingsView: View {
         screenRecording = ScreenRecording.granted
         speechAllowed = SpeechPermission.granted
         folderDenied = callbacks.folderDenied()
+        responders.look()
         let offering = callbacks.liveInkOffered()
         if offering != offeringLiveInk { withAnimation(Self.noticeMotion) { offeringLiveInk = offering } }
     }
@@ -299,8 +301,9 @@ struct SettingsView: View {
             })) {
                 Text("Live ink")
                 Text("Holding \(settings.data.liveInkChordChoice.glyphs) lets you draw over any app. A click on a mark while you hold them erases it.")
-                Text(SetupInkCopy.costNote)
+                Text(responders.costNote)
             }
+            CodexSignInRow(status: responders, signInTitle: "Sign In…", offersSignOut: true)
             Picker("Hold to draw", selection: Binding(get: { settings.data.liveInkChordChoice }, set: { chord in
                 let refusal = chord.refusal(against: HotKeySpec.parse(settings.data.recentHotkey))
                 withAnimation(Self.noticeMotion) { chordRefusal = refusal }
@@ -892,25 +895,6 @@ struct ShortcutSetting: View {
                         settings.update { $0.recentHotkey = value }
                     }
                 })
-    }
-}
-
-/// Screen Recording, which live ink's asks need to capture the window under the ink. Nothing else in
-/// Vignette needs it: setup's picture of its own window is ScreenCaptureKit's capture of the app's
-/// own windows, which needs no permission.
-enum ScreenRecording {
-    static var granted: Bool { CGPreflightScreenCaptureAccess() }
-
-    /// Raises macOS's own alert, which it shows once for an app; after that this does nothing, and the
-    /// row under the switch opens the pane. Only a switch the person turned on calls this.
-    static func request() {
-        guard !granted else { return }
-        Log.write("[live-ink] asking for Screen Recording")
-        _ = CGRequestScreenCaptureAccess()
-    }
-
-    static func openSystemSettings() {
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
     }
 }
 

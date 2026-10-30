@@ -7,7 +7,7 @@ import Foundation
 /// (docs/adr/0026-codex-answers-live-ink-too.md).
 @MainActor
 final class LiveResponders {
-    private let all: [AgentClient: LiveResponder]
+    private var all: [AgentClient: LiveResponder]
     /// Whether each agent is installed and signed in, as the last check found (`check`).
     private(set) var availability: [AgentClient: LiveResponder.Availability] = [.claude: .checking, .codex: .checking]
     /// The agent the asks since the screen was last cleared went to.
@@ -19,6 +19,20 @@ final class LiveResponders {
 
     init(drivers: [any ResponderDriver] = [ClaudeDriver(), CodexDriver()]) {
         all = Dictionary(uniqueKeysWithValues: drivers.map { ($0.client, LiveResponder(driver: $0)) })
+        NotificationCenter.default.addObserver(forName: .codexSignInChanged, object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated { self?.codexSignInChanged(signedIn: note.userInfo?["signedIn"] as? Bool ?? false) }
+        }
+    }
+
+    /// Vignette's Codex home was signed in or out in Settings or setup, so neither its last check nor
+    /// why its process last failed holds any more. A process in the middle of an ask is left to end
+    /// it; any other starts afresh at the next ask.
+    private func codexSignInChanged(signedIn: Bool) {
+        availability[.codex] = signedIn ? .ready : .signedOut
+        Log.write("[live-ink] responder \(signedIn ? "ready" : "signedOut") agent=codex source=signIn")
+        guard let old = all[.codex], old.state != .asking, old.state != .starting else { return }
+        old.stop()
+        all[.codex] = LiveResponder(driver: old.driver)
     }
 
     /// The agents a note offers, Claude first: Claude always, and Codex unless its check found no

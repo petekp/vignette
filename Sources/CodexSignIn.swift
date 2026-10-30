@@ -43,6 +43,8 @@ final class CodexLogin {
     static let startLimit: TimeInterval = 15
     /// How long the person has to finish signing in in the browser.
     static let signInLimit: TimeInterval = 10 * 60
+    /// How long Codex's logout may take: its request to revoke the tokens waits up to 10 s (0.165).
+    static let signOutLimit: TimeInterval = 15
 
     static let portTaken = "Another sign-in to Codex may be open. You can try again once it's done."
     static let couldNotStart = "Vignette couldn't start the sign-in to Codex. You can try again."
@@ -97,6 +99,34 @@ final class CodexLogin {
     /// login and frees the port.
     func cancel() {
         finish(.cancelled)
+    }
+
+    /// Signs `home` out with Codex's own logout, which also revokes the tokens with OpenAI, then
+    /// removes `auth.json` if it is still there, since the folder is Vignette's. `done` runs once.
+    static func signOut(binary: String?, home: URL = CodexDriver.defaultHome, done: @escaping () -> Void) {
+        var process: JSONLinesProcess?
+        var finished = false
+        let finish = {
+            guard !finished else { return }
+            finished = true
+            process?.stop()
+            try? FileManager.default.removeItem(at: home.appendingPathComponent("auth.json"))
+            Log.write("[codex-login] signed out")
+            done()
+        }
+        guard let binary else { return finish() }
+        process = try? JSONLinesProcess(binary: binary, arguments: ["app-server"] + CodexIsolation.arguments + CodexSignIn.arguments,
+                                        environment: Subprocess.environment(for: binary, adding: ["CODEX_HOME": home.path]), folder: home,
+                                        onLine: { message in
+                                            guard message["method"] == nil else { return }
+                                            if message["id"] as? Int == 2 { return finish() }
+                                            process?.write(["method": "initialized"])
+                                            process?.write(["id": 2, "method": "account/logout"])
+                                        },
+                                        onEnd: { _ in finish() })
+        guard process != nil else { return finish() }
+        process?.write(["id": 1, "method": "initialize", "params": ["clientInfo": ["name": "Vignette", "version": BuildInfo.current.version]]])
+        Timer.scheduledTimer(withTimeInterval: signOutLimit, repeats: false) { _ in MainActor.assumeIsolated { finish() } }
     }
 
     private func started(_ result: [String: Any]?, _ error: String?) {
@@ -192,4 +222,9 @@ final class CodexLogin {
     }
 
     nonisolated static let probeLimit: TimeInterval = 0.25
+}
+
+extension Notification.Name {
+    /// Vignette's Codex home was signed in or out: `userInfo["signedIn"]` says which.
+    static let codexSignInChanged = Notification.Name("CodexSignInChanged")
 }

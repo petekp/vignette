@@ -61,8 +61,8 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         }
         /// The agents the last page offers the plugin to.
         var agents: () -> [AgentPluginStatus] = { [] }
-        /// Whether Claude Code is installed and signed in, asked when the live ink page is reached.
-        var claudeAvailability: () async -> LiveResponder.Availability = { .checking }
+        /// Whether Claude Code and Codex can answer, and Codex's sign-in, on the live ink pages.
+        var responders = ResponderStatus.inert
         /// Sends, on the main thread once the change has landed, when something `conditions` or
         /// `agents` reads has changed, so the window looks now rather than at its next poll.
         var changes: AnyPublisher<Void, Never> = Empty().eraseToAnyPublisher()
@@ -397,11 +397,11 @@ final class SetupModel: ObservableObject {
         if page == .liveInk { checkClaude() }
     }
 
-    /// Asks Claude Code again, so the live ink page says why Claude cannot answer, if it cannot.
+    /// Asks again, so the live ink page says why Claude cannot answer when neither agent can.
     func checkClaude() {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            self.claudeAnswer = await self.callbacks.claudeAvailability()
+            self.claudeAnswer = await self.callbacks.responders.answer()
         }
     }
 

@@ -572,21 +572,6 @@ final class SetupInkGuide {
 
 // MARK: The pages
 
-/// The page's ⌃ and ⌥ caps, side by side, before and after the session makes them bigger.
-enum SetupInkKeys {
-    static let size: CGFloat = 24
-    static let grown: CGFloat = 40
-    static let padding: CGFloat = 5
-
-    static func width(height: CGFloat) -> CGFloat { height * 1.12 }
-    static func spacing(height: CGFloat) -> CGFloat { height * 0.16 }
-
-    /// The two caps with the gap between them and the padding either side.
-    static func row(height: CGFloat) -> CGSize {
-        CGSize(width: 2 * width(height: height) + spacing(height: height) + 2 * padding, height: height)
-    }
-}
-
 /// Setup's live ink page: the title written in ink, what live ink is, and whether to use it. The
 /// demo plays once when it appears.
 struct LiveInkPage: View {
@@ -703,10 +688,11 @@ struct LiveInkSetupPage: View {
                     }
                     .screenSpot(recording.row, in: guide.spots)
                 }
+                CodexSetupSection(status: callbacks.responders)
                 Section {} footer: {
                     VStack(alignment: .leading, spacing: 6) {
                         if !screenRecording { Text(SetupInkCopy.reopenNote) }
-                        Text(SetupInkCopy.costNote)
+                        ResponderCostNote(status: callbacks.responders)
                     }
                     .font(.caption).foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)

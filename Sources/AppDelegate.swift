@@ -906,7 +906,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         SetupWindowController.Callbacks(
             conditions: { [unowned self] in setupConditions(protectedArea: protectedArea) },
             agents: { AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser) },
-            claudeAvailability: { await LiveResponder.availability() },
+            responders: .shared,
             // `@Published` sends before the change lands, so the window looks a turn later.
             changes: settings.$appleTarget.dropFirst().map { _ in }
                 .merge(with: NotificationCenter.default.publisher(for: AgentTools.found).map { _ in })

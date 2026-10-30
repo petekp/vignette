@@ -2,7 +2,17 @@ import Foundation
 
 /// Live ink's words for setup's pages and the Settings window.
 enum SetupInkCopy {
-    static let costNote = "When you ask, Claude sees a picture of the window, its title and URL, through your own Claude Code. An ask costs about one to four cents."
+    /// What leaves the Mac when you ask, for the agents that can answer.
+    static func costNote(claude: Bool, codex: Bool) -> String {
+        switch (claude, codex) {
+        case (true, true):
+            "When you ask, Claude or Codex sees a picture of the window, its title and URL. An ask to Claude costs about one to four cents. One to Codex counts toward your ChatGPT plan's usage limit."
+        case (false, true):
+            "When you ask, Codex sees a picture of the window, its title and URL, through your ChatGPT account. An ask counts toward your plan's usage limit."
+        default:
+            "When you ask, Claude sees a picture of the window, its title and URL, through your own Claude Code. An ask costs about one to four cents."
+        }
+    }
     /// macOS asks to quit and reopen an app it has just let record the screen, since the grant
     /// reaches only a new process.
     static let reopenNote = "Once you allow Screen Recording, macOS asks to quit and reopen \(Identity.name). Setup opens again on this page."
