@@ -87,10 +87,18 @@ to turn it on.
 | --- | --- | --- |
 | Claude Code may open sent drawings (`ClaudeReadRule`), in the Agents tab | Let Claude Code open drawings without asking | Otherwise Claude Code stops to ask you in its terminal each time you send one. This adds a permission to Claude Code's settings for these drawings only. |
 | Under setup's agents while Claude Code is on (`ClaudeReadRule.setupNote`) | | Claude Code will open the drawings you send without asking you first. You can change this in Settings. |
-| Live ink (`liveInk`), in the General tab | Live ink | Holding Control and Option lets you draw over any app. A click on a mark while you hold them erases it. |
+| Live ink (`liveInk`), in the General tab | Live ink | Holding *pair* lets you draw over any app. A click on a mark while you hold them erases it. Then, on a line of its own, what leaves the Mac (`SetupInkCopy.costNote`): When you ask, Claude sees a picture of the window, its title and URL, through your own Claude Code. An ask costs about one to four cents. |
 | Speaking while drawing (`liveInkSpeech`), under Live ink | Speak while you draw | What you say goes into the note beside your ink. Your voice stays on this Mac. |
-| When listening ends (`liveInkListenUntil`), an experiment | Stop listening | When you let go of Control and Option / When you pause |
 | When the ask goes (`liveInkSendWhenQuiet`), an experiment | Ask when you stop talking | |
+
+*pair* is the live ink chord as glyphs, ⌃⌥ unless another is chosen (`LiveInkChord.glyphs`).
+
+| Where | Words |
+| --- | --- |
+| The pop-up that picks the pair (`liveInkChord`), under the Live ink switch | Hold to draw; its choices ⌃⌥, ⌃⇧, ⌥⇧, ⌃⌘, ⌥⌘ |
+| Under it, when the stack's key combination holds the pair picked (`LiveInkChord.refusal(against:)`) | *shortcut*, the stack's shortcut, starts with these keys. You can pick another pair. |
+| Under the stack's Keys box, when the combination pressed holds live ink's pair (`LiveInkChord.refusal(ofStackShortcut:)`) | Live ink uses *pair*. Try another combination. |
+| Live ink's one-time offer, at the top of the General tab | Live ink is new. Hold *pair* to draw over any app and ask Claude about what you drew. Buttons: Not Now, Turn On |
 
 ### Live ink
 
@@ -98,17 +106,22 @@ The menu bar menu names the switch as the General tab does.
 
 | Where | Words |
 | --- | --- |
-| The menu's switch, with a badge | Live Ink, badge "Hold ⌃⌥" |
+| The menu's switch, with a badge | Live Ink, badge "Hold *pair*" |
 | The menu, while live ink is on, greyed out with no marks | Clear Live Ink |
-| The General tab, under the switch while Accessibility is missing and the double tap is not asking for it (`liveInkAccessibilityReason`) | Needs Accessibility permission. Lets Vignette notice Control and Option held down in any app. |
+| The General tab, under the switch while Accessibility is missing and the double tap is not asking for it (`liveInkAccessibilityReason`) | Needs Accessibility permission. Lets Vignette notice *pair* held down in any app. |
 | The menu's first item while Accessibility is missing | Allow Accessibility for Live Ink…, or for the Shortcut and Live Ink… when the double tap needs it too |
 | The menu bar intro's popover, while Accessibility is missing | Live ink needs Accessibility. Click the icon to allow it. (The shortcut and live ink need Accessibility, when both do.) |
 | The General tab, under the switch while Screen Recording is missing (`liveInkScreenRecordingReason`) | Needs Screen Recording permission. Lets Vignette see the window under your ink when you ask about it. macOS may ask you to reopen Vignette after you allow it. |
 | The menu's first item while Screen Recording is missing | Allow Screen Recording for Live Ink… |
 | The menu bar intro's popover, while Screen Recording is missing | Live ink needs Screen Recording. Click the icon to allow it. |
 | The note's placeholder, with Claude as its target (`LiveNotePopover.askPlaceholder`) | Ask about this |
+| The same, until the first ask to Claude (`LiveNotePopover.firstAskPlaceholder`) | Ask about this. Claude sees the window's picture, title and URL. |
 | The note's placeholder, with a session as its target (`LiveNotePopover.sendPlaceholder`) | Send to session |
-| The note's placeholder while it listens past the chord's release (`LiveNotePopover.listeningPlaceholder`) | Listening… |
+| The note's placeholder with Claude as its target, Claude's row in the target menu under its name, and setup's live ink page under the line about asking Claude, when Claude Code is not found (`LiveResponder.Availability.problem`) | Vignette couldn't find Claude Code. You can send your ink to a session. |
+| The same, when Claude Code is signed out | Claude Code isn't signed in. You can sign in by running claude in Terminal. |
+| The note's placeholder, with speech on and its permission missing (`LiveInk.speechNotice`) | Speaking needs the microphone and speech recognition. You can allow them in System Settings. |
+| The note's placeholder, when speech could not start | The reason it gives: This Mac can't turn speech into words on its own yet. / Speech recognition isn't available right now. / Vignette couldn't find a microphone. / Vignette couldn't start the microphone. / Vignette couldn't start listening. |
+| Beside the pointer, as the pointer field comes up without Screen Recording (`LiveInk.screenRecordingNotice`) | Live ink needs Screen Recording to see the window under your ink. You can allow it in System Settings. |
 | The note's Return hint, ↩, and its tooltip | Return asks |
 | The last of a reply's buttons (`LiveAnswerActions.replyTitle`) | Reply |
 | The field Reply opens, empty | Reply to *agent* |
@@ -141,13 +154,25 @@ Without one, they are a note beside the ink it was about, in the person's colour
 | A session did not take the note | Not sent. Then the reason, as on a card. |
 | No Screen Recording | Live ink needs Screen Recording permission to see the screen. |
 | The capture failed | Vignette couldn't see the screen. / Vignette couldn't capture the window. |
-| No `claude` found | Vignette couldn't find Claude Code. |
+| No `claude` found | Vignette couldn't find Claude Code. You can send your ink to a session. |
 | Claude Code is signed out | Claude Code isn't signed in. You can sign in by running claude in Terminal. |
 | The usage limit | Claude's usage limit is reached for now. |
 | No answer in 45 s | Claude took too long to answer. You can ask again. |
 | The answer did not parse | Vignette couldn't draw Claude's answer. You can ask again. |
 | Anything else | Claude couldn't answer. You can ask again. |
 | The CLI started with tools | Live ink stopped Claude, which started with tools. |
+
+#### What VoiceOver reads
+
+| Element | Label |
+| --- | --- |
+| The note's field (its placeholder is read after it) | Note |
+| The note's target | Goes to Claude / Goes to *title* |
+| A reply's question | Your question |
+| A reply's answer | Answer |
+
+The note's ↩ hint and a reply's logo are hidden from VoiceOver, since the field and the name beside the
+logo say the same.
 
 ### A copy, on its card ("Not copied")
 

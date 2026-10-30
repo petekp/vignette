@@ -267,13 +267,13 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         case .responder:
             content.session.show(logo: Agent.logo(for: "claude"), title: "Claude")
             content.session.toolTip = "Claude answers on the screen."
-            content.session.setAccessibilityLabel("Answering agent: Claude")
+            content.session.setAccessibilityLabel("Goes to Claude")
             targetTitle = "Claude"
         case .session(let destination):
             let row = SessionMenu.row(of: destination, among: sessions)
             content.session.show(logo: Agent.logo(for: destination.client.rawValue), title: row.title)
             content.session.toolTip = row.tooltip
-            content.session.setAccessibilityLabel("Sending to: \(row.title)")
+            content.session.setAccessibilityLabel("Goes to \(row.title)")
             targetTitle = SessionMenu.cardTitle(of: row)
         }
         showPlaceholder()
@@ -662,7 +662,7 @@ private final class NoteContent: NSView {
         key.font = NoteLayout.labelFont
         key.textColor = .secondaryLabelColor
         key.toolTip = "Return asks"
-        field.setAccessibilityLabel("Ask about this ink")
+        field.setAccessibilityLabel("Note")
         key.setAccessibilityHidden(true)
         for view in [field, session, key] { addSubview(view) }
         wantsLayer = true

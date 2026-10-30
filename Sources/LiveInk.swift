@@ -2104,8 +2104,8 @@ final class LiveInk {
         inking.forEach { $0.overlay.showPen(points, longest: longest, markStyle: markStyle) }
     }
 
-    static let screenRecordingNotice = "Live ink needs Screen Recording to ask about the window. Allow it in System Settings, then ask again."
-    static let speechNotice = "Speaking needs the microphone and speech recognition. Allow them in System Settings."
+    static let screenRecordingNotice = "Live ink needs Screen Recording to see the window under your ink. You can allow it in System Settings."
+    static let speechNotice = "Speaking needs the microphone and speech recognition. You can allow them in System Settings."
 
     /// Starts Claude Code when the note this ink goes to will be aimed at Claude, so its first answer
     /// does not wait for a cold start. A note to a session starts no process, and a tap starts none.

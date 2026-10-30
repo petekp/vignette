@@ -196,7 +196,9 @@ struct SettingsView: View {
     static let agentsLine = "Adds a plugin that lets you send drawings to your coding agents, and lets them show you images and reply with drawings."
     /// macOS's Accessibility alert gives no reason, so the row gives it, and the way around it.
     static let accessibilityReason = "Lets Vignette notice the double tap in any app. A key combination doesn't need it."
-    static let liveInkAccessibilityReason = "Lets Vignette notice Control and Option held down in any app."
+    static var liveInkAccessibilityReason: String {
+        "Lets Vignette notice \(Settings.shared.data.liveInkChordChoice.glyphs) held down in any app."
+    }
     static let liveInkSpeechReason = "Lets Vignette hear what you say while you draw. The words are made on this Mac."
     static let liveInkScreenRecordingReason = "Lets Vignette see the window under your ink when you ask about it. macOS may ask you to reopen Vignette after you allow it."
 
@@ -293,7 +295,7 @@ struct SettingsView: View {
         }
         if offeringLiveInk {
             Section {
-                Text("Live ink is new. Hold Control and Option to draw over any app, and ask Claude about what you drew.")
+                Text("Live ink is new. Hold \(settings.data.liveInkChordChoice.glyphs) to draw over any app and ask Claude about what you drew.")
                 HStack {
                     Button("Not Now") { answerLiveInkOffer(false) }
                     Button("Turn On") { answerLiveInkOffer(true) }

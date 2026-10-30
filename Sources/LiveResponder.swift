@@ -55,7 +55,7 @@ final class LiveResponder {
         var problem: String? {
             switch self {
             case .checking, .ready: nil
-            case .notInstalled: "Claude Code isn't installed, so Claude can't answer about your ink."
+            case .notInstalled: "Vignette couldn't find Claude Code. You can send your ink to a session."
             case .signedOut: "Claude Code isn't signed in. You can sign in by running claude in Terminal."
             }
         }
