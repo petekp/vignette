@@ -178,6 +178,29 @@ first turn. Updating that CLI is the fix, and it is outside Vignette.
 
 ## Progress log
 
+### 2026-10-25, live ink spike (CLI 0.164.0-alpha.11.1)
+
+A spike measured Codex as a live ink responder and looked for a way to see a Codex turn end.
+These facts add to the ones above.
+
+- **The rollout file reports a turn's end across processes.** The thread store's `threads` row,
+  `thread/read`'s status and a second server's notifications do not. The engine that has the
+  thread appends `event_msg` lines `task_started`, then `task_complete` or `turn_aborted`, each
+  with the `turn_id`, within 1 ms of its own `turn/completed`. The Codex app's engine writes them
+  too: across 129 of Pete's rollouts, the file was written 0 to 26 ms after the line's timestamp.
+- **A queued line becomes its own turn.** In 3 of 3 runs the engine took a `codex queue` line
+  9.46 to 9.47 s after it was queued. The rollout holds the line as that turn's user message.
+- **`thread/read` gives the thread's rollout path** as `path`, marked unstable. A long thread is
+  split into segments: older ones are compressed as `.jsonl.zst`, and `path` names the live
+  `<id>_<segment id>.jsonl`.
+- **`turn/start`'s `outputSchema` is sent as strict `json_schema`.** Every property must be in
+  `required`, with the optional ones nullable.
+- **A ChatGPT account refuses `gpt-5.5`** ("not supported when using Codex with a ChatGPT
+  account").
+- **An `app-server` turn can be held to no tools and no instructions but the caller's.** The
+  report lists the switches. `apply_patch` comes from the model catalog and goes only with a
+  `model_catalog_json` whose `apply_patch_tool_type` is null.
+
 ### 2026-10-01, night
 
 - Ran the end-to-end suite with input: 18 scenarios, 90 checks, all passing, including
