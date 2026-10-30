@@ -1,24 +1,29 @@
 import Foundation
 
-/// Whether Claude Code can answer live ink, checked without sending a message.
+/// Whether each agent can answer live ink, checked without sending a message.
 extension LiveResponder {
-    /// Whether Claude Code can answer, as `claude auth status` reports it (`availability()`).
+    /// Whether an agent can answer, as its own tools report it (`availability(of:)`).
     enum Availability: Equatable {
-        /// The first check has not answered. An ask is sent while it runs, and fails if Claude cannot answer.
+        /// The first check has not answered. An ask is sent while it runs, and fails if the agent cannot answer.
         case checking
         case ready
         case notInstalled
         case signedOut
 
-        /// Whether a note aimed at Claude may send its ask.
+        /// Whether a note aimed at the agent may send its ask.
         var canAnswer: Bool { self == .checking || self == .ready }
 
         /// For the person: why Claude cannot answer, or nil when it can.
-        var problem: String? {
-            switch self {
-            case .checking, .ready: nil
-            case .notInstalled: "Vignette couldn't find Claude Code. You can send your ink to a session."
-            case .signedOut: "Claude Code isn't signed in. You can sign in by running claude in Terminal."
+        var problem: String? { problem(for: .claude) }
+
+        /// For the person: why `client` cannot answer, or nil when it can.
+        func problem(for client: AgentClient) -> String? {
+            switch (self, client) {
+            case (.checking, _), (.ready, _): nil
+            case (.notInstalled, .claude): "Vignette couldn't find Claude Code. You can send your ink to a session."
+            case (.signedOut, .claude): "Claude Code isn't signed in. You can sign in by running claude in Terminal."
+            case (.notInstalled, .codex): "Vignette couldn't find Codex. You can send your ink to a session."
+            case (.signedOut, .codex): CodexDriver.signedOut
             }
         }
     }
@@ -27,18 +32,42 @@ extension LiveResponder {
     static let authStatusLimit: TimeInterval = 10
 
     /// The `claude` that answers live ink. In a test launch it is only what `VIGNETTE_CLAUDE` names.
-    static func claudeBinary() -> String? {
+    nonisolated static func claudeBinary() -> String? {
         AgentTools.forSessions("VIGNETTE_CLAUDE") { PluginHost.binary(for: .claude) }
     }
 
-    /// Whether Claude Code is installed and signed in. It runs `claude auth status`, which sends no
-    /// message and costs nothing. A `claude` whose answer cannot be read counts as ready, and the first
-    /// ask then reports what the process says.
+    /// The `codex` that answers live ink, the Codex app's own first. In a test launch it is only what
+    /// `VIGNETTE_CODEX` names.
+    nonisolated static func codexBinary() -> String? {
+        AgentTools.forSessions("VIGNETTE_CODEX") { CodexConnection.binary() }
+    }
+
+    /// Whether a responder can answer, for setup: Claude Code's, or else Codex's, or why Claude cannot.
     static func availability() async -> Availability {
-        guard let binary = claudeBinary() else { return .notInstalled }
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .utility).async {
-                continuation.resume(returning: authStatus(binary: binary))
+        let claude = await availability(of: .claude)
+        guard !claude.canAnswer else { return claude }
+        return await availability(of: .codex).canAnswer ? .ready : claude
+    }
+
+    /// Whether `client` is installed and signed in. Claude Code's check runs `claude auth status`,
+    /// which sends no message and costs nothing; a `claude` whose answer cannot be read counts as
+    /// ready, and the first ask then reports what the process says. Codex's reads whether
+    /// Vignette's own Codex home holds a sign-in (`CodexSignIn.isSignedIn`).
+    static func availability(of client: AgentClient) async -> Availability {
+        switch client {
+        case .claude:
+            guard let binary = claudeBinary() else { return .notInstalled }
+            return await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .utility).async {
+                    continuation.resume(returning: authStatus(binary: binary))
+                }
+            }
+        case .codex:
+            guard codexBinary() != nil else { return .notInstalled }
+            return await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .utility).async {
+                    continuation.resume(returning: CodexSignIn.isSignedIn() ? .ready : .signedOut)
+                }
             }
         }
     }

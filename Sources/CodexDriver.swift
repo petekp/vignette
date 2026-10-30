@@ -9,7 +9,8 @@ import Foundation
 ///
 /// Its warm-up is the isolation check: a turn on a thread whose model provider is
 /// `CodexCheckProvider`, inside Vignette, and only when that request carries nothing but the prompt
-/// and the warm-up does the thread asks go to start, with a warm-up of its own.
+/// and the warm-up does the thread asks go to start, with a warm-up of its own. It answers on the
+/// sign-in kept in its own home (`CodexSignIn`).
 @MainActor
 final class CodexDriver: ResponderDriver {
     let client = AgentClient.codex
@@ -45,9 +46,8 @@ final class CodexDriver: ResponderDriver {
     private var lastError: String?
     private var startedAt = Date()
 
-    /// `binary` finds `codex`, the Codex app's own first. In a test launch it is only what
-    /// `VIGNETTE_CODEX` names.
-    init(binary: @escaping () -> String? = { AgentTools.forSessions("VIGNETTE_CODEX") { CodexConnection.binary() } },
+    /// `binary` finds `codex` (`LiveResponder.codexBinary`).
+    init(binary: @escaping () -> String? = LiveResponder.codexBinary,
          home: URL = CodexDriver.defaultHome) {
         self.binary = binary
         self.home = home
@@ -131,12 +131,14 @@ final class CodexDriver: ResponderDriver {
         if lower.contains("unknown feature flag") {
             return "This version of Codex can't be held to no tools, so live ink can't use it."
         }
-        if ["not logged in", "log in", "login", "unauthorized", "401", "authenticat"].contains(where: lower.contains) {
-            return "Codex isn't signed in. You can sign in in the Codex app."
+        if ["not signed in", "not logged in", "log in", "login", "unauthorized", "401", "authenticat", "refresh token"].contains(where: lower.contains) {
+            return Self.signedOut
         }
         if lower.contains("limit") { return "Codex's usage limit is reached for now." }
         return "Codex couldn't answer. You can ask again."
     }
+
+    nonisolated static let signedOut = "Codex isn't signed in for live ink. You can sign in in Vignette's settings."
 
     // MARK: Starting
 
@@ -180,7 +182,7 @@ final class CodexDriver: ResponderDriver {
             return refuse("could not write the model catalog: \(error.localizedDescription)")
         }
         let provider = #"{name="\#(Self.checkProvider)", base_url="http://127.0.0.1:\#(port)/v1", wire_api="responses", supports_websockets=false}"#
-        let arguments = ["app-server"] + CodexIsolation.arguments
+        let arguments = ["app-server"] + CodexIsolation.arguments + CodexSignIn.arguments
             + ["-c", "model_catalog_json=\(Self.toml(file.path))", "-c", "model_providers.\(Self.checkProvider)=\(provider)"]
         do {
             process = try JSONLinesProcess(binary: binary, arguments: arguments,
@@ -200,7 +202,11 @@ final class CodexDriver: ResponderDriver {
             guard let self else { return }
             if case .failure(let error) = answer { return refuse("initialize: \(error.message)") }
             process?.write(["method": "initialized"])
-            call("model/list", [:]) { [weak self] answer in self?.listed(answer) }
+            call("account/read", [:]) { [weak self] answer in
+                guard let self else { return }
+                guard (try? answer.get())?["account"] is [String: Any] else { return refuse("not signed in: no account") }
+                call("model/list", [:]) { [weak self] answer in self?.listed(answer) }
+            }
         }
     }
 
