@@ -1,6 +1,6 @@
 import AppKit
 
-struct Card: Identifiable {
+struct Card: Identifiable, Equatable {
     let id: UUID
     let shot: Screenshot
     var image: NSImage?       // thumbnail-sized; nil until decoded
@@ -21,4 +21,10 @@ struct Card: Identifiable {
     func with(pointSize: NSSize, size: NSSize, duration: TimeInterval?) -> Card {
         Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration, marks: marks)
     }
+}
+
+/// One drawing's layers are one object, which redraws itself in place, so two are the same only
+/// when they are the same object.
+extension MarkLayers: Equatable {
+    nonisolated static func == (a: MarkLayers, b: MarkLayers) -> Bool { a === b }
 }

@@ -6,23 +6,31 @@ import SwiftUI
 /// left, into the room the panel keeps for it, so a label never covers a card. The icons travel
 /// left with it; each row is one button, icon and label together, so the cursor is still on the row
 /// it was on when the label arrives under it.
-struct SelectionStrip: View {
-    @ObservedObject var model: StackModel
+struct SelectionStrip: View, Equatable {
+    /// The selected cards, in the order they were selected.
+    let cards: [Card]
     let size: NSSize        // the icon column, as the placement sized it
     let reveal: CGFloat     // how far the labels put the strip's left edge out
+    let ui: UITweaks
+    let motion: Double
+    /// For the rows' actions. Not observed, so a scroll step does not run the strip's body.
+    let model: StackModel
     /// The greyed row under the pointer. Its reason is drawn here rather than left to `.help`:
     /// AppKit shows a window's tooltips only while its app is active, and the stack never
     /// activates Vignette.
     @State private var explained: String? = nil
-    private var ui: UITweaks { Settings.shared.motionUI }
+
+    nonisolated static func == (a: SelectionStrip, b: SelectionStrip) -> Bool {
+        a.cards == b.cards && a.size == b.size && a.reveal == b.reveal && a.ui == b.ui && a.motion == b.motion
+            && a.model === b.model
+    }
 
     var body: some View {
-        let cards = model.selectedCards()
         // The labels are always out while the strip is up: a selection is the moment the rows'
         // names and shortcuts are wanted, whichever hand built it.
         let revealed = true
         let out = reveal
-        let labelBox = StackLayout.current.stripLabelBox(reveal: reveal)
+        let labelBox = StackLayout(ui: ui).stripLabelBox(reveal: reveal)
         let shots = cards.map(\.shot)
         VStack(spacing: ui.buttonSpacing) {
             // A row keeps its identity when it changes what it shows (Draw and Open share one), so it
@@ -61,7 +69,7 @@ struct SelectionStrip: View {
                 .zIndex(explained == action.id ? 1 : 0)
             }
         }
-        .animation(Anim.spring(0.15 * Settings.shared.motionScale), value: explained)
+        .animation(Anim.spring(0.15 * motion), value: explained)
         .frame(width: size.width + out, height: size.height)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white.opacity(0.15), lineWidth: 0.5))

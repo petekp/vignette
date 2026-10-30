@@ -1,24 +1,34 @@
 import SwiftUI
 
-struct CardView: View {
+struct CardView: View, Equatable {
     let card: Card
     let index: Int      // 0 = newest, at the bottom
-    @ObservedObject var model: StackModel
-    private var hovered: Bool { model.hoveredCard == card.id }
-    private var pressed: Bool { model.pressedCard == card.id }
-    private var selected: Bool { model.isSelected(card.id) }
-    private var focused: Bool { model.focused == card.id }
-    private var isOut: Bool { model.outCards.contains(card.id) }
-    /// The card's image is in the transition layer, flying into or out of a stitch. The slot keeps
-    /// its place in the column and draws nothing, so the image is never on screen twice.
-    private var isForming: Bool { model.forming.contains(card.id) }
-    private var offscreen: Bool { model.offscreen.contains(card.id) }
+    let state: CardState
+    let ui: UITweaks
+    /// How wide the stack is drawn; see `StackLayout.widthScale`.
+    let widthScale: CGFloat
+    let motion: Double
+    /// For the card's actions, which read it when they run. Not observed.
+    let model: StackModel
+
+    nonisolated static func == (a: CardView, b: CardView) -> Bool {
+        a.card == b.card && a.index == b.index && a.state == b.state && a.ui == b.ui
+            && a.widthScale == b.widthScale && a.motion == b.motion && a.model === b.model
+    }
+
+    private var hovered: Bool { state.hovered }
+    private var pressed: Bool { state.pressed }
+    private var selected: Bool { state.selectionNumber != nil }
+    private var focused: Bool { state.focused }
+    private var isOut: Bool { state.isOut }
+    private var isForming: Bool { state.isForming }
+    private var offscreen: Bool { state.offscreen }
     /// The card itself is under the mouse. A slot whose image is in the transition layer is not:
     /// the flight is what the eye follows, so the hover state arrives with the card that lands.
     private var showsHover: Bool { hovered && !isOut && !isForming }
-    private var showsCircle: Bool { model.offersSelection && !isOut && !isForming && (hovered || model.inSelectionMode || focused) }
-    private var notice: CardNotices.Notice? { model.notices.notice(on: card.shot.key) }
-    private var showsButtons: Bool { showsHover && !model.inSelectionMode && notice == nil }
+    private var showsCircle: Bool { state.offersSelection && !isOut && !isForming && (hovered || state.inSelectionMode || focused) }
+    private var notice: CardNotices.Notice? { state.notice }
+    private var showsButtons: Bool { showsHover && !state.inSelectionMode && notice == nil }
     /// The padding every corner control is given.
     static let buttonPad: CGFloat = 6
     /// How far a corner control's hit area reaches past it into the card.
@@ -33,7 +43,8 @@ struct CardView: View {
     }
     /// The card on screen. `Card.size` is its size at rest; the stack narrows while the annotator
     /// is beside it, and every card narrows with it.
-    private var size: NSSize { StackLayout.current.at(widthScale: model.widthScale).drawn(card.size) }
+    private var size: NSSize { layout.drawn(card.size) }
+    private var layout: StackLayout { StackLayout(ui: ui, widthScale: widthScale) }
 
     var body: some View {
         ZStack {
@@ -122,7 +133,7 @@ struct CardView: View {
         .overlay(alignment: .topLeading) {
             // Its own fade, so a circle that comes with the keyboard's focus fades in as a hovered one does.
             ZStack(alignment: .topLeading) { if showsCircle {
-                SelectionCircle(number: model.selectionNumber(of: card.id), size: ui.selectionCircleSize)
+                SelectionCircle(number: state.selectionNumber, size: ui.selectionCircleSize)
                     .padding(CardView.hitSlop(.topLeading))
                     .contentShape(Rectangle())
                     .onHover { model.overControl = $0 }
@@ -167,17 +178,15 @@ struct CardView: View {
         .animation(Anim.spring(ui.hoverRevealDuration), value: showsHover)
         .animation(Anim.spring(ui.hoverRevealDuration), value: showsButtons)
         // Past the panel's right edge, which sits just beyond the screen edge, so the card slides off screen.
-        .offset(x: offscreen ? StackLayout.current.offscreenDistance(cardWidth: size.width) : 0)
+        .offset(x: offscreen ? layout.offscreenDistance(cardWidth: size.width) : 0)
         .animation(slideAnimation.delay(slideDelay), value: offscreen)
         // Outside the slide's animation, which would otherwise take over the lift's spring.
-        .offset(y: model.lift[card.id] ?? 0)
+        .offset(y: state.lift)
         .onHover { inside in
             model.hoveredCard = inside ? card.id : (model.hoveredCard == card.id ? nil : model.hoveredCard)
         }
     }
 
-    private var ui: UITweaks { Settings.shared.motionUI }
-    private var motion: Double { Settings.shared.motionScale }
     /// The ring a selected or focused card wears over its resting border. It is 0 wide on any other card.
     private var ringColor: Color { selected ? .accentColor : .white.opacity(0.9) }
     private var ringWidth: CGFloat { selected || focused ? max(2, ui.cardBorderWidth) : 0 }
@@ -186,13 +195,13 @@ struct CardView: View {
     /// dismissal feels immediate even when the top of the column is still leaving. The per-card
     /// delay shrinks for tall stacks so the whole column is never slower than `staggerTotalMax`.
     private var slideDelay: Double {
-        if model.entering == card.id { return insertLead }
-        let place = model.slidingOut ? index : model.entranceRanks[card.id] ?? index
-        return Double(max(0, place)) * StackView.staggerStep(count: model.cards.count)
+        if state.entering { return insertLead }
+        let place = state.slidingOut ? index : state.entranceRank ?? index
+        return Double(max(0, place)) * StackView.staggerStep(count: state.cardCount)
     }
 
     private var slideAnimation: Animation {
-        if model.slidingOut { return Anim.spring(ui.slideOutDuration) }
+        if state.slidingOut { return Anim.spring(ui.slideOutDuration) }
         // A card joining a visible column moves as a lone thumbnail does, after `insertLead`.
         return Anim.swiftUI(ui.slideInCurve, duration: ui.slideInDuration)
     }
@@ -202,7 +211,6 @@ struct CardView: View {
     /// and the card above clears the slot once it has risen the new card's height. The new card
     /// reaches the column's width once it is less than its own width from rest.
     private var insertLead: Double {
-        let layout = StackLayout.current.at(widthScale: model.widthScale)
         let card = layout.drawn(self.card.size)
         let clears = Anim.reaches(Double(card.height / (card.height + layout.spacing)), spring: ui.shiftUpDuration)
         let travel = layout.offscreenDistance(cardWidth: card.width)
@@ -212,7 +220,7 @@ struct CardView: View {
 
     /// Dragging a selected card carries the whole selection, in the order it was selected.
     private func dragCards() -> [Card] {
-        selected ? model.selectedCards() : [card]
+        model.isSelected(card.id) ? model.selectedCards() : [card]
     }
 }
 

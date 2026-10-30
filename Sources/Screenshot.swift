@@ -1,6 +1,6 @@
 import Foundation
 
-struct Screenshot: Sendable {
+struct Screenshot: Sendable, Equatable {
     let key: ScreenshotKey
     var url: URL { key.url }
 

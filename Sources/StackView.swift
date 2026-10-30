@@ -32,7 +32,9 @@ struct StackView: View {
                 // The strip's box is always the grown width, with the strip against its
                 // trailing edge, so the right edge sits where the placement put it whether the
                 // labels are out or not and the growth goes left, away from the cards.
-                SelectionStrip(model: model, size: strip.size, reveal: reveal)
+                SelectionStrip(cards: model.selectedCards(), size: strip.size, reveal: reveal,
+                               ui: layout.ui, motion: settings.motionScale, model: model)
+                    .equatable()
                     .offset(x: -(layout.inset + strip.right), y: -(layout.inset + model.safeBottom + strip.bottom))
                     .animation(Anim.spring(settings.motionUI.relayoutDuration), value: strip)
                     // Scrolling moves it with the cards, at once, and it shifts up with them for a
@@ -89,7 +91,9 @@ struct StackView: View {
         let safeBottom = model.safeBottom
         return VStack(alignment: .trailing, spacing: layout.spacing) {
             ForEach(Array(model.cards.enumerated().reversed()), id: \.element.id) { index, card in
-                CardView(card: card, index: index, model: model)
+                CardView(card: card, index: index, state: CardState(of: card, in: model), ui: layout.ui,
+                         widthScale: model.widthScale, motion: settings.motionScale, model: model)
+                    .equatable()
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
