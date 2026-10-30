@@ -25,11 +25,9 @@ final class CodexDriver: ResponderDriver {
 
     private let binary: () -> String?
     private let home: URL
-    private var process: JSONLinesProcess?
+    private var session: AppServerSession?
     private var check: CodexCheckProvider?
     private var report: ((ResponderEvent) -> Void)?
-    private var nextID = 1
-    private var replies: [Int: (Result<[String: Any], ServerError>) -> Void] = [:]
     private var checkThread: String?
     /// The thread asks go to, once the check has passed.
     private var thread: String?
@@ -105,7 +103,7 @@ final class CodexDriver: ResponderDriver {
             case .text(let text): ["type": "text", "text": text]
             }
         }
-        call("turn/start", ["threadId": thread, "input": input, "outputSchema": Self.schema, "effort": Self.effort]) { [weak self] answer in
+        session?.call("turn/start", ["threadId": thread, "input": input, "outputSchema": Self.schema, "effort": Self.effort]) { [weak self] answer in
             if case .failure(let error) = answer { self?.report?(.turnFailed(error.message)) }
         }
     }
@@ -116,16 +114,15 @@ final class CodexDriver: ResponderDriver {
             interruptOnStart = true
             return
         }
-        call("turn/interrupt", ["threadId": thread, "turnId": turn]) { _ in }
+        session?.call("turn/interrupt", ["threadId": thread, "turnId": turn]) { _ in }
     }
 
     func stop() {
-        process?.stop()
-        process = nil
+        session?.stop()
+        session = nil
         check?.stop()
         check = nil
         report = nil
-        replies = [:]
         thread = nil
         checkThread = nil
         turn = nil
@@ -166,36 +163,32 @@ final class CodexDriver: ResponderDriver {
             return refuse("could not write the model catalog: \(error.localizedDescription)")
         }
         let provider = #"{name="\#(Self.checkProvider)", base_url="http://127.0.0.1:\#(port)/v1", wire_api="responses", supports_websockets=false}"#
-        let arguments = ["app-server"] + CodexIsolation.arguments + CodexSignIn.arguments
-            + ["-c", "model_catalog_json=\(Self.toml(file.path))", "-c", "model_providers.\(Self.checkProvider)=\(provider)"]
+        let arguments = ["-c", "model_catalog_json=\(Self.toml(file.path))", "-c", "model_providers.\(Self.checkProvider)=\(provider)"]
         do {
-            process = try JSONLinesProcess(binary: binary, arguments: arguments,
-                                           environment: Subprocess.environment(for: binary, adding: ["CODEX_HOME": home.path]),
-                                           folder: home,
-                                           onLine: { [weak self] in self?.received($0) },
-                                           onEnd: { [weak self] status in self?.ended(status) })
+            session = try AppServerSession(binary: binary, home: home, arguments: arguments,
+                                           onNotification: { [weak self] in self?.notified($0, $1) },
+                                           onEnd: { [weak self] in self?.ended($0) },
+                                           ready: { [weak self] in self?.initialized($0) })
         } catch {
             Log.write("[live-ink] responder error launch \(error.localizedDescription) agent=codex")
             report?(.refused(ResponderRefusal(failure: LiveResponder.Failure(reason: Self.couldNotStart, detail: error.localizedDescription),
                                               problem: Self.couldNotStart)))
             return
         }
-        Log.write("[live-ink] responder starting pid=\(process?.pid ?? 0) agent=codex")
-        call("initialize", ["clientInfo": ["name": "Vignette", "version": BuildInfo.current.version],
-                            "capabilities": ["experimentalApi": true]]) { [weak self] answer in
+        Log.write("[live-ink] responder starting pid=\(session?.pid ?? 0) agent=codex")
+    }
+
+    private func initialized(_ answer: Result<Void, AppServerSession.ServerError>) {
+        if case .failure(let error) = answer { return refuse("initialize: \(error.message)") }
+        session?.call("account/read", [:]) { [weak self] answer in
             guard let self else { return }
-            if case .failure(let error) = answer { return refuse("initialize: \(error.message)") }
-            process?.write(["method": "initialized"])
-            call("account/read", [:]) { [weak self] answer in
-                guard let self else { return }
-                guard (try? answer.get())?["account"] is [String: Any] else { return refuse("not signed in: no account") }
-                call("model/list", [:]) { [weak self] answer in self?.listed(answer) }
-            }
+            guard (try? answer.get())?["account"] is [String: Any] else { return refuse("not signed in: no account") }
+            session?.call("model/list", [:]) { [weak self] answer in self?.listed(answer) }
         }
     }
 
     /// The model the account offers, then the check's thread on it.
-    private func listed(_ answer: Result<[String: Any], ServerError>) {
+    private func listed(_ answer: Result<[String: Any], AppServerSession.ServerError>) {
         let models = (try? answer.get())?["data"] as? [[String: Any]] ?? []
         let offered = models.compactMap { $0["model"] as? String }
         let model = offered.contains(Self.model) ? Self.model : models.first { $0["isDefault"] as? Bool == true }?["model"] as? String
@@ -215,7 +208,7 @@ final class CodexDriver: ResponderDriver {
         var params: [String: Any] = ["ephemeral": true, "baseInstructions": LiveResponder.systemPrompt, "model": model,
                                      "approvalPolicy": "never", "sandbox": "read-only", "cwd": home.path]
         if let provider { params["modelProvider"] = provider }
-        call("thread/start", params) { [weak self] answer in
+        session?.call("thread/start", params) { [weak self] answer in
             guard let self else { return }
             guard let id = ((try? answer.get())?["thread"] as? [String: Any])?["id"] as? String else {
                 if case .failure(let error) = answer { return refuse("thread/start: \(error.message)") }
@@ -226,8 +219,8 @@ final class CodexDriver: ResponderDriver {
     }
 
     private func warmUp(on thread: String) {
-        call("turn/start", ["threadId": thread, "input": [["type": "text", "text": LiveResponder.warmUp]],
-                            "outputSchema": Self.schema, "effort": Self.effort]) { [weak self] answer in
+        session?.call("turn/start", ["threadId": thread, "input": [["type": "text", "text": LiveResponder.warmUp]],
+                                     "outputSchema": Self.schema, "effort": Self.effort]) { [weak self] answer in
             if case .failure(let error) = answer { self?.refuse("warm-up turn/start: \(error.message)") }
         }
     }
@@ -275,28 +268,7 @@ final class CodexDriver: ResponderDriver {
 
     // MARK: Talking
 
-    private func call(_ method: String, _ params: [String: Any], then reply: @escaping (Result<[String: Any], ServerError>) -> Void) {
-        let id = nextID
-        nextID += 1
-        replies[id] = reply
-        process?.write(["id": id, "method": method, "params": params])
-    }
-
-    private func received(_ message: [String: Any]) {
-        let method = message["method"] as? String
-        if let id = message["id"] as? Int, method == nil {
-            let reply = replies.removeValue(forKey: id)
-            if let result = message["result"] as? [String: Any] { reply?(.success(result)) }
-            else { reply?(.failure(ServerError(message: Self.text(of: message["error"]) ?? "no result"))) }
-            return
-        }
-        guard let method else { return }
-        let params = message["params"] as? [String: Any] ?? [:]
-        if let id = message["id"] {
-            // A request from the server, which the responder never grants.
-            process?.write(["id": id, "error": ["code": -32601, "message": "Vignette's live ink does not support \(method)"]])
-            return
-        }
+    private func notified(_ method: String, _ params: [String: Any]) {
         let onThread = params["threadId"] as? String
         switch method {
         case "turn/started" where onThread == thread && thread != nil:
@@ -322,7 +294,7 @@ final class CodexDriver: ResponderDriver {
             let counts = [("input", "inputTokens"), ("read", "cachedInputTokens"), ("output", "outputTokens"), ("thinking", "reasoningOutputTokens")]
             usage = counts.map { "\($0.0)=\((last[$0.1] as? Int).map(String.init) ?? "?")" }.joined(separator: " ")
         case "error":
-            lastError = Self.text(of: params["error"])
+            lastError = AppServerSession.text(of: params["error"])
         case "turn/completed":
             guard let ended = params["turn"] as? [String: Any] else { return }
             if onThread == checkThread && checkThread != nil && thread == nil { return checked(ended) }
@@ -357,23 +329,14 @@ final class CodexDriver: ResponderDriver {
     }
 
     private func ended(_ status: Int32) {
-        let tail = process?.lastErrorLine ?? ""
-        process = nil
+        let tail = session?.lastErrorLine ?? ""
+        session = nil
         report?(.ended(status: status, tail: tail))
     }
 
     /// A turn's error message.
     private static func message(of turn: [String: Any]) -> String? {
-        text(of: turn["error"])
-    }
-
-    private static func text(of error: Any?) -> String? {
-        (error as? [String: Any])?["message"] as? String
-    }
-
-    /// An app-server's error answer.
-    struct ServerError: Error {
-        let message: String
+        AppServerSession.text(of: turn["error"])
     }
 
     /// `text` as a TOML basic string, for a `-c` value.

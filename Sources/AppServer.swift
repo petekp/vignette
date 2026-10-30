@@ -5,8 +5,9 @@ import os
 /// `thread/list` reads the thread store on disk, so a server started here for the length of one
 /// listing answers for every session, whoever owns it.
 ///
-/// This is the only thing in the app that knows the app-server protocol. It reads; it never starts
-/// a thread, sends a turn, or changes anything a session holds.
+/// What it asks of the person's own Codex home only reads: it never starts a thread, sends a turn,
+/// or changes anything a session holds. Live ink's responder and its sign-in talk to a server in
+/// Vignette's own Codex home, through `AppServerSession` and `logoutRequests`.
 enum AppServer {
     /// How many threads discovery asks for, the ones used last. The store's list call costs about
     /// 0.12 s for five, 0.50 s for fifteen, and 2.9 s for thirty (measured 2026-09-21); a whole
@@ -52,17 +53,28 @@ enum AppServer {
         handshake + [request(id: readID, "thread/read", ["threadId": thread])]
     }
 
+    /// The request lines for Codex's logout in the home the server runs in, which also revokes the
+    /// sign-in's tokens with OpenAI.
+    static var logoutRequests: [String] {
+        handshake + [request(id: 2, "account/logout", nil)]
+    }
+
+    /// What Vignette says of itself in `initialize`, here and in an `AppServerSession`.
+    static var initializeParams: [String: Any] {
+        ["clientInfo": ["name": "Vignette", "version": BuildInfo.current.version]]
+    }
+
     private static var handshake: [String] {
-        [#"{"id":1,"method":"initialize","params":{"clientInfo":{"name":"Vignette","version":"\#(BuildInfo.current.version)"}}}"#,
-         #"{"method":"initialized"}"#]
+        [request(id: 1, "initialize", initializeParams), #"{"method":"initialized"}"#]
     }
 
     /// The id of the listing's answer, and of the read's.
     static let listingID = 2
     static let readID = 3
 
-    private static func request(id: Int, _ method: String, _ params: [String: Any]) -> String {
-        let request: [String: Any] = ["id": id, "method": method, "params": params]
+    private static func request(id: Int, _ method: String, _ params: [String: Any]?) -> String {
+        var request: [String: Any] = ["id": id, "method": method]
+        request["params"] = params
         let data = (try? JSONSerialization.data(withJSONObject: request, options: [.sortedKeys])) ?? Data()
         return String(decoding: data, as: UTF8.self)
     }
@@ -122,12 +134,13 @@ enum AppServer {
     /// the process. Standard input stays open until then: the server exits on EOF, and a batch
     /// written with the pipe already closed is answered only as far as `initialize` (measured).
     /// Returns whatever lines arrived, so a partial conversation still yields what it got.
+    /// `environment` is added to the app's own, as `Subprocess.run` adds it.
     static func converse(_ binary: String, _ arguments: [String], _ requests: [String],
-                         timeout: TimeInterval = AppServer.timeout) -> [String] {
+                         timeout: TimeInterval = AppServer.timeout, environment: [String: String] = [:]) -> [String] {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binary)
         process.arguments = arguments
-        process.environment = Subprocess.environment(for: binary)
+        process.environment = Subprocess.environment(for: binary, adding: environment)
         let input = Pipe(), output = Pipe()
         process.standardInput = input
         process.standardOutput = output

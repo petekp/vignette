@@ -60,7 +60,7 @@ final class CodexLogin {
     /// How long the person has to finish signing in in the browser.
     static let signInLimit: TimeInterval = 10 * 60
     /// How long Codex's logout may take: its request to revoke the tokens waits up to 10 s (0.165).
-    static let signOutLimit: TimeInterval = 15
+    nonisolated static let signOutLimit: TimeInterval = 15
 
     static let portTaken = "Another sign-in to Codex may be open. You can try again once it's done."
     static let couldNotStart = "Vignette couldn't start the sign-in to Codex. You can try again."
@@ -69,10 +69,8 @@ final class CodexLogin {
     private let binary: () -> String?
     private let home: URL?
     private let open: (URL) -> Void
-    private var process: JSONLinesProcess?
+    private var session: AppServerSession?
     private var done: ((Outcome) -> Void)?
-    private var nextID = 1
-    private var replies: [Int: ([String: Any]?, String?) -> Void] = [:]
     private var loginID: String?
     private var limit: Timer?
 
@@ -93,23 +91,15 @@ final class CodexLogin {
             return finish(.failed(reason: Self.portTaken, detail: "port \(Self.callbackPort) is taken"))
         }
         do {
-            process = try JSONLinesProcess(binary: binary, arguments: ["app-server"] + CodexIsolation.arguments + CodexSignIn.arguments,
-                                           environment: Subprocess.environment(for: binary, adding: ["CODEX_HOME": home.path]),
-                                           folder: home,
-                                           onLine: { [weak self] in self?.received($0) },
-                                           onEnd: { [weak self] status in self?.ended(status) })
+            session = try AppServerSession(binary: binary, home: home,
+                                           onNotification: { [weak self] in self?.notified($0, $1) },
+                                           onEnd: { [weak self] in self?.ended($0) },
+                                           ready: { [weak self] in self?.initialized($0) })
         } catch {
             return finish(.failed(reason: Self.couldNotStart, detail: error.localizedDescription))
         }
-        Log.write("[codex-login] starting pid=\(process?.pid ?? 0)")
+        Log.write("[codex-login] starting pid=\(session?.pid ?? 0)")
         wait(Self.startLimit, reason: Self.couldNotStart, detail: "no answer to account/login/start")
-        call("initialize", ["clientInfo": ["name": "Vignette", "version": BuildInfo.current.version],
-                            "capabilities": ["experimentalApi": true]]) { [weak self] _, error in
-            guard let self else { return }
-            if let error { return finish(.failed(reason: Self.couldNotStart, detail: "initialize: \(error)")) }
-            process?.write(["method": "initialized"])
-            call("account/login/start", ["type": "chatgpt"]) { [weak self] result, error in self?.started(result, error) }
-        }
     }
 
     /// Ends the sign-in, as the person closing what asked for it does. Stopping the server ends its
@@ -119,37 +109,32 @@ final class CodexLogin {
     }
 
     /// Signs `home` out with Codex's own logout, which also revokes the tokens with OpenAI, then
-    /// removes `auth.json` if it is still there, since the folder is Vignette's. `done` runs once.
-    static func signOut(binary: String?, home: URL? = CodexSignIn.defaultHome, done: @escaping () -> Void) {
-        guard let home else { return done() }
-        var process: JSONLinesProcess?
-        var finished = false
-        let finish = {
-            guard !finished else { return }
-            finished = true
-            process?.stop()
-            try? FileManager.default.removeItem(at: home.appendingPathComponent("auth.json"))
-            Log.write("[codex-login] signed out")
-            done()
+    /// removes `auth.json` if it is still there, since the folder is Vignette's. The logout runs off
+    /// the main thread, and `done` runs on it once.
+    nonisolated static func signOut(home: URL? = CodexSignIn.defaultHome, done: @escaping @MainActor @Sendable () -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            if let home {
+                if let binary = CodexConnection.binaryToRun() {
+                    _ = AppServer.converse(binary, ["app-server"] + CodexIsolation.arguments + CodexSignIn.arguments, AppServer.logoutRequests,
+                                           timeout: signOutLimit, environment: ["CODEX_HOME": home.path])
+                }
+                try? FileManager.default.removeItem(at: home.appendingPathComponent("auth.json"))
+                Log.write("[codex-login] signed out")
+            }
+            DispatchQueue.main.async { MainActor.assumeIsolated { done() } }
         }
-        guard let binary else { return finish() }
-        process = try? JSONLinesProcess(binary: binary, arguments: ["app-server"] + CodexIsolation.arguments + CodexSignIn.arguments,
-                                        environment: Subprocess.environment(for: binary, adding: ["CODEX_HOME": home.path]), folder: home,
-                                        onLine: { message in
-                                            guard message["method"] == nil else { return }
-                                            if message["id"] as? Int == 2 { return finish() }
-                                            process?.write(["method": "initialized"])
-                                            process?.write(["id": 2, "method": "account/logout"])
-                                        },
-                                        onEnd: { _ in finish() })
-        guard process != nil else { return finish() }
-        process?.write(["id": 1, "method": "initialize", "params": ["clientInfo": ["name": "Vignette", "version": BuildInfo.current.version]]])
-        Timer.scheduledTimer(withTimeInterval: signOutLimit, repeats: false) { _ in MainActor.assumeIsolated { finish() } }
     }
 
-    private func started(_ result: [String: Any]?, _ error: String?) {
-        guard let result, let id = result["loginId"] as? String, let page = (result["authUrl"] as? String).flatMap(URL.init(string:)) else {
-            let detail = error ?? "account/login/start answered no page"
+    private func initialized(_ answer: Result<Void, AppServerSession.ServerError>) {
+        if case .failure(let error) = answer { return finish(.failed(reason: Self.couldNotStart, detail: "initialize: \(error.message)")) }
+        session?.call("account/login/start", ["type": "chatgpt"]) { [weak self] in self?.started($0) }
+    }
+
+    private func started(_ answer: Result<[String: Any], AppServerSession.ServerError>) {
+        guard case .success(let result) = answer, let id = result["loginId"] as? String,
+              let page = (result["authUrl"] as? String).flatMap(URL.init(string:)) else {
+            var detail = "account/login/start answered no page"
+            if case .failure(let error) = answer { detail = error.message }
             let taken = detail.contains("already in use")
             return finish(.failed(reason: taken ? Self.portTaken : Self.couldNotStart, detail: detail))
         }
@@ -172,9 +157,8 @@ final class CodexLogin {
         self.done = nil
         limit?.invalidate()
         limit = nil
-        process?.stop()
-        process = nil
-        replies = [:]
+        session?.stop()
+        session = nil
         loginID = nil
         switch outcome {
         case .signedIn: Log.write("[codex-login] signed in")
@@ -184,33 +168,15 @@ final class CodexLogin {
         done(outcome)
     }
 
-    private func call(_ method: String, _ params: [String: Any], then reply: @escaping ([String: Any]?, String?) -> Void) {
-        let id = nextID
-        nextID += 1
-        replies[id] = reply
-        process?.write(["id": id, "method": method, "params": params])
-    }
-
-    private func received(_ message: [String: Any]) {
-        let method = message["method"] as? String
-        if let id = message["id"] as? Int, method == nil {
-            let error = (message["error"] as? [String: Any])?["message"] as? String
-            replies.removeValue(forKey: id)?(message["result"] as? [String: Any], message["result"] == nil ? error ?? "no result" : nil)
-            return
-        }
-        if let id = message["id"], let method {
-            process?.write(["id": id, "error": ["code": -32601, "message": "Vignette's sign-in does not support \(method)"]])
-            return
-        }
-        guard method == "account/login/completed", let params = message["params"] as? [String: Any],
-              params["loginId"] as? String == loginID, loginID != nil else { return }
+    private func notified(_ method: String, _ params: [String: Any]) {
+        guard method == "account/login/completed", params["loginId"] as? String == loginID, loginID != nil else { return }
         if params["success"] as? Bool == true { return finish(.signedIn) }
         finish(.failed(reason: Self.notSignedIn, detail: params["error"] as? String ?? "login failed"))
     }
 
     private func ended(_ status: Int32) {
-        let tail = process?.lastErrorLine ?? ""
-        process = nil
+        let tail = session?.lastErrorLine ?? ""
+        session = nil
         finish(.failed(reason: Self.couldNotStart, detail: "codex ended \(status) \(tail)"))
     }
 
