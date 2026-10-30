@@ -13,8 +13,8 @@ import AppKit
 /// ink fades (`follow`). While the stack or the annotator holds the screen it hides, and it comes back
 /// as it was once they are gone (`standAside`).
 ///
-/// Under the words, the target: the one picked last, else the responder (`DestinationChoice`
-/// decides), which answers on the screen, with the working sessions listed after it
+/// Under the words, the target: the one picked last, else a responder (`Target.start` decides),
+/// which answers on the screen, with the working sessions listed after the responders
 /// (docs/live-ink-integration-2026-10-04.md, decision 7). A click on it or the Down arrow opens the
 /// list.
 ///
@@ -34,15 +34,12 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// The person typed in the note, which takes over from what they say.
     var onTyped: (() -> Void)?
     private(set) var target: Target
-    /// Why Claude cannot answer, or nil when it can. A note aimed at Claude says why in place of its
-    /// prompt, and Claude's row in the target menu says why and cannot be picked.
-    var responderProblem: String? {
-        didSet {
-            guard responderProblem != oldValue else { return }
-            showTarget()
-            if let candidates { setSessions(candidates) }
-        }
-    }
+    /// The agents that answer on the screen (`offer`). A note aimed at one that cannot answer says why
+    /// in place of its prompt, and its row in the target menu says why.
+    private(set) var responders: [Responder] = [.claude]
+    /// The agent the conversation is with, and the responder picked by hand on this note.
+    private var conversing: AgentClient?
+    private var handPicked: AgentClient?
     /// Why speech cannot listen, or nil when it can. The empty note says so in place of its prompt.
     var speechProblem: String? {
         didSet { if speechProblem != oldValue { showPlaceholder() } }
@@ -89,7 +86,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     /// A note for `place`, in global top-left points, which shows once hung (`hang`): out of sight until
     /// `reveal`, but with the keys, so what the person types meanwhile is in it when it shows.
-    init(at place: PopoverPlace, target: Target) {
+    init(at place: PopoverPlace, target: Target = .responder(.claude)) {
         openedAt = CACurrentMediaTime()
         self.place = place
         self.target = target
@@ -207,11 +204,18 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         let answer = DestinationChoice.choose(candidates, for: .liveNote(ownPick))
         // The menu lists the sessions Vignette can start after the running ones (`SessionMenu.ranked`).
         sessions = answer.list + answer.startable
-        // Without Claude, a note with no pick opens on the first running session; only a person starts one.
-        let defaultTarget: Target = responderProblem == nil ? .responder : answer.list.first.map(Target.session) ?? .responder
-        let found: Target = answer.pick.map(Target.session) ?? defaultTarget
+        let found = Self.start(pick: answer.pick, handPicked: handPicked, conversing: conversing, responders: responders, list: answer.list)
         guard found != target else { return }
         show(found)
+    }
+
+    /// What live ink offers: the agents that answer on the screen, and the one the conversation is with.
+    func offer(_ responders: [Responder], conversing: AgentClient?) {
+        guard responders != self.responders || conversing != self.conversing else { return }
+        self.responders = responders
+        self.conversing = conversing
+        showTarget()
+        if let candidates { setSessions(candidates) }
     }
 
     /// Fades out without a word to the callbacks, giving the keys back when it has them.
@@ -252,11 +256,12 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     private func showTarget() {
         switch target {
-        case .responder:
-            content.session.show(logo: Agent.logo(for: "claude"), title: "Claude")
-            content.session.toolTip = responderProblem ?? "Claude answers on the screen."
-            content.session.setAccessibilityLabel("Goes to Claude")
-            targetTitle = "Claude"
+        case .responder(let client):
+            let name = responders.first { $0.client == client }?.name ?? client.label
+            content.session.show(logo: Agent.logo(for: client.rawValue), title: name)
+            content.session.toolTip = Self.problem(of: responder, among: responders) ?? "\(name) answers on the screen."
+            content.session.setAccessibilityLabel("Goes to \(name)")
+            targetTitle = name
         case .session(let destination):
             let row = SessionMenu.row(of: destination, among: sessions)
             content.session.show(logo: Agent.logo(for: destination.client.rawValue), title: row.title)
@@ -269,40 +274,31 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     /// What the empty note says: what Return does with its target.
     private func showPlaceholder() {
-        content.showPrompt(NoteContent.prompt(toClaude: target == .responder, responderProblem: responderProblem,
-                                              speechProblem: speechProblem, askedClaude: Settings.shared.data.liveInkAskedClaude), fading: revealed)
+        content.showPrompt(NoteContent.prompt(to: responder, problem: Self.problem(of: responder, among: responders),
+                                              speechProblem: speechProblem), fading: revealed)
         refit()
     }
+
+    /// The responder the note is aimed at, as offered.
+    private var responder: Responder? { responders.first { $0.client == target.responder } }
 
     /// The list of targets, under the target, or beside the note when the screen has no room below it,
     /// so it never covers the words being typed.
     private func showTargets() {
         guard let window = content.window else { return }
         let menu = NSMenu()
-        // A menu enables any item with an action, so Claude's row has none while it cannot answer.
-        let responder = NSMenuItem(title: "Claude, on the screen", action: responderProblem == nil ? #selector(pickTarget(_:)) : nil, keyEquivalent: "")
-        responder.image = SessionMenu.logo(for: .claude)
-        responder.state = target == .responder ? .on : .off
-        if let responderProblem {
-            responder.toolTip = responderProblem
-            if #available(macOS 14.4, *) { responder.subtitle = responderProblem }
+        for responder in responders {
+            menu.addItem(Self.item(for: responder, selected: target.responder == responder.client, action: #selector(pickTarget(_:)), target: self))
         }
-        responder.target = self
-        menu.addItem(responder)
         var search: SessionMenuSearch?
         if !sessions.isEmpty {
             menu.addItem(.separator())
-            search = SessionMenu.add(SessionMenu.menu(sessions, destination: target.session), to: menu, make: sessionItem)
+            search = SessionMenu.add(SessionMenu.menu(sessions, destination: target.session), to: menu) { [self] row in
+                Self.item(for: row, selected: target.session?.id == row.id, action: #selector(pickTarget(_:)), target: self)
+            }
         }
         let button = window.convertToScreen(content.session.convert(content.session.bounds, to: nil))
-        let visible = window.screen?.visibleFrame ?? .zero
-        var point = CGPoint(x: button.minX, y: button.minY - Self.menuGap)
-        if point.y - menu.size.height < visible.minY + Self.menuGap {
-            let body = window.frame
-            let left = body.minX - Self.menuGap - menu.size.width
-            point = CGPoint(x: left >= visible.minX + Self.menuGap ? left : body.maxX + Self.menuGap,
-                            y: max(visible.minY + Self.menuGap, button.minY) + menu.size.height)
-        }
+        let point = Self.menuPoint(menu.size, under: button, beside: window.frame, on: window.screen?.visibleFrame ?? .zero)
         menuOpen = true
         menuPicks.run(openedAt: openedAt) {
             withExtendedLifetime(search) { _ = menu.popUp(positioning: nil, at: point, in: nil) }
@@ -315,15 +311,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         content.field.currentEditor()?.selectedRange = NSRange(location: (content.field.stringValue as NSString).length, length: 0)
     }
 
-    private func sessionItem(_ row: SessionMenu.Row) -> NSMenuItem {
-        let item = SessionMenu.item(for: row, selected: target.session?.id == row.id)
-        item.action = #selector(pickTarget(_:))
-        item.target = self
-        item.representedObject = row.destination
-        return item
-    }
-
-    /// The sessions Tab steps through after the responder, in the menu's order. The submenu's are
+    /// The sessions Tab steps through after the responders, in the menu's order. The submenu's are
     /// left out: Tab goes through a short list.
     private var menuSessions: [AgentDestination] {
         sessions.isEmpty ? [] : SessionMenu.menu(sessions, destination: target.session).topRows.map(\.destination)
@@ -332,10 +320,10 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// Tab, or Shift+Tab with `backward`: the target after this one in the menu's order, or the one
     /// before, round from either end.
     func step(backward: Bool) {
-        let order: [Target] = [.responder] + menuSessions.map { .session($0) }
+        let order: [Target] = responders.map { .responder($0.client) } + menuSessions.map { .session($0) }
         guard order.count > 1 else { return }
         // By id, since a session's other fields change as its list is read again.
-        let index = order.firstIndex { $0.session?.id == target.session?.id } ?? 0
+        let index = order.firstIndex { $0.session?.id == target.session?.id && $0.responder == target.responder } ?? 0
         pick(order[(index + (backward ? order.count - 1 : 1)) % order.count])
     }
 
@@ -345,15 +333,16 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         // still the target and the send says it ended, rather than falling back to the responder.
         if let picked = item.representedObject as? AgentDestination {
             pick(.session(sessions.first { $0.id == picked.id } ?? picked))
-        } else {
-            pick(.responder)
+        } else if let client = (item.representedObject as? String).flatMap(AgentClient.init(rawValue:)) {
+            pick(.responder(client))
         }
     }
 
     private func pick(_ target: Target) {
         show(target)
         ownPick = .byHand(target.session)
-        Log.write("[live-ink] note target \(target == .responder ? "responder" : "session")")
+        handPicked = target.responder
+        Log.write("[live-ink] note target \(target.responder.map { "responder agent=\($0.rawValue)" } ?? "session")")
     }
 
     private func show(_ target: Target) {
@@ -557,6 +546,4 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// How long the target takes to settle into a name once sent, at full motion.
     private static let settleDuration: TimeInterval = 0.18
     private let removal = WindowRemoval()
-    /// Between the target and its list, and between the list and the screen's edge, in points.
-    private static let menuGap: CGFloat = 4
 }

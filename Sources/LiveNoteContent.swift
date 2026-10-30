@@ -99,16 +99,18 @@ final class NoteContent: NSView {
 
 extension NoteContent {
     static let askPlaceholder = "Ask about this"
-    /// Until the first ask to Claude, the prompt says what Claude sees (`SetupInkCopy.costNote`).
-    static let firstAskPlaceholder = "Ask about this. Claude sees the window's picture, title and URL."
+    /// Until the first ask to a responder, the prompt says what it sees (`SetupInkCopy.costNote`).
+    static func firstAskPlaceholder(_ name: String) -> String { "Ask about this. \(name) sees the window's picture, title and URL." }
     static let sendPlaceholder = "Send to session"
 
-    /// What the empty note says. Why Claude cannot answer comes first. Before the first ask to Claude,
-    /// what Claude sees comes next, ahead of why speech cannot listen, since it says what leaves the Mac.
-    static func prompt(toClaude: Bool, responderProblem: String?, speechProblem: String?, askedClaude: Bool) -> String {
-        if toClaude, let responderProblem { return responderProblem }
-        if toClaude, !askedClaude { return Self.firstAskPlaceholder }
-        return speechProblem ?? (toClaude ? Self.askPlaceholder : Self.sendPlaceholder)
+    /// What the empty note says. Aimed at a responder, why it cannot answer comes first, `problem`.
+    /// Before the first ask to it, what it sees comes next, ahead of why speech cannot listen, since it
+    /// says what leaves the Mac.
+    static func prompt(to responder: LiveNotePopover.Responder?, problem: String?, speechProblem: String?) -> String {
+        guard let responder else { return speechProblem ?? Self.sendPlaceholder }
+        if let problem { return problem }
+        if !LiveResponders.asked(responder.client) { return Self.firstAskPlaceholder(responder.name) }
+        return speechProblem ?? Self.askPlaceholder
     }
 
     /// Shows `text` as the empty field's prompt, cross-fading from the one before when `fading`.
