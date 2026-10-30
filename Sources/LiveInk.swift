@@ -451,7 +451,7 @@ final class LiveInk {
             "noteTarget": note.map { panel -> Any in panel.target == .responder ? "responder" : "session" } ?? NSNull(),
             "responder": responder.stateJSON,
             "claude": String(describing: responderAvailability),
-            "chord": Settings.shared.data.liveInkChordChoice.glyphs,
+            "pair": Settings.shared.data.liveInkChordChoice.glyphs,
             "escape": LiveEscape.next(escapeSnapshot)?.rawValue ?? NSNull(),
             "escapeHeld": escapeKey != nil,
             "ask": asks.newest.map(Self.json(of:)) ?? NSNull(),
