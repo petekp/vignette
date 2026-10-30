@@ -39,7 +39,7 @@ final class NoteContent: NSView {
     /// Sizes `popover` round the words, on a spring over `duration`. With NSPopover's own `animates`
     /// on, a change of `contentSize` still steps the window from one height to the next.
     func fit(_ popover: NSPopover, over duration: TimeInterval) {
-        let size = layOut()
+        let size = layOut(over: duration)
         let spring = height ?? Tween(initial: popover.contentSize.height) { [weak popover] in
             popover?.contentSize = CGSize(width: NoteLayout.width, height: $0)
         }
@@ -53,15 +53,21 @@ final class NoteContent: NSView {
     /// Sizes the field to its words, or its prompt while empty, from one line to `mostLines`, and
     /// answers its own size round them. Once it is in the popover, the popover sizes it (`fit`): a
     /// view that sets its own frame resizes the popover's window at once.
-    @discardableResult func layOut() -> CGSize {
+    /// The target and the ↩ move to their row over `duration`, as `fit` springs the height under them.
+    @discardableResult func layOut(over duration: TimeInterval = 0) -> CGSize {
         let typed = field.currentEditor()?.string ?? field.stringValue
         // Empty, the field shows its prompt, which can say why Claude cannot answer in two lines.
         let words = NoteLayout.wordsHeight(typed.isEmpty ? field.placeholderString ?? "" : typed)
         field.frame = NoteLayout.fieldFrame(height: words)
         let rowY = NoteLayout.top + words + NoteLayout.belowWords
-        session.setFrameOrigin(CGPoint(x: NoteLayout.inset - SessionButton.pad, y: rowY + (NoteLayout.row - SessionButton.height) / 2))
         key.sizeToFit()
-        key.setFrameOrigin(CGPoint(x: NoteLayout.width - NoteLayout.inset - key.frame.width, y: rowY + (NoteLayout.row - key.frame.height) / 2))
+        let (session, key) = duration > 0 ? (self.session.animator(), self.key.animator()) : (self.session, self.key)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            session.setFrameOrigin(CGPoint(x: NoteLayout.inset - SessionButton.pad, y: rowY + (NoteLayout.row - SessionButton.height) / 2))
+            key.setFrameOrigin(CGPoint(x: NoteLayout.width - NoteLayout.inset - key.frame.width, y: rowY + (NoteLayout.row - key.frame.height) / 2))
+        }
         let size = CGSize(width: NoteLayout.width, height: rowY + NoteLayout.row)
         if window == nil { setFrameSize(size) }
         return size
