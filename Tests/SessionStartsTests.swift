@@ -143,7 +143,7 @@ final class SessionStartsTests: XCTestCase {
     }
 
     private func submit(_ line: String, to destination: AgentDestination, through connection: ClaudeCodeConnection) async -> SubmissionOutcome {
-        await withCheckedContinuation { done in connection.submit(line, to: destination) { done.resume(returning: $0) } }
+        await withCheckedContinuation { done in connection.submit(line, to: destination, watchingTurn: false) { done.resume(returning: $0) } }
     }
 
     private func lines(in folder: URL) -> [String] {

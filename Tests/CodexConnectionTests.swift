@@ -92,7 +92,7 @@ final class CodexConnectionTests: XCTestCase {
         XCTAssertTrue(CodexConnection.isLoaded(thread, codexHome: home))
     }
 
-    func testASendFindsTheThreadsRolloutBeforeTheLineGoesAndAFailedSendTakesTheLineBack() throws {
+    func testAWatchedSendFindsTheThreadsRolloutBeforeTheLineGoesAndAFailedSendTakesTheLineBack() throws {
         let thread = "01a18b9f-6a44-7ad0-94b5-5e381edcb089"
         let rollout = temporaryFolder().appendingPathComponent("rollout-\(thread).jsonl")
         try FileManager.default.createDirectory(at: rollout.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -113,13 +113,18 @@ final class CodexConnectionTests: XCTestCase {
         XCTAssertTrue(connection.reportsTurns)
         XCTAssertNil(connection.turn(of: destination), "no line has gone to the thread")
 
-        guard case .accepted = connection.submit("look", to: destination) else { return XCTFail("a loaded thread takes it") }
+        guard case .accepted = connection.submit("unwatched", to: destination) else { return XCTFail("a loaded thread takes it") }
+        XCTAssertEqual(order.withLock { $0 }, ["queue"], "a send nobody watches reads no rollout")
+        XCTAssertNil(connection.turn(of: destination))
+
+        order.withLock { $0 = [] }
+        guard case .accepted = connection.submit("look", to: destination, watchingTurn: true) else { return XCTFail("a loaded thread takes it") }
         XCTAssertEqual(order.withLock { $0 },
                        [#"app-server {"id":3,"method":"thread\/read","params":{"threadId":"\#(thread)"}}"#, "queue"])
         XCTAssertEqual(connection.turn(of: destination), .waiting)
 
         connection.run = { _, _, _ in (1, "Error: invalid message", false) }
-        guard case .notSubmitted = connection.submit("again", to: destination) else { return XCTFail("the queue refused it") }
+        guard case .notSubmitted = connection.submit("again", to: destination, watchingTurn: true) else { return XCTFail("the queue refused it") }
         XCTAssertEqual(connection.turn(of: destination), .waiting)
         let handle = try FileHandle(forWritingTo: rollout)
         try handle.seekToEnd()

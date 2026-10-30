@@ -121,6 +121,16 @@ struct CodexConnection: AgentConnection {
     }
 
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome {
+        submit(line, to: destination, watchingTurn: false)
+    }
+
+    func submit(_ line: String, to destination: AgentDestination, watchingTurn: Bool,
+                completion: @escaping @Sendable (SubmissionOutcome) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async { completion(submit(line, to: destination, watchingTurn: watchingTurn)) }
+    }
+
+    /// A line whose turn is watched has its thread's rollout found first, which runs an app-server.
+    func submit(_ line: String, to destination: AgentDestination, watchingTurn: Bool) -> SubmissionOutcome {
         guard case .codexThread(let uuid) = destination.address else {
             return .notSubmitted(code: .noAgent, detail: "not a Codex destination", reason: SubmissionOutcome.internalReason)
         }
@@ -129,7 +139,7 @@ struct CodexConnection: AgentConnection {
                                  reason: "Sending to Codex needs the Codex app or its CLI.")
         }
         // Before the line goes, so the rollout is read from before the engine writes it.
-        turns.sending(line, to: uuid, rollout: rollout(of: uuid, codex: codex))
+        if watchingTurn { turns.sending(line, to: uuid, rollout: rollout(of: uuid, codex: codex)) }
         guard let result = run(codex, Self.arguments(thread: uuid, message: line), Self.queueTimeout) else {
             turns.unsent(line, to: uuid)
             return .notSubmitted(code: .sendFailed, detail: "codex queue did not run", reason: "Codex couldn't start. The log has details.")

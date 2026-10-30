@@ -252,7 +252,10 @@ These facts add to the ones above.
   9.46 to 9.47 s after it was queued. The rollout holds the line as that turn's user message.
 - **`thread/read` gives the thread's rollout path** as `path`, marked unstable. A long thread is
   split into segments: older ones are compressed as `.jsonl.zst`, and `path` names the live
-  `<id>_<segment id>.jsonl`.
+  `<id>_<segment id>.jsonl`. `thread/list`'s items are the same `Thread` type in the 0.165 schema
+  (`codex app-server generate-json-schema`), `path` included. Whether a `useStateDbOnly` listing
+  fills it was not checked. Vignette reads the thread just before a watched send, since a kept
+  listing can be minutes old.
 - **`turn/start`'s `outputSchema` is sent as strict `json_schema`.** Every property must be in
   `required`, with the optional ones nullable.
 - **A ChatGPT account refuses `gpt-5.5`** ("not supported when using Codex with a ChatGPT
