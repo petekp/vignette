@@ -10,12 +10,16 @@ import os
 /// with the `turn_id`. A queued line becomes a turn of its own and is that turn's user message: a
 /// `response_item` message from 0.165, an `event_msg` `user_message` before it. A line this reader
 /// does not know how to place makes the rollout unreadable, and its turn then reads as nil, as from
-/// a route that cannot tell.
+/// a route that cannot tell. So does a turn that shows these events in a changed form: one that ends
+/// with no user message it could read while a sent line waits, or a turn that starts while another
+/// has not ended.
 struct RolloutTurns: Equatable {
     /// The lines sent to the thread that the rollout has not shown as a user message yet.
     private(set) var pending: [String] = []
     /// The turn the rollout last said started and has not said ended; empty when it gave no id.
     private(set) var openTurn: String?
+    /// The open turn has a user message this reader could read.
+    private var openTurnHeard = false
     /// A sent line's turn started after the last reading said busy. A turn that starts and ends
     /// between two readings still reads busy once, since `TurnWatch` ends a turn only after it.
     private var owesBusy = false
@@ -38,10 +42,22 @@ struct RolloutTurns: Equatable {
         }
         switch (type, payload["type"] as? String) {
         case ("event_msg", "task_started"):
-            openTurn = payload["turn_id"] as? String ?? ""
+            let id = payload["turn_id"] as? String ?? ""
+            let root = payload["root_turn_id"] as? String ?? id
+            if let open = openTurn, !open.isEmpty, root == id, id != open {
+                unreadable = "a turn that started before the last one ended"
+                return
+            }
+            openTurn = id
+            openTurnHeard = false
         case ("event_msg", "task_complete"), ("event_msg", "turn_aborted"):
             let ended = payload["turn_id"] as? String
-            if let open = openTurn, ended == nil || open.isEmpty || ended == open { openTurn = nil }
+            guard let open = openTurn, ended == nil || open.isEmpty || ended == open else { return }
+            if !openTurnHeard, !pending.isEmpty {
+                unreadable = "a turn that ended with no user message it could read"
+                return
+            }
+            openTurn = nil
         case ("event_msg", "user_message"):
             took(payload["message"] as? String)
         case ("response_item", "message") where payload["role"] as? String == "user":
@@ -53,6 +69,7 @@ struct RolloutTurns: Equatable {
     }
 
     private mutating func took(_ message: String?) {
+        if openTurn != nil, !(message ?? "").isEmpty { openTurnHeard = true }
         guard let message, let index = pending.firstIndex(where: { message.contains($0) }) else { return }
         guard openTurn != nil else {
             unreadable = "a sent line outside any turn"
@@ -105,6 +122,8 @@ final class CodexTurns: Sendable {
         var grew: Date
         var asked: Date
         var logged = false
+        /// The open turn that has been said to be quiet for `TurnWatch.workingLimit`.
+        var quietTurn: String?
 
         /// Reads what was added since the last reading. Answers whether to ask for the path again:
         /// there is none to read, the file has gone or shrunk, or it has stopped growing while a line
@@ -205,6 +224,12 @@ final class CodexTurns: Sendable {
             if let reason = watch.turns.unreadable, !watch.logged {
                 watch.logged = true
                 Log.write("[live-ink] codex rollout of \(thread) unreadable: \(reason); its turn is not watched")
+            }
+            // A turn can work for many minutes without writing, so a quiet one is still waited on.
+            if let open = watch.turns.openTurn, open != watch.quietTurn, time.timeIntervalSince(watch.grew) >= TurnWatch.workingLimit {
+                watch.quietTurn = open
+                Log.write("[live-ink] codex rollout of \(thread): a turn has written nothing for \(Int(TurnWatch.workingLimit))s; "
+                          + "if it ended, its end is in a form this build does not read")
             }
             return watch.turns.reading()
         }

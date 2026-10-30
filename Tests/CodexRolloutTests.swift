@@ -101,6 +101,23 @@ final class CodexRolloutTests: XCTestCase {
         renamedEvents.read(user(note))
         XCTAssertNil(renamedEvents.reading(), "a sent line outside any turn means the turn events changed")
 
+        var changedMessage = RolloutTurns()
+        changedMessage.sent(note)
+        changedMessage.read(started("b"))
+        changedMessage.read(entry("response_item", ["type": "message", "role": "user", "content": [["type": "text", "text": note]]]))
+        changedMessage.read(completed("b"))
+        XCTAssertNil(changedMessage.reading(), "a turn with no user message it could read means the message changed")
+
+        var renamedEnd = RolloutTurns()
+        renamedEnd.sent(note)
+        [started("a"), user(note), entry("event_msg", ["type": "turn_finished", "turn_id": "a"]), started("b")].forEach { renamedEnd.read($0) }
+        XCTAssertNil(renamedEnd.reading(), "a turn starting while another is open means the end event changed")
+
+        var nested = RolloutTurns()
+        nested.sent(note)
+        [started("a"), user(note), entry("event_msg", ["type": "task_started", "turn_id": "a2", "root_turn_id": "a"])].forEach { nested.read($0) }
+        XCTAssertEqual(nested.reading(), .busy, "a turn inside another names that one as its root")
+
         var partLine = RolloutTurns()
         partLine.sent(note)
         partLine.read(Data(#"_turn_id":"b"}}"#.utf8))

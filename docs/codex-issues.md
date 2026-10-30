@@ -230,6 +230,13 @@ a real `codex` on a scratch Codex home.
   6.2 s for the warm-up. The next two took 3.4 and 4.5 s, with the first word at about 2.8 s. No
   process but three short `git` runs started under the server. The person's `auth.json` was
   unchanged.
+- **A real browser sign-in through `CodexLogin`** on a scratch home took Pete 71 s. `auth.json`
+  was written there only. The isolation check passed in 1.06 s, and the first ask answered in
+  8.45 s. `account/logout` took 1.48 s and removed `auth.json`, and the port and server were gone.
+- **A rollout in a changed form now reads as no turn.** A turn that ends with no user message the
+  reader can parse while a sent line waits, or a root turn that starts before the open one ended,
+  makes `RolloutTurns` unreadable, so the card stops waiting after 3 minutes. A turn open with
+  nothing written for 3 minutes is only logged, since real work can be that quiet.
 
 ### 2026-10-25, live ink spike (CLI 0.164.0-alpha.11.1)
 
