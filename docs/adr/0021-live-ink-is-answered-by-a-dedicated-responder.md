@@ -1,5 +1,7 @@
 # Live ink is answered by a responder Vignette runs
 
+Superseded by ADR 0026: Codex answers live ink too, from a warm `codex app-server`.
+
 An ask about live ink goes to one `claude` process Vignette keeps running, on the person's own
 Claude Code sign-in, not to the session they are working in. Over 7 days of Pete's transcripts a
 session was mid-turn 66 to 80% of the time, so ink sent to it waited a median of 6 to 10 minutes;

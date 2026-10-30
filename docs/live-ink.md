@@ -27,7 +27,7 @@ The names in brackets are `// MARK:` sections.
 | Where an answer's marks and words go on a result card | `ResultCard.swift`, `LiveAnswer.swift` (`cardMarks`), `AgentMarks.swift` (`AgentMark.note`) |
 | What an ask sends | `LivePacket.swift` |
 | Speaking while drawing | `LiveInk.swift` (Listening), `LiveListening.swift`, `Microphone.swift`, `Transcriber.swift`, `AppleTranscriber.swift` |
-| Claude on the screen, the `claude` process, stopping one turn | `LiveResponder.swift` |
+| Claude and Codex on the screen: which answers, their processes, stopping one turn (`docs/live-ink-responders.md`) | `LiveResponders.swift`, `LiveResponder.swift`, `ClaudeDriver.swift`, `CodexDriver.swift` |
 | Esc: which step is next, the hotkey that holds it | `LiveEscape.swift`, `LiveInk.swift` (Esc), `HotKey.swift` |
 | The answer: reading it, drawing it, steps | `LiveAnswer.swift`, `LiveInk.swift` (Answering) |
 | The reply's popover, the conversation: its question, its row, its words, what it is laid over | `LiveReplyPopover.swift`, `LiveInkOverlay.swift` (`LiveMarksLayer.showPopover`) |
@@ -258,7 +258,7 @@ The names in brackets are `// MARK:` sections.
   With motion off the whole rim glows at 35% and holds.
 - `vignette://live-ink-clear` erases every mark, and `live-ink-stroke?points=x,y;x,y` (debug) takes
   a stroke as if by hand, whether the stack is up or not, so a script can test without posting
-  input; it answers what the stroke did. `[state]` has a `liveInk` section: `on`, `inking`, `chord`, `pair`, `claude`,
+  input; it answers what the stroke did. `[state]` has a `liveInk` section: `on`, `inking`, `chord`, `pair`,
   the surfaces with their frames, whether each is on the active Space and how many marks it has, and
   every mark once with its frame.
 - Ink no ask has been about always has its note, `LiveNotePopover`, a macOS popover. There is one
@@ -298,8 +298,9 @@ The names in brackets are `// MARK:` sections.
   Down does. Return asks about the ink no ask has been about, or, with none, about the
   ink asked about last. A follow-up from an answer's button or its Reply field is about the ink asked
   about, never the note's ink, and the note stays with its words. Esc, while the note has the keys,
-  discards it: it closes, and its ink goes. ⌘⌫ deletes the typed line, as in any text field. Its target starts on the one picked last, else the
-  responder, and lists the sessions Send lists after it. Tab picks the next target in that list and
+  discards it: it closes, and its ink goes. ⌘⌫ deletes the typed line, as in any text field. Its target starts on the one picked last, else a
+  responder (`docs/live-ink-responders.md` says which), and lists the sessions Send lists after the
+  responders. Tab picks the next target in that list and
   Shift+Tab the one before, round from either end, without opening it. Down opens it. Return settles the note into the look of
   the conversation over 0.18 s (`NoteContent.settle`): the target's button loses its background and
   chevron, its label greys, the ↩ fades and the rim light starts. The conversation, the reply's
@@ -447,25 +448,9 @@ The names in brackets are `// MARK:` sections.
   its warm-up, or until an interrupted turn ends (`LiveResponder.pending`). Clearing the ink ends
   every ask, those waiting too, and stops the responder, which drops the ask it holds with no answer
   and no failure.
-- An ask is answered by `LiveResponder`: one `claude -p` process in stream-json mode, run with
-  `--safe-mode --tools ""`, its own system prompt, and `--json-schema` for the answer
-  (`LiveAnswer.schema`, fixed text that lists `say` first, the field that streams in as the reply).
-  Started plainly, the process registered itself as a session in Vignette's
-  inbox and could read files, so those flags are the isolation, and the process stops before any
-  screen content is sent unless its `init` line lists no tool but `StructuredOutput` and no MCP
-  server. It starts as a stroke moves, for a note aimed at Claude, and sends a short warm-up ask ($0.001 to $0.01) that checks
-  that line and caches the prompt. `docs/live-ink-ask-cost-2026-10-06.md` has what an ask costs and
-  why. It runs on Claude's 5-minute prompt cache (`CLAUDE_CODE_PROMPT_CACHE_TTL=5m`) and stops 4.5
-  minutes after its last request, since an ask after the cache ends would write the whole
-  conversation again. It also stops when the ink is cleared or live ink is turned off, and starts a
-  new conversation after 12 asks. Esc stops one turn and keeps the conversation: `cancel()` writes a
-  `control_request` with `subtype` `interrupt`, which ends the turn within milliseconds and keeps the
-  process (measured on Claude Code 2.1.302). The turn then ends with a `result` that has `is_error` true
-  and `subtype` `error_during_execution`, which is not an answer or a failure. Its deltas and its result
-  are dropped, nothing new is sent until the result arrives, and the process stops if it takes more than
-  3 s. The warm-up is never interrupted. In a test launch it runs only the `claude` that
-  `VIGNETTE_CLAUDE` names, since any other runs on the person's account;
-  `scripts/e2e/fake_claude.py` stands in for it. In `[live-ink] answered … marks=<n> thrownOut=<n>`,
+- An ask is answered by a responder, Claude Code's or Codex's. `docs/live-ink-responders.md` says
+  which one answers, how each runs with no tools, and how each stops one turn.
+- In `[live-ink] answered … marks=<n> thrownOut=<n>`,
   `thrownOut` counts the marks the responder gave that point at nothing, such as a box in pixels
   rather than thousandths. They are thrown out as the answer is read, before `drew answer` counts.
   A session's answer is read strictly instead (`LiveAnswer(json:strict:)`): the reply helper
@@ -623,7 +608,7 @@ The names in brackets are `// MARK:` sections.
   popover's frame while it is up), `actions` (each button's words,
   frame, and whether it is enabled and picked, for the newest answer with buttons), `replyField` and `replyCancel` (that
   answer's field's and Cancel's frames while they are up),
-  `responder`, `asks` (each ask, oldest first: its id, phase, how many marks it is about, whether
+  `noteTarget` and `responders` (`docs/live-ink-responders.md`), `asks` (each ask, oldest first: its id, phase, how many marks it is about, whether
   it sent a picture, whether it went to a session, why it failed, and the reply's length), `ask`
   (the newest of them), `queued` (how many asks to the responder wait for an earlier one), `escape` and
   `escapeHeld`, and each mark's

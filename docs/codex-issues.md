@@ -209,6 +209,27 @@ a real `codex` on a scratch Codex home.
   by a mutex inside one process only.
 - **Signed out, a turn on the default provider** goes to `api.openai.com` and fails with 401 after
   about 15 s of retries.
+- **A token login is not for other apps.** `account/login/start` with type `chatgptAuthTokens` is
+  marked "[UNSTABLE] FOR OPENAI INTERNAL USE ONLY - DO NOT USE" in the schema, and the binary
+  carries an off switch: "Access token login is disabled. Use API key login instead." So the
+  responder's home is signed in through the browser login (type `chatgpt`), and never with the
+  person's tokens (ADR 0026).
+- **The browser login answers an `authUrl` at `auth.openai.com` and a `loginId`,** and serves its
+  callback on `127.0.0.1:1455`. When something holds 1455, Codex sends it a `GET /cancel`, then
+  after 2 to 4 s serves on 1457. With 1457 taken too, it answers error -32603 "failed to start
+  login server: Port 127.0.0.1:1457 is already in use" after 6 s. Another Codex login waiting on
+  1455 would be cancelled, so `CodexLogin` does not start while that port is taken.
+- **Stopping the app-server ends its login.** The port and the process were gone, and no
+  `auth.json` was written.
+- **The sign-in is kept in `CODEX_HOME/auth.json` by default.** A keychain store keys its entry by
+  a hash of the `CODEX_HOME` path. Vignette pins the file store with
+  `-c cli_auth_credentials_store="file"`, so it can tell whether its home is signed in without
+  starting Codex.
+- **A live check answered 3 asks about a made-up image,** on a scratch home signed in by token for
+  that one run. The first answer took 13.6 s from a cold start: 0.47 s for the isolation check and
+  6.2 s for the warm-up. The next two took 3.4 and 4.5 s, with the first word at about 2.8 s. No
+  process but three short `git` runs started under the server. The person's `auth.json` was
+  unchanged.
 
 ### 2026-10-25, live ink spike (CLI 0.164.0-alpha.11.1)
 
