@@ -125,6 +125,8 @@ private final class CodexRun {
     private var turn: String?
     /// An interrupt asked for before the turn under way had an id.
     private var interruptOnStart = false
+    /// Whether the next turn is the first, sent in place of the warm-up, whose failure fails the start.
+    private var firstTurn = false
     private var partial = ""
     private var usage = ""
     private var lastError: String?
@@ -167,7 +169,7 @@ private final class CodexRun {
             }
         }
         session?.call("turn/start", ["threadId": thread, "input": input, "outputSchema": CodexDriver.schema, "effort": CodexDriver.effort]) { [weak self] answer in
-            if case .failure(let error) = answer { self?.report(.turnFailed(error.message)) }
+            if case .failure(let error) = answer { self?.turnFailed(error.message) }
         }
     }
 
@@ -279,6 +281,7 @@ private final class CodexRun {
         startThread(model: model, provider: nil) { [weak self] id in
             guard let self else { return }
             guard !askWaiting() else {
+                firstTurn = true
                 phase = .ready(thread: id)
                 report(.ready("ms=\(Int(Date().timeIntervalSince(startedAt) * 1000)) warm-up=skipped"))
                 return
@@ -341,15 +344,23 @@ private final class CodexRun {
         let milliseconds = ended["durationMs"] as? Int ?? 0
         switch status {
         case "completed":
+            firstTurn = false
             let items = ended["items"] as? [[String: Any]] ?? []
             let text = items.last { $0["type"] as? String == "agentMessage" }?["text"] as? String ?? partial
             let answer = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) ?? text
             report(.answered(answer, usage: "ms=\(milliseconds) \(usage)"))
         case "interrupted":
+            firstTurn = false
             report(.turnFailed("interrupted"))
         default:
-            report(.turnFailed(Self.message(of: ended) ?? lastError ?? "turn \(status ?? "?")"))
+            turnFailed(Self.message(of: ended) ?? lastError ?? "turn \(status ?? "?")")
         }
+    }
+
+    private func turnFailed(_ detail: String) {
+        let first = firstTurn
+        firstTurn = false
+        report(first ? .firstTurnFailed(detail) : .turnFailed(detail))
     }
 
     private func ended(_ status: Int32) {

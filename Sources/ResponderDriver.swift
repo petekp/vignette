@@ -59,6 +59,9 @@ enum ResponderEvent {
     case answered(Any, usage: String)
     /// The turn ended without an answer, interrupted or failed, with the detail.
     case turnFailed(String)
+    /// The first turn, sent in place of the warm-up, failed, with the detail. The ask fails as any
+    /// turn's does, and the start fails as a failed warm-up's does.
+    case firstTurnFailed(String)
     /// The process ended on its own, with the last of its standard error.
     case ended(status: Int32, tail: String)
 }

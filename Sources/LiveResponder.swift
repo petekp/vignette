@@ -319,15 +319,24 @@ final class LiveResponder {
                 }
             }
         case .turnFailed(let detail):
-            turnEnded { ask in
-                Log.write("[live-ink] responder error answer \(detail) agent=\(client.rawValue)")
-                ask.onAnswer(.failure(Failure(reason: driver.reason(forError: detail) ?? driver.couldNotAnswer, detail: detail)))
+            turnEnded { ask in failAnswer(of: ask, detail) }
+        case .firstTurnFailed(let detail):
+            askTimer?.invalidate()
+            if let ask = current {
+                current = nil
+                failAnswer(of: ask, detail)
             }
+            startFailed(detail)
         case .ended(let status, let tail):
             Log.write("[live-ink] responder ended status=\(status)\(tail.isEmpty ? "" : " stderr=\(tail)") agent=\(client.rawValue)")
             let reason = driver.reason(forError: tail) ?? (state == .starting ? driver.couldNotStart : driver.couldNotAnswer)
             shutDown(Failure(reason: reason, detail: "ended \(status)"), state: .failed(reason))
         }
+    }
+
+    private func failAnswer(of ask: Ask, _ detail: String) {
+        Log.write("[live-ink] responder error answer \(detail) agent=\(client.rawValue)")
+        ask.onAnswer(.failure(Failure(reason: driver.reason(forError: detail) ?? driver.couldNotAnswer, detail: detail)))
     }
 
     /// A turn ended. The turn of an ask the person cancelled says nothing; otherwise `answer` answers

@@ -84,7 +84,9 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
   on localhost inside Vignette (`CodexCheckProvider`). The real thread opens only when the request
   that listener receives has `tools: []` and nothing in its input but Vignette's prompt and the
   warm-up (`CodexIsolation.refusal`). The real thread is `ephemeral`, with the system prompt as
-  its base instructions, and gets a warm-up of its own.
+  its base instructions, and gets a warm-up of its own, unless an ask is waiting by then. That ask
+  is then the thread's first turn, and when it fails, not interrupted, the start fails as a failed
+  warm-up does: the process stops and Codex shows why (`ResponderEvent.firstTurnFailed`).
 - A refused check is not run again until Vignette restarts or the `codex` at that path is another
   file, by its size or modification date (`CodexIsolation.Stamp`). The check's answer holds for
   one file. Until then an ask to Codex is answered at once with the refusal, and starts nothing:
