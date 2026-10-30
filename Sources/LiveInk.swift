@@ -78,7 +78,9 @@ final class LiveInk {
     /// chord, so "this" and "that" drawn in two strokes are one note.
     private var listening: LiveListening?
     /// Why speech cannot listen, or nil when it can. A note says so in its prompt.
-    private var speechProblem: String?
+    private var speechProblem: String? {
+        didSet { note?.speechProblem = speechProblem }
+    }
     /// The note's words are the person's to keep: typed, or in the note before this listening began, so
     /// what they say no longer replaces them.
     private var typedOver = false
@@ -2232,7 +2234,7 @@ final class LiveInk {
     private func listen() {
         guard listening == nil else { return }
         let settings = Settings.shared.data
-        guard settings.liveInkSpeech else { return }
+        guard settings.liveInkSpeech else { speechProblem = nil; return }
         guard SpeechPermission.granted else {
             Log.write("[speech] not listening: the microphone or speech recognition is not allowed")
             speechProblem = Self.speechNotice
@@ -2240,8 +2242,10 @@ final class LiveInk {
         }
         guard let transcriber = SpeechEngine.make() else {
             Log.write("[speech] error no recognizer for \(Locale.current.identifier)")
+            speechProblem = AppleTranscriber.noModel
             return
         }
+        speechProblem = nil
         let listening = LiveListening(transcriber: transcriber)
         listening.onWords = { [weak self] words in self?.heard(words) }
         listening.onFinished = { [weak self, weak listening] words in
@@ -2252,6 +2256,7 @@ final class LiveInk {
             Log.write("[speech] error \(failure.detail)")
             guard let self, let listening, self.listening === listening else { return }
             self.listening = nil
+            self.speechProblem = failure.reason
         }
         self.listening = listening
         typedOver = note.map { !$0.isEmpty } ?? false
