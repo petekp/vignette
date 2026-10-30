@@ -77,7 +77,7 @@ final class SetupInkGuide {
         shown = shown + new
         if stage.isDark { dark.formUnion(new.filter { $0.kind != .text }.map(\.id)) }
         draw(drawingOn: Set(new.map(\.id)))
-        Log.write("[setup] live ink pointing at \(target) marks=\(new.count)")
+        Log.write("[setup] live ink pointing at \(target) marks=\(new.count) agent=\(agent)")
         guard !old.isEmpty else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + LiveMarksLayer.finishDuration(.dismissed)) { [weak self] in
             guard let self else { return }
