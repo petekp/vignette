@@ -294,8 +294,6 @@ final class SetupModel: ObservableObject {
     var folderAnswered: (FolderAccess) -> Void = { _ in }
     var done: () -> Void = {}
     let scope: Scope
-    /// Whether all of setup includes live ink's pages. They are still being designed, so they show
-    /// only with `debug`.
     /// The live ink page's demo, kept here so going back to the page shows where it rested.
     let inkPlayer = SetupInkPlayer()
     let inkGuide = SetupInkGuide()
