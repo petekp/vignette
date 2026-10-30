@@ -62,6 +62,7 @@ struct SettingsData: Codable, Equatable {
     var liveInk = false                      // holding `liveInkChord` draws on the screen itself; needs Accessibility
     var liveInkOffered = false               // whether live ink's one-time offer was made to an install that finished setup before it had a page
     var liveInkAskedClaude = false           // whether a live ink ask has gone to Claude, which ends the line that says what Claude sees
+    var liveInkAskedCodex = false            // the same for Codex
     var liveInkChord = LiveInkChord.standard.rawValue  // the two modifiers that hold live ink on: ⌃⌥ unless another pair is chosen
     var liveInkSpeech = false                // talking while drawing fills the note; needs the microphone and speech recognition
     var liveInkSendWhenQuiet = true          // experiment: the ask goes once the person stops talking, or waits for Return
@@ -526,22 +527,6 @@ struct AppleOriginal: Codable, Equatable {
                       showThumbnail: AppleScreencapture.bool("show-thumbnail"),
                       disableShadow: AppleScreencapture.bool("disable-shadow"),
                       type: AppleScreencapture.string("type"))
-    }
-}
-
-/// A launch with `VIGNETTE_SETTINGS` set is a test launch. It reads and writes that settings file and
-/// its own screenshot defaults, and reaches nothing else of the person's: no login item, and no
-/// update feed, agent folder or agent tool the environment does not name.
-enum Launch {
-    static let settingsPath = settingsPath(in: ProcessInfo.processInfo.environment)
-    static let isTest = settingsPath != nil
-
-    static func isTest(in environment: [String: String]) -> Bool {
-        settingsPath(in: environment) != nil
-    }
-
-    private static func settingsPath(in environment: [String: String]) -> String? {
-        environment["VIGNETTE_SETTINGS"].flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 
