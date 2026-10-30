@@ -61,8 +61,8 @@ final class CodexDriver: ResponderDriver {
     func start(report: @escaping (ResponderEvent) -> Void) -> ResponderRefusal? {
         guard let binary = binary() else {
             Log.write("[live-ink] responder error no-codex")
-            return ResponderRefusal(failure: LiveResponder.Failure(reason: "Vignette couldn't find Codex.", detail: "no codex"),
-                                    problem: "Live ink answers with Codex, and Vignette couldn't find the codex command.")
+            let reason = LiveResponder.Availability.notInstalled.problem(for: .codex) ?? ""
+            return ResponderRefusal(failure: LiveResponder.Failure(reason: reason, detail: "no codex"), problem: reason)
         }
         let check: CodexCheckProvider
         do {
@@ -129,7 +129,7 @@ final class CodexDriver: ResponderDriver {
     func reason(forError text: String) -> String {
         let lower = text.lowercased()
         if lower.contains("unknown feature flag") {
-            return "This version of Codex can't be held to no tools, so live ink can't use it."
+            return "This version of Codex can't turn its tools off, so live ink can't use it."
         }
         if ["not signed in", "not logged in", "log in", "login", "unauthorized", "401", "authenticat", "refresh token"].contains(where: lower.contains) {
             return Self.signedOut
@@ -138,7 +138,7 @@ final class CodexDriver: ResponderDriver {
         return "Codex couldn't answer. You can ask again."
     }
 
-    nonisolated static let signedOut = "Codex isn't signed in for live ink. You can sign in in Vignette's settings."
+    nonisolated static let signedOut = "Codex isn't signed in for live ink. You can sign in in Settings."
 
     // MARK: Starting
 

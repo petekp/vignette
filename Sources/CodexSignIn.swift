@@ -44,9 +44,9 @@ final class CodexLogin {
     /// How long the person has to finish signing in in the browser.
     static let signInLimit: TimeInterval = 10 * 60
 
-    static let portTaken = "Another sign-in to Codex is open. You can try again once it's finished."
+    static let portTaken = "Another sign-in to Codex may be open. You can try again once it's done."
     static let couldNotStart = "Vignette couldn't start the sign-in to Codex. You can try again."
-    static let notSignedIn = "Codex didn't sign in. You can try again."
+    static let notSignedIn = "The sign-in to Codex didn't finish. You can try again."
 
     private let binary: () -> String?
     private let home: URL
