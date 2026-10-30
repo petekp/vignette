@@ -254,11 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.liveInk != old.liveInk { liveInk.setOn(new.liveInk) }
-        // The chord is taken when live ink turns on, so a new pair is taken by turning it off and on.
-        if new.liveInk, new.liveInkChord != old.liveInkChord {
-            liveInk.setOn(false)
-            liveInk.setOn(true)
-        }
+        if new.liveInkChord != old.liveInkChord { liveInk.takeChord() }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem(); showUpdateDot() }
         if new.launchAtLogin != old.launchAtLogin { applyLoginItem() }
     }

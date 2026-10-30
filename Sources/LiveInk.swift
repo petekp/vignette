@@ -210,9 +210,7 @@ final class LiveInk {
             checkResponder()
             LivePacket.warmUp()
             InkMarkLayer.warmUp(scale: NSScreen.main?.backingScaleFactor ?? 2)
-            chord = ModifierChord(Settings.shared.data.liveInkChordChoice.flags, tag: "live-ink", name: "the chord") { [weak self] change in
-                self?.chordChanged(change)
-            }
+            chord = makeChord()
             let workspace = NSWorkspace.shared.notificationCenter
             observers = [
                 (NotificationCenter.default, NotificationCenter.default.addObserver(
@@ -240,6 +238,20 @@ final class LiveInk {
             windows.removeAll()
         }
         Log.write("[live-ink] \(on ? "on" : "off")")
+    }
+
+    /// Takes the pair chosen in the General tab. The marks stay; a stroke under way ends.
+    func takeChord() {
+        guard isOn else { return }
+        if isInking { stopInking(because: "the chord changed") }
+        chord = makeChord()
+        Log.write("[live-ink] chord \(Settings.shared.data.liveInkChordChoice.glyphs)")
+    }
+
+    private func makeChord() -> ModifierChord {
+        ModifierChord(Settings.shared.data.liveInkChordChoice.flags, tag: "live-ink", name: "the chord") { [weak self] change in
+            self?.chordChanged(change)
+        }
     }
 
     /// What a stroke did, as `[live-ink]` lines and `live-ink-stroke` answer it.
