@@ -127,6 +127,8 @@ final class CodexDriver: ResponderDriver {
         thread = nil
         checkThread = nil
         turn = nil
+        interruptOnStart = false
+        lastError = nil
         warmingUp = false
     }
 
