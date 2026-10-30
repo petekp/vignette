@@ -29,7 +29,7 @@ extension LiveResponder {
     }
 
     /// How long `claude auth status` may take before the check counts as ready.
-    static let authStatusLimit: TimeInterval = 10
+    nonisolated static let authStatusLimit: TimeInterval = 10
 
     /// The `claude` that answers live ink. In a test launch it is only what `VIGNETTE_CLAUDE` names.
     nonisolated static func claudeBinary() -> String? {
@@ -40,19 +40,15 @@ extension LiveResponder {
     /// which sends no message and costs nothing; a `claude` whose answer cannot be read counts as
     /// ready, and the first ask then reports what the process says. Codex's reads whether
     /// Vignette's own Codex home holds a sign-in (`CodexSignIn.isSignedIn`).
+    /// Every step, the command's lookup included, runs off the main thread.
     static func availability(of client: AgentClient) async -> Availability {
-        switch client {
-        case .claude:
-            guard let binary = claudeBinary() else { return .notInstalled }
-            return await withCheckedContinuation { continuation in
-                DispatchQueue.global(qos: .utility).async {
-                    continuation.resume(returning: authStatus(binary: binary))
-                }
-            }
-        case .codex:
-            guard CodexConnection.binaryToRun() != nil, CodexSignIn.defaultHome != nil else { return .notInstalled }
-            return await withCheckedContinuation { continuation in
-                DispatchQueue.global(qos: .utility).async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                switch client {
+                case .claude:
+                    continuation.resume(returning: claudeBinary().map(authStatus(binary:)) ?? .notInstalled)
+                case .codex:
+                    guard CodexConnection.binaryToRun() != nil, CodexSignIn.defaultHome != nil else { return continuation.resume(returning: .notInstalled) }
                     continuation.resume(returning: CodexSignIn.isSignedIn() ? .ready : .signedOut)
                 }
             }
@@ -61,7 +57,7 @@ extension LiveResponder {
 
     /// The answer of `claude auth status --json`, read off the calling thread. A check that does not
     /// answer within `authStatusLimit` stops the process and counts as ready.
-    private static func authStatus(binary: String) -> Availability {
+    nonisolated private static func authStatus(binary: String) -> Availability {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binary)
         process.arguments = ["auth", "status", "--json"]

@@ -15,7 +15,11 @@ final class ClaudeDriver: ResponderDriver {
     /// The only tool the process may have: the one `--json-schema` adds to carry the answer.
     static let allowedTools: Set<String> = ["StructuredOutput"]
 
-    private let binary: () -> String?
+    let binary: @Sendable () -> String?
+    let notFound = ResponderRefusal(failure: LiveResponder.Failure(reason: "Vignette couldn't find Claude Code.", detail: "no claude"),
+                                    problem: "Live ink answers with Claude Code, and Vignette couldn't find the claude command.")
+    let couldNotStart = "Vignette couldn't start Claude Code."
+    let couldNotAnswer = "Claude couldn't answer. You can ask again."
     private var process: JSONLinesProcess?
     private var report: ((ResponderEvent) -> Void)?
     private var warmingUp = false
@@ -26,16 +30,11 @@ final class ClaudeDriver: ResponderDriver {
 
     /// `binary` finds `claude`. In a test launch it is only what `VIGNETTE_CLAUDE` names, since any
     /// other found on the Mac runs on the person's own account.
-    init(binary: @escaping () -> String? = LiveResponder.claudeBinary) {
+    init(binary: @escaping @Sendable () -> String? = { LiveResponder.claudeBinary() }) {
         self.binary = binary
     }
 
-    func start(askWaiting: @escaping () -> Bool, report: @escaping (ResponderEvent) -> Void) -> ResponderRefusal? {
-        guard let binary = binary() else {
-            Log.write("[live-ink] responder error no-claude")
-            return ResponderRefusal(failure: LiveResponder.Failure(reason: "Vignette couldn't find Claude Code.", detail: "no claude"),
-                                    problem: "Live ink answers with Claude Code, and Vignette couldn't find the claude command.")
-        }
+    func start(binary: String, askWaiting: @escaping () -> Bool, report: @escaping (ResponderEvent) -> Void) -> String? {
         let arguments = [
             "-p", "--model", "sonnet",
             "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
@@ -54,8 +53,7 @@ final class ClaudeDriver: ResponderDriver {
                                            onLine: { [weak self] in self?.received($0) },
                                            onEnd: { [weak self] status in self?.ended(status) })
         } catch {
-            Log.write("[live-ink] responder error launch \(error.localizedDescription)")
-            return ResponderRefusal(reason: "Vignette couldn't start Claude Code.", detail: error.localizedDescription)
+            return "launch: \(error.localizedDescription)"
         }
         self.report = report
         totalCost = 0
@@ -100,7 +98,8 @@ final class ClaudeDriver: ResponderDriver {
             guard Set(tools).isSubset(of: Self.allowedTools), servers.isEmpty else {
                 Log.write("[live-ink] responder error not-isolated tools=\(tools.count) mcp=\(servers.count)")
                 report?(.refused(ResponderRefusal(failure: LiveResponder.Failure(reason: "Live ink stopped Claude, which started with tools.", detail: "not isolated"),
-                                                  problem: "This version of Claude Code starts with tools, so live ink can't use it.")))
+                                                  problem: "This version of Claude Code starts with tools, so live ink can't use it.",
+                                                  retry: .onceBinaryChanges)))
                 return
             }
         case "stream_event":
@@ -126,13 +125,7 @@ final class ClaudeDriver: ResponderDriver {
         if let total { totalCost = total }
         if warmingUp {
             warmingUp = false
-            guard !failed else {
-                Log.write("[live-ink] responder error warm-up \(detail)")
-                let reason = reason(forError: detail)
-                report?(.refused(ResponderRefusal(reason: reason, detail: detail)))
-                return
-            }
-            report?(.ready("ms=\(milliseconds) cost=\(cost)"))
+            report?(failed ? .startFailed("warm-up: \(detail)") : .ready("ms=\(milliseconds) cost=\(cost)"))
             return
         }
         if failed {
@@ -152,13 +145,13 @@ final class ClaudeDriver: ResponderDriver {
         return counts.map { "\($0.0)=\(($0.1 as? Int).map(String.init) ?? "?")" }.joined(separator: " ")
     }
 
-    func reason(forError text: String) -> String {
+    func reason(forError text: String) -> String? {
         let lower = text.lowercased()
         if ["log in", "login", "authenticat", "api key"].contains(where: lower.contains) {
             return "Claude Code isn't signed in. You can sign in by running claude in Terminal."
         }
         if lower.contains("limit") { return "Claude's usage limit is reached for now." }
-        return "Claude couldn't answer. You can ask again."
+        return nil
     }
 
     private func ended(_ status: Int32) {

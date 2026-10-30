@@ -24,36 +24,25 @@ final class CodexDriver: ResponderDriver {
     /// The isolation check's model provider, as `-c model_providers.<name>` defines it.
     static let checkProvider = "vignette_check"
 
-    private let binary: () -> String?
+    let binary: @Sendable () -> String?
+    let notFound = ResponderRefusal(reason: LiveResponder.Availability.notInstalled.problem(for: .codex) ?? "", detail: "no codex")
+    let couldNotStart = "Vignette couldn't start Codex."
+    let couldNotAnswer = "Codex couldn't answer. You can ask again."
     private let home: URL
     /// The start under way or running. `stop` drops it, and nothing it began reports after that.
     private var run: CodexRun?
-    /// The codex file the isolation check refused, and the refusal, for as long as Vignette runs. A
-    /// start of that same file answers with the refusal and runs nothing.
-    private var refused: (file: CodexIsolation.Stamp, refusal: ResponderRefusal)?
 
     /// `binary` finds `codex` (`CodexConnection.binaryToRun`).
-    init(binary: @escaping () -> String? = CodexConnection.binaryToRun, home: URL) {
+    init(binary: @escaping @Sendable () -> String? = { CodexConnection.binaryToRun() }, home: URL) {
         self.binary = binary
         self.home = home
     }
 
-    func start(askWaiting: @escaping () -> Bool, report: @escaping (ResponderEvent) -> Void) -> ResponderRefusal? {
-        guard let binary = binary() else {
-            Log.write("[live-ink] responder error no-codex")
-            return ResponderRefusal(reason: LiveResponder.Availability.notInstalled.problem(for: .codex) ?? "", detail: "no codex")
-        }
-        let file = CodexIsolation.Stamp(path: binary)
-        if let refused, refused.file == file {
-            Log.write("[live-ink] responder codex not started: the isolation check refused this codex path=\(binary)")
-            return refused.refusal
-        }
+    func start(binary: String, askWaiting: @escaping () -> Bool, report: @escaping (ResponderEvent) -> Void) -> String? {
         do {
-            run = try CodexRun(binary: binary, home: home, askWaiting: askWaiting, report: report) { [weak self] refusal in
-                if let file { self?.refused = (file, refusal) }
-            }
+            run = try CodexRun(binary: binary, home: home, askWaiting: askWaiting, report: report)
         } catch {
-            return Self.refusal("could not listen: \(error)")
+            return "could not listen: \(error)"
         }
         return nil
     }
@@ -71,33 +60,19 @@ final class CodexDriver: ResponderDriver {
         run = nil
     }
 
-    func reason(forError text: String) -> String {
-        Self.reason(forError: text)
-    }
-
-    static func reason(forError text: String) -> String {
+    func reason(forError text: String) -> String? {
         let lower = text.lowercased()
         if lower.contains("unknown feature flag") {
             return "This version of Codex can't turn its tools off, so live ink can't use it."
         }
         if ["not signed in", "not logged in", "log in", "login", "unauthorized", "401", "authenticat", "refresh token"].contains(where: lower.contains) {
-            return signedOut
+            return Self.signedOut
         }
         if lower.contains("limit") { return "Codex's usage limit is reached for now." }
-        return couldNotAnswer
+        return nil
     }
 
     nonisolated static let signedOut = "Codex isn't signed in for live ink. You can sign in in Settings."
-    static let couldNotAnswer = "Codex couldn't answer. You can ask again."
-    static let couldNotStart = "Vignette couldn't start Codex."
-
-    /// Why a start failed: the words its detail matches (`reason(forError:)`), else that Codex could
-    /// not start.
-    static func refusal(_ detail: String) -> ResponderRefusal {
-        Log.write("[live-ink] responder error codex \(detail)")
-        let named = reason(forError: detail)
-        return ResponderRefusal(reason: named == couldNotAnswer ? couldNotStart : named, detail: detail)
-    }
 
     /// The strict schema as the object `turn/start` takes.
     fileprivate static let schema: Any = (try? JSONSerialization.jsonObject(with: Data(LiveAnswer.strictSchema.utf8))) ?? [String: Any]()
@@ -110,8 +85,8 @@ final class CodexDriver: ResponderDriver {
 
 /// One start of Codex's responder, from the check to the stop: its server, the check's provider,
 /// how far the start has got, and the turn under way. Every callback holds it weakly, so once the
-/// driver drops it at `stop` nothing it began reports. The check's catalog read, `codex debug
-/// models`, still runs to its end, and its answer launches nothing.
+/// driver drops it at `stop` nothing it began reports. The check's catalog, from `codex debug
+/// models`, is still made to its end, and launches nothing.
 @MainActor
 private final class CodexRun {
     /// How far the start has got: the check's thread and the model it runs on, then the thread asks
@@ -126,8 +101,6 @@ private final class CodexRun {
     private let home: URL
     private let askWaiting: () -> Bool
     private let report: (ResponderEvent) -> Void
-    /// Hears the check refuse this codex.
-    private let refusedCheck: (ResponderRefusal) -> Void
     private var session: AppServerSession?
     private var check: CodexCheckProvider?
     private var phase = Phase.starting
@@ -140,17 +113,15 @@ private final class CodexRun {
     private var lastError: String?
     private let startedAt = Date()
 
-    init(binary: String, home: URL, askWaiting: @escaping () -> Bool, report: @escaping (ResponderEvent) -> Void,
-         refusedCheck: @escaping (ResponderRefusal) -> Void) throws {
+    init(binary: String, home: URL, askWaiting: @escaping () -> Bool, report: @escaping (ResponderEvent) -> Void) throws {
         self.home = home
         self.askWaiting = askWaiting
         self.report = report
-        self.refusedCheck = refusedCheck
         let check = try CodexCheckProvider()
         self.check = check
         let run = WeakRun(self)
         check.start { port in
-            let catalog = port == nil ? nil : CodexIsolation.catalog(binary: binary, home: home)
+            let catalog = port == nil ? nil : CodexIsolation.writeCatalog(binary: binary, home: home)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { run.value?.launch(binary, port: port, catalog: catalog) }
             }
@@ -203,18 +174,12 @@ private final class CodexRun {
 
     /// The start failed, at whichever step: one way for all of them.
     private func fail(_ detail: String) {
-        report(.refused(CodexDriver.refusal(detail)))
+        report(.startFailed(detail))
     }
 
-    private func launch(_ binary: String, port: UInt16?, catalog: Data?) {
+    private func launch(_ binary: String, port: UInt16?, catalog file: URL?) {
         guard let port else { return fail("could not listen for the check") }
-        guard let catalog else { return fail("could not read codex debug models") }
-        let file = home.appendingPathComponent("model-catalog.json")
-        do {
-            try catalog.write(to: file, options: .atomic)
-        } catch {
-            return fail("could not write the model catalog: \(error.localizedDescription)")
-        }
+        guard let file else { return fail("could not make the model catalog from codex debug models") }
         let provider = #"{name="\#(CodexDriver.checkProvider)", base_url="http://127.0.0.1:\#(port)/v1", wire_api="responses", supports_websockets=false}"#
         let arguments = ["-c", "model_catalog_json=\(CodexDriver.toml(file.path))", "-c", "model_providers.\(CodexDriver.checkProvider)=\(provider)"]
         do {
@@ -289,10 +254,8 @@ private final class CodexRun {
             : bodies.lazy.compactMap { CodexIsolation.refusal(of: $0, prompt: LiveResponder.systemPrompt, warmUp: LiveResponder.warmUp) }.first
         if let refusal {
             Log.write("[live-ink] responder error not-isolated \(refusal) agent=codex")
-            let refused = ResponderRefusal(failure: LiveResponder.Failure(reason: "Live ink stopped Codex, which started with tools.", detail: "not isolated"),
-                                           problem: "This version of Codex starts with tools, so live ink can't use it.")
-            refusedCheck(refused)
-            report(.refused(refused))
+            report(.refused(ResponderRefusal(failure: LiveResponder.Failure(reason: "Live ink stopped Codex, which started with tools.", detail: "not isolated"),
+                                             problem: "This version of Codex starts with tools, so live ink can't use it.", retry: .onceBinaryChanges)))
             return
         }
         Log.write("[live-ink] responder codex isolated requests=\(bodies.count) ms=\(Int(Date().timeIntervalSince(startedAt) * 1000))")

@@ -44,32 +44,17 @@ enum CodexIsolation {
     /// How long `codex debug models` may take.
     static let catalogLimit: TimeInterval = 10
 
-    /// `codex debug models` run in `home`, with what adds tools taken out. It blocks, so it runs off the
-    /// main thread.
-    static func catalog(binary: String, home: URL) -> Data? {
+    /// Runs `codex debug models` in `home` and writes it, with what adds tools taken out, to
+    /// `model-catalog.json` there. Answers that file, or nil when either step failed. It blocks, so
+    /// it runs off the main thread.
+    static func writeCatalog(binary: String, home: URL) -> URL? {
+        let file = home.appendingPathComponent("model-catalog.json")
         guard (try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)) != nil,
               let run = Subprocess.run(binary, ["debug", "models"], timeout: catalogLimit, environment: ["CODEX_HOME": home.path],
                                        folder: home, includingErrors: false),
-              run.status == 0, !run.timedOut else { return nil }
-        return strippedCatalog(Data(run.output.utf8))
-    }
-
-    /// A codex file as it is now: the path it was found at, and the size and modification date of
-    /// the file that path leads to. The check's answer holds for one file, so a codex the check
-    /// refused is checked again only once the file at its path is another.
-    struct Stamp: Equatable {
-        let path: String
-        let size: Int
-        let modified: Date
-
-        init?(path: String) {
-            let file = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
-            guard let attributes = try? FileManager.default.attributesOfItem(atPath: file),
-                  let size = attributes[.size] as? Int, let modified = attributes[.modificationDate] as? Date else { return nil }
-            self.path = path
-            self.size = size
-            self.modified = modified
-        }
+              run.status == 0, !run.timedOut, let catalog = strippedCatalog(Data(run.output.utf8)),
+              (try? catalog.write(to: file, options: .atomic)) != nil else { return nil }
+        return file
     }
 
     /// Why the warm-up's request to the model is not the request Vignette means to send, or nil

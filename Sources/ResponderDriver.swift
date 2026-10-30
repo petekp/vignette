@@ -1,11 +1,21 @@
 import Foundation
 
-/// Why a driver could not start, or its warm-up refused the process.
+/// Why a responder cannot answer, in words of the driver's own: its command was not found, or its
+/// isolation check refused the process.
 struct ResponderRefusal: Equatable {
     /// What an ask waiting on the start is told.
     let failure: LiveResponder.Failure
     /// Why the responder cannot answer, for the note and the settings.
     let problem: String
+    /// When an ask may start the agent again.
+    var retry = Retry.always
+
+    enum Retry: Equatable {
+        case always
+        /// Once the file at the command's path is another (`BinaryStamp`): the isolation check's
+        /// answer holds for one file, for as long as Vignette runs.
+        case onceBinaryChanges
+    }
 }
 
 extension ResponderRefusal {
@@ -15,11 +25,31 @@ extension ResponderRefusal {
     }
 }
 
+/// A command's file as it is now: the path it was found at, and the size and modification date of
+/// the file that path leads to.
+struct BinaryStamp: Equatable {
+    let path: String
+    let size: Int
+    let modified: Date
+
+    /// It reads the disk, so it runs off the main thread.
+    init?(path: String) {
+        let file = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: file),
+              let size = attributes[.size] as? Int, let modified = attributes[.modificationDate] as? Date else { return nil }
+        self.path = path
+        self.size = size
+        self.modified = modified
+    }
+}
+
 /// What a driver's process said, in the responder's terms.
 enum ResponderEvent {
     /// The warm-up answered and the process has nothing but the answer to give. The detail is for
     /// the log.
     case ready(String)
+    /// The start failed before it was ready, with the detail for the log.
+    case startFailed(String)
     case refused(ResponderRefusal)
     /// The turn's first output.
     case output
@@ -40,17 +70,25 @@ protocol ResponderDriver: AnyObject {
     var client: AgentClient { get }
     /// The agent's name in what the person reads.
     var name: String { get }
-    /// Starts the process and its warm-up, and reports what it says through `report` from then on.
-    /// Answers why it could not start. `askWaiting` says whether an ask is waiting for the start to
-    /// end, which a warm-up that only warms the cache can give way to.
-    func start(askWaiting: @escaping () -> Bool, report: @escaping (ResponderEvent) -> Void) -> ResponderRefusal?
+    /// Finds the agent's command. It reads the disk, so it is called off the main thread.
+    var binary: @Sendable () -> String? { get }
+    /// What an ask is told when the command is not found.
+    var notFound: ResponderRefusal { get }
+    /// What the person reads when the process could not start, and when a turn could not answer,
+    /// unless the error names a cause `reason(forError:)` knows.
+    var couldNotStart: String { get }
+    var couldNotAnswer: String { get }
+    /// Starts `binary` and its warm-up, and reports what it says through `report` from then on.
+    /// Answers why it could not start, for the log. `askWaiting` says whether an ask is waiting for
+    /// the start to end, which a warm-up that only warms the cache can give way to.
+    func start(binary: String, askWaiting: @escaping () -> Bool, report: @escaping (ResponderEvent) -> Void) -> String?
     /// Writes one ask's message.
     func send(_ parts: [LiveResponder.Part])
     /// Ends the turn under way. Its end is still reported.
     func interrupt()
     /// Ends the process. Nothing is reported after it.
     func stop()
-    /// Words for the person from the agent's error text, which is not an interface: a match only picks
-    /// a clearer sentence, and anything else gets a general one.
-    func reason(forError text: String) -> String
+    /// Words for the person when the agent's error text names a cause they can act on, else nil.
+    /// The text is not an interface: a match only picks a clearer sentence.
+    func reason(forError text: String) -> String?
 }
