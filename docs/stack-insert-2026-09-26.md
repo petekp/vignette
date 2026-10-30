@@ -71,3 +71,22 @@ of a 40 by 30 pt patch, summed, from 0.2 s before the shortcut to 1.0 s after it
 | --- | --- | --- |
 | Shortcut over lone thumbnails | The middle card changed by up to 78, the top card by up to 227. Both left their slots and slid back in. | No kept card changed in any frame. |
 | Esc out of the editor, then the shortcut | The middle card changed by up to 34. | No kept card changed in any frame. |
+
+## One transaction (2026-10-30)
+
+`shiftUp` makes its changes inside `layoutPanel`'s transaction. SwiftUI runs an update when one turn
+of the run loop starts writing the model under a second transaction. If that update moves the
+hover, the new hover is set inside the second transaction. In `layoutPanel` that transaction has
+animations off, so the card under the pointer would lose its hover look, ring and buttons in one
+frame when a new card joined.
+
+Measured in the VM, with the pointer resting on the newest card and five joins per build. Each
+hover change was logged with its time, and with two transactions also with its call stack.
+
+| Transactions | Hover reaches the new card | Where SwiftUI sets it | The old card's look |
+| --- | --- | --- | --- |
+| Two | 5 to 10 ms after the insert | `Update.dispatchActions`, inside `layoutPanel`'s `withTransaction` | Gone in one frame |
+| One | 6 to 11 ms after the insert | After `layoutPanel` returns, before the next turn, by the times logged | Fades over about six frames |
+
+The hover moves to the new card in the insert's turn, while that card is still off screen. So the
+old card's look starts fading as the card starts to rise.
