@@ -44,6 +44,15 @@ final class StackModel: ObservableObject {
     /// No other card is in the column. The card itself may be out of it, as one in the annotator is.
     func isAlone(_ id: UUID) -> Bool { cards.allSatisfy { $0.id == id } }
 
+    /// The card Left or Right in the editor opens from the screenshot `key`: the next older or newer
+    /// one in the column that the editor can open. Nil at either end, or when `key` has no card here.
+    func neighbor(of key: ScreenshotKey, _ page: EditorCore.Page) -> Card? {
+        let images = cards.filter { $0.shot.kind == .image }
+        guard let index = images.firstIndex(where: { $0.shot.key == key }) else { return nil }
+        let next = page == .older ? index + 1 : index - 1
+        return images.indices.contains(next) ? images[next] : nil
+    }
+
     func follow(_ presentation: CornerPresentation) {
         if presentation.mode != .hidden, isStack != presentation.isStack { isStack = presentation.isStack }
     }

@@ -1,28 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// How the recent stack forms over a column already on screen: every card showing one of the
-/// recent screenshots stays, and only the others enter.
-struct StackEntrance: Equatable {
-    /// For each recent screenshot, newest first: the card on screen that shows it, or nil for one that enters.
-    let kept: [UUID?]
-
-    init(onScreen: [(key: ScreenshotKey, id: UUID)], recent: [ScreenshotKey]) {
-        kept = recent.map { key in onScreen.first { $0.key == key }?.id }
-    }
-
-    /// For each recent screenshot, its place in the slide-in's stagger, counting the entering cards
-    /// from 0, newest first; nil for a card that stays.
-    var ranks: [Int?] {
-        var next = 0
-        return kept.map { id in
-            guard id == nil else { return nil }
-            defer { next += 1 }
-            return next
-        }
-    }
-}
-
 /// Owns the bottom-right panel: fresh-screenshot thumbnails, the recent stack, the marks on cards,
 /// and the transitions into and out of the annotator. An NSObject because the drag-select's
 /// auto-scroll takes its ticks from a display link, which calls a target and a selector.
@@ -449,6 +427,15 @@ final class ThumbnailController: NSObject {
         if visible { dismiss(by: .quickDone) } else { send(.dismiss(.finished)) }
     }
 
+    /// Left or Right in the editor: the screenshot beside the one the editor shows or is opening, in
+    /// the corner's order, or a beep at either end. A key's repeat never beeps.
+    func page(_ page: EditorCore.Page, isRepeat: Bool) {
+        guard run.takesPage(isRepeat: isRepeat), let from = run.heading else { return }
+        guard let next = model.neighbor(of: from, page) else { if !isRepeat { NSSound.beep() }; return }
+        if let index = model.cards.firstIndex(where: { $0.id == next.id }) { scrollToReveal(index) }
+        send(.page(next.shot.key, isRepeat: isRepeat))
+    }
+
     /// The editor has the screenshot for `opening`.
     func editorLoaded(_ opening: Opening) {
         send(.loaded(opening))
@@ -852,6 +839,7 @@ final class ThumbnailController: NSObject {
             onTakesScreen?()
             sessionCard = card
             leaveTimer?.invalidate()
+            for page in [EditorCore.Page.older, .newer] { prefetchFlightImage(model.neighbor(of: key, page)?.id) }
             // The selection stays: the card comes back to its slot, and a queued run needs the rest
             // of it to still be there when the last card is done.
             _ = model.outCards.insert(card.id)

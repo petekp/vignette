@@ -130,7 +130,7 @@ targets:
     sources:
       - path: Tests
       - path: Sources
-        excludes: [AppDelegate.swift, AppDelegate+LiveInkOffer.swift, Updater.swift]
+        excludes: [AppDelegate.swift, AppDelegate+LiveInkOffer.swift, AppDelegate+MainMenu.swift, Updater.swift]
     settings:
       base:
         SWIFT_VERSION: "5.10"

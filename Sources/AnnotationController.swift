@@ -30,6 +30,8 @@ final class AnnotationController {
     var onSend: ((Screenshot, Drawing, AgentDestination, _ title: String, _ message: String?) -> Void)?
     /// Cmd+C with nothing selected: this drawing's rendering goes on the clipboard.
     var onCopyDrawing: ((Screenshot, Drawing) -> Void)?
+    /// Left or Right asked for the screenshot beside this one.
+    var onPage: ((EditorCore.Page, _ isRepeat: Bool) -> Void)?
 
     /// The editor, the whole content of the frame. The state report reads its core.
     let editor = EditorView()
@@ -105,6 +107,12 @@ final class AnnotationController {
         editor.onLeaveCanvas = { [weak self] backward in self?.toolbar.enter(backward: backward) }
         toolbar.onLeave = { [weak self] backward in self?.editor.enterCanvas(backward: backward) ?? false }
         editor.onFocusMessage = { [weak self] in self?.toolbar.focusMessage() }
+        // While a control on the bar has the focus ring, the keys are about that control.
+        editor.onPage = { [weak self] page, isRepeat in
+            guard let self, toolbar.model.focus == nil else { return }
+            onPage?(page, isRepeat)
+        }
+        toolbar.onPage = { [weak self] page, isRepeat in self?.onPage?(page, isRepeat) }
         editor.onPress = { [weak self] in
             self?.editorUntouched = false
             self?.toolbar.clearFocus()
@@ -210,7 +218,7 @@ final class AnnotationController {
         let decoded = Thumbnailer.cached(at: shot.url, maxPixel: maxPixel, space: space).flatMap(Self.cgImage)
         textStyle = ui.textStyle
         editor.open(drawing, image: decoded, picture: container?.bounds ?? .zero, style: textStyle, metrics: ui.editorMetrics,
-                    markStyle: ui.markStyle)
+                    markStyle: ui.markStyle, selectsNewest: !opening.paged)
         editor.noteSettleDuration = Settings.shared.motionUI.noteSettleDuration
         if decoded != nil { loaded(opening, started: started) }
         else {
@@ -800,25 +808,6 @@ final class AnnotationController {
             json["focus"] = destination.focus?.rawValue as Any
         }
         return json
-    }
-}
-
-/// Borderless windows refuse key status by default; the editor needs it for typing and shortcuts.
-final class AnnotationWindow: NSWindow {
-    /// Above the stack's backdrop blur (19) and the Dock (20), so the blur never paints over the
-    /// image, and under the stack and the flight layer (`.statusBar`, 25), so a flight image still
-    /// covers this window and the stack draws over its shadow. The toolbar shares it.
-    static let level = NSWindow.Level(rawValue: 21)
-    var onCloseRequest: (() -> Void)?
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
-    override func performClose(_ sender: Any?) { onCloseRequest?() }
-    /// Esc reaches the window only when no view took it, which means the editor was not the first
-    /// responder. It still closes, as Esc does from the editor, and says what held the keys.
-    override func keyDown(with event: NSEvent) {
-        guard event.keyCode == 53 else { return super.keyDown(with: event) }
-        Log.write("[annotate] esc reached the window firstResponder=\(firstResponder.map { String(describing: type(of: $0)) } ?? "none")")
-        onCloseRequest?()
     }
 }
 
