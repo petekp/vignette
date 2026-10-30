@@ -460,10 +460,10 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   `docs/replacing-apple-capture-2026-09-22.md` has the measurements.
 - The first launch opens the setup window (`SetupWindow.swift`), and it has that launch to itself.
   It is pages, one step each: welcome, with the folder permission when macOS protects the watch
-  folder, and Open at login; the shortcut; and the agent skill, only when `~/.claude` or `~/.codex`
-  exists. Its main job is the shortcut, because the default is `double-rshift` and that needs
-  Accessibility. Nothing else
-  may raise that dialog: `ModifierTap` is constructed with `prompt: false`, so the only
+  folder, and Open at login; the shortcut; live ink; and the agent skill, only when `~/.claude` or
+  `~/.codex` exists. Its main job is the shortcut, whose default, `double-rshift`, needs
+  Accessibility. Nothing else may raise that dialog: `ModifierTap` is constructed with
+  `prompt: false`, so the only
   `trusted(prompt: true)` in the app is `Accessibility.request()`, which runs from a button the user
   pressed: this window's, after choosing the double tap, the Settings window's, and the status
   menu's Allow Accessibility for the Shortcut…. A dialog raised
