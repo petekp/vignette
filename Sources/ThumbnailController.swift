@@ -1,29 +1,6 @@
 import AppKit
 import SwiftUI
 
-struct Card: Identifiable {
-    let id: UUID
-    let shot: Screenshot
-    var image: NSImage?       // thumbnail-sized; nil until decoded
-    let pointSize: NSSize     // the screenshot in points, for the annotator frame
-    let size: NSSize          // the card on screen
-    let agent: String?        // the agent that added the file (see Agent); nil for a capture
-    var duration: TimeInterval? = nil   // a recording's length, for its badge; nil for an image
-    /// The drawing's marks, drawn over the thumbnail; nil for a screenshot with no drawing.
-    var marks: MarkLayers? = nil
-
-    func with(image: NSImage?) -> Card { var card = self; card.image = image; return card }
-    func with(shot: Screenshot) -> Card {
-        Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration, marks: marks)
-    }
-    func with(size: NSSize) -> Card {
-        Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration, marks: marks)
-    }
-    func with(pointSize: NSSize, size: NSSize, duration: TimeInterval?) -> Card {
-        Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration, marks: marks)
-    }
-}
-
 @MainActor
 final class StackModel: ObservableObject {
     @Published var cards: [Card] = []          // index 0 is newest, drawn at the bottom
