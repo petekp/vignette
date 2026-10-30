@@ -45,6 +45,8 @@ final class CodexDriver: ResponderDriver {
     private var usage = ""
     private var lastError: String?
     private var startedAt = Date()
+    /// Counts the starts, so the check's answer to a start since stopped launches nothing.
+    private var runs = 0
 
     /// `binary` finds `codex` (`LiveResponder.codexBinary`).
     init(binary: @escaping () -> String? = LiveResponder.codexBinary,
@@ -74,12 +76,14 @@ final class CodexDriver: ResponderDriver {
         self.check = check
         warmingUp = true
         startedAt = Date()
+        runs += 1
+        let run = runs
         let home = home
         let driver = WeakDriver(self)
         check.start { port in
             let catalog = port == nil ? nil : Self.catalog(binary: binary, home: home)
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { driver.value?.launch(binary, port: port, catalog: catalog) }
+                MainActor.assumeIsolated { driver.value?.launch(binary, port: port, catalog: catalog, run: run) }
             }
         }
         return nil
@@ -171,8 +175,8 @@ final class CodexDriver: ResponderDriver {
         return process.terminationStatus == 0 ? CodexIsolation.strippedCatalog(data) : nil
     }
 
-    private func launch(_ binary: String, port: UInt16?, catalog: Data?) {
-        guard report != nil else { return }
+    private func launch(_ binary: String, port: UInt16?, catalog: Data?, run: Int) {
+        guard report != nil, run == runs else { return }
         guard let port else { return refuse("could not listen for the check") }
         guard let catalog else { return refuse("could not read codex debug models") }
         let file = home.appendingPathComponent("model-catalog.json")
