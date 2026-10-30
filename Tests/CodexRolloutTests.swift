@@ -147,63 +147,90 @@ final class CodexRolloutTests: XCTestCase {
     func testTheRolloutIsReadFromItsEndWhenTheLineWentAndALineIsReadOnceItsEndIsWritten() throws {
         let file = try rolloutFile([started("old"), user(note), completed("old")])
         let tracker = CodexTurns()
-        tracker.sending(note, to: "thread", rollout: .at(file.path))
-        XCTAssertEqual(tracker.turn(of: "thread") { _ in .unknown }, .waiting, "the same words earlier in the thread are not this line")
+        tracker.sending(note, to: "thread", rollout: .at(file.path), loaded: false)
+        XCTAssertEqual(tracker.turn(of: "thread", loaded: { _ in false }) { _ in .unknown }, .waiting, "the same words earlier in the thread are not this line")
         let taken = started("b") + Data("\n".utf8) + user(note)
         try append(taken.prefix(taken.count - 10), to: file)
-        XCTAssertEqual(tracker.turn(of: "thread") { _ in .unknown }, .waiting)
+        XCTAssertEqual(tracker.turn(of: "thread", loaded: { _ in false }) { _ in .unknown }, .waiting)
         try append(taken.suffix(10) + Data("\n".utf8), to: file)
-        XCTAssertEqual(tracker.turn(of: "thread") { _ in .unknown }, .busy)
+        XCTAssertEqual(tracker.turn(of: "thread", loaded: { _ in false }) { _ in .unknown }, .busy)
         try append(completed("b") + Data("\n".utf8), to: file)
-        XCTAssertEqual(tracker.turn(of: "thread") { _ in .unknown }, .idle)
-        XCTAssertNil(tracker.turn(of: "another thread") { _ in .unknown })
+        XCTAssertEqual(tracker.turn(of: "thread", loaded: { _ in false }) { _ in .unknown }, .idle)
+        XCTAssertNil(tracker.turn(of: "another thread", loaded: { _ in false }) { _ in .unknown })
     }
 
     func testARolloutThatStopsGrowingIsAskedForAgainAndANewFileIsReadFromItsStart() throws {
         let file = try rolloutFile([])
         let clock = Clock()
         let tracker = CodexTurns(now: { clock.now })
-        tracker.sending(note, to: "thread", rollout: .at(file.path))
+        tracker.sending(note, to: "thread", rollout: .at(file.path), loaded: false)
         try append(started("b") + Data("\n".utf8) + user(note) + Data("\n".utf8), to: file)
         var asked = 0
-        XCTAssertEqual(tracker.turn(of: "thread") { _ in asked += 1; return .unknown }, .busy)
+        XCTAssertEqual(tracker.turn(of: "thread", loaded: { _ in false }) { _ in asked += 1; return .unknown }, .busy)
         clock.now += CodexTurns.staleAfter - 1
-        XCTAssertEqual(tracker.turn(of: "thread") { _ in asked += 1; return .unknown }, .busy)
+        XCTAssertEqual(tracker.turn(of: "thread", loaded: { _ in false }) { _ in asked += 1; return .unknown }, .busy)
         XCTAssertEqual(asked, 0, "a turn that is thinking writes nothing for a while")
 
         let next = file.deletingLastPathComponent().appendingPathComponent("rollout-2026-10-30T01-00-00-thread.jsonl")
         try Data((completed("b") + Data("\n".utf8))).write(to: next)
         clock.now += 2
-        XCTAssertEqual(tracker.turn(of: "thread") { _ in asked += 1; return .at(next.path) }, .idle)
+        XCTAssertEqual(tracker.turn(of: "thread", loaded: { _ in false }) { _ in asked += 1; return .at(next.path) }, .idle)
         XCTAssertEqual(asked, 1)
+    }
+
+    func testAQuietRolloutIsAskedForLessOftenAndAtOnceWhenAnEngineOpensTheThread() throws {
+        let file = try rolloutFile([])
+        let clock = Clock()
+        let start = clock.now
+        let tracker = CodexTurns(now: { clock.now })
+        tracker.sending(note, to: "thread", rollout: .at(file.path), loaded: false)
+        var asked: [TimeInterval] = []
+        var loaded = false
+        let read = {
+            clock.now += 0.5
+            _ = tracker.turn(of: "thread", loaded: { _ in loaded }) { _ in
+                asked.append(clock.now.timeIntervalSince(start))
+                return .at(file.path)
+            }
+        }
+        for _ in 0..<(30 * 60 * 2) { read() }
+        XCTAssertEqual(asked.first, CodexTurns.staleAfter)
+        XCTAssertLessThanOrEqual(asked.count, 10, "half an hour of a line that never arrives")
+
+        asked = []
+        loaded = true
+        read()
+        XCTAssertEqual(asked.count, 1, "an engine that opens the thread may write to another file")
+        read()
+        XCTAssertEqual(asked.count, 1)
     }
 
     func testAWatchedThreadThatMovesToAnotherFileIsReadFromThatFilesStart() throws {
         let file = try rolloutFile([])
         let tracker = CodexTurns()
-        tracker.sending(note, to: "thread", rollout: .at(file.path))
-        XCTAssertEqual(tracker.turn(of: "thread") { _ in .unknown }, .waiting)
+        tracker.sending(note, to: "thread", rollout: .at(file.path), loaded: false)
+        XCTAssertEqual(tracker.turn(of: "thread", loaded: { _ in false }) { _ in .unknown }, .waiting)
         let moved = file.deletingLastPathComponent().appendingPathComponent("rollout-2026-10-30T01-00-00-thread.jsonl")
         try Data([started("a"), user(note), completed("a")].map { $0 + Data("\n".utf8) }.joined()).write(to: moved)
         let second = "From Vignette: a second note. requests/BBBB-2222/image.png"
-        tracker.sending(second, to: "thread", rollout: .at(moved.path))
+        tracker.sending(second, to: "thread", rollout: .at(moved.path), loaded: false)
         try append(Data([started("b"), user(second)].map { $0 + Data("\n".utf8) }.joined()), to: moved)
-        XCTAssertEqual(tracker.turn(of: "thread") { _ in .unknown }, .busy, "the first line's turn in the new file is read too")
+        XCTAssertEqual(tracker.turn(of: "thread", loaded: { _ in false }) { _ in .unknown }, .busy, "the first line's turn in the new file is read too")
         try append(completed("b") + Data("\n".utf8), to: moved)
-        XCTAssertEqual(tracker.turn(of: "thread") { _ in .unknown }, .idle)
+        XCTAssertEqual(tracker.turn(of: "thread", loaded: { _ in false }) { _ in .unknown }, .idle)
     }
 
     func testALineSentBeforeTheThreadHasARolloutWaitsAndAReadThatNamesNoFileReadsAsNoTurn() throws {
         let clock = Clock()
         let tracker = CodexTurns(now: { clock.now })
-        tracker.sending(note, to: "thread", rollout: .unknown)
-        XCTAssertEqual(tracker.turn(of: "thread") { _ in XCTFail("asked again at once"); return .unknown }, .waiting)
+        tracker.sending(note, to: "thread", rollout: .unknown, loaded: false)
+        XCTAssertEqual(tracker.turn(of: "thread", loaded: { _ in false }) { _ in XCTFail("asked again at once"); return .unknown }, .waiting)
         let file = try rolloutFile([started("b"), user(note)])
         clock.now += CodexTurns.staleAfter
-        XCTAssertEqual(tracker.turn(of: "thread") { _ in .at(file.path) }, .busy, "a file that appears later is read from its start")
+        XCTAssertEqual(tracker.turn(of: "thread", loaded: { _ in false }) { _ in .at(file.path) }, .busy, "a file that appears later is read from its start")
 
         let unnamed = CodexTurns()
-        unnamed.sending(note, to: "thread", rollout: .unnamed)
-        XCTAssertNil(unnamed.turn(of: "thread") { _ in .unknown })
+        unnamed.sending(note, to: "thread", rollout: .unnamed, loaded: false)
+        XCTAssertNil(unnamed.turn(of: "thread", loaded: { _ in false }) { _ in .unknown })
     }
 }

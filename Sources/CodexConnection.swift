@@ -139,7 +139,7 @@ struct CodexConnection: AgentConnection {
                                  reason: "Sending to Codex needs the Codex app or its CLI.")
         }
         // Before the line goes, so the rollout is read from before the engine writes it.
-        if watchingTurn { turns.sending(line, to: uuid, rollout: rollout(of: uuid, codex: codex)) }
+        if watchingTurn { turns.sending(line, to: uuid, rollout: rollout(of: uuid, codex: codex), loaded: isLoaded(uuid)) }
         guard let result = run(codex, Self.arguments(thread: uuid, message: line), Self.queueTimeout) else {
             turns.unsent(line, to: uuid)
             return .notSubmitted(code: .sendFailed, detail: "codex queue did not run", reason: "Codex couldn't start. The log has details.")
@@ -162,7 +162,7 @@ struct CodexConnection: AgentConnection {
     /// reads files and can start an app-server, so it never runs on the main thread.
     func turn(of destination: AgentDestination) -> SessionTurn? {
         guard case .codexThread(let uuid) = destination.address else { return nil }
-        return turns.turn(of: uuid) { thread in binary().map { rollout(of: thread, codex: $0) } ?? .unknown }
+        return turns.turn(of: uuid, loaded: isLoaded) { thread in binary().map { rollout(of: thread, codex: $0) } ?? .unknown }
     }
 
     /// The thread's rollout file, as an app-server of its own reads it from the store.

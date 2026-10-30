@@ -100,9 +100,12 @@ struct RolloutTurns: Equatable {
 /// a file is read, never while a server is asked for a path.
 final class CodexTurns: Sendable {
     /// How long a rollout may stay the same size while a sent line waits or its turn runs before
-    /// the thread's path is asked again. A long thread moves on to a new file, and a thread no
-    /// engine has loaded may get one when it is opened.
+    /// the thread's path is asked again, which starts an app-server. A long thread moves on to a new
+    /// file, and a thread no engine has loaded may get one when it is opened. Each ask that finds
+    /// the same file doubles the wait, up to `staleAfterLongest`, and an engine opening the thread
+    /// asks at once.
     static let staleAfter: TimeInterval = 30
+    static let staleAfterLongest: TimeInterval = 240
 
     /// What `thread/read` said of a thread's rollout.
     enum Path: Equatable {
@@ -121,17 +124,24 @@ final class CodexTurns: Sendable {
         var partial = Data()
         var grew: Date
         var asked: Date
+        /// How long after `asked` the path is asked again, from `staleAfter` to `staleAfterLongest`.
+        var askAfter = CodexTurns.staleAfter
+        /// Whether an engine had the thread loaded when it was last looked at.
+        var loaded: Bool
         var logged = false
         /// The open turn that has been said to be quiet for `TurnWatch.workingLimit`.
         var quietTurn: String?
 
         /// Reads what was added since the last reading. Answers whether to ask for the path again:
         /// there is none to read, the file has gone or shrunk, or it has stopped growing while a line
-        /// waits or its turn runs.
-        mutating func readOn(at now: Date) -> Bool {
+        /// waits or its turn runs, each once `askAfter` has passed; or an engine has just opened the
+        /// thread.
+        mutating func readOn(at now: Date, loaded: Bool) -> Bool {
+            let opened = loaded && !self.loaded
+            self.loaded = loaded
             guard let path, !path.hasSuffix(".zst"),
                   let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? UInt64,
-                  size >= offset else { return now.timeIntervalSince(asked) >= CodexTurns.staleAfter }
+                  size >= offset else { return opened || now.timeIntervalSince(asked) >= askAfter }
             if size > offset, let file = FileHandle(forReadingAtPath: path) {
                 defer { try? file.close() }
                 try? file.seek(toOffset: offset)
@@ -142,10 +152,13 @@ final class CodexTurns: Sendable {
                     for line in partial[..<end].split(separator: UInt8(ascii: "\n")) { turns.read(Data(line)) }
                     partial = Data(partial[partial.index(after: end)...])
                 }
-                if !chunk.isEmpty { grew = now }
+                if !chunk.isEmpty {
+                    grew = now
+                    askAfter = CodexTurns.staleAfter
+                }
             }
-            return turns.expectsMore && now.timeIntervalSince(grew) >= CodexTurns.staleAfter
-                && now.timeIntervalSince(asked) >= CodexTurns.staleAfter
+            let quiet = now.timeIntervalSince(grew) >= CodexTurns.staleAfter && now.timeIntervalSince(asked) >= askAfter
+            return turns.expectsMore && (opened || quiet)
         }
 
         mutating func move(to found: Path, at now: Date) {
@@ -155,11 +168,12 @@ final class CodexTurns: Sendable {
                 path = new
                 offset = 0
                 partial = Data()
+                askAfter = CodexTurns.staleAfter
             case .unnamed:
                 path = nil
                 turns = RolloutTurns(unreadable: "thread/read gave no path")
             case .at, .unknown:
-                break
+                askAfter = min(askAfter * 2, CodexTurns.staleAfterLongest)
             }
         }
     }
@@ -171,15 +185,16 @@ final class CodexTurns: Sendable {
         self.now = now
     }
 
-    /// `line` is going to `thread`, whose rollout `thread/read` found just before. A thread already
+    /// `line` is going to `thread`, whose rollout `thread/read` found just before, and which an engine
+    /// had `loaded` or not then. A thread already
     /// watched is read on from where it stopped, or from the start of a file it moved to, which can
     /// hold the turn of a line sent earlier. A thread not watched yet is read from the file's end as
     /// it is now, or from its start when the file is not there yet.
-    func sending(_ line: String, to thread: String, rollout: Path) {
+    func sending(_ line: String, to thread: String, rollout: Path, loaded: Bool) {
         let time = now()
         watches.withLock { watches in
             let watched = watches[thread] != nil
-            var watch = watches[thread] ?? Watch(grew: time, asked: time)
+            var watch = watches[thread] ?? Watch(grew: time, asked: time, loaded: loaded)
             if case .at(let path) = rollout, path != watch.path {
                 watch.path = path
                 watch.offset = watched ? 0 : (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? UInt64 ?? 0
@@ -190,6 +205,8 @@ final class CodexTurns: Sendable {
             watch.turns.sent(line)
             watch.grew = time
             watch.asked = time
+            watch.askAfter = CodexTurns.staleAfter
+            watch.loaded = loaded
             watches[thread] = watch
         }
     }
@@ -200,21 +217,22 @@ final class CodexTurns: Sendable {
     }
 
     /// Where `thread` is in its turns, or nil when no line went to it this launch or its rollout
-    /// cannot be read. `path` asks a server for the rollout, outside the lock. It reads files, so it
-    /// never runs on the main thread.
-    func turn(of thread: String, path: (String) -> Path) -> SessionTurn? {
+    /// cannot be read. `loaded` says whether an engine has the thread now, and `path` asks a server
+    /// for the rollout, outside the lock. It reads files, so it never runs on the main thread.
+    func turn(of thread: String, loaded: (String) -> Bool, path: (String) -> Path) -> SessionTurn? {
         let time = now()
+        let isLoaded = loaded(thread)
         let asks = watches.withLock { watches -> Bool in
             guard var watch = watches[thread] else { return false }
             defer { watches[thread] = watch }
-            return watch.readOn(at: time)
+            return watch.readOn(at: time, loaded: isLoaded)
         }
         if asks {
             let found = path(thread)
             watches.withLock { watches in
                 guard var watch = watches[thread] else { return }
                 watch.move(to: found, at: time)
-                _ = watch.readOn(at: time)
+                _ = watch.readOn(at: time, loaded: isLoaded)
                 watches[thread] = watch
             }
         }
