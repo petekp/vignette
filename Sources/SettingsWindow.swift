@@ -252,7 +252,8 @@ struct SettingsView: View {
         screenRecording = ScreenRecording.granted
         speechAllowed = SpeechPermission.granted
         folderDenied = callbacks.folderDenied()
-        offeringLiveInk = callbacks.liveInkOffered()
+        let offering = callbacks.liveInkOffered()
+        if offering != offeringLiveInk { withAnimation(Self.noticeMotion) { offeringLiveInk = offering } }
     }
 
     /// How a notice in this window, such as a refused pair or live ink's offer, comes and goes.
@@ -294,14 +295,7 @@ struct SettingsView: View {
             footer(ShortcutSetting.caption(doubleTap: settings.data.usesDoubleTap))
         }
         if offeringLiveInk {
-            Section {
-                Text(SetupInkCopy.offer(pair: settings.data.liveInkChordChoice.glyphs))
-                HStack {
-                    Button("Not Now") { answerLiveInkOffer(false) }
-                    Button("Turn On") { answerLiveInkOffer(true) }
-                        .keyboardShortcut(.defaultAction)
-                }
-            }
+            LiveInkOfferSection(pair: settings.data.liveInkChordChoice.glyphs, answer: answerLiveInkOffer)
         }
         Section {
             Toggle(isOn: Binding(get: { settings.data.liveInk }, set: { on in

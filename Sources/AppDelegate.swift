@@ -36,9 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let thumbnail = ThumbnailController()
     private let annotator = AnnotationController()
     private lazy var liveInk = LiveInk(mayInk: { [weak self] in !(self?.thumbnail.holdsScreen ?? true) })
-    private let settingsWindow = SettingsWindowController()
+    let settingsWindow = SettingsWindowController()
     /// Whether the Settings window is showing live ink's one-time offer (`offerLiveInk`).
-    private var liveInkOfferOpen = false
+    var liveInkOfferOpen = false
     private let setupWindow = SetupWindowController()
     private lazy var debugPanel = DebugPanelController(previews: .init(
         thumbnail: { [weak self] in self?.openLast() },
@@ -59,7 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let checkLab = CheckLabController()
     private lazy var setupLab = SetupLabController(
         callbacks: { [unowned self] in self.setupCallbacks(protectedArea: ScreenshotWatcher.protectedArea(of: self.watchFolder)) })
-    private let settings = Settings.shared
+    let settings = Settings.shared
     private var watchFolder: URL { settings.data.folderURL }
     /// One map, so Send submits through the same connections it lists.
     private static let connections: [AgentClient: any AgentConnection] = [.claude: ClaudeCodeConnection(), .codex: CodexConnection()]
@@ -254,6 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.liveInk != old.liveInk { liveInk.setOn(new.liveInk) }
+        if new.liveInk, !new.liveInkOffered { liveInkOfferOpen = false; settings.update { $0.liveInkOffered = true } }
         if new.liveInkChord != old.liveInkChord { liveInk.takeChord() }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem(); showUpdateDot() }
         if new.launchAtLogin != old.launchAtLogin { applyLoginItem() }
@@ -335,26 +336,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         Log.write("[plugin] offered \(roots.map(\.lastPathComponent).joined(separator: " "))")
         settingsWindow.show(tab: .agents, activating: false)
         return true
-    }
-
-    /// The one-time live ink offer, for an install that finished setup without seeing live ink's page. It
-    /// opens the General tab, where the offer is, and is recorded as made (`Settings.liveInkOffered`).
-    private func offerLiveInk() {
-        guard !settings.data.liveInkOffered, SetupState(rawValue: settings.data.setup) == .done else { return }
-        settings.update { $0.liveInkOffered = true }
-        liveInkOfferOpen = true
-        Log.write("[settings] offered live ink")
-        settingsWindow.show(tab: .general, activating: false)
-    }
-
-    /// The offer's answer: Turn On turns live ink on, as the General tab's switch does.
-    private func answerLiveInkOffer(_ on: Bool) {
-        liveInkOfferOpen = false
-        if on {
-            settings.update { $0.liveInk = true }
-            ScreenRecording.request()
-        }
-        Log.write("[settings] live ink offer \(on ? "turned on" : "not now")")
     }
 
     /// The agent folders whose settings have the plugin on, for the state report.
