@@ -253,6 +253,14 @@ struct SettingsView: View {
         offeringLiveInk = callbacks.liveInkOffered()
     }
 
+    /// How a notice in this window, such as a refused pair or live ink's offer, comes and goes.
+    private static var noticeMotion: Animation { Anim.spring(0.25 * Settings.shared.motionScale) }
+
+    private func answerLiveInkOffer(_ on: Bool) {
+        withAnimation(Self.noticeMotion) { offeringLiveInk = false }
+        callbacks.answerLiveInkOffer(on)
+    }
+
     // MARK: General
 
     @ViewBuilder private var general: some View {
@@ -287,8 +295,8 @@ struct SettingsView: View {
             Section {
                 Text("Live ink is new. Hold Control and Option to draw over any app, and ask Claude about what you drew.")
                 HStack {
-                    Button("Not Now") { offeringLiveInk = false; callbacks.answerLiveInkOffer(false) }
-                    Button("Turn On") { offeringLiveInk = false; callbacks.answerLiveInkOffer(true) }
+                    Button("Not Now") { answerLiveInkOffer(false) }
+                    Button("Turn On") { answerLiveInkOffer(true) }
                         .keyboardShortcut(.defaultAction)
                 }
             }
@@ -304,13 +312,13 @@ struct SettingsView: View {
             }
             Picker("Hold to draw", selection: Binding(get: { settings.data.liveInkChordChoice }, set: { chord in
                 let refusal = chord.refusal(against: HotKeySpec.parse(settings.data.recentHotkey))
-                chordRefusal = refusal
+                withAnimation(Self.noticeMotion) { chordRefusal = refusal }
                 if refusal == nil { settings.update { $0.liveInkChord = chord.rawValue } }
             })) {
                 ForEach(LiveInkChord.allCases, id: \.self) { chord in Text(chord.glyphs).tag(chord) }
             }
             if let chordRefusal {
-                Text(chordRefusal).font(.footnote).foregroundStyle(.secondary)
+                Text(chordRefusal).font(.footnote).foregroundStyle(.secondary).transition(.opacity)
             }
             // The double tap's row above asks for the same permission.
             if settings.data.liveInk, !settings.data.usesDoubleTap, !trusted {
