@@ -337,7 +337,7 @@ final class SetupLabModel: ObservableObject {
 
     /// The pages a run can start on: those the run will hold.
     var startPages: [SetupModel.Page] {
-        SetupModel.pages(scope: scope, offersLiveInk: Settings.shared.data.debug, usesLiveInk: true, hasAgents: !agents.isEmpty)
+        SetupModel.pages(scope: scope, usesLiveInk: true, hasAgents: !agents.isEmpty)
     }
 
     private func keepStart() {

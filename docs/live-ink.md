@@ -60,8 +60,7 @@ The names in brackets are `// MARK:` sections.
 
 ## Rules
 
-- Live ink is an option (`liveInk`) that runs only while `debug` is on too (`Settings.usesLiveInk`),
-  so it stays internal until it ships. `LiveInk` owns it: the chord, and a surface per screen per
+- Live ink is an option (`liveInk`), on General in Settings and in the menu. `LiveInk` owns it: the chord, and a surface per screen per
   Space, each a `LiveInkOverlay` and the marks on it. A mark drawn on a window belongs to that window
   (`LiveWindows`) and keeps its offset from the window's top-left, whatever the window's content
   does: a scroll or a page's own change leaves it where it is, and so does a resize. It moves with

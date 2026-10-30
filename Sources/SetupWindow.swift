@@ -123,7 +123,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         callbacks.askedForScreenRecording = { SetupModel.returnsToLiveInkSetup = true }
         callbacks.closed = { [weak self] model in self?.record(model) }
         let data = settings.data
-        let reopened = data.debug && data.liveInk && SetupModel.returnsToLiveInkSetup
+        let reopened = data.liveInk && SetupModel.returnsToLiveInkSetup
         if reopened { Log.write("[setup] reopened on live ink's permissions") }
         open(callbacks: callbacks, scope: .whole, start: reopened ? .liveInkSetup : .welcome)
     }
@@ -145,7 +145,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             NSApp.activate(ignoringOtherApps: true)
             return win
         }
-        let model = SetupModel(callbacks: callbacks, scope: scope, start: start, offersLiveInk: settings.data.debug)
+        let model = SetupModel(callbacks: callbacks, scope: scope, start: start)
         model.granted = { [weak self] in self?.granted() }
         model.folderAnswered = { [weak self] access in self?.folderAnswered(access) }
         model.dropFocus = { [weak self] in self?.window?.makeFirstResponder(nil) }
@@ -293,7 +293,6 @@ final class SetupModel: ObservableObject {
     let scope: Scope
     /// Whether all of setup includes live ink's pages. They are still being designed, so they show
     /// only with `debug`.
-    let offersLiveInk: Bool
     /// The live ink page's demo, kept here so going back to the page shows where it rested.
     let inkPlayer = SetupInkPlayer()
     let inkGuide = SetupInkGuide()
@@ -319,10 +318,9 @@ final class SetupModel: ObservableObject {
 
     /// Opens on `start`, or on the first page when `start` is not among them. Starting on live ink's
     /// permissions is starting after Use Live Ink, as a reopen after asking for Screen Recording does.
-    init(callbacks: SetupWindowController.Callbacks, scope: Scope = .whole, start: Page = .welcome, offersLiveInk: Bool = false) {
+    init(callbacks: SetupWindowController.Callbacks, scope: Scope = .whole, start: Page = .welcome) {
         self.callbacks = callbacks
         self.scope = scope
-        self.offersLiveInk = offersLiveInk
         seen = callbacks.conditions()
         let agents = callbacks.agents()
         self.agents = agents
@@ -384,14 +382,14 @@ final class SetupModel: ObservableObject {
     var installsIntoClaude: Bool { claude.map { !$0.installed && chosen.contains($0.root) } ?? false }
 
     var pages: [Page] {
-        Self.pages(scope: scope, offersLiveInk: offersLiveInk, usesLiveInk: usesLiveInk, hasAgents: !agents.isEmpty)
+        Self.pages(scope: scope, usesLiveInk: usesLiveInk, hasAgents: !agents.isEmpty)
     }
 
-    static func pages(scope: Scope, offersLiveInk: Bool, usesLiveInk: Bool, hasAgents: Bool) -> [Page] {
+    static func pages(scope: Scope, usesLiveInk: Bool, hasAgents: Bool) -> [Page] {
         let liveInk: [Page] = [.liveInk] + (usesLiveInk ? [.liveInkSetup] : [])
         switch scope {
         case .liveInk: return liveInk
-        case .whole: return [.welcome, .shortcut] + (offersLiveInk ? liveInk : []) + (hasAgents ? [.agents] : [])
+        case .whole: return [.welcome, .shortcut] + liveInk + (hasAgents ? [.agents] : [])
         }
     }
     var index: Int { pages.firstIndex(of: page) ?? 0 }
