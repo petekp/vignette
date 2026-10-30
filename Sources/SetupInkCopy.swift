@@ -37,8 +37,9 @@ enum SetupInkCopy {
     static let liveInkSpeechReason = "Lets Vignette hear what you say while you draw. The words are made on this Mac."
     static let liveInkScreenRecordingReason = "Lets Vignette see the window under your ink when you ask about it. macOS may ask you to reopen Vignette after you allow it."
 
-    /// The one-time offer to an install that finished setup before live ink had a page.
-    static func offer(pair: String) -> String {
-        "Live ink is new. Holding \(pair) lets you draw over any app and ask Claude about what you drew."
+    /// The one-time offer to an install that finished setup before live ink had a page, naming the
+    /// agent that will answer (`ResponderStatus.codexAlone`).
+    static func offer(pair: String, codex: Bool) -> String {
+        "Live ink is new. Holding \(pair) lets you draw over any app and ask \(codex ? "Codex" : "Claude") about what you drew."
     }
 }

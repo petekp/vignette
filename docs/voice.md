@@ -102,6 +102,7 @@ to turn it on.
 | The same, for ⌘⇧3, ⌘⇧4 or ⌘⇧5 | *keys* takes screenshots. You can pick another combination. |
 | The same, for ⌃ with Space or an arrow | macOS uses *keys*. You can pick another combination. |
 | Live ink's one-time offer, at the top of the General tab | Live ink is new. Holding *pair* lets you draw over any app and ask Claude about what you drew. Buttons: Not Now, Turn On |
+| The same, where Codex is installed and Claude Code can't answer (`ResponderStatus.codexAlone`) | Live ink is new. Holding *pair* lets you draw over any app and ask Codex about what you drew. Buttons: Not Now, Turn On |
 
 What leaves the Mac (`SetupInkCopy.costNote`) is a line under the Live ink switch and on setup's
 live ink permissions page. It names the agents that can answer.
