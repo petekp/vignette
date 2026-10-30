@@ -211,7 +211,7 @@ With Codex answering, the rows after the capture's are Codex's own.
 | When | Words |
 | --- | --- |
 | No `codex` found | Vignette couldn't find Codex. You can send your ink to a session. |
-| Codex's process could not start | Vignette couldn't start Codex. |
+| Codex could not start, for no reason below | Vignette couldn't start Codex. |
 | Vignette's Codex home is not signed in | Codex isn't signed in for live ink. You can sign in in Settings. |
 | Codex rejected a switch that turns its tools off | This version of Codex can't turn its tools off, so live ink can't use it. |
 | The usage limit | Codex's usage limit is reached for now. |

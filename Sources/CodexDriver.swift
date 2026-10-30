@@ -141,10 +141,12 @@ final class CodexDriver: ResponderDriver {
             return Self.signedOut
         }
         if lower.contains("limit") { return "Codex's usage limit is reached for now." }
-        return "Codex couldn't answer. You can ask again."
+        return Self.couldNotAnswer
     }
 
     nonisolated static let signedOut = "Codex isn't signed in for live ink. You can sign in in Settings."
+    static let couldNotAnswer = "Codex couldn't answer. You can ask again."
+    static let couldNotStart = "Vignette couldn't start Codex."
 
     // MARK: Starting
 
@@ -198,8 +200,8 @@ final class CodexDriver: ResponderDriver {
                                            onEnd: { [weak self] status in self?.ended(status) })
         } catch {
             Log.write("[live-ink] responder error launch \(error.localizedDescription) agent=codex")
-            report?(.refused(ResponderRefusal(failure: LiveResponder.Failure(reason: "Vignette couldn't start Codex.", detail: error.localizedDescription),
-                                              problem: "Vignette couldn't start Codex.")))
+            report?(.refused(ResponderRefusal(failure: LiveResponder.Failure(reason: Self.couldNotStart, detail: error.localizedDescription),
+                                              problem: Self.couldNotStart)))
             return
         }
         Log.write("[live-ink] responder starting pid=\(process?.pid ?? 0) agent=codex")
@@ -280,16 +282,17 @@ final class CodexDriver: ResponderDriver {
     /// The model the check's thread ran on, which the thread asks go to runs on too.
     private var checkModel: String?
 
+    /// Codex did not start: the reason its error matches (`reason(forError:)`), else that it could not.
     private func refuse(_ detail: String) {
         Log.write("[live-ink] responder error codex \(detail)")
-        let reason = reason(forError: detail)
+        let named = reason(forError: detail)
+        let reason = named == Self.couldNotAnswer ? Self.couldNotStart : named
         report?(.refused(ResponderRefusal(failure: LiveResponder.Failure(reason: reason, detail: detail), problem: reason)))
     }
 
     private func refusal(_ detail: String) -> ResponderRefusal {
         Log.write("[live-ink] responder error codex \(detail)")
-        return ResponderRefusal(failure: LiveResponder.Failure(reason: "Vignette couldn't start Codex.", detail: detail),
-                                problem: "Vignette couldn't start Codex.")
+        return ResponderRefusal(failure: LiveResponder.Failure(reason: Self.couldNotStart, detail: detail), problem: Self.couldNotStart)
     }
 
     // MARK: Talking
