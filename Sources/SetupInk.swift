@@ -2,14 +2,6 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// Words setup's live ink pages share with the Settings window.
-enum SetupInkCopy {
-    static let costNote = "When you ask, Claude sees a picture of the window, its title and URL, through your own Claude Code. An ask costs about one to four cents."
-    /// macOS asks to quit and reopen an app it has just let record the screen, since the grant
-    /// reaches only a new process.
-    static let reopenNote = "Once you allow Screen Recording, macOS asks to quit and reopen \(Identity.name). Setup opens again on this page."
-}
-
 // MARK: A hand
 
 /// The pointer's events a hand sends as it draws along a line, each with its time from when the pen

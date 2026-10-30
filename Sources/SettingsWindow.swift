@@ -295,7 +295,7 @@ struct SettingsView: View {
         }
         if offeringLiveInk {
             Section {
-                Text("Live ink is new. Hold \(settings.data.liveInkChordChoice.glyphs) to draw over any app and ask Claude about what you drew.")
+                Text(SetupInkCopy.offer(pair: settings.data.liveInkChordChoice.glyphs))
                 HStack {
                     Button("Not Now") { answerLiveInkOffer(false) }
                     Button("Turn On") { answerLiveInkOffer(true) }

@@ -42,6 +42,6 @@ enum LiveInkChord: String, CaseIterable {
     /// Why a combination recorded for the stack cannot be its shortcut while live ink holds this pair,
     /// or nil. The recorder's other refusals are `HotKeySpec.refusal`.
     func refusal(ofStackShortcut shortcut: HotKeySpec) -> String? {
-        isHeld(by: shortcut) ? "Live ink uses \(glyphs). Try another combination." : nil
+        isHeld(by: shortcut) ? "Live ink uses \(glyphs). You can pick another combination." : nil
     }
 }
