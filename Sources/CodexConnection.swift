@@ -18,6 +18,9 @@ struct CodexConnection: AgentConnection {
     }
     /// Whether an engine has the thread loaded. Injected so a test never reads the person's Codex folder.
     var isLoaded: @Sendable (String) -> Bool = { CodexConnection.isLoaded($0) }
+    /// The rollouts of the threads sent to, which say when a sent line's turn ends.
+    let turns = CodexTurns()
+    let reportsTurns = true
 
     static let queueTimeout: TimeInterval = 25
 
@@ -119,7 +122,10 @@ struct CodexConnection: AgentConnection {
             return .notSubmitted(code: .noAgent, detail: "no codex at \(AgentTools.searched("codex", fixed: Self.binaryPaths).joined(separator: " ")) or on the login shell's PATH",
                                  reason: "Sending to Codex needs the Codex app or its CLI.")
         }
+        // Before the line goes, so the rollout is read from before the engine writes it.
+        turns.sending(line, to: uuid, rollout: rollout(of: uuid, codex: codex))
         guard let result = run(codex, Self.arguments(thread: uuid, message: line), Self.queueTimeout) else {
+            turns.unsent(line, to: uuid)
             return .notSubmitted(code: .sendFailed, detail: "codex queue did not run", reason: "Codex couldn't start. The log has details.")
         }
         if result.timedOut {
@@ -127,12 +133,25 @@ struct CodexConnection: AgentConnection {
                               reason: "Codex didn't confirm it. It may still have arrived.")
         }
         guard result.status == 0 else {
+            turns.unsent(line, to: uuid)
             return Self.failure(output: result.output, thread: uuid)
         }
         guard isLoaded(uuid) else {
             return .queued(detail: "thread=\(uuid) not loaded", reason: "Codex reads it when you open this thread.")
         }
         return .accepted(detail: "thread=\(uuid)")
+    }
+
+    /// Where the thread is in its turns, from its rollout, once a line went to it this launch. It
+    /// reads files and can start an app-server, so it never runs on the main thread.
+    func turn(of destination: AgentDestination) -> SessionTurn? {
+        guard case .codexThread(let uuid) = destination.address else { return nil }
+        return turns.turn(of: uuid) { thread in binary().map { rollout(of: thread, codex: $0) } ?? .unknown }
+    }
+
+    /// The thread's rollout file, as an app-server of its own reads it from the store.
+    private func rollout(of thread: String, codex: String) -> CodexTurns.Path {
+        AppServer.rolloutPath(in: converse(codex, ["app-server"], AppServer.readRequests(thread)))
     }
 
     /// Whether an engine, the Codex app's or a CLI session's, has the thread loaded. `codex queue`

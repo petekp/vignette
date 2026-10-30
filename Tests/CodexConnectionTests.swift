@@ -1,4 +1,5 @@
 import XCTest
+import os
 
 final class CodexConnectionTests: XCTestCase {
     private func temporaryFolder() -> URL {
@@ -73,6 +74,7 @@ final class CodexConnectionTests: XCTestCase {
         var connection = CodexConnection()
         connection.binary = { "/bin/codex" }
         connection.run = { _, _, _ in (0, "Queued message 7 for thread \(thread).", false) }
+        connection.converse = { _, _, _ in [] }
         let destination = AgentDestination(id: thread, name: "t", address: .codexThread(uuid: thread))
         connection.isLoaded = { _ in false }
         guard case .queued(_, let reason) = connection.submit("look", to: destination) else {
@@ -88,6 +90,43 @@ final class CodexConnectionTests: XCTestCase {
         try FileManager.default.createDirectory(at: locks, withIntermediateDirectories: true)
         try Data().write(to: locks.appendingPathComponent("\(thread).lock"))
         XCTAssertTrue(CodexConnection.isLoaded(thread, codexHome: home))
+    }
+
+    func testASendFindsTheThreadsRolloutBeforeTheLineGoesAndAFailedSendTakesTheLineBack() throws {
+        let thread = "01a18b9f-6a44-7ad0-94b5-5e381edcb089"
+        let rollout = temporaryFolder().appendingPathComponent("rollout-\(thread).jsonl")
+        try FileManager.default.createDirectory(at: rollout.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data((#"{"type":"session_meta","payload":{"id":"x"}}"# + "\n").utf8).write(to: rollout)
+        let order = OSAllocatedUnfairLock(initialState: [String]())
+        var connection = CodexConnection()
+        connection.binary = { "/bin/codex" }
+        connection.isLoaded = { _ in true }
+        connection.converse = { _, arguments, requests in
+            order.withLock { $0.append("\(arguments.joined(separator: " ")) \(requests.last ?? "")") }
+            return [#"{"id":3,"result":{"thread":{"id":"\#(thread)","cwd":"/x","path":"\#(rollout.path)"}}}"#]
+        }
+        connection.run = { _, arguments, _ in
+            order.withLock { $0.append(arguments[0]) }
+            return (0, "Queued message 7 for thread \(thread).", false)
+        }
+        let destination = AgentDestination(id: thread, name: "t", address: .codexThread(uuid: thread))
+        XCTAssertTrue(connection.reportsTurns)
+        XCTAssertNil(connection.turn(of: destination), "no line has gone to the thread")
+
+        guard case .accepted = connection.submit("look", to: destination) else { return XCTFail("a loaded thread takes it") }
+        XCTAssertEqual(order.withLock { $0 },
+                       [#"app-server {"id":3,"method":"thread\/read","params":{"threadId":"\#(thread)"}}"#, "queue"])
+        XCTAssertEqual(connection.turn(of: destination), .waiting)
+
+        connection.run = { _, _, _ in (1, "Error: invalid message", false) }
+        guard case .notSubmitted = connection.submit("again", to: destination) else { return XCTFail("the queue refused it") }
+        XCTAssertEqual(connection.turn(of: destination), .waiting)
+        let handle = try FileHandle(forWritingTo: rollout)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((#"{"type":"event_msg","payload":{"type":"task_started","turn_id":"b"}}"# + "\n"
+            + #"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"look"}]}}"# + "\n").utf8))
+        try handle.close()
+        XCTAssertEqual(connection.turn(of: destination), .busy, "the refused line does not wait")
     }
 
     /// Every thread the listing reports becomes a destination, named, with its own project and

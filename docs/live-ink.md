@@ -362,19 +362,19 @@ The names in brackets are `// MARK:` sections.
   the window: a flight from a whole window moves most of the screen at once, which disorients
   (Pete, 2026-10-10). A send refused before the request is stored
   takes the file back, and the ink stays, with the reason beside it.
-- Each note's turn is read twice a second, once per session per tick (`LiveNoteCards`), from the `turn` file the
-  plugin's hooks write in the session's inbox (`ClaudeCodeConnection.turn(of:)`). Vignette reads
-  only the inbox the session was listed from: `AgentDestination.inbox` is the process id that
-  names its folder. It reads that inbox only while it is live and still holds that session. Any
-  other folder reads as no turn. The reads run off the main thread. A tick that comes due while
-  the last tick's reads still run is skipped, and each tick's readings reach the waits as one input. Nothing on the
-  screen waits on it, so clearing the ink or drawing a new note leaves it running. The request
-  waits in the inbox while another turn runs. Vignette stops waiting 3 minutes after the session
-  takes the request when it sees no turn start, 30 minutes into a turn it saw start, or 30 minutes
-  after the ask while the request is still queued (`TurnWatch`). Codex reports no turns, so a note
-  to a Codex thread is not watched: Vignette stops waiting as it sends, and a reply within 3 minutes
-  is still drawn on a fresh capture. `[state] liveInk.watching` counts the notes watched. One pure
-  value, `NoteCardGroups`, holds every wait and groups the notes that end in one reading on one
+- Each note's turn is read twice a second, once per session per tick (`LiveNoteCards`), off the main
+  thread. A Claude Code session's comes from the `turn` file the plugin's hooks write in the inbox it
+  was listed from (`ClaudeCodeConnection.turn(of:)`, `AgentDestination.inbox`), only while that inbox
+  is live and holds that session. A Codex thread's comes from its rollout, the file its engine
+  appends each turn's start and end to (`CodexTurns`), read from its size just before the send,
+  until the line shows as a user message and its turn ends. `thread/read` names the file again when
+  it stops growing for 30 s. A rollout shape `RolloutTurns` does not know reads as no turn
+  (`[live-ink] codex rollout … unreadable`). A tick due while the last one's reads run is skipped,
+  and each tick's readings reach the waits as one input. Clearing the ink or drawing a new note
+  leaves it running. Vignette stops waiting 3 minutes after the session takes the request when it
+  sees no turn start, 30 minutes into a turn it saw start, or 30 minutes after the ask while the
+  request is still queued (`TurnWatch`). `[state] liveInk.watching` counts the notes watched. One
+  pure value, `NoteCardGroups`, holds every wait and groups the notes that end in one reading on one
   window. `NoteCardWait` decides each note, in any order of its reply, its turn's end and its
   delivery.
 - A session's answer with `scripts/reply --answer`, words and up to four marks that each name words

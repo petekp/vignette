@@ -42,13 +42,19 @@ enum AppServer {
     /// (`useStateDbOnly`): the five used last took 0.06 s instead of 0.13 to 0.26 s (measured
     /// 2026-09-25).
     static func discoveryRequests(limit: Int = listLimit, shown: String? = nil) -> [String] {
-        var lines = [
-            #"{"id":1,"method":"initialize","params":{"clientInfo":{"name":"Vignette","version":"\#(BuildInfo.current.version)"}}}"#,
-            #"{"method":"initialized"}"#,
-            request(id: listingID, "thread/list", ["limit": limit, "sortKey": "recency_at", "useStateDbOnly": true]),
-        ]
+        var lines = handshake + [request(id: listingID, "thread/list", ["limit": limit, "sortKey": "recency_at", "useStateDbOnly": true])]
         if let shown { lines.append(request(id: readID, "thread/read", ["threadId": shown])) }
         return lines
+    }
+
+    /// The request lines for a read of one thread, which names its rollout file.
+    static func readRequests(_ thread: String) -> [String] {
+        handshake + [request(id: readID, "thread/read", ["threadId": thread])]
+    }
+
+    private static var handshake: [String] {
+        [#"{"id":1,"method":"initialize","params":{"clientInfo":{"name":"Vignette","version":"\#(BuildInfo.current.version)"}}}"#,
+         #"{"method":"initialized"}"#]
     }
 
     /// The id of the listing's answer, and of the read's.
@@ -77,6 +83,13 @@ enum AppServer {
     /// thread that is not in the store.
     static func read(in lines: [String]) -> Thread? {
         (answer(readID, in: lines)?["thread"] as? [String: Any]).flatMap(thread)
+    }
+
+    /// The rollout file the read found, the thread's `path`, which 0.165 still marks unstable.
+    static func rolloutPath(in lines: [String]) -> CodexTurns.Path {
+        guard let thread = answer(readID, in: lines)?["thread"] as? [String: Any] else { return .unknown }
+        guard let path = thread["path"] as? String, !path.isEmpty else { return .unnamed }
+        return .at(path)
     }
 
     /// The result of the answer with this id. Anything else is ignored, so a notification arriving
