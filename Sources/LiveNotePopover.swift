@@ -285,6 +285,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         let askedClaude = Settings.shared.data.liveInkAskedClaude
         let prompt = target == .responder ? (askedClaude ? Self.askPlaceholder : Self.firstAskPlaceholder) : Self.sendPlaceholder
         content.field.placeholderString = targetProblem ?? speechProblem ?? prompt
+        refit()
     }
 
     /// The list of targets, under the target, or beside the note when the screen has no room below it,
@@ -663,7 +664,7 @@ private final class NoteContent: NSView {
         key.textColor = .secondaryLabelColor
         key.toolTip = "Return asks"
         field.setAccessibilityLabel("Note")
-        key.setAccessibilityHidden(true)
+        key.setAccessibilityElement(false)
         for view in [field, session, key] { addSubview(view) }
         wantsLayer = true
         layer?.addSublayer(light)
@@ -674,9 +675,11 @@ private final class NoteContent: NSView {
     /// The words' own rect, without the field's inset.
     var wordsFrame: CGRect { field.frame.insetBy(dx: NoteLayout.fieldTextInset, dy: 0) }
 
-    /// Sizes the field to its words, from one line to `mostLines`, and itself round them.
+    /// Sizes the field to its words, or its prompt while empty, from one line to `mostLines`, and itself round them.
     func layOut() {
-        let words = NoteLayout.wordsHeight(field.currentEditor()?.string ?? field.stringValue)
+        let typed = field.currentEditor()?.string ?? field.stringValue
+        // Empty, the field shows its prompt, which can say why Claude cannot answer in two lines.
+        let words = NoteLayout.wordsHeight(typed.isEmpty ? field.placeholderString ?? "" : typed)
         field.frame = NoteLayout.fieldFrame(height: words)
         let rowY = NoteLayout.top + words + NoteLayout.belowWords
         session.setFrameOrigin(CGPoint(x: NoteLayout.inset - SessionButton.pad, y: rowY + (NoteLayout.row - SessionButton.height) / 2))
@@ -706,97 +709,5 @@ private final class NoteContent: NSView {
             context.duration = duration
             key.animator().alphaValue = 0
         }
-    }
-}
-
-/// Where Return sends the note: the agent's logo, the project, and a chevron, since a click picks
-/// another.
-@MainActor
-private final class SessionButton: NSView {
-    var onClick: (() -> Void)?
-    private let logo = NSImageView()
-    private let label = NSTextField(labelWithString: "")
-    private let chevron = NSImageView()
-
-    static let height = NoteLayout.buttonHeight
-    /// How far the logo sits inside the button's edge, in points.
-    static let pad: CGFloat = 6
-    private static let chevronWidth: CGFloat = 8
-    private var settled = false
-
-    init() {
-        super.init(frame: CGRect(x: 0, y: 0, width: 60, height: Self.height))
-        wantsLayer = true
-        layer?.cornerRadius = 6
-        layer?.cornerCurve = .continuous
-        logo.imageScaling = .scaleProportionallyUpOrDown
-        label.font = NoteLayout.labelFont
-        label.textColor = .labelColor
-        label.lineBreakMode = .byTruncatingMiddle
-        label.maximumNumberOfLines = 1
-        chevron.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 8, weight: .bold))
-        chevron.contentTintColor = .secondaryLabelColor
-        for view in [logo, label, chevron] { addSubview(view) }
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override var wantsUpdateLayer: Bool { true }
-
-    override func updateLayer() {
-        layer?.backgroundColor = settled ? nil : NSColor.labelColor.withAlphaComponent(0.07).cgColor
-    }
-
-    /// Shows `title` after `image`, and fits itself round them.
-    func show(logo image: NSImage?, title: String) {
-        logo.image = image
-        label.stringValue = title
-        let words = NoteLayout.labelWidth(title)
-        var x = Self.pad
-        logo.frame = CGRect(x: x, y: (Self.height - NoteLayout.logoSize) / 2, width: NoteLayout.logoSize, height: NoteLayout.logoSize)
-        x += NoteLayout.logoSize + NoteLayout.gap
-        let lineHeight = ceil(label.intrinsicContentSize.height)
-        label.frame = CGRect(x: x, y: (Self.height - lineHeight) / 2, width: words, height: lineHeight)
-        x += words + NoteLayout.gap
-        chevron.frame = CGRect(x: x, y: 0, width: Self.chevronWidth, height: Self.height)
-        setFrameSize(CGSize(width: x + Self.chevronWidth + Self.pad, height: Self.height))
-    }
-
-    /// Sent: it settles into a name, as the conversation's row shows it, over `duration`. Its
-    /// background and chevron fade and its name greys; it takes no more clicks.
-    func settle(duration: CFTimeInterval) {
-        guard !settled else { return }
-        settled = true
-        let background = layer?.backgroundColor
-        layer?.backgroundColor = nil
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            chevron.animator().alphaValue = 0
-        }
-        guard duration > 0 else { label.textColor = .secondaryLabelColor; return }
-        if let background {
-            let fade = CABasicAnimation(keyPath: "backgroundColor")
-            fade.fromValue = background
-            fade.toValue = CGColor(gray: 0, alpha: 0)
-            fade.duration = duration
-            layer?.add(fade, forKey: "settle")
-        }
-        label.wantsLayer = true
-        let fade = CATransition()
-        fade.type = .fade
-        fade.duration = duration
-        label.layer?.add(fade, forKey: "settle")
-        label.textColor = .secondaryLabelColor
-    }
-
-    /// A press anywhere on it is its own, not its label's or its logo's.
-    override func hitTest(_ point: NSPoint) -> NSView? { !settled && frame.contains(point) ? self : nil }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    /// The list opens a turn after the press: opened inside it, the menu closed at once (measured).
-    override func mouseDown(with event: NSEvent) {
-        DispatchQueue.main.async { [weak self] in self?.onClick?() }
     }
 }
