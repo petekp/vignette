@@ -745,9 +745,11 @@ struct LiveInkPage: View {
                         .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 340)
                         .opacity(words)
+                        .transition(.opacity)
                 }
             }
             .animation(Anim.spring(0.5 * settings.motionScale), value: player.wordsShown)
+            .animation(Anim.spring(0.5 * settings.motionScale), value: claudeProblem)
             .animation(Anim.spring(SetupInkDemo.growing * settings.motionScale, bounce: 0.2), value: player.keysGrown)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
