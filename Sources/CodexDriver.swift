@@ -9,8 +9,9 @@ import Foundation
 ///
 /// Its warm-up is the isolation check: a turn on a thread whose model provider is
 /// `CodexCheckProvider`, inside Vignette, and only when that request carries nothing but the prompt
-/// and the warm-up does the thread asks go to start, with a warm-up of its own. It answers on the
-/// sign-in kept in its own home (`CodexSignIn`).
+/// and the warm-up does the thread asks go to start. That thread warms up too, unless an ask is
+/// waiting by then, which is its first turn instead. It answers on the sign-in kept in its own home
+/// (`CodexSignIn`).
 @MainActor
 final class CodexDriver: ResponderDriver {
     let client = AgentClient.codex
@@ -37,7 +38,7 @@ final class CodexDriver: ResponderDriver {
         self.home = home
     }
 
-    func start(report: @escaping (ResponderEvent) -> Void) -> ResponderRefusal? {
+    func start(askWaiting: @escaping () -> Bool, report: @escaping (ResponderEvent) -> Void) -> ResponderRefusal? {
         guard let binary = binary() else {
             Log.write("[live-ink] responder error no-codex")
             return ResponderRefusal(reason: LiveResponder.Availability.notInstalled.problem(for: .codex) ?? "", detail: "no codex")
@@ -48,7 +49,7 @@ final class CodexDriver: ResponderDriver {
             return refused.refusal
         }
         do {
-            run = try CodexRun(binary: binary, home: home, report: report) { [weak self] refusal in
+            run = try CodexRun(binary: binary, home: home, askWaiting: askWaiting, report: report) { [weak self] refusal in
                 if let file { self?.refused = (file, refusal) }
             }
         } catch {
@@ -123,6 +124,7 @@ private final class CodexRun {
     }
 
     private let home: URL
+    private let askWaiting: () -> Bool
     private let report: (ResponderEvent) -> Void
     /// Hears the check refuse this codex.
     private let refusedCheck: (ResponderRefusal) -> Void
@@ -138,9 +140,10 @@ private final class CodexRun {
     private var lastError: String?
     private let startedAt = Date()
 
-    init(binary: String, home: URL, report: @escaping (ResponderEvent) -> Void,
+    init(binary: String, home: URL, askWaiting: @escaping () -> Bool, report: @escaping (ResponderEvent) -> Void,
          refusedCheck: @escaping (ResponderRefusal) -> Void) throws {
         self.home = home
+        self.askWaiting = askWaiting
         self.report = report
         self.refusedCheck = refusedCheck
         let check = try CodexCheckProvider()
@@ -273,7 +276,8 @@ private final class CodexRun {
     }
 
     /// The check's turn ended: the thread asks go to starts, on the check's model, only if what Codex
-    /// sent the check is Vignette's prompt, the warm-up and no tools.
+    /// sent the check is Vignette's prompt, the warm-up and no tools. Its warm-up only warms the
+    /// cache, so an ask waiting by then goes first instead, and a cold ask is answered sooner.
     private func checked(_ ended: [String: Any], model: String) {
         phase = .starting
         let bodies = check?.requests ?? []
@@ -293,8 +297,14 @@ private final class CodexRun {
         }
         Log.write("[live-ink] responder codex isolated requests=\(bodies.count) ms=\(Int(Date().timeIntervalSince(startedAt) * 1000))")
         startThread(model: model, provider: nil) { [weak self] id in
-            self?.phase = .warming(thread: id)
-            self?.warmUp(on: id)
+            guard let self else { return }
+            guard !askWaiting() else {
+                phase = .ready(thread: id)
+                report(.ready("ms=\(Int(Date().timeIntervalSince(startedAt) * 1000)) warm-up=skipped"))
+                return
+            }
+            phase = .warming(thread: id)
+            warmUp(on: id)
         }
     }
 

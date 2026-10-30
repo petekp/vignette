@@ -41,8 +41,9 @@ protocol ResponderDriver: AnyObject {
     /// The agent's name in what the person reads.
     var name: String { get }
     /// Starts the process and its warm-up, and reports what it says through `report` from then on.
-    /// Answers why it could not start.
-    func start(report: @escaping (ResponderEvent) -> Void) -> ResponderRefusal?
+    /// Answers why it could not start. `askWaiting` says whether an ask is waiting for the start to
+    /// end, which a warm-up that only warms the cache can give way to.
+    func start(askWaiting: @escaping () -> Bool, report: @escaping (ResponderEvent) -> Void) -> ResponderRefusal?
     /// Writes one ask's message.
     func send(_ parts: [LiveResponder.Part])
     /// Ends the turn under way. Its end is still reported.

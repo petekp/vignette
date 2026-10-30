@@ -30,7 +30,7 @@ final class ClaudeDriver: ResponderDriver {
         self.binary = binary
     }
 
-    func start(report: @escaping (ResponderEvent) -> Void) -> ResponderRefusal? {
+    func start(askWaiting: @escaping () -> Bool, report: @escaping (ResponderEvent) -> Void) -> ResponderRefusal? {
         guard let binary = binary() else {
             Log.write("[live-ink] responder error no-claude")
             return ResponderRefusal(failure: LiveResponder.Failure(reason: "Vignette couldn't find Claude Code.", detail: "no claude"),

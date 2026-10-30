@@ -209,7 +209,7 @@ final class LiveResponder {
     private func start() {
         runs += 1
         let run = runs
-        if let refusal = driver.start(report: { [weak self] event in
+        if let refusal = driver.start(askWaiting: { [weak self] in self?.pending != nil }, report: { [weak self] event in
             guard let self, run == runs, running else { return }
             handle(event)
         }) {
