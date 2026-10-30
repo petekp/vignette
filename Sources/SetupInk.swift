@@ -2,104 +2,6 @@ import AppKit
 import Combine
 import SwiftUI
 
-// MARK: The stage
-
-/// Where a page's live ink is drawn: a view over the page, in its points, y down, holding the real
-/// pen layers and the marks layer live ink draws with. It takes no presses.
-final class SetupInkStage: NSView {
-    let marks: LiveMarksLayer
-    /// Runs each display refresh while `isRunning`, with the time that refresh will show, on the ink's
-    /// own clock, so the hand moves just before the ink is drawn.
-    var onFrame: ((CFTimeInterval) -> Void)?
-    var isRunning = false { didSet { if isRunning != oldValue { runClock() } } }
-    private let scale: CGFloat
-
-    init() {
-        scale = NSScreen.main?.backingScaleFactor ?? 2
-        marks = LiveMarksLayer(scale: scale)
-        super.init(frame: .zero)
-        wantsLayer = true
-        layer?.addSublayer(marks)
-        marks.host = self
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override var isFlipped: Bool { true }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    /// A new pen, above the marks.
-    func pen() -> InkMarkLayer {
-        let pen = InkMarkLayer(scale: scale)
-        layer?.addSublayer(pen)
-        return pen
-    }
-
-    /// This view's frame, in global top-left points.
-    var globalFrame: CGRect? {
-        guard let window else { return nil }
-        return StateReport.flipped(window.convertToScreen(convert(bounds, to: nil)))
-    }
-
-    /// This view's top-left corner, in global top-left points.
-    var globalOrigin: CGPoint? { globalFrame?.origin }
-
-    /// The marks drawn over a page are the agent's light on a dark window.
-    var isDark: Bool { effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        runClock()
-    }
-
-    private func runClock() {
-        let runs = isRunning && window != nil
-        InkClock.shared.onTick(self, runs ? { [weak self] in self?.onFrame?($0) } : nil)
-    }
-}
-
-/// The stage, laid over a page.
-struct SetupInkCanvas: NSViewRepresentable {
-    let stage: SetupInkStage
-
-    func makeNSView(context: Context) -> SetupInkStage { stage }
-    func updateNSView(_ nsView: SetupInkStage, context: Context) {}
-}
-
-/// The parts of a page the ink is drawn round, by name, for the stage laid over it.
-struct SetupInkAnchors: PreferenceKey {
-    static let defaultValue: [String: Anchor<CGRect>] = [:]
-    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
-        value.merge(nextValue()) { $1 }
-    }
-}
-
-extension View {
-    /// Names this view's bounds for the ink stage over the page, beside the names inside it.
-    func inkAnchor(_ name: String) -> some View {
-        transformAnchorPreference(key: SetupInkAnchors.self, value: .bounds) { $0[name] = $1 }
-    }
-
-    /// Lays `stage` over this page.
-    func inkStage(_ stage: SetupInkStage) -> some View {
-        overlay { SetupInkCanvas(stage: stage).allowsHitTesting(false) }
-    }
-
-    /// Lays `stage` over this page, and hands `place` the page's named parts, in the stage's points,
-    /// whenever they move.
-    func inkStage(_ stage: SetupInkStage, place: @escaping ([String: CGRect]) -> Void) -> some View {
-        overlayPreferenceValue(SetupInkAnchors.self) { anchors in
-            GeometryReader { geometry in
-                let rects = anchors.mapValues { geometry[$0] }
-                SetupInkCanvas(stage: stage)
-                    .allowsHitTesting(false)
-                    .onAppear { place(rects) }
-                    .onChange(of: rects) { place(rects) }
-            }
-        }
-    }
-}
-
 // MARK: Playing the demo
 
 /// Plays `SetupInkDemo` on the page's stage with live ink's own parts: the pen and `InkHand` for the
@@ -497,7 +399,7 @@ struct LiveInkSetupPage: View {
                     .screenSpot(recording.row, in: guide.spots)
                 }
                 CodexSetupSection(status: responders, spots: guide.spots, permissionsDone: trusted && screenRecording)
-                LiveInkSetupFooter(status: responders, spots: guide.spots, reopens: !screenRecording)
+                LiveInkSetupFooter(status: responders, spots: guide.spots, trusted: trusted, screenRecording: screenRecording)
             }
             .formStyle(.grouped).scrollDisabled(true).fixedSize(horizontal: false, vertical: true)
         }

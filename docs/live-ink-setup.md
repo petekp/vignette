@@ -28,8 +28,9 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
   row rather than on what fits, so the page stays still across the sign-in's steps. The room above
   the cost line is the guide's label's height (`SetupInkGuide.Rooms`), and holds the label beside
   the next button while an Allow button or Sign In to Codex… can be next. Once Codex is signed in or
-  signing in, the cost line sits closer to the row (`LiveInkSetupFooter`). Under the cost line the
-  page keeps the guide's note's height, and the note is placed in that room. The note keeps off the
+  signing in, the cost line sits closer to the row (`LiveInkSetupFooter`). Once every step is taken,
+  the page keeps the guide's note's height under the cost line, and the note is placed in that room.
+  The room is kept only then, since the page's height is fixed. The note keeps off the
   title and the row. The guide's ring
   keeps off the words of its own row (`LiveAnswerLayout.circle(around:keepingOff:)`). With both
   permissions allowed, Sign In to Codex… is

@@ -39,7 +39,8 @@ struct LiveInkSetupTop: ViewModifier {
 struct LiveInkSetupFooter: View {
     @ObservedObject var status: ResponderStatus
     let spots: ScreenSpots
-    let reopens: Bool
+    let trusted: Bool
+    let screenRecording: Bool
 
     /// The lines' gap under the rows while the label needs no room there.
     private static let gap: CGFloat = 8
@@ -49,19 +50,27 @@ struct LiveInkSetupFooter: View {
     /// guide's note needs the page's room under these lines instead.
     private var keepsLabelRoom: Bool { status.namedAgent != .codex || status.offersCodexSignIn }
 
+    /// Whether the guide draws its note under these lines, which it does once every step is taken.
+    /// The note's room is kept only then, since the page's height is fixed: with the label's room as
+    /// well, the page outgrew the window after a failed sign-in.
+    private var drawsNote: Bool {
+        SetupInkGuide.Pointing(trusted: trusted, screenRecording: screenRecording, codexSignIn: status.codexSignInLeft,
+                               signingIn: status.signIn == .waiting) == .ready
+    }
+
     var body: some View {
         let rooms = SetupInkGuide.Rooms(ui: Settings.shared.data.ui, agent: status.namedAgent)
         Section {} footer: {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 6) {
-                    if reopens { Text(SetupInkCopy.reopenNote) }
+                    if !screenRecording { Text(SetupInkCopy.reopenNote) }
                     Text(status.costNote)
                 }
                 .font(.caption).foregroundStyle(.secondary)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .screenSpot(SetupInkGuide.footer, in: spots)
-                Color.clear.frame(height: rooms.note).screenSpot(SetupInkGuide.noteRoom, in: spots)
+                if drawsNote { Color.clear.frame(height: rooms.note).screenSpot(SetupInkGuide.noteRoom, in: spots) }
             }
             .padding(.top, keepsLabelRoom ? rooms.label : Self.gap)
             .onAppear { status.look() }
