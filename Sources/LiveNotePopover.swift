@@ -102,8 +102,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         content.field.delegate = self
         content.session.onClick = { [weak self] in self?.showTargets() }
         showTarget()
-        content.layOut()
-        popover.contentSize = content.frame.size
+        popover.contentSize = content.layOut()
     }
 
     /// Hangs it from `rect` in `host`, which is `place` on the screen. The first time, it opens there
@@ -244,13 +243,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         Log.write("[live-ink] note shown edge=\(place.edge)")
     }
 
-    /// Grows or shrinks to fit the words, on the popover's own animation once it shows.
+    /// Grows or shrinks to fit the words, on a spring once it shows.
     private func refit() {
-        content.layOut()
-        guard popover.contentSize != content.frame.size else { return }
-        popover.animates = revealed && Settings.shared.motionScale > 0
-        popover.contentSize = content.frame.size
-        popover.animates = false
+        content.fit(popover, over: revealed ? NoteContent.resize * Settings.shared.motionScale : 0)
     }
 
     // MARK: Targets

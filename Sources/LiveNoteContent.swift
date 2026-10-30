@@ -13,6 +13,8 @@ final class NoteContent: NSView {
     let session = SessionButton()
     private let key = NSTextField(labelWithString: "↩")
     let light = RimLight()
+    /// The popover's height, which springs to the words' as they change (`fit`).
+    private var height: Tween?
 
     override var isFlipped: Bool { true }
 
@@ -31,11 +33,27 @@ final class NoteContent: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    /// How long the popover takes to grow or shrink to the words, at full motion.
+    static let resize: TimeInterval = 0.2
+
+    /// Sizes `popover` round the words, on a spring over `duration`. With NSPopover's own `animates`
+    /// on, a change of `contentSize` still steps the window from one height to the next.
+    func fit(_ popover: NSPopover, over duration: TimeInterval) {
+        let size = layOut()
+        let spring = height ?? Tween(initial: popover.contentSize.height) { [weak popover] in
+            popover?.contentSize = CGSize(width: NoteLayout.width, height: $0)
+        }
+        height = spring
+        spring.animate(to: size.height, duration: duration)
+    }
+
     /// The words' own rect, without the field's inset.
     var wordsFrame: CGRect { field.frame.insetBy(dx: NoteLayout.fieldTextInset, dy: 0) }
 
-    /// Sizes the field to its words, or its prompt while empty, from one line to `mostLines`, and itself round them.
-    func layOut() {
+    /// Sizes the field to its words, or its prompt while empty, from one line to `mostLines`, and
+    /// answers its own size round them. Once it is in the popover, the popover sizes it (`fit`): a
+    /// view that sets its own frame resizes the popover's window at once.
+    @discardableResult func layOut() -> CGSize {
         let typed = field.currentEditor()?.string ?? field.stringValue
         // Empty, the field shows its prompt, which can say why Claude cannot answer in two lines.
         let words = NoteLayout.wordsHeight(typed.isEmpty ? field.placeholderString ?? "" : typed)
@@ -44,7 +62,9 @@ final class NoteContent: NSView {
         session.setFrameOrigin(CGPoint(x: NoteLayout.inset - SessionButton.pad, y: rowY + (NoteLayout.row - SessionButton.height) / 2))
         key.sizeToFit()
         key.setFrameOrigin(CGPoint(x: NoteLayout.width - NoteLayout.inset - key.frame.width, y: rowY + (NoteLayout.row - key.frame.height) / 2))
-        setFrameSize(CGSize(width: NoteLayout.width, height: rowY + NoteLayout.row))
+        let size = CGSize(width: NoteLayout.width, height: rowY + NoteLayout.row)
+        if window == nil { setFrameSize(size) }
+        return size
     }
 
     /// Words at full strength and the ↩ shown while the note has the keys, dimmed and faded while it
