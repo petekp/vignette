@@ -11,7 +11,7 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
 | What both share: one ask at a time, the limits, the idle stop, stopping one turn | `LiveResponder.swift` |
 | Claude Code's process | `ClaudeDriver.swift` |
 | Codex's process, its switches and its isolation check | `CodexDriver.swift`, `CodexIsolation.swift` |
-| Codex's sign-in | `CodexSignIn.swift` |
+| Codex's sign-in | `CodexSignIn.swift`, and its row in Settings and setup in `ResponderStatus.swift` |
 | The note's target and its menu | `LiveNoteTarget.swift`, `LiveNotePopover.swift` |
 
 ## Which one answers
@@ -96,7 +96,17 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
 - Codex keeps the sign-in in `auth.json` in that home and renews it there. Vignette pins the file
   store (`CodexSignIn.arguments`), so `CodexSignIn.isSignedIn` can tell whether the home is signed
   in from the file, without starting Codex. Only whether the refresh token is there is read.
-- Nothing in the interface starts `CodexLogin` yet.
+- The sign-in is a row in the General tab, under Live ink, while Codex is installed, and on setup's
+  permissions page for live ink, after Use Live Ink, while Codex is installed and Claude Code can't
+  answer (`CodexSignInRow`). Without
+  setup's row, a person with Codex alone would finish setup with no agent that can answer. Setup's
+  row has no Sign Out.
+- Sign Out runs Codex's own `account/logout` in that home. It asks OpenAI to revoke the tokens,
+  waiting up to 10 s, then deletes the sign-in. `CodexLogin.signOut` gives Codex 15 s, then removes
+  `auth.json` itself if it is still there, since the folder is Vignette's.
+- A sign-in or a sign-out posts `codexSignInChanged`. `LiveResponders` takes Codex's availability
+  from it, and starts Codex's process afresh at the next ask, so a failure from before no longer
+  holds. A process in the middle of an ask is left to finish it.
 
 ## In `[state]`
 

@@ -9,6 +9,7 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
 | The pair and its refusals | `LiveInkChord.swift`, `LiveInk.takeChord` |
 | The offer | `AppDelegate.offerLiveInk` (`AppDelegate+LiveInkOffer.swift`), `LiveInkOfferSection` |
 | Whether Claude Code and Codex can answer | `LiveResponderAvailability.swift`, `LiveResponders.check` |
+| What Settings and setup show about them, Codex's sign-in included | `ResponderStatus.swift` |
 | A notice beside the pointer | `LiveNotice.swift`, `LiveInkOverlay.showNotice` |
 
 ## Turning it on
@@ -20,11 +21,14 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
   as the plugin's is, and whenever live ink turns on, by any switch. An install with live ink on
   never sees it, and a showing offer leaves when the switch goes on. A settings file written before the offer existed that already holds `liveInk`
   counts as offered (`Settings.migrate`), since the switch in it was set by the person or by setup.
+- Setup's permissions page offers Codex's sign-in while Codex is installed and Claude Code can't
+  answer (`CodexSetupSection`). `docs/live-ink-responders.md` has the sign-in.
 - What leaves the Mac is said in three places (`SetupInkCopy.costNote`): under the switch, on
   setup's permissions page, and in the note's prompt until the first ask to that agent
   (`liveInkAskedClaude`, `liveInkAskedCodex`). Until then it comes before why speech cannot listen
   (`NoteContent.prompt`). The prompt goes once the person types or speaks, so with speech on the
-  note can fill before it is read.
+  note can fill before it is read. Under the switch and in setup, it names the agents that can
+  answer: Claude, Codex, or both (`ResponderStatus.costNote`).
 
 ## The pair
 
