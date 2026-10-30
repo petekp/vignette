@@ -196,11 +196,6 @@ struct SettingsView: View {
     static let agentsLine = "Adds a plugin that lets you send drawings to your coding agents, and lets them show you images and reply with drawings."
     /// macOS's Accessibility alert gives no reason, so the row gives it, and the way around it.
     static let accessibilityReason = "Lets Vignette notice the double tap in any app. A key combination doesn't need it."
-    static var liveInkAccessibilityReason: String {
-        "Lets Vignette notice \(Settings.shared.data.liveInkChordChoice.glyphs) held down in any app."
-    }
-    static let liveInkSpeechReason = "Lets Vignette hear what you say while you draw. The words are made on this Mac."
-    static let liveInkScreenRecordingReason = "Lets Vignette see the window under your ink when you ask about it. macOS may ask you to reopen Vignette after you allow it."
 
     let tab: SettingsTab
     let callbacks: SettingsWindowController.Callbacks
@@ -313,17 +308,18 @@ struct SettingsView: View {
             })) {
                 ForEach(LiveInkChord.allCases, id: \.self) { chord in Text(chord.glyphs).tag(chord) }
             }
-            if let chordRefusal {
-                Text(chordRefusal).font(.footnote).foregroundStyle(.secondary).transition(.opacity)
+            // A pick refused now, or the pair a stack shortcut set elsewhere already starts with.
+            if let refusal = chordRefusal ?? settings.data.liveInkChordChoice.refusal(against: HotKeySpec.parse(settings.data.recentHotkey)) {
+                Text(refusal).font(.footnote).foregroundStyle(.secondary).transition(.opacity)
             }
             // The double tap's row above asks for the same permission.
             if settings.data.liveInk, !settings.data.usesDoubleTap, !trusted {
                 PermissionRow(symbol: "lock.fill", title: "Needs Accessibility permission",
-                              reason: SettingsView.liveInkAccessibilityReason, status: .refused) { Accessibility.request() }
+                              reason: SetupInkCopy.liveInkAccessibilityReason, status: .refused) { Accessibility.request() }
             }
             if settings.data.liveInk, !screenRecording {
                 PermissionRow(symbol: "lock.fill", title: "Needs Screen Recording permission",
-                              reason: SettingsView.liveInkScreenRecordingReason, status: .refused) { ScreenRecording.openSystemSettings() }
+                              reason: SetupInkCopy.liveInkScreenRecordingReason, status: .refused) { ScreenRecording.openSystemSettings() }
             }
             if settings.data.liveInk {
                 Toggle(isOn: Binding(get: { settings.data.liveInkSpeech }, set: { on in
@@ -335,7 +331,7 @@ struct SettingsView: View {
                 }
                 if settings.data.liveInkSpeech, !speechAllowed {
                     PermissionRow(symbol: "lock.fill", title: "Needs microphone and speech recognition permission",
-                                  reason: SettingsView.liveInkSpeechReason, status: .refused) {
+                                  reason: SetupInkCopy.liveInkSpeechReason, status: .refused) {
                         if SpeechPermission.unanswered { SpeechPermission.request { speechAllowed = $0 } } else { SpeechPermission.openSystemSettings() }
                     }
                 }
@@ -344,6 +340,8 @@ struct SettingsView: View {
                 }
             }
         }
+        // A stack shortcut changed outside this window can bring or end a collision with the pair.
+        .animation(Self.noticeMotion, value: settings.data.recentHotkey)
         Section("Recent screenshots") {
             LabeledContent("How many to show") {
                 HStack(spacing: 4) {
@@ -802,9 +800,8 @@ private final class ShortcutRecorderView: NSView {
             return
         }
         let modifiers = HotKeySpec.carbonModifiers(flags)
-        let liveInk = Settings.shared.data.liveInk ? Settings.shared.data.liveInkChordChoice : nil
         if let reason = HotKeySpec.refusal(keyCode: UInt32(event.keyCode), modifiers: modifiers)
-            ?? liveInk?.refusal(ofStackShortcut: .key(keyCode: UInt32(event.keyCode), modifiers: modifiers)) {
+            ?? Settings.shared.data.liveInkChordChoice.refusal(ofStackShortcut: .key(keyCode: UInt32(event.keyCode), modifiers: modifiers)) {
             NSSound.beep()
             refused = true
             onRefusal(reason)
