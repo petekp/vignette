@@ -41,16 +41,6 @@ final class TransitionLayer {
         static let screen = Look(corner: 0, shadowOpacity: 0, shadowRadius: 0, shadowY: 0, ring: 0, matte: 0)
     }
 
-    /// An agent's title leaving the annotator with its image: the block as the annotator drew it,
-    /// above the flight's picture, scaled with the flight's frame from `frameWidth`.
-    struct Caption {
-        var image: NSImage
-        /// Its top-left corner from the frame's, in points, y down, at `frameWidth`.
-        var offset: CGPoint
-        var frameWidth: CGFloat
-        var opacity: Double
-    }
-
     struct Flight: Identifiable {
         let id: UUID
         var image: NSImage
@@ -60,6 +50,9 @@ final class TransitionLayer {
         var look: Look
         var opacity: Double = 1
         var caption: Caption?
+        /// Leaving the annotator, which still draws the title: the flight shows its caption from
+        /// `annotatorStoppedDrawing`.
+        var leavingAnnotator = false
         /// The path this flight is on, and the one it was on before it was aimed again.
         var path = Path()
         var previousPath = Path()
@@ -218,23 +211,24 @@ final class TransitionLayer {
     /// the flight's place draws at the exact target, so it has to appear then or it steps by what
     /// the spring still had to go. A `caption` fades out from the flight's start.
     func fly(id: UUID, image: NSImage, marks: MarkLayers? = nil, caption: Caption? = nil, from: NSRect, to: NSRect,
-             lookFrom: Look, lookTo: Look, on screen: NSScreen, covered: @escaping () -> Void = {},
+             leavingAnnotator: Bool = false, lookFrom: Look, lookTo: Look, on screen: NSScreen, covered: @escaping () -> Void = {},
              arrived: @escaping () -> Void = {}, dropped: (() -> Void)? = nil) {
         let ui = Settings.shared.motionUI
         showPanel(on: screen)
         // At most half the flight, so the title is gone well before the card lands over the stack.
         let fade = min(ui.agentTitleFade, ui.expandDuration / 2)
-        let gen = start(id: id, image: image, marks: marks, caption: fade > 0 ? caption : nil, from: from, to: to,
-                        look: lookFrom, ui: ui, dropped: dropped)
+        let gen = start(id: id, image: image, marks: marks, caption: fade > 0 ? caption : nil, leavingAnnotator: leavingAnnotator,
+                        from: from, to: to, look: lookFrom, ui: ui, dropped: dropped)
         let travel = max(abs(to.minX - from.minX), abs(to.minY - from.minY),
                          abs(to.width - from.width), abs(to.height - from.height))
         let settleTime = Anim.settle(ui.expandDuration, bounce: Anim.flightBounce, distance: travel, within: Self.arrivalTolerance)
         let coverTime = min(settleTime, Anim.passesTarget(ui.expandDuration, bounce: Anim.flightBounce))
         // The starting state has to be committed before the animated change, or it starts at `to`.
-        // The annotator's `Removal` hides its frame on this same turn, so the flight home takes over
-        // from it in one commit.
+        // The annotator's `Removal` hides its frame and the title on this same turn, so the flight
+        // home takes over from it in one commit, caption and all.
         DispatchQueue.main.async { [weak self] in
             guard let self, let i = self.model.flights.firstIndex(where: { $0.id == id }), self.model.flights[i].generation == gen else { return }
+            if self.model.flights[i].leavingAnnotator { self.annotatorStoppedDrawing() }
             // A spring, so a flight retargeted mid-way (a swap) blends into the new path instead
             // of restarting; SwiftUI springs are additive by default.
             withAnimation(Anim.spring(ui.expandDuration, bounce: Anim.flightBounce)) {
@@ -264,6 +258,14 @@ final class TransitionLayer {
                 arrived()
                 if self.pendingLift.remove(id) != nil { self.end(id: id) }
             }
+        }
+    }
+
+    /// The annotator no longer draws the title of the image leaving it, so the flight taking that
+    /// image home shows its caption from this commit on.
+    func annotatorStoppedDrawing() {
+        withTransaction(Transaction(animation: nil)) {
+            for i in model.flights.indices where model.flights[i].leavingAnnotator { model.flights[i].leavingAnnotator = false }
         }
     }
 
@@ -332,8 +334,8 @@ final class TransitionLayer {
     /// Adds the flight, or aims an existing one down a new path, and returns its generation.
     /// The curve is fixed when the path is, so a flight keeps the motion scale it started with.
     /// Aiming again keeps the old path and resets `blend`, which `fly` then animates back to 1.
-    private func start(id: UUID, image: NSImage, marks: MarkLayers?, caption: Caption? = nil, from: NSRect, to: NSRect,
-                       look: Look, ui: UITweaks, dropped: (() -> Void)? = nil) -> Int {
+    private func start(id: UUID, image: NSImage, marks: MarkLayers?, caption: Caption? = nil, leavingAnnotator: Bool = false,
+                       from: NSRect, to: NSRect, look: Look, ui: UITweaks, dropped: (() -> Void)? = nil) -> Int {
         let path = Path(from: center(local(from)), to: center(local(to)), curve: FlightCurve(ui: ui))
         // It is going somewhere else now, so it has not arrived and any lift waits for the new end.
         arrivedFlights.remove(id)
@@ -355,7 +357,7 @@ final class TransitionLayer {
             return gen
         }
         model.flights.append(Flight(id: id, image: image, marks: marks, frame: local(from), look: look, caption: caption,
-                                    path: path, previousPath: path, generation: gen, dropped: dropped))
+                                    leavingAnnotator: leavingAnnotator, path: path, previousPath: path, generation: gen, dropped: dropped))
         return gen
     }
 
@@ -485,12 +487,7 @@ private struct FlightsView: View {
                     .overlay(FlightSpot(id: f.id, picture: f.image.size))
                     // The agent's title, pinned to the picture's top-left corner, so it bows and swells with it.
                     .overlay(alignment: .topLeading) {
-                        if let caption = f.caption {
-                            Image(nsImage: caption.image)
-                                .offset(x: caption.offset.x, y: caption.offset.y)
-                                .scaleEffect(f.frame.width / max(caption.frameWidth, 1), anchor: .topLeading)
-                                .opacity(caption.opacity)
-                        }
+                        if let caption = f.caption { FlightCaption(caption: caption, frameWidth: f.frame.width, shown: !f.leavingAnnotator) }
                     }
                     .modifier(Bow(center: CGPoint(x: f.frame.midX, y: f.frame.midY), path: f.path, previous: f.previousPath, blend: f.blend))
                     .opacity(f.opacity)
@@ -498,37 +495,6 @@ private struct FlightsView: View {
             }
         }
         .ignoresSafeArea()
-    }
-}
-
-/// Bows the straight path the flight's frame is taking, and swells the card around its middle.
-/// Its animatable data is that frame's centre and the blend between the flight's paths, so both
-/// the position along the path and a change of path move with the frame's own animation: a flight
-/// aimed somewhere else in mid-air bends across to the new bow instead of stepping sideways.
-private struct Bow: GeometryEffect {
-    var center: CGPoint
-    var path: TransitionLayer.Path
-    var previous: TransitionLayer.Path
-    var blend: CGFloat
-
-    var animatableData: AnimatablePair<CGPoint.AnimatableData, CGFloat> {
-        get { AnimatablePair(CGPoint.AnimatableData(center.x, center.y), blend) }
-        set {
-            center = CGPoint(x: newValue.first.first, y: newValue.first.second)
-            blend = newValue.second
-        }
-    }
-
-    func effectValue(size: CGSize) -> ProjectionTransform {
-        let placed = FlightCurve.blend(previous.curve.placement(at: center, from: previous.from, to: previous.to),
-                                       path.curve.placement(at: center, from: path.from, to: path.to),
-                                       blend)
-        let mid = CGPoint(x: size.width / 2, y: size.height / 2)
-        return ProjectionTransform(CGAffineTransform.identity
-            .translatedBy(x: placed.offset.width, y: placed.offset.height)
-            .translatedBy(x: mid.x, y: mid.y)
-            .scaledBy(x: placed.scale, y: placed.scale)
-            .translatedBy(x: -mid.x, y: -mid.y))
     }
 }
 

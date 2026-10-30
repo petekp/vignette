@@ -732,7 +732,7 @@ final class ThumbnailController: NSObject {
             slot.origin.x += layout.offscreenDistance(cardWidth: slot.width)
             flights.fly(id: card.id, image: flightImage(for: currentCard(card)), marks: homeFlightMarks(for: currentCard(card)),
                         caption: annotatorTitle(card.shot.key), from: annotationFrame, to: slot,
-                        lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
+                        leavingAnnotator: true, lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
                 self?.flights.end(id: card.id)
             })
         }
@@ -839,6 +839,7 @@ final class ThumbnailController: NSObject {
             annotationFrame = target
             dim.show(on: screen)
             parkedMarks = nil
+            flights.annotatorStoppedDrawing()   // it draws this image from here, so not the one leaving
             onAnnotatorPrepare?(card.shot, opening, target, annotatorRoom)
             var from = slot ?? cardFrame(of: card)
             if model.offscreen.contains(card.id) { from.origin.x += layout.offscreenDistance(cardWidth: from.width) }
@@ -937,7 +938,7 @@ final class ThumbnailController: NSObject {
         // exact slot, so a card and a shadow put there while the flight still had a few points to
         // go would both step. Nothing is visible before then; the flight covers the slot.
         flights.fly(id: card.id, image: flightImage(for: card), marks: homeFlightMarks(for: card), caption: annotatorTitle(card.shot.key),
-                    from: annotationFrame, to: cardFrame(of: card), lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
+                    from: annotationFrame, to: cardFrame(of: card), leavingAnnotator: true, lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
             guard let self else { return }
             self.model.outCards.remove(card.id)
             self.hover(landing: card)
@@ -970,7 +971,7 @@ final class ThumbnailController: NSObject {
         var slot = layout.loneCardFrame(size: card.size, area: area)
         slot.origin.x += layout.offscreenDistance(cardWidth: slot.width)
         flights.fly(id: card.id, image: flightImage(for: card), marks: homeFlightMarks(for: card), caption: annotatorTitle(card.shot.key),
-                    from: annotationFrame, to: slot, lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
+                    from: annotationFrame, to: slot, leavingAnnotator: true, lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
             self?.flights.end(id: card.id)
             card.marks?.clear()   // the card is gone for good, as `removeCards` would have it
         })
@@ -1451,10 +1452,6 @@ final class ThumbnailController: NSObject {
 
     /// Shows a new column. Cards start past the screen edge and arrive staggered, newest first.
     /// `keepOffscreen` leaves the cards parked past the edge, for a card that is about to fly out from there.
-    /// How presented cards arrive: sliding in from the right edge, parked past it for a flight to
-    /// start from, or already in place because a flight lands on them.
-    enum Entrance { case slide, stayOffscreen, inPlace }
-
     private func present(cards: [Card], entrance: Entrance = .slide) {
         if !visible {
             // A capture opening in the editor shows on the screen it was taken on, where its flight starts.

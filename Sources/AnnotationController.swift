@@ -561,11 +561,9 @@ final class AnnotationController {
     }
 
     /// The agent's title as it is drawn now, for the flight taking `key` home, which carries it from
-    /// here: the block stops drawing in this turn, the one the flight is added in.
+    /// here. The block stops drawing with the frame (`hideWindows`).
     func takeTitle(of key: ScreenshotKey) -> TransitionLayer.Caption? {
-        guard opened?.key == key, let frameView else { return nil }
-        defer { titleView.show(false, duration: 0) }
-        guard let image = titleView.picture() else { return nil }
+        guard opened?.key == key, let frameView, let image = titleView.picture() else { return nil }
         let offset = CGPoint(x: titleView.frame.minX - frameView.frame.minX, y: frameView.frame.maxY - titleView.frame.maxY)
         return TransitionLayer.Caption(image: image, offset: offset, frameWidth: frameView.frame.width,
                                        opacity: titleView.alphaValue)
@@ -603,7 +601,7 @@ final class AnnotationController {
         // window left the frame empty for 4 to 9 frames before the flight showed (measured). So the
         // frame is hidden in the commit that starts the flight moving, and the window goes once the
         // display has shown it. The flight casts the shadow from this turn, so it is never doubled.
-        // A title no flight took (`takeTitle`) goes with the frame.
+        // The title goes in that commit too, the one the flight shows its copy in (`leavingAnnotator`).
         frameView?.layer?.shadowOpacity = 0
         removal.start(on: window?.screen, hide: { [weak self] in
             self?.frameView?.isHidden = true
