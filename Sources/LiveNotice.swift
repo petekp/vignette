@@ -8,6 +8,8 @@ final class LiveNotice: NSView {
     static let duration: TimeInterval = 4
     /// The widest its text runs before it wraps.
     static let width: CGFloat = 260
+    /// How long it takes to fade in or out.
+    static var fade: TimeInterval { 0.2 * Settings.shared.motionScale }
 
     private let label: NSTextField
     private var hideTimer: Timer?
@@ -58,7 +60,7 @@ final class LiveNotice: NSView {
         hideTimer?.invalidate()
         hideTimer = nil
         NSAnimationContext.runAnimationGroup({ [weak self] context in
-            context.duration = 0.2 * Settings.shared.motionScale
+            context.duration = Self.fade
             self?.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
             MainActor.assumeIsolated { self?.removeFromSuperview() }
@@ -67,7 +69,7 @@ final class LiveNotice: NSView {
 
     private func fade(to alpha: CGFloat) {
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.2 * Settings.shared.motionScale
+            context.duration = Self.fade
             animator().alphaValue = alpha
         }
     }
