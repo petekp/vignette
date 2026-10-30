@@ -187,8 +187,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             } else {
                 applyLoginItem()
             }
-            startAgentPlugin()
-            offerLiveInk()
+            // The Settings window shows one tab, so one offer a launch: live ink's waits for the next.
+            if !startAgentPlugin() { offerLiveInk() }
         }
         sessions.refreshKeptLists()
         CheckCoin.compileShaders()
@@ -274,9 +274,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// Launch: the offer if it has never been made, then the marketplace written and every
     /// installed plugin brought up to this app's version (`AgentPlugins.launch`). A plugin goes in
     /// by itself only where the skill from before the plugin was, since that person chose the skill.
-    private func startAgentPlugin() {
-        if settings.data.agentSkillChoice == .unasked { offerAgentPlugin() }
+    /// Answers whether the offer was made.
+    private func startAgentPlugin() -> Bool {
+        let offered = settings.data.agentSkillChoice == .unasked && offerAgentPlugin()
         agentPlugins.launch { _ in }
+        return offered
     }
 
     /// The Agents tab's switch, the setup window and `install-skill`. `AgentPlugins` logs each
@@ -326,15 +328,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// The offer, once: the app has never asked and this Mac has an agent directory. The offer is
     /// the Settings window, and the answer is the buttons in it.
     /// Recorded as `off` as it is made, so the question is asked once whatever the user does.
-    private func offerAgentPlugin() {
+    private func offerAgentPlugin() -> Bool {
         let roots = AgentPlugin.roots(home: FileManager.default.homeDirectoryForCurrentUser)
-        guard !roots.isEmpty else { return }
+        guard !roots.isEmpty else { return false }
         settings.update { $0.agentSkill = AgentSkill.off.rawValue }
         Log.write("[plugin] offered \(roots.map(\.lastPathComponent).joined(separator: " "))")
         settingsWindow.show(tab: .agents, activating: false)
+        return true
     }
 
-    /// The one-time live ink offer, for an install that finished setup before live ink had a page. It
+    /// The one-time live ink offer, for an install that finished setup without seeing live ink's page. It
     /// opens the General tab, where the offer is, and is recorded as made (`Settings.liveInkOffered`).
     private func offerLiveInk() {
         guard !settings.data.liveInkOffered, SetupState(rawValue: settings.data.setup) == .done else { return }

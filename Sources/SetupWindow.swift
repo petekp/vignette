@@ -255,8 +255,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         if model.seen.folder == .ask { model.callbacks.askFolder() }
         settings.update {
             $0.setup = SetupState.done.rawValue
-            // Setup has had its live ink page, or closed before it: either way the offer is not due.
-            $0.liveInkOffered = true
+            if model.sawLiveInk { $0.liveInkOffered = true }
             if let choice = model.launchAtLoginChoice { $0.launchAtLogin = choice }
         }
         UserDefaults.standard.set(true, forKey: SetupWindowController.doneOnThisMacKey)
@@ -313,7 +312,7 @@ final class SetupModel: ObservableObject {
     var dropFocus: () -> Void = {}
 
     @Published var page = Page.welcome {
-        didSet { if page == .liveInk { checkClaude() } }
+        didSet { reached(page) }
     }
     /// Whether Claude Code can answer live ink, as the live ink page last found it.
     @Published private(set) var claudeAnswer = LiveResponder.Availability.checking
@@ -323,6 +322,9 @@ final class SetupModel: ObservableObject {
     /// Vignette to work with them, and a switch they can see is still their choice.
     @Published var chosen: Set<URL>
     private(set) var sawAgents = false
+    /// Whether live ink's page was shown, which makes its offer: a setup closed before it leaves the
+    /// offer for the Settings window.
+    private(set) var sawLiveInk = false
 
     /// Opens on `start`, or on the first page when `start` is not among them. Starting on live ink's
     /// permissions is starting after Use Live Ink, as a reopen after asking for Screen Recording does.
@@ -341,6 +343,8 @@ final class SetupModel: ObservableObject {
         changes = callbacks.changes.sink { [weak self] in
             MainActor.assumeIsolated { self?.look(includingAgents: true) }
         }
+        // `page`'s observer does not run in `init`.
+        reached(page)
     }
 
     private var changes: AnyCancellable?
@@ -388,6 +392,12 @@ final class SetupModel: ObservableObject {
     /// Whether Claude Code's switch is on for an install, which leaves the sessions already open
     /// without the plugin until they reload.
     var installsIntoClaude: Bool { claude.map { !$0.installed && chosen.contains($0.root) } ?? false }
+
+    /// Live ink's pages record the offer as made, and its first page asks whether Claude Code can answer.
+    private func reached(_ page: Page) {
+        if page == .liveInk || page == .liveInkSetup { sawLiveInk = true }
+        if page == .liveInk { checkClaude() }
+    }
 
     /// Asks Claude Code again, so the live ink page says why Claude cannot answer, if it cannot.
     func checkClaude() {
