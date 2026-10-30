@@ -10,6 +10,7 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
 | The offer | `AppDelegate.offerLiveInk` (`AppDelegate+LiveInkOffer.swift`), `LiveInkOfferSection` |
 | Whether Claude Code and Codex can answer | `ResponderStatus.check`, from `ClaudeDriver.availability` and `CodexDriver.availability` |
 | What Settings and setup show about them, Codex's sign-in included | `ResponderStatus.swift` |
+| Setup's permissions page for live ink, and the room it keeps for the guide | `SetupInkLayout.swift`, `SetupInkGuide.Rooms` |
 | A notice beside the pointer | `LiveNotice.swift`, `LiveInkOverlay.showNotice` |
 
 ## Turning it on
@@ -23,10 +24,13 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
   counts as offered (`Settings.migrate`), since the switch in it was set by the person or by setup.
 - Setup's permissions page offers Codex's sign-in while Codex is installed and Claude Code can't
   answer (`CodexSetupSection`). `docs/live-ink-responders.md` has the sign-in. The page's height is
-  fixed, so while the row shows, the title starts higher (`LiveInkSetupTop`). While the row shows
-  Sign In to Codex…, the room above the cost line holds the guide's label beside it. Once Codex is
-  signed in or signing in, the cost line sits closer to the row (`LiveInkSetupFooter`), which keeps
-  room under it for the guide's note. The note keeps off the title and the row. The guide's ring
+  fixed, so while the row shows, the title starts higher (`LiveInkSetupTop`). The switch is on the
+  row rather than on what fits, so the page stays still across the sign-in's steps. The room above
+  the cost line is the guide's label's height (`SetupInkGuide.Rooms`), and holds the label beside
+  the next button while an Allow button or Sign In to Codex… can be next. Once Codex is signed in or
+  signing in, the cost line sits closer to the row (`LiveInkSetupFooter`). Under the cost line the
+  page keeps the guide's note's height, and the note is placed in that room. The note keeps off the
+  title and the row. The guide's ring
   keeps off the words of its own row (`LiveAnswerLayout.circle(around:keepingOff:)`). With both
   permissions allowed, Sign In to Codex… is
   the next step: the guide's Then this points at it and it is the default button, and nothing is

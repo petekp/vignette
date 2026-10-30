@@ -48,6 +48,8 @@ final class SetupInkGuide {
     let stage = SetupInkStage()
     let spots = ScreenSpots()
     static let footer = "footer"
+    /// The room the page keeps under the cost line, which the note is placed in.
+    static let noteRoom = "noteRoom"
     static let header = "header"
     private static let rows = [Step.accessibility.row, Step.screenRecording.row]
 
@@ -59,6 +61,28 @@ final class SetupInkGuide {
     private var shown: [Mark] = []
     private var leaving: [Mark.ID: LiveMarksLayer.Finish] = [:]
     private var dark = Set<Mark.ID>()
+
+    /// The room the page keeps for the guide's marks, at `ui`'s sizes, drawn as `agent`: the label's
+    /// height under the rows, and the note's under the cost line with the gap an answer's marks keep.
+    struct Rooms {
+        let label: CGFloat
+        let note: CGFloat
+
+        @MainActor init(ui: UITweaks, agent: AgentClient) {
+            let sizes = LiveAnswerLayout.Sizes(ui: ui)
+            func height(_ text: String, isLabel: Bool) -> CGFloat {
+                var mark = Mark(geometry: .text(Mark.Text(origin: .zero, text: text, wrap: sizes.textWidth, size: sizes.textSize)),
+                                agent: true, agentName: agent.rawValue)
+                mark.isLabel = isLabel
+                return LiveAnswerLayout.noteBox(mark, sizes: sizes)?.height ?? 0
+            }
+            label = height(Step.screenRecording.label, isLabel: true)
+            note = height(SetupInkGuide.noteText, isLabel: false) + LiveAnswerLayout.spacing
+        }
+    }
+
+    /// The note's words once every step is taken.
+    static var noteText: String { "Hold \(Settings.shared.data.liveInkChordChoice.glyphs) and draw anywhere" }
 
     /// Points at `target` as `agent` once the page is on the screen, asked again until it is, and
     /// again when what it points at changes size, as a button does when its title changes.
@@ -77,7 +101,10 @@ final class SetupInkGuide {
         shown = shown + new
         if stage.isDark { dark.formUnion(new.filter { $0.kind != .text }.map(\.id)) }
         draw(drawingOn: Set(new.map(\.id)))
-        Log.write("[setup] live ink pointing at \(target) marks=\(new.count) agent=\(agent.rawValue)")
+        let sizes = LiveAnswerLayout.Sizes(ui: Settings.shared.data.ui)
+        let frames = new.compactMap { $0.shapeExtent ?? LiveAnswerLayout.noteBox($0, sizes: sizes) }
+            .map { r in [r.minX + frame.minX, r.minY + frame.minY, r.width, r.height].map { String(Int($0.rounded())) }.joined(separator: ",") }
+        Log.write("[setup] live ink pointing at \(target) marks=\(new.count) agent=\(agent.rawValue) frames=\(frames.joined(separator: ";"))")
         guard !old.isEmpty else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + LiveMarksLayer.finishDuration(.dismissed)) { [weak self] in
             guard let self else { return }
@@ -102,7 +129,7 @@ final class SetupInkGuide {
     private func aim(of target: Pointing) -> CGRect? {
         if let next = target.steps?.next { return spots.global(next.button) }
         guard target == .ready else { return nil }
-        return (Self.rows + [Step.codexSignIn.row]).compactMap(spots.global).reduce(CGRect.null) { $0.union($1) }
+        return (Self.rows + [Step.codexSignIn.row, Self.noteRoom]).compactMap(spots.global).reduce(CGRect.null) { $0.union($1) }
     }
 
     private func draw(drawingOn: Set<Mark.ID> = []) {
@@ -135,11 +162,13 @@ final class SetupInkGuide {
             guard let button = spots.global(steps.next.button) else { return [] }
             placed = LiveAnswerLayout.pointer(.circle, label: steps.next.label, at: button, scene: scene, sizes: sizes, agent: agent)
         } else {
-            // Under the line below the rows, the room nothing else on the page takes.
+            // In the room the page keeps under the cost line (`LiveInkSetupFooter`).
             let page = (rows + footer).reduce(CGRect.null) { $0.union($1) }
-            guard !page.isNull else { return [] }
-            placed = [LiveAnswerLayout.note("Hold \(Settings.shared.data.liveInkChordChoice.glyphs) and draw anywhere", near: page, scene: scene,
-                                            obstacles: rows + footer + header + codex, sizes: sizes, agent: agent)]
+            guard !page.isNull, let noteRoom = spots.global(Self.noteRoom) else { return [] }
+            var inRoom = scene
+            inRoom.room = noteRoom
+            placed = [LiveAnswerLayout.note(Self.noteText, near: page, scene: inRoom, obstacles: rows + footer + header + codex, sizes: sizes,
+                                            agent: agent)]
         }
         return placed.map { LiveWindows.translated($0, by: back) }
     }
