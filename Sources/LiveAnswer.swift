@@ -33,63 +33,28 @@ struct LiveAnswer: Equatable {
     static let maxActions = 3
     static let maxAction = 24
 
-    /// The answer's JSON Schema, for the responder's `claude --json-schema`. Written out, so it is the
-    /// same at every start and lists `say` first, the field that streams in as the reply: built from a
-    /// dictionary, its order changed from launch to launch. Its boxes are in thousandths of the
-    /// picture, as the packet's are, and `init(responder:)` reads them.
-    static let schema = #"""
-    {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["say", "marks"],
-      "properties": {
-        "say": {"type": "string", "description": "The answer, in one to three short sentences of plain text."},
-        "marks": {
-          "type": "array",
-          "maxItems": \#(maxMarks),
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["kind"],
-            "properties": {
-              "kind": {"type": "string", "enum": [\#(AnswerMark.Kind.allCases.map { "\"\($0.rawValue)\"" }.joined(separator: ", "))]},
-              "line": {"type": "string", "description": "The id of the text line it points at, such as t3, from the lines sent."},
-              "words": {"type": "string", "description": "Words copied from that line when it points at part of the line, or from the picture for text not among the lines."},
-              "box": {
-                "type": "array", "items": {"type": "integer"}, "minItems": 4, "maxItems": 4,
-                "description": "x, y, width and height in thousandths of the picture, from its top-left corner, for something with no text line."
-              },
-              "label": {"type": "string", "description": "One to four words drawn beside the mark, only when the mark needs them."},
-              "zoom": {"type": "boolean", "description": "For a focus mark: magnify what it points at, for something too small to see."}
-            }
-          }
-        },
-        "steps": {"type": "boolean", "description": "True when the marks are steps to take in order, each shown once the one before is clicked."},
-        "actions": {
-          "type": "array", "maxItems": \#(maxActions), "items": {"type": "string"},
-          "description": "Up to three next steps the person can click, one to three words each, such as \"Fix both\". A click sends the words back as their reply."
-        }
-      }
-    }
-    """#
-
     struct Problem: Error, CustomStringConvertible {
         let description: String
     }
 
     /// Reads the responder's answer, whose boxes are in thousandths of the picture as `schema` asks.
-    /// A session's answer gives fractions, as `init(json:)` reads them.
+    /// A null field is absent, as `strictSchema` writes one. A session's answer gives fractions, as
+    /// `init(json:)` reads them.
     init(responder json: Any) throws {
-        guard var object = json as? [String: Any], let marks = object["marks"] as? [Any] else {
+        guard var object = (json as? [String: Any]).map(Self.withoutNulls), let marks = object["marks"] as? [Any] else {
             try self.init(json: json)
             return
         }
         object["marks"] = marks.map { item -> Any in
-            guard var mark = item as? [String: Any], let box = mark["box"] as? [Any] else { return item }
-            mark["box"] = box.compactMap(DrawingJSON.number).map { Double($0) / 1000 }
+            guard var mark = (item as? [String: Any]).map(Self.withoutNulls) else { return item }
+            if let box = mark["box"] as? [Any] { mark["box"] = box.compactMap(DrawingJSON.number).map { Double($0) / 1000 } }
             return mark
         }
         try self.init(json: object)
+    }
+
+    private static func withoutNulls(_ object: [String: Any]) -> [String: Any] {
+        object.filter { !($0.value is NSNull) }
     }
 
     /// Checks an answer from outside the process. A mark that names nothing it can point at is
