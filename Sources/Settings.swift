@@ -60,6 +60,9 @@ struct SettingsData: Codable, Equatable {
     var annotateOnCapture = false            // a new capture opens in the annotator instead of showing a thumbnail
     var copyOnCapture = true                 // a new capture goes to the clipboard as it lands
     var liveInk = false                      // holding Control and Option draws on the screen itself; needs Accessibility
+    var liveInkOffered = false               // whether live ink's one-time offer was made to an install that finished setup before it had a page
+    var liveInkAskedClaude = false           // whether a live ink ask has gone to Claude, which ends the line that says what Claude sees
+    var liveInkChord = LiveInkChord.standard.rawValue  // the two modifiers that hold live ink on: ⌃⌥ unless another pair is chosen
     var liveInkSpeech = false                // talking while drawing fills the note; needs the microphone and speech recognition
     var liveInkSendWhenQuiet = true          // experiment: the ask goes once the person stops talking, or waits for Return
     var debug = false                        // unlocks tweaks, install-skill root=, live-ink-stroke, and file= outside the watch folder
@@ -69,6 +72,9 @@ struct SettingsData: Codable, Equatable {
     var appleOriginal: AppleOriginal?        // Apple's screencapture values before Vignette changed them
 
     var folderURL: URL { URL(fileURLWithPath: (screenshotsFolder as NSString).expandingTildeInPath) }
+
+    /// `liveInkChord` as the pair it holds. An unknown word reads as the standard pair.
+    var liveInkChordChoice: LiveInkChord { LiveInkChord(rawValue: liveInkChord) ?? .standard }
 
     /// `agentSkill` as the states it holds. An unknown word reads as `unasked`, which
     /// `validated()` then writes back.
@@ -750,6 +756,9 @@ final class Settings: ObservableObject {
     /// version field. Version 2 writes only the `ui` values that differ from the defaults.
     nonisolated static func migrate(_ raw: [String: Any]) -> (json: [String: Any], from: Int) {
         var json = raw
+        // A file that already has live ink's switch in it is past the offer: the switch was set by the
+        // person or by setup. Written before `liveInkOffered` existed, so the key is absent.
+        if json["liveInk"] != nil, json["liveInkOffered"] == nil { json["liveInkOffered"] = true }
         let from = (json["version"] as? NSNumber)?.intValue ?? 0
         guard from < currentVersion else { return (json, from) }
         // 0.1.0 and 0.1.1 wrote every `ui` value, so a value there is a choice only where it

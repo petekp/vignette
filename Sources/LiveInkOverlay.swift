@@ -61,6 +61,7 @@ final class LiveInkOverlay: NSPanel {
     /// each raises it to the inking level.
     private var takesInk = false
     private var holdsField = false
+    private var notice: LiveNotice?
     private var keptAboveMenus = false
 
     /// Comes up at once, on the Space that is active now.
@@ -132,6 +133,16 @@ final class LiveInkOverlay: NSPanel {
     /// this screen shows here too. Past `longest` points of line, its start recedes.
     func showPen(_ points: [CGPoint], longest: CGFloat, markStyle: MarkStyle) {
         canvas.showPen(points, longest: longest, markStyle: markStyle)
+    }
+
+    /// Says `text` beside `point`, in global top-left points, for a few seconds. A notice already up is
+    /// replaced.
+    func showNotice(_ text: String, at point: CGPoint) {
+        notice?.hide()
+        let view = LiveNotice(text: text)
+        canvas.addSubview(view)
+        view.show(at: CGPoint(x: point.x - canvas.origin.x, y: point.y - canvas.origin.y))
+        notice = view
     }
 
     /// Holds the pointer field up in `ui`'s settings, or lets it go. Held, it raises the overlay to the

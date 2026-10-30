@@ -37,6 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let annotator = AnnotationController()
     private lazy var liveInk = LiveInk(mayInk: { [weak self] in !(self?.thumbnail.holdsScreen ?? true) })
     private let settingsWindow = SettingsWindowController()
+    /// Whether the Settings window is showing live ink's one-time offer (`offerLiveInk`).
+    private var liveInkOfferOpen = false
     private let setupWindow = SetupWindowController()
     private lazy var debugPanel = DebugPanelController(previews: .init(
         thumbnail: { [weak self] in self?.openLast() },
@@ -151,7 +153,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             installAgentPlugin: { [weak self] root, done in self?.turnOnAgents([root]) { done($0) } },
             removeAgentPlugin: { [weak self] root, done in self?.removeAgentPlugin(from: root, completion: done) },
             folderDenied: { [weak self] in self?.watcher?.isDenied ?? false },
-            agentFailures: { [weak self] in self?.pluginFailures ?? [:] })
+            agentFailures: { [weak self] in self?.pluginFailures ?? [:] },
+            liveInkOffered: { [weak self] in self?.liveInkOfferOpen ?? false },
+            answerLiveInkOffer: { [weak self] on in self?.answerLiveInkOffer(on) })
         // Before the watcher, so a capture taken during launch already lands the way Vignette needs.
         settings.reconcileApple()
         startDrawings()
@@ -184,6 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 applyLoginItem()
             }
             startAgentPlugin()
+            offerLiveInk()
         }
         sessions.refreshKeptLists()
         CheckCoin.compileShaders()
@@ -249,6 +254,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
         if new.liveInk != old.liveInk { liveInk.setOn(new.liveInk) }
+        // The chord is taken when live ink turns on, so a new pair is taken by turning it off and on.
+        if new.liveInk, new.liveInkChord != old.liveInkChord {
+            liveInk.setOn(false)
+            liveInk.setOn(true)
+        }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem(); showUpdateDot() }
         if new.launchAtLogin != old.launchAtLogin { applyLoginItem() }
     }
@@ -326,6 +336,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         settings.update { $0.agentSkill = AgentSkill.off.rawValue }
         Log.write("[plugin] offered \(roots.map(\.lastPathComponent).joined(separator: " "))")
         settingsWindow.show(tab: .agents, activating: false)
+    }
+
+    /// The one-time live ink offer, for an install that finished setup before live ink had a page. It
+    /// opens the General tab, where the offer is, and is recorded as made (`Settings.liveInkOffered`).
+    private func offerLiveInk() {
+        guard !settings.data.liveInkOffered, SetupState(rawValue: settings.data.setup) == .done else { return }
+        settings.update { $0.liveInkOffered = true }
+        liveInkOfferOpen = true
+        Log.write("[settings] offered live ink")
+        settingsWindow.show(tab: .general, activating: false)
+    }
+
+    /// The offer's answer: Turn On turns live ink on, as the General tab's switch does.
+    private func answerLiveInkOffer(_ on: Bool) {
+        liveInkOfferOpen = false
+        if on {
+            settings.update { $0.liveInk = true }
+            ScreenRecording.request()
+        }
+        Log.write("[settings] live ink offer \(on ? "turned on" : "not now")")
     }
 
     /// The agent folders whose settings have the plugin on, for the state report.
@@ -896,6 +926,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         SetupWindowController.Callbacks(
             conditions: { [unowned self] in setupConditions(protectedArea: protectedArea) },
             agents: { AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser) },
+            claudeAvailability: { await LiveResponder.availability() },
             // `@Published` sends before the change lands, so the window looks a turn later.
             changes: settings.$appleTarget.dropFirst().map { _ in }
                 .merge(with: NotificationCenter.default.publisher(for: AgentTools.found).map { _ in })
@@ -1055,7 +1086,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         menu.addItem(.separator())
         let liveInkItem = NSMenuItem(title: "Live Ink", action: #selector(toggleLiveInk), keyEquivalent: "")
         liveInkItem.state = settings.data.liveInk ? .on : .off
-        liveInkItem.badge = NSMenuItemBadge(string: "Hold ⌃⌥")
+        liveInkItem.badge = NSMenuItemBadge(string: "Hold \(settings.data.liveInkChordChoice.glyphs)")
         menu.addItem(liveInkItem)
         if settings.data.liveInk {
             menu.addItem(NSMenuItem(title: "Clear Live Ink", action: #selector(clearLiveInk), keyEquivalent: ""))

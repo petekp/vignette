@@ -678,7 +678,7 @@ final class SetupInkGuide {
             // Under the line below the rows, the room nothing else on the page takes.
             let page = (rows + footer).reduce(CGRect.null) { $0.union($1) }
             guard !page.isNull else { return [] }
-            placed = [LiveAnswerLayout.note("Hold ⌃⌥ and draw anywhere", near: page, scene: scene, obstacles: rows + footer, sizes: sizes)]
+            placed = [LiveAnswerLayout.note("Hold \(Settings.shared.data.liveInkChordChoice.glyphs) and draw anywhere", near: page, scene: scene, obstacles: rows + footer, sizes: sizes)]
         }
         return placed.map { mark in
             var mark = LiveWindows.translated(mark, by: back)
@@ -709,6 +709,8 @@ enum SetupInkKeys {
 /// demo plays once when it appears.
 struct LiveInkPage: View {
     @ObservedObject var player: SetupInkPlayer
+    /// Why Claude cannot answer, or nil when it can. Setup says so under the line about asking Claude.
+    let claudeProblem: String?
     @ObservedObject private var settings = Settings.shared
     @StateObject private var held = HeldModifiers()
 
@@ -738,6 +740,12 @@ struct LiveInkPage: View {
                     .inkAnchor(SetupInkPlayer.lineAnchors[1])
                     .offset(y: player.lineTwoDrop)
                     .animation(Anim.spring(SetupInkPlayer.makingRoom * settings.motionScale), value: player.lineTwoDrop)
+                if let claudeProblem {
+                    Text(claudeProblem)
+                        .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 340)
+                        .opacity(words)
+                }
             }
             .animation(Anim.spring(0.5 * settings.motionScale), value: player.wordsShown)
             .animation(Anim.spring(SetupInkDemo.growing * settings.motionScale, bounce: 0.2), value: player.keysGrown)
@@ -797,7 +805,7 @@ struct LiveInkSetupPage: View {
             .padding(.top, 60)
             Form {
                 Section {
-                    PermissionRow(symbol: "hand.draw", title: "Accessibility", reason: "So you can draw while holding ⌃⌥.",
+                    PermissionRow(symbol: "hand.draw", title: "Accessibility", reason: "So you can draw while holding \(Settings.shared.data.liveInkChordChoice.glyphs).",
                                   status: trusted ? .granted : .ask, isDefault: !trusted,
                                   spot: (guide.spots, accessibility.button, accessibility.words)) {
                         callbacks.askAccessibility()

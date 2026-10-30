@@ -61,6 +61,8 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         }
         /// The agents the last page offers the plugin to.
         var agents: () -> [AgentPluginStatus] = { [] }
+        /// Whether Claude Code is installed and signed in, asked when the live ink page is reached.
+        var claudeAvailability: () async -> LiveResponder.Availability = { .checking }
         /// Sends, on the main thread once the change has landed, when something `conditions` or
         /// `agents` reads has changed, so the window looks now rather than at its next poll.
         var changes: AnyPublisher<Void, Never> = Empty().eraseToAnyPublisher()
@@ -253,6 +255,8 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         if model.seen.folder == .ask { model.callbacks.askFolder() }
         settings.update {
             $0.setup = SetupState.done.rawValue
+            // Setup has had its live ink page, or closed before it: either way the offer is not due.
+            $0.liveInkOffered = true
             if let choice = model.launchAtLoginChoice { $0.launchAtLogin = choice }
         }
         UserDefaults.standard.set(true, forKey: SetupWindowController.doneOnThisMacKey)
@@ -308,7 +312,11 @@ final class SetupModel: ObservableObject {
     /// keeps its focus ring on the screen, at full strength, until it has faded out.
     var dropFocus: () -> Void = {}
 
-    @Published var page = Page.welcome
+    @Published var page = Page.welcome {
+        didSet { if page == .liveInk { checkClaude() } }
+    }
+    /// Whether Claude Code can answer live ink, as the live ink page last found it.
+    @Published private(set) var claudeAnswer = LiveResponder.Availability.checking
     /// Whether the last move was forward, which decides the side the pages slide to.
     @Published var forward = true
     /// The agents whose switch is on. All that can take the plugin to start: the user installed
@@ -380,6 +388,14 @@ final class SetupModel: ObservableObject {
     /// Whether Claude Code's switch is on for an install, which leaves the sessions already open
     /// without the plugin until they reload.
     var installsIntoClaude: Bool { claude.map { !$0.installed && chosen.contains($0.root) } ?? false }
+
+    /// Asks Claude Code again, so the live ink page says why Claude cannot answer, if it cannot.
+    func checkClaude() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.claudeAnswer = await self.callbacks.claudeAvailability()
+        }
+    }
 
     var pages: [Page] {
         Self.pages(scope: scope, usesLiveInk: usesLiveInk, hasAgents: !agents.isEmpty)
@@ -481,7 +497,7 @@ struct SetupView: View {
         switch page {
         case .welcome: welcome
         case .shortcut: shortcut
-        case .liveInk: LiveInkPage(player: model.inkPlayer)
+        case .liveInk: LiveInkPage(player: model.inkPlayer, claudeProblem: model.claudeAnswer.problem)
         case .liveInkSetup:
             LiveInkSetupPage(guide: model.inkGuide, trusted: model.seen.trusted, screenRecording: model.seen.screenRecording,
                              callbacks: model.callbacks)

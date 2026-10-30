@@ -207,6 +207,11 @@ final class ReplyView: NSView {
         name.font = NoteLayout.labelFont
         name.textColor = .secondaryLabelColor
         name.wantsLayer = true
+        question.setAccessibilityLabel("Your question")
+        logo.setAccessibilityHidden(true)
+        words.setAccessibilityElement(true)
+        words.setAccessibilityRole(.staticText)
+        words.setAccessibilityLabel("Answer")
         for view in [question, logo, name, words] as [NSView] { addSubview(view) }
         wantsLayer = true
         words.wantsLayer = true

@@ -49,6 +49,8 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// Why Claude cannot answer, or nil when it can. A note aimed at Claude says why in place of its
     /// prompt, and Claude's row in the target menu cannot be picked.
     var responderProblem: String?
+    /// Why speech cannot listen, or nil when it can. The empty note says so in place of its prompt.
+    var speechProblem: String?
     /// The title a card sent to the target shows, as the target is shown now (`SessionMenu.cardTitle`).
     private var targetTitle = ""
     /// The note's own pick, which each session list resolves: the session picked last until the
@@ -84,6 +86,8 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private let menuPicks = MenuPickLog(surface: "note")
 
     static let askPlaceholder = "Ask about this"
+    /// Until the first ask to Claude, the prompt says what Claude sees (`SetupInkCopy.costNote`).
+    static let firstAskPlaceholder = "Ask about this. Claude sees the window's picture, title and URL."
     static let sendPlaceholder = "Send to session"
 
     /// The body at the height it is placed for, three lines of words, so it can grow without covering
@@ -259,11 +263,13 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         case .responder:
             content.session.show(logo: Agent.logo(for: "claude"), title: "Claude")
             content.session.toolTip = "Claude answers on the screen."
+            content.session.setAccessibilityLabel("Answering agent: Claude")
             targetTitle = "Claude"
         case .session(let destination):
             let row = SessionMenu.row(of: destination, among: sessions)
             content.session.show(logo: Agent.logo(for: destination.client.rawValue), title: row.title)
             content.session.toolTip = row.tooltip
+            content.session.setAccessibilityLabel("Sending to: \(row.title)")
             targetTitle = SessionMenu.cardTitle(of: row)
         }
         showPlaceholder()
@@ -271,7 +277,10 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     /// What the empty note says: what Return does with its target.
     private func showPlaceholder() {
-        content.field.placeholderString = target == .responder ? responderProblem ?? Self.askPlaceholder : Self.sendPlaceholder
+        let targetProblem = target == .responder ? responderProblem : nil
+        let askedClaude = Settings.shared.data.liveInkAskedClaude
+        let prompt = target == .responder ? (askedClaude ? Self.askPlaceholder : Self.firstAskPlaceholder) : Self.sendPlaceholder
+        content.field.placeholderString = targetProblem ?? speechProblem ?? prompt
     }
 
     /// The list of targets, under the target, or beside the note when the screen has no room below it,
@@ -645,6 +654,8 @@ private final class NoteContent: NSView {
         key.font = NoteLayout.labelFont
         key.textColor = .secondaryLabelColor
         key.toolTip = "Return asks"
+        field.setAccessibilityLabel("Ask about this ink")
+        key.setAccessibilityHidden(true)
         for view in [field, session, key] { addSubview(view) }
         wantsLayer = true
         layer?.addSublayer(light)

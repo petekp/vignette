@@ -77,6 +77,8 @@ final class LiveInk {
     /// Listening to the person while they draw, with speech on. It can span several presses of the
     /// chord, so "this" and "that" drawn in two strokes are one note.
     private var listening: LiveListening?
+    /// Why speech cannot listen, or nil when it can. A note says so in its prompt.
+    private var speechProblem: String?
     /// The note's words are the person's to keep: typed, or in the note before this listening began, so
     /// what they say no longer replaces them.
     private var typedOver = false
@@ -208,7 +210,7 @@ final class LiveInk {
             checkResponder()
             LivePacket.warmUp()
             InkMarkLayer.warmUp(scale: NSScreen.main?.backingScaleFactor ?? 2)
-            chord = ModifierChord([.control, .option], tag: "live-ink", name: "the chord") { [weak self] change in
+            chord = ModifierChord(Settings.shared.data.liveInkChordChoice.flags, tag: "live-ink", name: "the chord") { [weak self] change in
                 self?.chordChanged(change)
             }
             let workspace = NSWorkspace.shared.notificationCenter
@@ -435,6 +437,7 @@ final class LiveInk {
             "noteTarget": note.map { panel -> Any in panel.target == .responder ? "responder" : "session" } ?? NSNull(),
             "responder": responder.stateJSON,
             "claude": String(describing: responderAvailability),
+            "chord": Settings.shared.data.liveInkChordChoice.glyphs,
             "escape": LiveEscape.next(escapeSnapshot)?.rawValue ?? NSNull(),
             "escapeHeld": escapeKey != nil,
             "ask": asks.newest.map(Self.json(of:)) ?? NSNull(),
@@ -695,6 +698,7 @@ final class LiveInk {
         }
         let panel = LiveNotePopover(at: first, target: lastTarget)
         panel.responderProblem = responderAvailability.problem
+        panel.speechProblem = speechProblem
         noteOffered = lastTarget
         panel.onAsk = { [weak self, weak panel] words, target, title in
             guard let self else { return }
@@ -975,6 +979,7 @@ final class LiveInk {
         }
         Log.write("[live-ink] sending id=\(id)")
         answering.ask(ask)
+        if !Settings.shared.data.liveInkAskedClaude { Settings.shared.update { $0.liveInkAskedClaude = true } }
     }
 
     /// Asks Claude Code whether it is installed and signed in, when live ink turns on and when setup
@@ -1992,7 +1997,12 @@ final class LiveInk {
         // The ink takes its colour from what is behind it.
         InkBackdrop.shared.refresh()
         let mouse = NSEvent.mouseLocation
-        hover(at: CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y))
+        let pointer = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
+        hover(at: pointer)
+        // Screen Recording is what an ask reads the window with, so say so before any ink is drawn.
+        if !ScreenRecording.granted, let surface = inking.first(where: { $0.overlay.globalFrame.contains(pointer) }) ?? inking.first {
+            surface.overlay.showNotice(Self.screenRecordingNotice, at: pointer)
+        }
         // The field waits, so holding the chord on the way to a key, as in a window manager's
         // Control-Option-arrow, does not flash it. A press shows it at once.
         fieldTimer?.invalidate()
@@ -2079,6 +2089,9 @@ final class LiveInk {
         let markStyle = ui.markStyle
         inking.forEach { $0.overlay.showPen(points, longest: longest, markStyle: markStyle) }
     }
+
+    static let screenRecordingNotice = "Live ink needs Screen Recording to ask about the window. Allow it in System Settings, then ask again."
+    static let speechNotice = "Speaking needs the microphone and speech recognition. Allow them in System Settings."
 
     /// Starts Claude Code when the note this ink goes to will be aimed at Claude, so its first answer
     /// does not wait for a cold start. A note to a session starts no process, and a tap starts none.
@@ -2204,6 +2217,7 @@ final class LiveInk {
         guard settings.liveInkSpeech else { return }
         guard SpeechPermission.granted else {
             Log.write("[speech] not listening: the microphone or speech recognition is not allowed")
+            speechProblem = Self.speechNotice
             return
         }
         guard let transcriber = SpeechEngine.make() else {

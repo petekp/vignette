@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import XCTest
 
 final class LiveInkTests: XCTestCase {
@@ -20,6 +21,19 @@ final class LiveInkTests: XCTestCase {
         end.pressAgain()
         XCTAssertFalse(end.isOver(at: 10), "drawing more is part of the same note")
         XCTAssertTrue(end.isOver(at: ListeningEnd.longest), "but never past the longest listening")
+    }
+
+    // MARK: Which pair holds live ink
+
+    func testAChordTheStackDoubleTapsIsRefused() {
+        XCTAssertNotNil(LiveInkChord.controlShift.refusal(against: .doubleTap(keyCode: 60)), "the right Shift is in ⌃⇧")
+        XCTAssertNil(LiveInkChord.controlOption.refusal(against: .doubleTap(keyCode: 60)), "⌃⌥ does not hold Shift")
+    }
+
+    func testAChordInsideTheStacksKeyCombinationIsRefused() {
+        let controlOptionS = HotKeySpec.key(keyCode: 1, modifiers: UInt32(controlKey | optionKey | cmdKey))
+        XCTAssertNotNil(LiveInkChord.controlOption.refusal(against: controlOptionS), "holding ⌃⌥ would start ⌃⌥⌘S")
+        XCTAssertNil(LiveInkChord.controlShift.refusal(against: controlOptionS), "⌃⇧ is not part of ⌃⌥⌘S")
     }
 
     // MARK: How long a note card's turn is waited on

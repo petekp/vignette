@@ -47,6 +47,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDeleg
         var folderDenied: () -> Bool = { false }
         /// Why the last install failed, by agent directory, whatever started it.
         var agentFailures: () -> [URL: String] = { [:] }
+        /// Whether the one-time live ink offer is open, and its answer: on turns live ink on.
+        var liveInkOffered: () -> Bool = { false }
+        var answerLiveInkOffer: (Bool) -> Void = { _ in }
     }
 
     var callbacks = Callbacks()
@@ -217,6 +220,9 @@ struct SettingsView: View {
     @State private var screenRecording = ScreenRecording.granted
     @State private var speechAllowed = SpeechPermission.granted
     @State private var folderDenied = false
+    @State private var offeringLiveInk = false
+    /// Why the last chord picked cannot be taken, or nil. Shown under the picker.
+    @State private var chordRefusal: String?
     /// Neither the Accessibility grant nor macOS's folder permission announces a change, so the
     /// rows that show them look again while the window is up.
     private let poll = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -244,6 +250,7 @@ struct SettingsView: View {
         screenRecording = ScreenRecording.granted
         speechAllowed = SpeechPermission.granted
         folderDenied = callbacks.folderDenied()
+        offeringLiveInk = callbacks.liveInkOffered()
     }
 
     // MARK: General
@@ -276,13 +283,34 @@ struct SettingsView: View {
             // Under the title, the wide pop-up would leave the caption half the row's width.
             footer(ShortcutSetting.caption(doubleTap: settings.data.usesDoubleTap))
         }
+        if offeringLiveInk {
+            Section {
+                Text("Live ink is new. Hold Control and Option to draw over any app, and ask Claude about what you drew.")
+                HStack {
+                    Button("Not Now") { offeringLiveInk = false; callbacks.answerLiveInkOffer(false) }
+                    Button("Turn On") { offeringLiveInk = false; callbacks.answerLiveInkOffer(true) }
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
         Section {
             Toggle(isOn: Binding(get: { settings.data.liveInk }, set: { on in
                 settings.update { $0.liveInk = on }
                 if on { ScreenRecording.request() }
             })) {
                 Text("Live ink")
-                Text("Holding Control and Option lets you draw over any app. A click on a mark while you hold them erases it.")
+                Text("Holding \(settings.data.liveInkChordChoice.glyphs) lets you draw over any app. A click on a mark while you hold them erases it.")
+                Text(SetupInkCopy.costNote)
+            }
+            Picker("Hold to draw", selection: Binding(get: { settings.data.liveInkChordChoice }, set: { chord in
+                let refusal = chord.refusal(against: HotKeySpec.parse(settings.data.recentHotkey))
+                chordRefusal = refusal
+                if refusal == nil { settings.update { $0.liveInkChord = chord.rawValue } }
+            })) {
+                ForEach(LiveInkChord.allCases, id: \.self) { chord in Text(chord.glyphs).tag(chord) }
+            }
+            if let chordRefusal {
+                Text(chordRefusal).font(.footnote).foregroundStyle(.secondary)
             }
             // The double tap's row above asks for the same permission.
             if settings.data.liveInk, !settings.data.usesDoubleTap, !trusted {
