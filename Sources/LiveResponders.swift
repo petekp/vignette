@@ -21,30 +21,11 @@ final class LiveResponders {
          status: ResponderStatus = .shared) {
         all = Dictionary(uniqueKeysWithValues: drivers.map { ($0.client, LiveResponder(driver: $0)) })
         self.status = status
-        status.onCodexSignIn = { [weak self] _ in self?.codexSignInChanged() }
+        // Codex's process keeps the sign-in it started with.
+        status.onCodexSignIn = { [weak self] _ in self?.all[.codex]?.restart(whenIdle: "sign-in changed") }
     }
 
     private var availability: [AgentClient: LiveResponder.Availability] { status.availability }
-
-    /// Vignette's Codex home was signed in or out in Settings or setup, so why its process last
-    /// failed no longer holds, and its process has the old sign-in.
-    private func codexSignInChanged() {
-        codexSignInChangedSince = true
-        replaceCodexAfterSignIn()
-    }
-
-    /// Codex's sign-in changed since its process started.
-    private var codexSignInChangedSince = false
-
-    /// Starts Codex afresh after a sign-in change: now, or once an ask or start under way ends, at the
-    /// next ask or stroke. The new conversation has no picture yet, so its first ask sends one.
-    private func replaceCodexAfterSignIn() {
-        guard codexSignInChangedSince, let old = all[.codex], old.state != .asking, old.state != .starting else { return }
-        codexSignInChangedSince = false
-        old.stop()
-        all[.codex] = LiveResponder(driver: old.driver)
-        pictures[.codex] = nil
-    }
 
     /// The agents a note offers, Claude first: each one installed, and one not installed that is
     /// always offered (`ResponderDriver.alwaysOffered`), to say so. Each says why it cannot answer:
@@ -76,7 +57,6 @@ final class LiveResponders {
     /// Starts `client`'s process ahead of an ask, so its first answer does not wait for a cold start.
     func prepare(_ client: AgentClient) {
         guard availability[client]?.canAnswer ?? false else { return }
-        if client == .codex { replaceCodexAfterSignIn() }
         all[client]?.prepare()
     }
 
@@ -90,7 +70,6 @@ final class LiveResponders {
             return LiveResponder.Failure(reason: problem ?? "", detail: "\(client.rawValue) \(checked)")
         }
         conversing = client
-        if client == .codex { replaceCodexAfterSignIn() }
         responder.ask(ask)
         guard !Self.asked(client) else { return nil }
         Settings.shared.update {

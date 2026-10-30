@@ -103,6 +103,8 @@ final class LiveResponder {
     /// The ask sent while the process could not take it: during the warm-up, or until an interrupted
     /// turn ends. `LiveAsks` sends one ask at a time, so there is at most one.
     private var pending: Ask?
+    /// Why the process must start again once the start or turn under way ends (`restart(whenIdle:)`).
+    private var restartDue: String?
     private var lastSay: String?
     private var askTimer: Timer?
     private var idleTimer: Timer?
@@ -118,6 +120,7 @@ final class LiveResponder {
 
     /// Starts the process ahead of an ask. After a failure only an ask starts it again.
     func prepare() {
+        restartIfIdle()
         guard !running else { return }
         if case .failed = state { return }
         start()
@@ -135,6 +138,23 @@ final class LiveResponder {
         if case .failed = state { state = .stopped }
         prepare()
         sendNext()
+    }
+
+    /// Starts a new conversation, for a change the running process cannot see, such as a sign-in:
+    /// now, or once the start or turn under way ends. An ask waiting then goes to the new process. A
+    /// failure no longer holds, so the agent is offered again.
+    func restart(whenIdle reason: String) {
+        restartDue = reason
+        restartIfIdle()
+    }
+
+    private func restartIfIdle() {
+        guard let reason = restartDue, current == nil, !interrupting, state != .starting else { return }
+        restartDue = nil
+        Log.write("[live-ink] responder restarting: \(reason) agent=\(client.rawValue)")
+        let next = pending
+        shutDown(nil, state: .stopped)
+        if let next { ask(next) }
     }
 
     /// Stops the process, which ends the conversation; the next ask starts a new one. An ask under
@@ -269,6 +289,7 @@ final class LiveResponder {
             askTimer?.invalidate()
             Log.write("[live-ink] responder ready \(detail) agent=\(client.rawValue)")
             state = .ready
+            restartIfIdle()
             sendNext()
         case .startFailed(let detail):
             startFailed(detail)
@@ -317,12 +338,13 @@ final class LiveResponder {
             interrupting = false
             Log.write("[live-ink] responder turn interrupted ms=\(Self.since(sentAt, Date())) agent=\(client.rawValue)")
             state = .ready
-            return sendNext()
+        } else {
+            guard let ask = current else { return }
+            current = nil
+            state = .ready
+            answer(ask)
         }
-        guard let ask = current else { return }
-        current = nil
-        state = .ready
-        answer(ask)
+        restartIfIdle()
         sendNext()
     }
 
