@@ -685,14 +685,14 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   shortcut keeps them for the stack. Any other hand sends the focus back, and a stack takes the
   keys again when the card lands.
 - Which card a key acts on is one variable, `model.focused`. The stack focuses the newest card the
-  moment it takes keys (the `takeKeys` effect), or the card that just came back from the annotator, the last one
-  looked at, so arrows, Space, and Return act on a card without a first click, and the pointer moves
-  the focus too: moving onto a card focuses it, and leaving it leaves the focus there. The pointer only
-  moves it while the stack holds the keys and no card is in the annotator; while the annotator has
-  them nothing moves. A shortcut runs on the selection when there
-  is one, else on the focused card (`targetCards`). The ring says where the focus is: the accent
-  color on a selected card, white on a focused one. It grows out of the card's resting border and
-  shrinks back into it, and the selection circle fades in with it.
+  moment it takes keys (the `takeKeys` effect), or the card back from the annotator, so arrows, Space
+  and Return act on a card without a first click. While the stack has the keys and no card is in
+  the annotator, the pointer moves the focus too: moving onto a card focuses it, and leaving it
+  leaves the focus there. While the wheel moves the column, the hover and the focus stay; 0.15 s
+  after it stops, the card under the pointer takes both (`docs/hover-hold-2026-10-30.md`). A
+  shortcut runs on the selection, else on the focused card (`targetCards`). The ring shows the
+  focus: accent on a selected card, white on a focused one. It grows out of the card's resting
+  border and back into it, and the selection circle fades in with it.
 - Thumbnails in the corner show the selection circle once there are two or more of them
   (`StackModel.offersSelection`), except while one is in the annotator. Selecting there makes the
   corner the stack with the cards it holds: every move of the selecting drag sends `.selected`, and
