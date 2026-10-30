@@ -1,29 +1,6 @@
 import AppKit
 import SwiftUI
 
-struct Card: Identifiable {
-    let id: UUID
-    let shot: Screenshot
-    var image: NSImage?       // thumbnail-sized; nil until decoded
-    let pointSize: NSSize     // the screenshot in points, for the annotator frame
-    let size: NSSize          // the card on screen
-    let agent: String?        // the agent that added the file (see Agent); nil for a capture
-    var duration: TimeInterval? = nil   // a recording's length, for its badge; nil for an image
-    /// The drawing's marks, drawn over the thumbnail; nil for a screenshot with no drawing.
-    var marks: MarkLayers? = nil
-
-    func with(image: NSImage?) -> Card { var card = self; card.image = image; return card }
-    func with(shot: Screenshot) -> Card {
-        Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration, marks: marks)
-    }
-    func with(size: NSSize) -> Card {
-        Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration, marks: marks)
-    }
-    func with(pointSize: NSSize, size: NSSize, duration: TimeInterval?) -> Card {
-        Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration, marks: marks)
-    }
-}
-
 @MainActor
 final class StackModel: ObservableObject {
     @Published var cards: [Card] = []          // index 0 is newest, drawn at the bottom
@@ -1684,15 +1661,12 @@ final class ThumbnailController: NSObject {
         let rise = layout.drawn(card.size).height + layout.spacing + model.scroll
         var lift: [UUID: CGFloat] = [:]
         for old in model.cards { lift[old.id] = liftLeft(old.id, at: now) + rise }
-        var still = Transaction()
-        still.disablesAnimations = true
-        withTransaction(still) {
+        layoutPanel(shrinkLater: false, animated: false) {
             model.entering = card.id
             model.cards.insert(card, at: 0)
             model.lift = lift
             model.scroll = 0
         }
-        layoutPanel(shrinkLater: false, animated: false)
         springLifts(lift, from: now, first: { [weak self] in self?.model.offscreen.remove(card.id) }) { [weak self] in
             // The oldest card leaves the top with its transition, once the column is moving.
             guard let self else { return }
@@ -1732,15 +1706,17 @@ final class ThumbnailController: NSObject {
     /// A fresh presentation applies the viewport at once: animated, its change overlaps the cards'
     /// entrance and bends their path, since the column frame's height and the slide land in the
     /// same transaction.
-    private func layoutPanel(shrinkLater: Bool, animated: Bool, duration: Double? = nil) {
-        // At the stack's full width, so a stack narrowed for the annotator keeps the panel it will
-        // need when it comes back. The panel is transparent outside the column either way.
-        let content = layout.contentHeight(cards: model.cards.map(\.size))
-        readArea()
-        let viewport = layout.viewportHeight(content: content, area: area)
+    private func layoutPanel(shrinkLater: Bool, animated: Bool, duration: Double? = nil, _ changes: () -> Void = {}) {
         var transaction = Transaction(animation: animated ? Anim.spring(duration ?? ui.relayoutDuration) : nil)
         transaction.disablesAnimations = !animated
+        var viewport: CGFloat = 0
         withTransaction(transaction) {
+            changes()
+            // At the stack's full width, so a stack narrowed for the annotator keeps the panel it
+            // will need when it comes back. The panel is transparent outside the column either way.
+            let content = layout.contentHeight(cards: model.cards.map(\.size))
+            readArea()
+            viewport = layout.viewportHeight(content: content, area: area)
             model.viewport = viewport
             model.safeBottom = area.safeBottom
             model.scroll = min(model.scroll, max(0, content - viewport))

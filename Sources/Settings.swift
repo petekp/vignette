@@ -3,29 +3,6 @@ import SwiftUI
 import Combine
 @preconcurrency import CoreFoundation
 
-struct Screenshot: Sendable {
-    let key: ScreenshotKey
-    var url: URL { key.url }
-
-    init(key: ScreenshotKey) { self.key = key }
-
-    /// A still image, or a screen recording from Cmd+Shift+5.
-    enum Kind: Sendable {
-        case image, recording
-
-        /// Read from the extension alone. The name says nothing: macOS names screenshots and
-        /// recordings from the same `com.apple.screencapture name` default, which is the user's to change.
-        init(of url: URL) {
-            self = Screenshot.recordingExtensions.contains(url.pathExtension.lowercased()) ? .recording : .image
-        }
-    }
-
-    var kind: Kind { Kind(of: url) }
-
-    /// What Cmd+Shift+5 writes (docs/replacing-apple-capture-2026-09-22.md).
-    static let recordingExtensions: Set<String> = ["mov"]
-}
-
 /// Whether the app has offered the agent skill yet. Whether the skill is installed is read from
 /// disk, so the key only records that the offer was made. `on` is what older files hold; it is
 /// read as `off` (`validated()`).
@@ -569,19 +546,19 @@ final class Settings: ObservableObject {
     }()
     static var directory: URL { fileURL.deletingLastPathComponent() }
 
-    @Published private(set) var data: SettingsData
+    @Published private(set) var data: SettingsData { didSet { updateMotion() } }
     var onChange: ((SettingsData, SettingsData) -> Void)?
     /// The system's Reduce Motion switch, kept current by the workspace notification.
-    @Published private(set) var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    @Published private(set) var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { didSet { updateMotion() } }
     /// Where macOS sends a capture (`AppleScreencapture.target`), kept current by an observer.
     /// Anything but `file` leaves the watch folder with no new screenshots.
     @Published private(set) var appleTarget = AppleScreencapture.target
     private var motionObserver: Any?
 
     /// 0 to 1: what every animation duration is multiplied by. Reduce Motion makes it 0.
-    var motionScale: Double { Motion.scale(reduceMotion: reduceMotion, multiplier: data.ui.motion) }
+    private(set) var motionScale: Double = 1
     /// The tweaks every animation reads: layout as in `data.ui`, durations scaled by `motionScale`.
-    var motionUI: UITweaks { data.ui.scaledForMotion(motionScale) }
+    private(set) var motionUI = UITweaks()
     /// What the Settings window says when this launch had to set the file aside. nil when all was well.
     let startupNotice: Notice?
 
@@ -609,6 +586,7 @@ final class Settings: ObservableObject {
         for line in boot.log { Log.write("[settings] \(line)") }
         sync = SettingsSync(bytes: boot.written ?? (try? Data(contentsOf: Settings.fileURL)), data: boot.data,
                             readOnly: boot.readOnly, readOnlyReason: boot.readOnlyReason)
+        updateMotion()
         watch()
         motionObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
@@ -620,6 +598,11 @@ final class Settings: ObservableObject {
                 if now != self.reduceMotion { self.reduceMotion = now; Log.write("[settings] reduce motion \(now ? "on" : "off")") }
             }
         }
+    }
+
+    private func updateMotion() {
+        motionScale = Motion.scale(reduceMotion: reduceMotion, multiplier: data.ui.motion)
+        motionUI = data.ui.scaledForMotion(motionScale)
     }
 
     /// What loading the file produced, before any of it reaches the app.
@@ -1191,11 +1174,3 @@ enum Anim {
         return 0
     }
 }
-
-/// How much of every animation to play. One rule, so a script or a person can turn motion off.
-enum Motion {
-    static func scale(reduceMotion: Bool, multiplier: Double) -> Double {
-        reduceMotion ? 0 : min(max(multiplier.isFinite ? multiplier : 1, 0), 1)
-    }
-}
-
