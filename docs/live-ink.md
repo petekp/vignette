@@ -1,6 +1,6 @@
 # Live ink
 
-Live ink is drawing straight on the screen, over any app, while Control and Option are held, and
+Live ink is drawing straight on the screen, over any app, while a pair of modifiers is held, and
 asking an agent about what was drawn. This file has its rules and says where each part of it lives.
 `docs/live-ink-integration-2026-10-04.md` has the plan, and the dated `docs/live-ink-*.md` notes
 have the measurements.
@@ -60,7 +60,7 @@ The names in brackets are `// MARK:` sections.
 
 ## Rules
 
-- Live ink is an option (`liveInk`), on General in Settings and in the menu. `LiveInk` owns it: the chord, and a surface per screen per
+- Live ink is an option (`liveInk`), turned on as `docs/live-ink-setup.md` says. `LiveInk` owns it: the chord, and a surface per screen per
   Space, each a `LiveInkOverlay` and the marks on it. A mark drawn on a window belongs to that window
   (`LiveWindows`) and keeps its offset from the window's top-left, whatever the window's content
   does: a scroll or a page's own change leaves it where it is, and so does a resize. It moves with
@@ -179,7 +179,7 @@ The names in brackets are `// MARK:` sections.
   `ThumbnailController.holdsScreen`, and either coming up while it is held ends the inking
   (`onTakesScreen`). A chord let go mid-stroke keeps the overlays raised until the button is up,
   read from the button's state as well as the release.
-- The chord is `HeldChord`, a pure value with tests: exactly ⌃⌥, ended by any key or another
+- The chord is `HeldChord`, a pure value with tests: exactly its pair, ended by any key or another
   modifier, and not begun again until its modifiers are let go, so a window manager's ⌃⌥-arrow
   never inks, and neither does letting go of ⌘ out of ⌘⌃⌥. A key another app takes as a shortcut
   reaches no event monitor (measured with a Carbon hotkey), so `ModifierChord` reads keys from the
@@ -188,8 +188,7 @@ The names in brackets are `// MARK:` sections.
   is a tap on a mark with the chord held, not a key: Vignette sees a key but cannot keep it from the
   frontmost app, where ⌃⌥⌫ deletes a word.
 - While inking, the pointer field says the screen takes ink (`PointerField`, a Metal layer under
-  the marks; `docs/live-ink-cursor-2026-10-10.md`). It is a ring round the pointer, in one of
-  several styles (`ui.liveInkFieldStyle`; `docs/live-ink-pointer-variants-2026-10-10.md`).
+  the marks; `docs/live-ink-cursor-2026-10-10.md`). It is a ring round the pointer.
   Nothing follows the pen while it draws: a wake that rippled the screen behind the stroke was
   removed on 2026-10-12 as too much. The default style is Lamp, a soft pool of light in the ink's
   colours, the ice over dark content and deep blue over light, that breathes, brightens with the
@@ -209,7 +208,7 @@ The names in brackets are `// MARK:` sections.
   points square rather than the screen. Its numbers are in the Pointer section of Tweak UI
   (`ui.liveInkField*`, `ui.liveInkLamp*`).
   `LiveInk.holdField` is the one place that holds the field up: on the surfaces taking ink while
-  the chord shows it, and on the lab's while the lab holds it. An overlay closes only once its
+  the chord shows it. An overlay closes only once its
   field has faded out (`PointerField.whenHidden`).
 - Marks are `Mark`s in global top-left points at a `pointScale` of 1. `InkStroke` reads a stroke: a loop is the ellipse round it, and any other stroke the editor's freehand arrow
   (`Mark.Arrow.freehand`, at the editor's tolerances). A stroke under `ui.shortestArrow` is a tap,
@@ -259,7 +258,7 @@ The names in brackets are `// MARK:` sections.
   With motion off the whole rim glows at 35% and holds.
 - `vignette://live-ink-clear` erases every mark, and `live-ink-stroke?points=x,y;x,y` (debug) takes
   a stroke as if by hand, whether the stack is up or not, so a script can test without posting
-  input; it answers what the stroke did. `[state]` has a `liveInk` section: `on`, `inking`, `chord`,
+  input; it answers what the stroke did. `[state]` has a `liveInk` section: `on`, `inking`, `chord`, `pair`, `claude`,
   the surfaces with their frames, whether each is on the active Space and how many marks it has, and
   every mark once with its frame.
 - Ink no ask has been about always has its note, `LiveNotePopover`, a macOS popover. There is one
@@ -454,7 +453,7 @@ The names in brackets are `// MARK:` sections.
   Started plainly, the process registered itself as a session in Vignette's
   inbox and could read files, so those flags are the isolation, and the process stops before any
   screen content is sent unless its `init` line lists no tool but `StructuredOutput` and no MCP
-  server. It starts at the first inking and sends a short warm-up ask ($0.001 to $0.01) that checks
+  server. It starts as a stroke moves, for a note aimed at Claude, and sends a short warm-up ask ($0.001 to $0.01) that checks
   that line and caches the prompt. `docs/live-ink-ask-cost-2026-10-06.md` has what an ask costs and
   why. It runs on Claude's 5-minute prompt cache (`CLAUDE_CODE_PROMPT_CACHE_TTL=5m`) and stops 4.5
   minutes after its last request, since an ask after the cache ends would write the whole
