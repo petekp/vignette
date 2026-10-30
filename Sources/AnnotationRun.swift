@@ -162,13 +162,14 @@ struct AnnotationRun: Equatable {
         }
     }
 
-    /// A page acts while there is an image to move on from. A key's repeat waits until the image
-    /// before it is in the annotator, so a held key steps at the flight's own pace and no flight
-    /// turns around under it.
+    /// A page acts while there is an image to move on from. A key's repeat waits until the flight
+    /// of the image before it has lifted, so a held key steps at the flight's own pace and no
+    /// flight turns around under it.
     func takesPage(isRepeat: Bool) -> Bool {
         guard transition.heading != nil else { return false }
-        if case .annotating = phase { return true }
-        return !isRepeat
+        guard isRepeat else { return true }
+        if case .annotating = phase { return lift.lifted }
+        return false
     }
 
     private mutating func open(_ keys: [ScreenshotKey], paged: Bool) -> [Effect] {
