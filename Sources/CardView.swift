@@ -183,6 +183,7 @@ struct CardView: View, Equatable {
         // Outside the slide's animation, which would otherwise take over the lift's spring.
         .offset(y: state.lift)
         .onHover { inside in
+            guard !model.holdsHover else { return }
             model.hoveredCard = inside ? card.id : (model.hoveredCard == card.id ? nil : model.hoveredCard)
         }
     }
