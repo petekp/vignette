@@ -30,7 +30,8 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
   agent that gave the answer.
 - Codex is offered unless its check found no `codex`. A responder that is not installed or not
   signed in cannot be picked. Its row says why in its tooltip, and under its name on macOS 14.4 and
-  later. One whose process stopped can be picked, and starts again at the next ask.
+  later. One whose process stopped can be picked, and starts again at the next ask, unless Codex's
+  isolation check refused that same `codex`.
 - A note aimed at a responder that cannot answer says why. When the other can answer, the note then
   names it: "Codex can answer instead."
 - The responder the note is aimed at starts as the first stroke moves
@@ -78,6 +79,10 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
   that listener receives has `tools: []` and nothing in its input but Vignette's prompt and the
   warm-up (`CodexIsolation.refusal`). The real thread is `ephemeral`, with the system prompt as
   its base instructions, and gets a warm-up of its own.
+- A refused check is not run again until Vignette restarts or the `codex` at that path is another
+  file, by its size or modification date (`CodexIsolation.Stamp`). The check's answer holds for
+  one file. Until then an ask to Codex is answered at once with the refusal, and starts nothing:
+  `[live-ink] responder codex not started: the isolation check refused this codex`.
 - Each ask is one `turn/start` with the pictures as `data:` URLs and the strict answer schema
   (`LiveAnswer.strictSchema`). The answer streams in as `item/agentMessage/delta`.
 - Esc sends `turn/interrupt`. The idle stop, the conversation's 12 asks and the interrupt's 3 s are

@@ -41,6 +41,53 @@ enum CodexIsolation {
         return try? JSONSerialization.data(withJSONObject: catalog, options: [.sortedKeys])
     }
 
+    /// How long `codex debug models` may take.
+    static let catalogLimit: TimeInterval = 10
+
+    /// `codex debug models` run in `home`, with what adds tools taken out. It blocks, so it runs off the
+    /// main thread. Standard error is left out, so a warning cannot spoil the JSON.
+    static func catalog(binary: String, home: URL) -> Data? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: binary)
+        process.arguments = ["debug", "models"]
+        process.environment = Subprocess.environment(for: binary, adding: ["CODEX_HOME": home.path])
+        process.currentDirectoryURL = home
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        process.standardInput = FileHandle.nullDevice
+        do {
+            try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+            try process.run()
+        } catch {
+            return nil
+        }
+        let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + catalogLimit, execute: watchdog)
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        watchdog.cancel()
+        return process.terminationStatus == 0 ? strippedCatalog(data) : nil
+    }
+
+    /// A codex file as it is now: the path it was found at, and the size and modification date of
+    /// the file that path leads to. The check's answer holds for one file, so a codex the check
+    /// refused is checked again only once the file at its path is another.
+    struct Stamp: Equatable {
+        let path: String
+        let size: Int
+        let modified: Date
+
+        init?(path: String) {
+            let file = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: file),
+                  let size = attributes[.size] as? Int, let modified = attributes[.modificationDate] as? Date else { return nil }
+            self.path = path
+            self.size = size
+            self.modified = modified
+        }
+    }
+
     /// Why the warm-up's request to the model is not the request Vignette means to send, or nil
     /// when it is: no tools, no instructions of Codex's own, and nothing in its input but `prompt`
     /// as a developer message and `warmUp` as the one user message. Anything it cannot read counts

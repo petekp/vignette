@@ -58,8 +58,10 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
 - A responder starts as the first stroke moves, and only when the note that ink goes to is aimed at
   it (`LiveInk.prepareResponderForStroke`). A press of the chord, a tap that erases a mark, and a
   note to a session start no process, so nobody is billed for holding the keys. A responder that
-  failed is started again only by an ask, not by the next stroke. `docs/live-ink-responders.md`
-  says which responder a note is aimed at.
+  failed is started again only by an ask, not by the next stroke. A Codex whose isolation check
+  refused it is not started again at all until Vignette restarts or that `codex` changes.
+  `docs/live-ink-responders.md` says which responder a note is aimed at, and when Codex is checked
+  again.
 
 ## What it says when something is missing
 

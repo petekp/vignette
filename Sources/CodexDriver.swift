@@ -22,8 +22,6 @@ final class CodexDriver: ResponderDriver {
     static let effort = "low"
     /// The isolation check's model provider, as `-c model_providers.<name>` defines it.
     static let checkProvider = "vignette_check"
-    /// How long `codex debug models` may take.
-    nonisolated static let catalogLimit: TimeInterval = 10
 
     private let binary: () -> String?
     private let home: URL
@@ -47,6 +45,11 @@ final class CodexDriver: ResponderDriver {
     private var startedAt = Date()
     /// Counts the starts, so the check's answer to a start since stopped launches nothing.
     private var runs = 0
+    /// The codex file the last start ran.
+    private var started: CodexIsolation.Stamp?
+    /// The codex file the isolation check refused, and the refusal, for as long as Vignette runs. A
+    /// start of that same file answers with the refusal and runs nothing.
+    private var refused: (file: CodexIsolation.Stamp, refusal: ResponderRefusal)?
 
     /// `binary` finds `codex` (`LiveResponder.codexBinary`).
     init(binary: @escaping () -> String? = LiveResponder.codexBinary, home: URL) {
@@ -59,6 +62,11 @@ final class CodexDriver: ResponderDriver {
             Log.write("[live-ink] responder error no-codex")
             let reason = LiveResponder.Availability.notInstalled.problem(for: .codex) ?? ""
             return ResponderRefusal(failure: LiveResponder.Failure(reason: reason, detail: "no codex"), problem: reason)
+        }
+        started = CodexIsolation.Stamp(path: binary)
+        if let refused, refused.file == started {
+            Log.write("[live-ink] responder codex not started: the isolation check refused this codex path=\(binary)")
+            return refused.refusal
         }
         let check: CodexCheckProvider
         do {
@@ -75,7 +83,7 @@ final class CodexDriver: ResponderDriver {
         let home = home
         let driver = WeakDriver(self)
         check.start { port in
-            let catalog = port == nil ? nil : Self.catalog(binary: binary, home: home)
+            let catalog = port == nil ? nil : CodexIsolation.catalog(binary: binary, home: home)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { driver.value?.launch(binary, port: port, catalog: catalog, run: run) }
             }
@@ -146,32 +154,6 @@ final class CodexDriver: ResponderDriver {
 
     /// The strict schema as the object `turn/start` takes.
     private static let schema: Any = (try? JSONSerialization.jsonObject(with: Data(LiveAnswer.strictSchema.utf8))) ?? [String: Any]()
-
-    /// `codex debug models` run in `home`, with what adds tools taken out. It blocks, so it runs off the
-    /// main thread. Standard error is left out, so a warning cannot spoil the JSON.
-    nonisolated private static func catalog(binary: String, home: URL) -> Data? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: binary)
-        process.arguments = ["debug", "models"]
-        process.environment = Subprocess.environment(for: binary, adding: ["CODEX_HOME": home.path])
-        process.currentDirectoryURL = home
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        process.standardInput = FileHandle.nullDevice
-        do {
-            try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
-            try process.run()
-        } catch {
-            return nil
-        }
-        let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + catalogLimit, execute: watchdog)
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        watchdog.cancel()
-        return process.terminationStatus == 0 ? CodexIsolation.strippedCatalog(data) : nil
-    }
 
     private func launch(_ binary: String, port: UInt16?, catalog: Data?, run: Int) {
         guard report != nil, run == runs else { return }
@@ -262,8 +244,10 @@ final class CodexDriver: ResponderDriver {
             : bodies.lazy.compactMap { CodexIsolation.refusal(of: $0, prompt: LiveResponder.systemPrompt, warmUp: LiveResponder.warmUp) }.first
         if let refusal {
             Log.write("[live-ink] responder error not-isolated \(refusal) agent=codex")
-            report?(.refused(ResponderRefusal(failure: LiveResponder.Failure(reason: "Live ink stopped Codex, which started with tools.", detail: "not isolated"),
-                                              problem: "This version of Codex starts with tools, so live ink can't use it.")))
+            let refusal = ResponderRefusal(failure: LiveResponder.Failure(reason: "Live ink stopped Codex, which started with tools.", detail: "not isolated"),
+                                           problem: "This version of Codex starts with tools, so live ink can't use it.")
+            if let started { refused = (started, refusal) }
+            report?(.refused(refusal))
             return
         }
         Log.write("[live-ink] responder codex isolated requests=\(bodies.count) ms=\(Int(Date().timeIntervalSince(startedAt) * 1000))")
