@@ -94,7 +94,7 @@ final class LiveInk {
     /// The conversation that takes a note's place, once the note has settled into its look.
     private var handingTo: [LiveAsks.Ask.ID: Mark.ID] = [:]
     /// Who each ask goes to: the agent, and how the conversation's row names it.
-    private var answerers: [LiveAsks.Ask.ID: (agent: String, name: String?)] = [:]
+    private var answerers: [LiveAsks.Ask.ID: (agent: AgentClient, name: String?)] = [:]
     /// What each ask to the responder sends, from when its packet came until the asks before it end
     /// (`LiveAsks.Effect.send`).
     private var held: [LiveAsks.Ask.ID: LiveResponder.Ask] = [:]
@@ -702,7 +702,7 @@ final class LiveInk {
             self.lastTarget = target
             let session = target.session.map { (destination: $0, title: title) }
             let note = panel.flatMap { panel in panel.shownPlace.map { (panel: panel, place: $0, tag: panel.tagFrame) } }
-            if case .failure = self.ask(words, sendingTo: session, to: target.responder, from: note) { panel?.fadeAway() }
+            if case .failure = self.ask(words, to: target.agent, sendingTo: session, from: note) { panel?.fadeAway() }
         }
         panel.onKeysBack = { [weak self, weak panel] in
             guard let self, let panel else { return }
@@ -832,6 +832,13 @@ final class LiveInk {
     /// The marks on the screen, and the conversations about to take their notes' places.
     private var shownIDs: Set<Mark.ID> { Set(marks.map(\.id)).union(handingTo.values) }
 
+    /// The agent a script's `live-ink-ask` with no session asks: the open note's responder, else the
+    /// one a new note starts on (`LiveNotePopover.start`), with the sessions taken to be none.
+    var scriptAgent: AgentClient {
+        note?.target.responder
+            ?? LiveNotePopover.start(pick: nil, handPicked: nil, conversing: responders.conversing, responders: responders.offers, list: []).agent
+    }
+
     /// Asks the responder about the new ink, with `words` as its note, or about the ink asked about
     /// last when there is none new, as a follow-up. The picture is taken now, and the ask waits for the
     /// asks to the responder before it (`LiveAsks.Effect.send`). With `session`, sends the picture and
@@ -842,15 +849,12 @@ final class LiveInk {
     /// next answer replaces them. A follow-up is about the ink asked about, and the note, with its new
     /// ink and its words, stays. Answers whether an ask started, and why not.
     @discardableResult
-    func ask(_ words: String, sendingTo session: (destination: AgentDestination, title: String)? = nil, to responder: AgentClient? = nil,
+    func ask(_ words: String, to agent: AgentClient, sendingTo session: (destination: AgentDestination, title: String)? = nil,
              from note: (panel: LiveNotePopover, place: PopoverPlace, tag: CGRect?)? = nil,
              following reply: Mark? = nil, picked: LiveAnswerActions.Pick? = nil) -> Result<Void, LiveResponder.Failure> {
         let trimmed = words.trimmingCharacters(in: .whitespacesAndNewlines)
         // A follow-up is not about the note's ink, and leaves the note, its words and what was said for it.
         let noteIDs = reply == nil ? [] : asks.noteInk
-        // A follow-up goes to the agent that answered.
-        let agent = responder ?? reply.flatMap { AgentClient(rawValue: $0.agentName ?? "") } ?? self.note?.target.responder ?? responders.conversing
-            ?? responders.offers.first { $0.canPick && $0.problem == nil }?.client ?? .claude
         if reply == nil { closeNote() }
         // The words as they were said, unless the person changed them in the note.
         let said = reply != nil ? nil : spoken.flatMap { LiveListening.text(of: $0.words).trimmingCharacters(in: .whitespacesAndNewlines) == trimmed ? $0 : nil }
@@ -869,15 +873,14 @@ final class LiveInk {
             id = began
             about = asked
             point = centre
+            answerers[id] = (agent, session?.title)
             run(effects)
         }
-        let answerer = (agent: session?.destination.client.rawValue ?? agent.rawValue, name: session?.title)
-        answerers[id] = answerer
         if let note { handing[id] = note.panel }
         if let reply {
             put([reply], window: windows.window(of: reply.id), for: id)
         } else if let note, !trimmed.isEmpty {
-            let conversation = LiveAnswerLayout.conversation(trimmed, agent: answerer.agent, answerer: answerer.name, at: note.place,
+            let conversation = LiveAnswerLayout.conversation(trimmed, agent: agent, answerer: session?.title, at: note.place,
                                                              sizes: answerSizes)
             _ = asks.reduce(.conversed(conversation, for: id))
             handOver(to: conversation, for: id)
@@ -959,7 +962,7 @@ final class LiveInk {
 
     /// Hands the responder ask `id`, whose turn has come.
     private func sendHeld(_ id: LiveAsks.Ask.ID) {
-        guard let ask = held.removeValue(forKey: id), let agent = answerers[id].flatMap({ AgentClient(rawValue: $0.agent) }) else { return }
+        guard let ask = held.removeValue(forKey: id), let agent = answerers[id]?.agent else { return }
         Log.write("[live-ink] sending id=\(id) agent=\(agent.rawValue)")
         if let failure = responders.ask(ask, to: agent) { failed(failure, for: id) }
     }
@@ -1279,14 +1282,15 @@ final class LiveInk {
         Log.write("[live-ink] \(pick == .reply ? "reply typed" : "action picked") words=\(words.count) id=\(id)")
         hideDismissButton()
         point(at: nil, of: id)
-        guard let answered = asks.ask(id), let said = answered.say, shownReply(of: answered) != nil else { return }
+        guard let answered = asks.ask(id), let said = answered.say, shownReply(of: answered) != nil,
+              let agent = answerers[id]?.agent else { return }
         hideActions(of: id)
         // A new ask starts from the reply where it is now. Refused, it puts the answer back.
         guard var reply = marks.first(where: { $0.id == said.id }) else { return }
         reply.quote = words
         reply.notice = nil
         reply = LiveAnswerLayout.grown(reply, to: "", sizes: answerSizes)
-        ask(words, following: reply, picked: pick)
+        ask(words, to: agent, following: reply, picked: pick)
     }
 
     // MARK: Answering
@@ -1294,15 +1298,13 @@ final class LiveInk {
     /// Vignette says why ask `id`, with no conversation, failed: in a reply hung from the ink it asked
     /// about, named for who the ask went to. The reply is the ask's, with its own ×.
     private func say(_ reason: String, for id: LiveAsks.Ask.ID) {
-        guard let about = asks.ask(id)?.about else { return }
+        guard let about = asks.ask(id)?.about, let answerer = answerers[id] else { return }
         let near = shownMarks.filter { about.contains($0.id) }.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
         guard !near.isNull else { showMarks(); return }
         let screen = StateReport.screenFrames.first { $0.intersects(near) } ?? near
         let scene = LiveAnswerLayout.Scene(room: screen.insetBy(dx: 8, dy: 8), ink: ink, text: [], notes: answerBoxes(except: id),
                                            screen: Self.visibleScreen(around: near))
-        var reply = LiveAnswerLayout.reply("", quote: nil, from: near, scene: scene, sizes: answerSizes)
-        let answerer = answerers[id] ?? (LiveAnswerLayout.agentName, nil)
-        reply.agentName = answerer.agent
+        var reply = LiveAnswerLayout.reply("", quote: nil, from: near, scene: scene, sizes: answerSizes, agent: answerer.agent)
         reply.answerer = answerer.name
         reply = noticed(reply, reason)
         _ = asks.reduce(.conversed(reply, for: id))
@@ -1343,6 +1345,7 @@ final class LiveInk {
     /// The reply so far, in the conversation where the person asked, or with no question, as a popover
     /// hung from the ink. It keeps where it hangs, so it grows rather than jumping as words arrive.
     private func showSay(_ say: String, near asked: CGRect, packet: LivePacket, for id: LiveAsks.Ask.ID) {
+        guard let agent = answerers[id]?.agent else { return }
         let effects = asks.reduce(.arrived(.replyCame, for: id))
         guard effects.contains(.showReply) else { return }
         run(effects)
@@ -1350,8 +1353,8 @@ final class LiveInk {
         if let shown = asks.ask(id)?.say {
             note = LiveAnswerLayout.grown(shown, to: say, sizes: answerSizes)
         } else {
-            var reply = LiveAnswerLayout.reply(say, quote: nil, from: asked, scene: scene(for: packet, answering: id), sizes: answerSizes)
-            reply.agentName = answerers[id]?.agent
+            let reply = LiveAnswerLayout.reply(say, quote: nil, from: asked, scene: scene(for: packet, answering: id), sizes: answerSizes,
+                                               agent: agent)
             note = LiveAnswerLayout.grown(reply, to: say, sizes: answerSizes)
             drawingOn.insert(note.id)
         }
@@ -1365,18 +1368,16 @@ final class LiveInk {
     @discardableResult
     private func answered(_ answer: LiveAnswer, packet: LivePacket, sent: Set<String>, near asked: CGRect,
                           for id: LiveAsks.Ask.ID) -> [Int]? {
+        guard let agent = answerers[id]?.agent else { return nil }
         let effects = asks.reduce(.arrived(.answerCame, for: id))
         guard effects.contains(.drawAnswer) else { return nil }
         run(effects)
         let targets = answer.marks.map { $0.target(in: packet.lines, sent: sent).map(packet.global) }
         let layout = LiveAnswerLayout.placed(for: answer, targets: targets, asked: asked,
-                                             scene: scene(for: packet, answering: id), sizes: answerSizes, streamed: asks.ask(id)?.say,
-                                             below: LiveAnswerActions.room(for: answer.actions), focusable: packet.windowID != nil)
-        let placed = layout.marks.map { mark in
-            var mark = mark
-            if mark.agent { mark.agentName = answerers[id]?.agent ?? LiveAnswerLayout.agentName }
-            return mark
-        }
+                                             scene: scene(for: packet, answering: id), sizes: answerSizes, agent: agent,
+                                             streamed: asks.ask(id)?.say, below: LiveAnswerActions.room(for: answer.actions),
+                                             focusable: packet.windowID != nil)
+        let placed = layout.marks
         // The focus marks, each with its label, come in one at a time once the window is captured.
         let focus = Self.steps(in: Array(placed.dropFirst())).filter { $0.first?.focus != nil }
         let held = Set(focus.joined().map(\.id))

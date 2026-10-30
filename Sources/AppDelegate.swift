@@ -93,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         terminateSignal?.resume()
         AppLocation.ejectDiskImageIfAsked()
         NSApp.setActivationPolicy(.accessory)
-        NSApp.mainMenu = AppDelegate.makeMainMenu()
+        NSApp.mainMenu = MainMenu.make()
         let settingsSource = Launch.isTest ? " (VIGNETTE_SETTINGS) screencapture=\(AppleScreencapture.domainName)" : ""
         Log.writeLaunch("[app] launched \(BuildInfo.current.description) watching \(watchFolder.path) settings \(Settings.fileURL.path)\(settingsSource)")
         if let type = AppleScreencapture.string("type"), !ScreenshotWatcher.isCandidate("screenshot.\(type)") {
@@ -726,7 +726,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\" to true in settings.json"); return }
             let words = request.message ?? ""
             guard let id = request.session else {
-                switch liveInk.ask(words) {
+                switch liveInk.ask(words, to: liveInk.scriptAgent) {
                 case .success: Commands.ok(cmd, "asking")
                 case .failure(let failure): Commands.error(cmd, .liveInkNotAsked, failure.reason)
                 }
@@ -741,7 +741,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 if let session = candidates.destinations.first(where: { $0.id == id }) {
                     answered = true
                     let title = SessionMenu.cardTitle(of: SessionMenu.row(of: session, among: candidates.destinations))
-                    switch liveInk.ask(words, sendingTo: (session, title)) {
+                    switch liveInk.ask(words, to: session.client, sendingTo: (session, title)) {
                     case .success: Commands.ok(cmd, "sending to \(session.project)")
                     case .failure(let failure): Commands.error(cmd, .liveInkNotAsked, failure.reason)
                     }
@@ -842,31 +842,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             report.sections = ["tag": tag as Any, "app": report.sections["app"] as Any, section: picked]
         }
         Log.write("[state] \(report.rendered())")
-    }
-
-    /// Accessory apps have no menu bar, but key equivalents like Cmd+W and Cmd+C in the Settings
-    /// window still route through the main menu, so build a minimal one.
-    private static func makeMainMenu() -> NSMenu {
-        let main = NSMenu()
-        let app = NSMenuItem(); main.addItem(app)
-        let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Quit Vignette", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        app.submenu = appMenu
-        let file = NSMenuItem(); main.addItem(file)
-        let fileMenu = NSMenu(title: "File")
-        fileMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        file.submenu = fileMenu
-        let edit = NSMenuItem(); main.addItem(edit)
-        let editMenu = NSMenu(title: "Edit")
-        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
-        editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        edit.submenu = editMenu
-        return main
     }
 
     // MARK: Status item

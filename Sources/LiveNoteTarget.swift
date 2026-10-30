@@ -17,6 +17,14 @@ extension LiveNotePopover {
             if case .responder(let client) = self { return client }
             return nil
         }
+
+        /// The agent the words go to: the responder's, or the session's.
+        var agent: AgentClient {
+            switch self {
+            case .responder(let client): client
+            case .session(let destination): destination.client
+            }
+        }
     }
 
     /// An agent a note can be aimed at, as live ink offers it.

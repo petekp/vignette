@@ -11,7 +11,7 @@ final class LiveAnswerRingTests: XCTestCase {
         let scene = LiveAnswerLayout.Scene(room: CGRect(x: 12, y: 12, width: 456, height: 474), ink: [], text: [footer, header],
                                            notes: rows + [words])
         let sizes = LiveAnswerLayout.Sizes(ui: UITweaks())
-        let marks = LiveAnswerLayout.pointer(.circle, label: "Then this", at: button, scene: scene, sizes: sizes)
+        let marks = LiveAnswerLayout.pointer(.circle, label: "Then this", at: button, scene: scene, sizes: sizes, agent: .claude)
         guard marks.count == 2, case .ellipse(let ring) = marks[0].geometry else { return XCTFail("a ring and its label") }
         XCTAssertGreaterThanOrEqual(ring.minX, words.maxX + LiveAnswerLayout.ringGap - 0.5)
         for corner in [CGPoint(x: button.minX, y: button.minY), CGPoint(x: button.maxX, y: button.maxY)] {

@@ -29,6 +29,8 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
   responders above the sessions, as "Claude, on the screen" and "Codex, on the screen", so a person
   can aim one note at the other. A reply from an answer's button or its Reply field goes to the
   agent that gave the answer.
+- A script's `live-ink-ask` with no session asks the open note's responder, else the one a new note
+  starts on, with the sessions taken to be none (`LiveInk.scriptAgent`).
 - Codex is offered unless its check found no `codex`. A responder that is not installed or not
   signed in cannot be picked. Its row says why in its tooltip, and under its name on macOS 14.4 and
   later. One whose process stopped can be picked, and starts again at the next ask, unless Codex's

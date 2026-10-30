@@ -133,18 +133,14 @@ final class SetupInkGuide {
         let placed: [Mark]
         if let steps {
             guard let button = spots.global(steps.next.button) else { return [] }
-            placed = LiveAnswerLayout.pointer(.circle, label: steps.next.label, at: button, scene: scene, sizes: sizes)
+            placed = LiveAnswerLayout.pointer(.circle, label: steps.next.label, at: button, scene: scene, sizes: sizes, agent: agent)
         } else {
             // Under the line below the rows, the room nothing else on the page takes.
             let page = (rows + footer).reduce(CGRect.null) { $0.union($1) }
             guard !page.isNull else { return [] }
             placed = [LiveAnswerLayout.note("Hold \(Settings.shared.data.liveInkChordChoice.glyphs) and draw anywhere", near: page, scene: scene,
-                                            obstacles: rows + footer + header + codex, sizes: sizes, agent: agent.rawValue)]
+                                            obstacles: rows + footer + header + codex, sizes: sizes, agent: agent)]
         }
-        return placed.map { mark in
-            var mark = LiveWindows.translated(mark, by: back)
-            if mark.agent { mark.agentName = agent.rawValue }
-            return mark
-        }
+        return placed.map { LiveWindows.translated($0, by: back) }
     }
 }
