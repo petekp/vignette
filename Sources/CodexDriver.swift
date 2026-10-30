@@ -329,7 +329,7 @@ private final class CodexRun {
             let answer = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) ?? text
             report(.answered(answer, usage: "ms=\(milliseconds) \(usage)"))
         case "interrupted":
-            report(.interrupted("interrupted"))
+            report(.turnFailed("interrupted"))
         default:
             report(.turnFailed(Self.message(of: ended) ?? lastError ?? "turn \(status ?? "?")"))
         }

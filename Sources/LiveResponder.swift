@@ -81,10 +81,16 @@ final class LiveResponder {
 
     let driver: any ResponderDriver
     var client: AgentClient { driver.client }
-    /// The driver's process runs, from its start until it stops or ends.
-    private var running = false
-    /// Counts the driver's starts, so a report from a process that was stopped is dropped.
-    private var runs = 0
+    /// The driver's process runs, or its command is being found, from its start until it stops or ends.
+    private var running: Bool {
+        switch state {
+        case .starting, .ready, .asking: true
+        case .stopped, .failed: false
+        }
+    }
+    /// Counts the starts, so a command found after a stop starts nothing. A driver reports nothing
+    /// after its own stop.
+    private var starts = 0
     /// The command file the last start ran.
     private var started: BinaryStamp?
     /// The command file the isolation check refused, and the refusal, for as long as Vignette runs. A
@@ -163,9 +169,8 @@ final class LiveResponder {
 
     /// Finds the driver's command off the main thread, then starts it on the main thread.
     private func start() {
-        runs += 1
-        let run = runs
-        running = true
+        starts += 1
+        let start = starts
         state = .starting
         renewIdle()
         armTimer()
@@ -174,12 +179,12 @@ final class LiveResponder {
             let found = await Task.detached(priority: .userInitiated) { () -> (binary: String, file: BinaryStamp?)? in
                 find().map { ($0, BinaryStamp(path: $0)) }
             }.value
-            guard let self, run == runs, running else { return }
-            launch(found, run: run)
+            guard let self, start == starts, running else { return }
+            launch(found)
         }
     }
 
-    private func launch(_ found: (binary: String, file: BinaryStamp?)?, run: Int) {
+    private func launch(_ found: (binary: String, file: BinaryStamp?)?) {
         guard let found else {
             Log.write("[live-ink] responder error no-\(client.rawValue)")
             return refuse(driver.notFound)
@@ -189,10 +194,8 @@ final class LiveResponder {
             return refuse(held.refusal)
         }
         started = found.file
-        if let detail = driver.start(binary: found.binary, askWaiting: { [weak self] in self?.pending != nil }, report: { [weak self] event in
-            guard let self, run == runs, running else { return }
-            handle(event)
-        }) {
+        if let detail = driver.start(binary: found.binary, askWaiting: { [weak self] in self?.pending != nil },
+                                     report: { [weak self] in self?.handle($0) }) {
             return startFailed(detail)
         }
         conversation += 1
@@ -299,11 +302,6 @@ final class LiveResponder {
                 Log.write("[live-ink] responder error answer \(detail) agent=\(client.rawValue)")
                 ask.onAnswer(.failure(Failure(reason: driver.reason(forError: detail) ?? driver.couldNotAnswer, detail: detail)))
             }
-        case .interrupted(let detail):
-            turnEnded { ask in
-                Log.write("[live-ink] responder error turn interrupted \(detail) agent=\(client.rawValue)")
-                ask.onAnswer(.failure(Failure(reason: driver.reason(forError: detail) ?? driver.couldNotAnswer, detail: detail)))
-            }
         case .ended(let status, let tail):
             Log.write("[live-ink] responder ended status=\(status)\(tail.isEmpty ? "" : " stderr=\(tail)") agent=\(client.rawValue)")
             let reason = driver.reason(forError: tail) ?? (state == .starting ? driver.couldNotStart : driver.couldNotAnswer)
@@ -338,10 +336,7 @@ final class LiveResponder {
     private func shutDown(_ failure: Failure?, state final: State) {
         idleTimer?.invalidate()
         askTimer?.invalidate()
-        if running {
-            running = false
-            driver.stop()
-        }
+        if running { driver.stop() }
         interrupting = false
         let dropped = [current, pending].compactMap { $0 }
         current = nil

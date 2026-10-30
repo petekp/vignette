@@ -57,9 +57,8 @@ enum ResponderEvent {
     case answerSoFar(String)
     /// The turn's answer, and its time, cost and tokens for the log.
     case answered(Any, usage: String)
+    /// The turn ended without an answer, interrupted or failed, with the detail.
     case turnFailed(String)
-    /// The turn ended without an answer because it was interrupted.
-    case interrupted(String)
     /// The process ended on its own, with the last of its standard error.
     case ended(status: Int32, tail: String)
 }

@@ -269,7 +269,6 @@ final class SetupModel: ObservableObject {
     @Published var page = Page.welcome {
         didSet { reached(page) }
     }
-    /// Whether Claude Code can answer live ink, as the live ink page last found it.
     /// Whether the last move was forward, which decides the side the pages slide to.
     @Published var forward = true
     /// The agents whose switch is on. All that can take the plugin to start: the user installed

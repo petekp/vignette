@@ -37,9 +37,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// The agents that answer on the screen (`offer`). A note aimed at one that cannot answer says why
     /// in place of its prompt, and its row in the target menu says why.
     private(set) var responders: [Responder] = [.claude]
-    /// The agent the conversation is with, and the responder picked by hand on this note.
     private var conversing: AgentClient?
-    private var handPicked: AgentClient?
     /// Why speech cannot listen, or nil when it can. The empty note says so in place of its prompt.
     var speechProblem: String? {
         didSet { if speechProblem != oldValue { showPlaceholder() } }
@@ -49,7 +47,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// The note's own pick, which each session list resolves: the session picked last until the
     /// person picks by hand, then their pick. Only the person changes it: a hand-picked session missing
     /// from a list shows the responder, and comes back when a later list has it.
-    private var ownPick: DestinationChoice.LiveNotePick
+    private var ownPick: DestinationChoice.LiveNotePick { handPick.map { .byHand($0.session) } ?? .remembered(remembered) }
+    private let remembered: AgentDestination?
+    private var handPick: Target?
 
     /// Out of sight until `reveal`.
     private let hanging = HangingPopover(reshow: .fadingThrough, alpha: 0)
@@ -90,7 +90,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         openedAt = CACurrentMediaTime()
         self.place = place
         self.target = target
-        ownPick = .remembered(target.session)
+        remembered = target.session
         super.init()
         let controller = NSViewController()
         controller.view = content
@@ -204,7 +204,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         let answer = DestinationChoice.choose(candidates, for: .liveNote(ownPick))
         // The menu lists the sessions Vignette can start after the running ones (`SessionMenu.ranked`).
         sessions = answer.list + answer.startable
-        let found = Self.start(pick: answer.pick, handPicked: handPicked, conversing: conversing, responders: responders, list: answer.list)
+        let found = Self.start(pick: answer.pick, handPicked: handPick?.responder, conversing: conversing, responders: responders, list: answer.list)
         guard found != target else { return }
         show(found)
     }
@@ -340,8 +340,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     private func pick(_ target: Target) {
         show(target)
-        ownPick = .byHand(target.session)
-        handPicked = target.responder
+        handPick = target
         Log.write("[live-ink] note target \(target.responder.map { "responder agent=\($0.rawValue)" } ?? "session")")
     }
 
