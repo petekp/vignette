@@ -106,15 +106,15 @@ final class LiveResponder {
 
     /// `binary` finds `claude`. In a test launch it is only what `VIGNETTE_CLAUDE` names, since any
     /// other found on the Mac runs on the person's own account.
-    init(binary: @escaping () -> String? = {
-        AgentTools.forSessions("VIGNETTE_CLAUDE") { PluginHost.binary(for: .claude) }
-    }) {
+    init(binary: @escaping () -> String? = LiveResponder.claudeBinary) {
         self.binary = binary
     }
 
-    /// Starts the process if it is not running, so it is ready by the time the person asks.
+    /// Starts the process ahead of an ask. After a failure only an ask starts it again.
     func prepare() {
-        if process == nil { start() }
+        guard process == nil else { return }
+        if case .failed = state { return }
+        start()
     }
 
     /// Asks once the process is ready, one ask at a time: the next comes once this one has answered,

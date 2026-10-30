@@ -36,7 +36,7 @@ final class AppleTranscriber: Transcriber, @unchecked Sendable {
         // Without an on-device model the request would go to Apple's servers, which speech input
         // never does.
         guard recognizer.supportsOnDeviceRecognition else {
-            throw TranscriberFailure(reason: "This Mac can't turn speech into words on its own yet.", detail: "no on-device model for \(recognizer.locale.identifier)")
+            throw TranscriberFailure(reason: Self.noModel, detail: "no on-device model for \(recognizer.locale.identifier)")
         }
         guard recognizer.isAvailable else {
             throw TranscriberFailure(reason: "Speech recognition isn't available right now.", detail: "recognizer unavailable")
@@ -57,6 +57,9 @@ final class AppleTranscriber: Transcriber, @unchecked Sendable {
         }
         lock.withLock { self.task = task }
     }
+
+    /// For the person, when this Mac has no on-device recognizer for their language.
+    static let noModel = "This Mac can't turn speech into words on its own yet."
 
     /// Apple gives no limit for `contextualStrings`; a window's text can run to hundreds of lines.
     static let hintLimit = 100

@@ -24,18 +24,6 @@ import AppKit
 /// `FocusReturn` at once (`letGoOfKeys`) rather than when AppKit's fade ends.
 @MainActor
 final class LiveNotePopover: NSObject, NSTextFieldDelegate {
-    enum Target: Equatable {
-        /// Claude, kept running by Vignette, which draws its answer on the screen.
-        case responder
-        /// A working session, through Send. Its answer is drawn beside the ink when it comes.
-        case session(AgentDestination)
-
-        var session: AgentDestination? {
-            if case .session(let destination) = self { return destination }
-            return nil
-        }
-    }
-
     /// The words typed, trimmed, the target, and the title a card sent to it shows, when the person
     /// presses Return.
     var onAsk: ((String, Target, _ title: String) -> Void)?
@@ -46,6 +34,19 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// The person typed in the note, which takes over from what they say.
     var onTyped: (() -> Void)?
     private(set) var target: Target
+    /// Why Claude cannot answer, or nil when it can. A note aimed at Claude says why in place of its
+    /// prompt, and Claude's row in the target menu says why and cannot be picked.
+    var responderProblem: String? {
+        didSet {
+            guard responderProblem != oldValue else { return }
+            showTarget()
+            if let candidates { setSessions(candidates) }
+        }
+    }
+    /// Why speech cannot listen, or nil when it can. The empty note says so in place of its prompt.
+    var speechProblem: String? {
+        didSet { if speechProblem != oldValue { showPlaceholder() } }
+    }
     /// The title a card sent to the target shows, as the target is shown now (`SessionMenu.cardTitle`).
     private var targetTitle = ""
     /// The note's own pick, which each session list resolves: the session picked last until the
@@ -66,6 +67,8 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// Where the caret was when the note lost the keys, which it takes back with them.
     private var caret: NSRange?
     private var sessions: [AgentDestination] = []
+    /// The last session list, which a change in whether Claude can answer resolves again.
+    private var candidates: DestinationChoice.Candidates?
     private var closing = false
     /// Waiting to look as the conversation does before handing over to it, which `fadeAway` can stop.
     private var handingOver = false
@@ -74,17 +77,11 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private var sent = false
     /// The target's menu is up. It takes the keys while it is, and `popUp` returns when it closes.
     private(set) var menuOpen = false
-    /// Listening to the person, which the empty note says.
-    private var listening = false
     private var watching: [NSObjectProtocol] = []
 
     /// For `SendContext.menu`: when the note opened, and the menu's picks.
     private var openedAt: CFTimeInterval
     private let menuPicks = MenuPickLog(surface: "note")
-
-    static let askPlaceholder = "Ask about this"
-    static let sendPlaceholder = "Send to session"
-    static let listeningPlaceholder = "Listening…"
 
     /// The body at the height it is placed for, three lines of words, so it can grow without covering
     /// what it was placed clear of.
@@ -105,8 +102,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         content.field.delegate = self
         content.session.onClick = { [weak self] in self?.showTargets() }
         showTarget()
-        content.layOut()
-        popover.contentSize = content.frame.size
+        popover.contentSize = content.layOut()
     }
 
     /// Hangs it from `rect` in `host`, which is `place` on the screen. The first time, it opens there
@@ -207,10 +203,13 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// The working sessions to offer after the responder. The list can arrive in several answers, a
     /// kept one and fresh ones; `DestinationChoice` says which target each one starts the note on.
     func setSessions(_ candidates: DestinationChoice.Candidates) {
+        self.candidates = candidates
         let answer = DestinationChoice.choose(candidates, for: .liveNote(ownPick))
         // The menu lists the sessions Vignette can start after the running ones (`SessionMenu.ranked`).
         sessions = answer.list + answer.startable
-        let found: Target = answer.pick.map(Target.session) ?? .responder
+        // Without Claude, a note with no pick opens on the first running session; only a person starts one.
+        let defaultTarget: Target = responderProblem == nil ? .responder : answer.list.first.map(Target.session) ?? .responder
+        let found: Target = answer.pick.map(Target.session) ?? defaultTarget
         guard found != target else { return }
         show(found)
     }
@@ -244,10 +243,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         Log.write("[live-ink] note shown edge=\(place.edge)")
     }
 
-    /// Grows or shrinks to fit the words.
+    /// Grows or shrinks to fit the words, on a spring once it shows.
     private func refit() {
-        content.layOut()
-        if popover.contentSize != content.frame.size { popover.contentSize = content.frame.size }
+        content.fit(popover, over: revealed ? NoteContent.resize * Settings.shared.motionScale : 0)
     }
 
     // MARK: Targets
@@ -256,21 +254,24 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         switch target {
         case .responder:
             content.session.show(logo: Agent.logo(for: "claude"), title: "Claude")
-            content.session.toolTip = "Claude answers on the screen."
+            content.session.toolTip = responderProblem ?? "Claude answers on the screen."
+            content.session.setAccessibilityLabel("Goes to Claude")
             targetTitle = "Claude"
         case .session(let destination):
             let row = SessionMenu.row(of: destination, among: sessions)
             content.session.show(logo: Agent.logo(for: destination.client.rawValue), title: row.title)
             content.session.toolTip = row.tooltip
+            content.session.setAccessibilityLabel("Goes to \(row.title)")
             targetTitle = SessionMenu.cardTitle(of: row)
         }
         showPlaceholder()
     }
 
-    /// What the empty note says: that it is listening, else what Return does with its target.
+    /// What the empty note says: what Return does with its target.
     private func showPlaceholder() {
-        content.field.placeholderString = listening ? Self.listeningPlaceholder
-            : target == .responder ? Self.askPlaceholder : Self.sendPlaceholder
+        content.showPrompt(NoteContent.prompt(toClaude: target == .responder, responderProblem: responderProblem,
+                                              speechProblem: speechProblem, askedClaude: Settings.shared.data.liveInkAskedClaude), fading: revealed)
+        refit()
     }
 
     /// The list of targets, under the target, or beside the note when the screen has no room below it,
@@ -278,9 +279,14 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private func showTargets() {
         guard let window = content.window else { return }
         let menu = NSMenu()
-        let responder = NSMenuItem(title: "Claude, on the screen", action: #selector(pickTarget(_:)), keyEquivalent: "")
+        // A menu enables any item with an action, so Claude's row has none while it cannot answer.
+        let responder = NSMenuItem(title: "Claude, on the screen", action: responderProblem == nil ? #selector(pickTarget(_:)) : nil, keyEquivalent: "")
         responder.image = SessionMenu.logo(for: .claude)
         responder.state = target == .responder ? .on : .off
+        if let responderProblem {
+            responder.toolTip = responderProblem
+            if #available(macOS 14.4, *) { responder.subtitle = responderProblem }
+        }
         responder.target = self
         menu.addItem(responder)
         var search: SessionMenuSearch?
@@ -373,12 +379,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         // The caret follows the words, so typing after them adds to the end.
         (content.field.currentEditor() as? NSTextView)?.setSelectedRange(NSRange(location: (words as NSString).length, length: 0))
         refit()
-    }
-
-    /// Says in the empty note that it is listening, or that it is waiting for typing.
-    func setListening(_ listening: Bool) {
-        self.listening = listening
-        showPlaceholder()
     }
 
     /// Asks as Return does.
@@ -559,229 +559,4 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private let removal = WindowRemoval()
     /// Between the target and its list, and between the list and the screen's edge, in points.
     private static let menuGap: CGFloat = 4
-}
-
-/// What the note and the conversation that takes its place share, so the one hands over to the
-/// other without a seam: the width, the words' font and place, and the row under them.
-enum NoteLayout {
-    static let width: CGFloat = 300
-    static let inset: CGFloat = 12
-    static let top: CGFloat = 11
-    static let belowWords: CGFloat = 4
-    static let row: CGFloat = 34
-    static let mostLines = 5
-    /// Where an `NSTextField` without a border starts its words, past its frame's left edge: its text
-    /// container's line fragment padding.
-    static let fieldTextInset: CGFloat = 2
-    static var font: NSFont { .systemFont(ofSize: NSFont.systemFontSize) }
-    static var lineHeight: CGFloat { ceil(font.ascender - font.descender + font.leading) }
-    /// How wide the words wrap.
-    static var wordsWidth: CGFloat { width - inset * 2 }
-    static var fieldWidth: CGFloat { wordsWidth + fieldTextInset * 2 }
-
-    /// The note's body with `lines` lines of words.
-    static func size(lines: Int) -> CGSize {
-        CGSize(width: width, height: top + CGFloat(lines) * lineHeight + belowWords + row)
-    }
-
-    /// The height of `text`'s lines wrapped as the field wraps them, from one line to `mostLines`.
-    static func wordsHeight(_ text: String) -> CGFloat {
-        let measured = NSAttributedString(string: text, attributes: [.font: font])
-            .boundingRect(with: CGSize(width: wordsWidth, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading])
-        return min(max(ceil(measured.height), lineHeight), lineHeight * CGFloat(mostLines))
-    }
-
-    /// The field's frame for words `height` high, in a flipped view.
-    static func fieldFrame(height: CGFloat) -> CGRect {
-        CGRect(x: inset - fieldTextInset, y: top, width: fieldWidth, height: height)
-    }
-
-    /// Sets `field` up to show the person's words as the note does.
-    @MainActor
-    static func configure(_ field: NSTextField) {
-        field.isBordered = false
-        field.drawsBackground = false
-        field.focusRingType = .none
-        field.font = font
-        field.textColor = .labelColor
-        field.cell?.wraps = true
-        field.cell?.isScrollable = false
-        field.cell?.usesSingleLineMode = false
-        field.lineBreakMode = .byWordWrapping
-    }
-
-    /// The row's target: its logo, `logoSize` square, `inset` from the left, then its name, `gap`
-    /// after it, in `labelFont`.
-    static let logoSize: CGFloat = 14
-    static let gap: CGFloat = 5
-    static var labelFont: NSFont { .systemFont(ofSize: 12, weight: .medium) }
-    /// The target button's height, centred in the row.
-    static let buttonHeight: CGFloat = 22
-    /// The widest a target's name is shown; past it the name is cut in the middle.
-    private static let longestLabel: CGFloat = 180
-
-    /// The width a label of `title` takes in the row, cut at `longestLabel`. A label's cell draws its
-    /// words a couple of points in from each side.
-    static func labelWidth(_ title: String) -> CGFloat {
-        min(ceil((title as NSString).size(withAttributes: [.font: labelFont]).width) + 4, longestLabel)
-    }
-}
-
-/// The note's field, blended with the popover's glass as a label is. AppKit leaves an editable field
-/// out of vibrancy, so its placeholder drew as a flat grey that turned muddy over a light window.
-private final class VibrantField: NSTextField {
-    override var allowsVibrancy: Bool { true }
-}
-
-/// What the note's popover shows: the words, then the target and the key that asks.
-@MainActor
-private final class NoteContent: NSView {
-    let field = VibrantField()
-    let session = SessionButton()
-    private let key = NSTextField(labelWithString: "↩")
-    let light = RimLight()
-
-    override var isFlipped: Bool { true }
-
-    init() {
-        super.init(frame: CGRect(origin: .zero, size: NoteLayout.size(lines: 1)))
-        NoteLayout.configure(field)
-        key.font = NoteLayout.labelFont
-        key.textColor = .secondaryLabelColor
-        key.toolTip = "Return asks"
-        for view in [field, session, key] { addSubview(view) }
-        wantsLayer = true
-        layer?.addSublayer(light)
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    /// The words' own rect, without the field's inset.
-    var wordsFrame: CGRect { field.frame.insetBy(dx: NoteLayout.fieldTextInset, dy: 0) }
-
-    /// Sizes the field to its words, from one line to `mostLines`, and itself round them.
-    func layOut() {
-        let words = NoteLayout.wordsHeight(field.currentEditor()?.string ?? field.stringValue)
-        field.frame = NoteLayout.fieldFrame(height: words)
-        let rowY = NoteLayout.top + words + NoteLayout.belowWords
-        session.setFrameOrigin(CGPoint(x: NoteLayout.inset - SessionButton.pad, y: rowY + (NoteLayout.row - SessionButton.height) / 2))
-        key.sizeToFit()
-        key.setFrameOrigin(CGPoint(x: NoteLayout.width - NoteLayout.inset - key.frame.width, y: rowY + (NoteLayout.row - key.frame.height) / 2))
-        setFrameSize(CGSize(width: NoteLayout.width, height: rowY + NoteLayout.row))
-    }
-
-    /// Words at full strength and the ↩ shown while the note has the keys, dimmed and faded while it
-    /// does not, over `duration`.
-    func showsKeys(_ keys: Bool, duration: CFTimeInterval) {
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            field.animator().alphaValue = keys ? 1 : Self.inactiveWords
-            key.animator().alphaValue = keys ? 1 : 0
-        }
-    }
-
-    /// How strongly the words show while the note does not have the keys.
-    private static let inactiveWords: CGFloat = 0.55
-
-    /// Sent: the target settles into the row the conversation shows, a name rather than a button, and
-    /// the key that asks fades, over `duration`.
-    func settle(duration: CFTimeInterval) {
-        session.settle(duration: duration)
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            key.animator().alphaValue = 0
-        }
-    }
-}
-
-/// Where Return sends the note: the agent's logo, the project, and a chevron, since a click picks
-/// another.
-@MainActor
-private final class SessionButton: NSView {
-    var onClick: (() -> Void)?
-    private let logo = NSImageView()
-    private let label = NSTextField(labelWithString: "")
-    private let chevron = NSImageView()
-
-    static let height = NoteLayout.buttonHeight
-    /// How far the logo sits inside the button's edge, in points.
-    static let pad: CGFloat = 6
-    private static let chevronWidth: CGFloat = 8
-    private var settled = false
-
-    init() {
-        super.init(frame: CGRect(x: 0, y: 0, width: 60, height: Self.height))
-        wantsLayer = true
-        layer?.cornerRadius = 6
-        layer?.cornerCurve = .continuous
-        logo.imageScaling = .scaleProportionallyUpOrDown
-        label.font = NoteLayout.labelFont
-        label.textColor = .labelColor
-        label.lineBreakMode = .byTruncatingMiddle
-        label.maximumNumberOfLines = 1
-        chevron.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 8, weight: .bold))
-        chevron.contentTintColor = .secondaryLabelColor
-        for view in [logo, label, chevron] { addSubview(view) }
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override var wantsUpdateLayer: Bool { true }
-
-    override func updateLayer() {
-        layer?.backgroundColor = settled ? nil : NSColor.labelColor.withAlphaComponent(0.07).cgColor
-    }
-
-    /// Shows `title` after `image`, and fits itself round them.
-    func show(logo image: NSImage?, title: String) {
-        logo.image = image
-        label.stringValue = title
-        let words = NoteLayout.labelWidth(title)
-        var x = Self.pad
-        logo.frame = CGRect(x: x, y: (Self.height - NoteLayout.logoSize) / 2, width: NoteLayout.logoSize, height: NoteLayout.logoSize)
-        x += NoteLayout.logoSize + NoteLayout.gap
-        let lineHeight = ceil(label.intrinsicContentSize.height)
-        label.frame = CGRect(x: x, y: (Self.height - lineHeight) / 2, width: words, height: lineHeight)
-        x += words + NoteLayout.gap
-        chevron.frame = CGRect(x: x, y: 0, width: Self.chevronWidth, height: Self.height)
-        setFrameSize(CGSize(width: x + Self.chevronWidth + Self.pad, height: Self.height))
-    }
-
-    /// Sent: it settles into a name, as the conversation's row shows it, over `duration`. Its
-    /// background and chevron fade and its name greys; it takes no more clicks.
-    func settle(duration: CFTimeInterval) {
-        guard !settled else { return }
-        settled = true
-        let background = layer?.backgroundColor
-        layer?.backgroundColor = nil
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            chevron.animator().alphaValue = 0
-        }
-        guard duration > 0 else { label.textColor = .secondaryLabelColor; return }
-        if let background {
-            let fade = CABasicAnimation(keyPath: "backgroundColor")
-            fade.fromValue = background
-            fade.toValue = CGColor(gray: 0, alpha: 0)
-            fade.duration = duration
-            layer?.add(fade, forKey: "settle")
-        }
-        label.wantsLayer = true
-        let fade = CATransition()
-        fade.type = .fade
-        fade.duration = duration
-        label.layer?.add(fade, forKey: "settle")
-        label.textColor = .secondaryLabelColor
-    }
-
-    /// A press anywhere on it is its own, not its label's or its logo's.
-    override func hitTest(_ point: NSPoint) -> NSView? { !settled && frame.contains(point) ? self : nil }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    /// The list opens a turn after the press: opened inside it, the menu closed at once (measured).
-    override func mouseDown(with event: NSEvent) {
-        DispatchQueue.main.async { [weak self] in self?.onClick?() }
-    }
 }

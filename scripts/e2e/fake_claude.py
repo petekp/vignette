@@ -9,7 +9,8 @@ an `init` line before its first answer, the answer's JSON in `input_json_delta` 
 `<folder>/calls.jsonl` gets one line for the arguments and one per message, with its text and the
 size of each image, never the image. `<folder>/answer.json` is the answer it gives, or else it
 circles the first text line the message names. `<folder>/tools` holds tool names its `init` line
-lists, one a line, to stand in for a CLI that ignores `--tools ""`.
+lists, one a line, to stand in for a CLI that ignores `--tools ""`. `<folder>/signed-out` makes
+`claude auth status` report that nobody is signed in.
 """
 import json
 import os
@@ -21,6 +22,11 @@ import time
 def main():
     folder, args = sys.argv[1], sys.argv[2:]
     record(folder, {'args': args})
+    # `claude auth status --json`, which Vignette asks before a note aimed at Claude. `<folder>/signed-out`
+    # makes it report that the person is not signed in.
+    if args[:2] == ['auth', 'status']:
+        print(json.dumps({'loggedIn': not os.path.exists(os.path.join(folder, 'signed-out'))}))
+        return
     started = False
     for line in sys.stdin:
         message = json.loads(line)

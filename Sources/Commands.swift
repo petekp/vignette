@@ -62,8 +62,6 @@ struct CommandRequest: Equatable {
     var message: String? = nil
     /// `section=` from the query: the one section `state` reports beside `app`.
     var section: String? = nil
-    /// `preview=` from the query: `pointer-lab` holds live ink's pointer field on screen, or lets it go.
-    var preview: Bool? = nil
 }
 
 /// The URL command surface: what exists, how a URL parses, and which files a command may touch.
@@ -98,7 +96,6 @@ enum Commands {
         Fixed(name: "check-lab", summary: "open the Check Lab, for tuning the check on copied and sent cards: the coin, its light, its spin and its bloom", needsDebug: true),
         Fixed(name: "intro-lab", summary: "open the Intro Lab, for tuning how setup's window goes into the menu bar icon", needsDebug: true),
         Fixed(name: "setup-lab", summary: "open the Setup Lab, which runs setup as a new person sees it, under permissions, folders and agents it simulates; closing setup there records nothing", needsDebug: true),
-        Fixed(name: "pointer-lab", summary: "open the Pointer Lab, for trying and tuning live ink's pointer field; &preview=1 holds the field on screen without opening it, and &preview=0 lets it go", needsDebug: true),
     ]
 
     /// URLComponents decodes each query value once; `open` does not encode again, so nothing else may.
@@ -118,8 +115,7 @@ enum Commands {
                               clear: items.first { $0.name == "clear" }?.value,
                               points: items.first { $0.name == "points" }?.value,
                               message: items.first { $0.name == "message" }?.value,
-                              section: items.first { $0.name == "section" }?.value,
-                              preview: items.first { $0.name == "preview" }.map { !["0", "false"].contains($0.value ?? "") })
+                              section: items.first { $0.name == "section" }?.value)
     }
 
     /// `points=` as a stroke: `x,y` pairs joined by `;`. Nil when it holds none, or any pair is not

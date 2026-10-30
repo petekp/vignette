@@ -14,8 +14,6 @@ struct TweakSpec: @unchecked Sendable, Identifiable {
         /// A system design's name or an installed family's.
         case font(WritableKeyPath<UITweaks, String>)
         case choice(WritableKeyPath<UITweaks, String>, [String])
-        /// One of `names`, which the file keeps as the name's index.
-        case style(WritableKeyPath<UITweaks, Double>, names: [String], safe: ClosedRange<Double>)
     }
 
     /// The setting's name in settings.json.
@@ -49,16 +47,11 @@ struct TweakSpec: @unchecked Sendable, Identifiable {
         TweakSpec(key: key, label: label, control: .choice(path, options), applies: { _ in true })
     }
 
-    static func style(_ key: String, _ label: String, _ path: WritableKeyPath<UITweaks, Double>, _ names: [String],
-                      safe: ClosedRange<Double>) -> TweakSpec {
-        TweakSpec(key: key, label: label, control: .style(path, names: names, safe: safe), applies: { _ in true })
-    }
-
     /// Whether `ui` holds this setting's default, counting floating-point noise as equal.
     func isDefault(in ui: UITweaks) -> Bool {
         let defaults = UITweaks()
         switch control {
-        case .number(let path, _, _, _, _), .style(let path, _, _): return UITweaks.same(ui[keyPath: path], defaults[keyPath: path])
+        case .number(let path, _, _, _, _): return UITweaks.same(ui[keyPath: path], defaults[keyPath: path])
         case .integer(let path, _): return ui[keyPath: path] == defaults[keyPath: path]
         case .colour(let path), .font(let path), .choice(let path, _): return ui[keyPath: path] == defaults[keyPath: path]
         }
@@ -68,7 +61,7 @@ struct TweakSpec: @unchecked Sendable, Identifiable {
     func reset(_ ui: inout UITweaks) {
         let defaults = UITweaks()
         switch control {
-        case .number(let path, _, _, _, _), .style(let path, _, _): ui[keyPath: path] = defaults[keyPath: path]
+        case .number(let path, _, _, _, _): ui[keyPath: path] = defaults[keyPath: path]
         case .integer(let path, _): ui[keyPath: path] = defaults[keyPath: path]
         case .colour(let path), .font(let path), .choice(let path, _): ui[keyPath: path] = defaults[keyPath: path]
         }
@@ -89,7 +82,7 @@ struct TweakGroup: @unchecked Sendable {
 /// One entry of the panel's sidebar. A section a lab also shows names the lab, and one that changes
 /// how live ink looks offers its samples (`InkSamples`).
 struct TweakSection: @unchecked Sendable, Identifiable {
-    enum Lab { case intro, pointer, check, setup }
+    enum Lab { case intro, check, setup }
 
     let name: String
     let lab: Lab?
@@ -340,35 +333,21 @@ enum TweakCatalog {
                 .number("liveInkHideFade", "Hide fade", \.liveInkHideFade, 0...1, step: 0.01, unit: "s", safe: 0...10),
                 .number("liveInkShowFade", "Show fade", \.liveInkShowFade, 0...1, step: 0.01, unit: "s", safe: 0...10),
             ], caption: { _ in "A window's marks fade out as it minimises or shrinks past them, and fade back in when they can show again." }),
-            TweakGroup(nil, [
-                .number("liveInkSpeechPause", "Speech pause", \.liveInkSpeechPause, 0.3...4, step: 0.1, unit: "s", safe: 0.1...30),
-                .number("liveInkSpeechQuiet", "Speech quiet level", \.liveInkSpeechQuiet, 0...1, step: 0.05, safe: 0...1),
-            ], caption: { _ in "Listening until a pause ends once the input stays under the quiet level for the pause, after Control and Option are let go. The level runs from -60 dB at 0 to 0 dB at 1." }),
         ]),
-        TweakSection("Pointer", lab: .pointer, [
+        TweakSection("Pointer", [
             TweakGroup("Ring", [
-                .style("liveInkFieldStyle", "Style", \.liveInkFieldStyle, ["Glass", "Lens", "Squircle", "Droplet", "Lamp", "Caustic"], safe: 0...5),
                 .number("liveInkFieldSize", "Size", \.liveInkFieldSize, 0...120, unit: "pt", safe: 0...200),
-                // Bend past 1.8 folds the glass where the ridge is steepest.
-                .number("liveInkFieldBend", "Bend", \.liveInkFieldBend, 0...1.8, step: 0.05, safe: 0...1.8, when: { $0.ring != 4 }),
-                .number("liveInkFieldSplit", "Colour split", \.liveInkFieldSplit, 0...2, step: 0.05, safe: 0...2, when: { $0.ring != 4 }),
-                .number("liveInkFieldDepth", "Depth", \.liveInkFieldDepth, 0.04...0.3, step: 0.01, safe: 0.04...0.3, when: { $0.ring == 5 }),
-                .number("liveInkFieldZoom", "Zoom", \.liveInkFieldZoom, 1...1.6, step: 0.02, safe: 1...1.6, when: { $0.ring == 1 }),
-                .number("liveInkFieldClear", "Clear middle", \.liveInkFieldClear, 0...1, step: 0.05, safe: 0...1, when: { [1, 4].contains($0.ring) }),
-                .number("liveInkFieldShine", "Shine", \.liveInkFieldShine, 0...1, step: 0.05, safe: 0...1, when: { [1, 5].contains($0.ring) }),
-                .number("liveInkFieldShade", "Shade", \.liveInkFieldShade, 0...1, step: 0.05, safe: 0...1, when: { [1, 5].contains($0.ring) }),
-                .number("liveInkFieldSquareness", "Squareness", \.liveInkFieldSquareness, 2...8, step: 0.1, safe: 2...8, when: { $0.ring == 2 }),
-                .number("liveInkFieldBreak", "Break", \.liveInkFieldBreak, 0...1, step: 0.05, safe: 0...1, when: { $0.ring == 2 }),
-                .number("liveInkFieldSpread", "Spread", \.liveInkFieldSpread, 0.8...3, step: 0.05, safe: 0.8...3, when: { $0.ring == 4 }),
+                .number("liveInkFieldClear", "Clear middle", \.liveInkFieldClear, 0...1, step: 0.05, safe: 0...1),
+                .number("liveInkFieldSpread", "Spread", \.liveInkFieldSpread, 0.8...3, step: 0.05, safe: 0.8...3),
                 .number("liveInkFieldGlow", "Glow", \.liveInkFieldGlow, 0...1, step: 0.05, safe: 0...1),
                 .number("liveInkFieldFollow", "Follow", \.liveInkFieldFollow, 0...0.5, step: 0.01, unit: "s", safe: 0...1),
                 .number("liveInkFieldStretch", "Stretch", \.liveInkFieldStretch, 0...1, step: 0.05, safe: 0...1),
-            ], caption: { TweakCatalog.ringNote($0) }),
+            ], caption: { _ in "The lamp shows while Control and Option are held, tightens while the button is down, and Size 0 turns it off. Follow 0 holds it on the pointer." }),
             TweakGroup("Lamp's life", [
-                .number("liveInkLampBreath", "Breath", \.liveInkLampBreath, 0...0.5, step: 0.01, safe: 0...1, when: { $0.ring == 4 }),
-                .number("liveInkLampBreathSeconds", "Breath length", \.liveInkLampBreathSeconds, 1...8, step: 0.1, unit: "s", safe: 0.5...30, when: { $0.ring == 4 }),
-                .number("liveInkLampEnergy", "Energy from speed", \.liveInkLampEnergy, 0...1.5, step: 0.05, safe: 0...3, when: { $0.ring == 4 }),
-                .number("liveInkLampDrift", "Drift", \.liveInkLampDrift, 0...1, step: 0.05, safe: 0...1, when: { $0.ring == 4 }),
+                .number("liveInkLampBreath", "Breath", \.liveInkLampBreath, 0...0.5, step: 0.01, safe: 0...1),
+                .number("liveInkLampBreathSeconds", "Breath length", \.liveInkLampBreathSeconds, 1...8, step: 0.1, unit: "s", safe: 0.5...30),
+                .number("liveInkLampEnergy", "Energy from speed", \.liveInkLampEnergy, 0...1.5, step: 0.05, safe: 0...3),
+                .number("liveInkLampDrift", "Drift", \.liveInkLampDrift, 0...1, step: 0.05, safe: 0...1),
             ], caption: { _ in "The lamp takes your ink's colours: the ice over dark content and deep blue over light, which darkens what is under it. Breath makes its pool rise and fall over the breath length. Energy brightens and widens it while the pointer moves fast. Drift moves light slowly round inside it. Breath and drift stop with Reduce Motion." }),
             TweakGroup("Showing", [
                 .number("liveInkFieldDelay", "Delay", \.liveInkFieldDelay, 0...1, step: 0.05, unit: "s", safe: 0...60),
@@ -428,24 +407,4 @@ enum TweakCatalog {
             ], caption: { _ in "What is brighter than Threshold, the mark's glow and the glint's flash, blurred over Radius, a fraction of the coin, and added back, so it glows past the coin's edge. Strength 0 turns it off. It shows on the dark veil, not on the white ring of a send's badge." }),
         ]),
     ]
-
-    /// The pointer lab's notes on each style, in the order of the style's names.
-    private static let ringNotes = [
-        "Glass: a soft ridge of glass round the pointer that bends the screen and glows in the ink colour. What the pointer is on stays still.",
-        "Lens: a clear bead. Its rim draws the screen in, Zoom magnifies its middle about the arrow's tip, and a rim light, a highlight and a soft shadow let it read on any page.",
-        "Squircle: the glass ridge on a rounded square, the shape of an app icon. Break leaves only its corners.",
-        "Droplet: the glass ring at rest. Moving, it pulls into a teardrop, a round head leading and a soft tail behind, as long as Stretch lets it.",
-        "Lamp: no edge, only a soft pool of ink-coloured light round the arrow. It never reads the screen.",
-        "Caustic: light through a glass on a table. A bright crescent gathers to a point on the side away from the light, fringed by Colour split.",
-    ]
-
-    private static func ringNote(_ ui: UITweaks) -> String {
-        ringNotes[min(max(ui.ring, 0), ringNotes.count - 1)]
-            + " It shows while Control and Option are held, tightens while the button is down, and Size 0 turns it off. Follow 0 holds it on the pointer."
-    }
-}
-
-extension UITweaks {
-    /// The pointer field's ring style, as the index its name is kept as.
-    var ring: Int { Int(liveInkFieldStyle.rounded()) }
 }

@@ -42,13 +42,6 @@ enum SetupState: String {
     case done
 }
 
-/// When live ink stops listening: as the chord is let go, or at a pause after it. An experiment;
-/// one of the two stays (`docs/live-ink-speech-input-2026-10-06.md`).
-enum ListenUntil: String {
-    case release
-    case pause
-}
-
 /// Everything a user changes per machine. Lives in ~/.config/<URL scheme>/settings.json, which is
 /// ~/.config/vignette/settings.json for Vignette.
 /// Missing keys fall back to defaults, so a partial file is fine.
@@ -66,9 +59,11 @@ struct SettingsData: Codable, Equatable {
     var sendInstructions = SettingsData.defaultSendInstructions  // the words after the image in the line Send puts in a session
     var annotateOnCapture = false            // a new capture opens in the annotator instead of showing a thumbnail
     var copyOnCapture = true                 // a new capture goes to the clipboard as it lands
-    var liveInk = false                      // holding Control and Option draws on the screen itself; needs Accessibility and, for now, `debug`
+    var liveInk = false                      // holding `liveInkChord` draws on the screen itself; needs Accessibility
+    var liveInkOffered = false               // whether live ink's one-time offer was made to an install that finished setup before it had a page
+    var liveInkAskedClaude = false           // whether a live ink ask has gone to Claude, which ends the line that says what Claude sees
+    var liveInkChord = LiveInkChord.standard.rawValue  // the two modifiers that hold live ink on: ⌃⌥ unless another pair is chosen
     var liveInkSpeech = false                // talking while drawing fills the note; needs the microphone and speech recognition
-    var liveInkListenUntil = ListenUntil.pause.rawValue  // experiment: listening ends as the chord is let go, or at a pause after
     var liveInkSendWhenQuiet = true          // experiment: the ask goes once the person stops talking, or waits for Return
     var debug = false                        // unlocks tweaks, install-skill root=, live-ink-stroke, and file= outside the watch folder
     var agentSkill = AgentSkill.unasked.rawValue  // whether the skill was offered: unasked, then off
@@ -78,12 +73,13 @@ struct SettingsData: Codable, Equatable {
 
     var folderURL: URL { URL(fileURLWithPath: (screenshotsFolder as NSString).expandingTildeInPath) }
 
+    /// `liveInkChord` as the pair it holds. An unknown word reads as the standard pair.
+    var liveInkChordChoice: LiveInkChord { LiveInkChord(rawValue: liveInkChord) ?? .standard }
+
     /// `agentSkill` as the states it holds. An unknown word reads as `unasked`, which
     /// `validated()` then writes back.
     var agentSkillChoice: AgentSkill { AgentSkill(rawValue: agentSkill) ?? .unasked }
 
-    /// `liveInkListenUntil` as the choices it holds. An unknown word reads as `pause`.
-    var listenUntil: ListenUntil { ListenUntil(rawValue: liveInkListenUntil) ?? .pause }
 
     /// `setup` as the states it holds. An unknown word reads as `unasked`.
     var setupChoice: SetupState { SetupState(rawValue: setup) ?? .unasked }
@@ -94,10 +90,6 @@ struct SettingsData: Codable, Equatable {
         if case .doubleTap = HotKeySpec.parse(recentHotkey) { return true }
         return false
     }
-
-    /// Live ink is internal until it ships: it runs, and the Settings window and the menu offer it,
-    /// only while `debug` is on too.
-    var usesLiveInk: Bool { liveInk && debug }
 
     /// What the line Send puts in a session says after the image (`ScreenshotRequests.requestLine`).
     static let defaultSendInstructions = "If a drawing would answer better than words, you can send one back."
@@ -129,9 +121,6 @@ struct SettingsData: Codable, Equatable {
         // The line Send puts in a session is one line, since the plugin's monitor makes each line one message.
         let instructions = String(d.sendInstructions.asOneLine.prefix(MarkFields.maxTextLength))
         if instructions != d.sendInstructions { notes.append("sendInstructions made one line of \(instructions.count) characters"); d.sendInstructions = instructions }
-        if ListenUntil(rawValue: d.liveInkListenUntil) == nil {
-            notes.append("liveInkListenUntil \"\(d.liveInkListenUntil)\" -> \"\(ListenUntil.pause.rawValue)\""); d.liveInkListenUntil = ListenUntil.pause.rawValue
-        }
         if SetupState(rawValue: d.setup) == nil {
             notes.append("setup \"\(d.setup)\" -> \"\(SetupState.unasked.rawValue)\""); d.setup = SetupState.unasked.rawValue
         }
@@ -329,20 +318,11 @@ struct UITweaks: Codable, Equatable {
     // The ring: it bends the screen under it and glows in the ink colour, with a still middle so what
     // the pointer is on stays put.
     var liveInkFieldSize = 23.0      // the ring's radius in points; 0 turns it off
-    var liveInkFieldBend = 1.8       // 0 to 1.8: how far the ring moves what is under it
-    var liveInkFieldSplit = 1.7      // 0 to 2: how far red and blue part where the ring moves the picture
     var liveInkFieldGlow = 1.0       // 0 to 1: the ink-coloured light on and round the ring
     var liveInkFieldFollow = 0.04    // how long the ring takes to catch up with the pointer; 0 holds it on it
     var liveInkFieldStretch = 0.6    // 0 to 1: how far the ring stretches along the way the pointer moves
-    var liveInkFieldStyle = 4.0      // 0 Glass, 1 Lens, 2 Squircle, 3 Droplet, 4 Lamp, 5 Caustic
-    var liveInkFieldZoom = 1.46      // Lens: magnifies its middle about the arrow's tip; 1 is none
-    var liveInkFieldClear = 0.4      // Lens and Lamp: how much of the middle is left alone
-    var liveInkFieldShine = 1.0      // Lens: its rim and highlight; Caustic: its glass edge
-    var liveInkFieldShade = 1.0      // Lens and Caustic: the darker parts that let them read on white
-    var liveInkFieldSquareness = 4.5 // Squircle: 2 is a circle, 4.5 Apple's continuous corners, 8 nearly square
-    var liveInkFieldBreak = 0.0      // Squircle: 0 is a closed outline; raised, only its corners remain
+    var liveInkFieldClear = 0.4      // how much of the lamp's middle is left alone
     var liveInkFieldSpread = 1.7     // Lamp: how far its light reaches, in ring sizes
-    var liveInkFieldDepth = 0.23     // Caustic: how far into the ring its bright crescent reaches, a fraction of the size
     // Lamp's life: how its pool of light moves on its own
     var liveInkLampBreath = 0.15     // 0 to 0.5: how far its size and light rise and fall
     var liveInkLampBreathSeconds = 3.5 // how long one breath takes
@@ -355,8 +335,6 @@ struct UITweaks: Codable, Equatable {
     var liveInkTextSize = 15.0       // an answer's note, in points of the screen
     var liveInkTextWidth = 320.0     // the widest an answer's note wraps at, in points
     // Live ink's speech input
-    var liveInkSpeechPause = 1.2     // how long a quiet spell after the chord is let go ends listening
-    var liveInkSpeechQuiet = 0.4     // the input's level under which it counts as quiet, 0 for -60 dB to 1 for 0 dB
     // The person's live ink as opal gel (InkGel; docs/live-ink-gel-2026-10-12.md): a rod of milky
     // material under a thin film whose pale colours follow the line, with a glow under it.
     var inkGelLight = "#0085ff"      // the ice's hue, over dark content
@@ -447,7 +425,7 @@ struct UITweaks: Codable, Equatable {
     /// defined with its tweak in `TweakCatalog`.
     static let bounds: [Bound] = TweakCatalog.sections.flatMap(\.tweaks).compactMap { spec in
         switch spec.control {
-        case .number(let path, _, _, _, let safe), .style(let path, _, let safe): Bound(spec.key, path, safe)
+        case .number(let path, _, _, _, let safe): Bound(spec.key, path, safe)
         default: nil
         }
     }
@@ -778,6 +756,9 @@ final class Settings: ObservableObject {
     /// version field. Version 2 writes only the `ui` values that differ from the defaults.
     nonisolated static func migrate(_ raw: [String: Any]) -> (json: [String: Any], from: Int) {
         var json = raw
+        // A file that already has live ink's switch in it is past the offer: the switch was set by the
+        // person or by setup. Written before `liveInkOffered` existed, so the key is absent.
+        if json["liveInk"] != nil, json["liveInkOffered"] == nil { json["liveInkOffered"] = true }
         let from = (json["version"] as? NSNumber)?.intValue ?? 0
         guard from < currentVersion else { return (json, from) }
         // 0.1.0 and 0.1.1 wrote every `ui` value, so a value there is a choice only where it

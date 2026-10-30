@@ -105,11 +105,14 @@ the order they block work.
      waits: ADR 0021 measured `codex exec` at 16 to 23 s cold.
    - Keep the `sonnet` alias rather than pinning a model. The alias follows the newest Sonnet, and
      `--json-schema` holds the answer's shape whatever the model.
-7. **The chord.** ⌃⌥ is fixed in code (`LiveInk.swift:185`). It is also VoiceOver's modifier, and
-   some window managers use it. Decided 2026-10-24, Pete: "⌃⌥ default, choosable".
-   - Keep ⌃⌥ as the default, and let people choose another pair in the same control
-     that sets the stack's shortcut. Pausing live ink while VoiceOver runs is the other way to
-     handle VoiceOver; the choice of pair covers both.
+7. **The chord.** ⌃⌥ was fixed in code. It is also VoiceOver's modifier, and some window managers
+   use it. Decided 2026-10-24, Pete: "⌃⌥ default, choosable". Where it is chosen was decided on
+   2026-10-29: Pete kept the "Hold to draw" picker beside the Live ink switch.
+   - Keep ⌃⌥ as the default, and let people choose another pair in "Hold to draw", under the Live
+     ink switch. The pair sits with the switch it belongs to. The stack's shortcut control offers
+     double taps and key combinations, which do not fit a held pair.
+   - Pausing live ink while VoiceOver runs is the other way to handle VoiceOver. The choice of
+     pair covers both.
 8. **What to trim.** Decided 2026-10-24, Pete: "Trim as recommended". `liveInkSendWhenQuiet` stays
    on until Pete has tried it. These were listed as Pete's to decide on 10-18:
    - *Pointer styles:* ship Lamp, and delete the other styles and `PointerLab`.

@@ -38,6 +38,11 @@ final class LiveInk {
     private let mayInk: () -> Bool
 
     private let responder = LiveResponder()
+    /// Whether Claude Code is installed and signed in, as the last check found (`checkResponder`).
+    private(set) var responderAvailability = LiveResponder.Availability.checking
+    /// The responder that answers a note aimed at Claude, or nil while Claude Code cannot answer. This is
+    /// the one place live ink picks its responder: a Codex responder (decision 11) is chosen here too.
+    private var answeringResponder: LiveResponder? { responderAvailability.canAnswer ? responder : nil }
     /// The marks drawn on an app's window, which stay on it (docs/live-ink-step3-2026-10-05.md). The
     /// surfaces keep the rest: marks drawn where no window is.
     private let windows = LiveWindows()
@@ -72,6 +77,10 @@ final class LiveInk {
     /// Listening to the person while they draw, with speech on. It can span several presses of the
     /// chord, so "this" and "that" drawn in two strokes are one note.
     private var listening: LiveListening?
+    /// Why speech cannot listen, or nil when it can. A note says so in its prompt.
+    private var speechProblem: String? {
+        didSet { note?.speechProblem = speechProblem }
+    }
     /// The note's words are the person's to keep: typed, or in the note before this listening began, so
     /// what they say no longer replaces them.
     private var typedOver = false
@@ -200,11 +209,10 @@ final class LiveInk {
     func setOn(_ on: Bool) {
         guard on != isOn else { return }
         if on {
+            checkResponder()
             LivePacket.warmUp()
             InkMarkLayer.warmUp(scale: NSScreen.main?.backingScaleFactor ?? 2)
-            chord = ModifierChord([.control, .option], tag: "live-ink", name: "the chord") { [weak self] change in
-                self?.chordChanged(change)
-            }
+            chord = makeChord()
             let workspace = NSWorkspace.shared.notificationCenter
             observers = [
                 (NotificationCenter.default, NotificationCenter.default.addObserver(
@@ -232,6 +240,20 @@ final class LiveInk {
             windows.removeAll()
         }
         Log.write("[live-ink] \(on ? "on" : "off")")
+    }
+
+    /// Takes the pair chosen in the General tab. The marks stay; a stroke under way ends.
+    func takeChord() {
+        guard isOn else { return }
+        if isInking { stopInking(because: "the chord changed") }
+        chord = makeChord()
+        Log.write("[live-ink] chord \(Settings.shared.data.liveInkChordChoice.glyphs)")
+    }
+
+    private func makeChord() -> ModifierChord {
+        ModifierChord(Settings.shared.data.liveInkChordChoice.flags, tag: "live-ink", name: "the chord") { [weak self] change in
+            self?.chordChanged(change)
+        }
     }
 
     /// What a stroke did, as `[live-ink]` lines and `live-ink-stroke` answer it.
@@ -428,6 +450,8 @@ final class LiveInk {
             "dismiss": dismissButton.map { button -> Any in StateReport.topLeft(button.frame, primaryHeight: StateReport.primaryHeight) } ?? NSNull(),
             "noteTarget": note.map { panel -> Any in panel.target == .responder ? "responder" : "session" } ?? NSNull(),
             "responder": responder.stateJSON,
+            "claude": String(describing: responderAvailability),
+            "pair": Settings.shared.data.liveInkChordChoice.glyphs,
             "escape": LiveEscape.next(escapeSnapshot)?.rawValue ?? NSNull(),
             "escapeHeld": escapeKey != nil,
             "ask": asks.newest.map(Self.json(of:)) ?? NSNull(),
@@ -687,6 +711,10 @@ final class LiveInk {
             return true
         }
         let panel = LiveNotePopover(at: first, target: lastTarget)
+        panel.responderProblem = responderAvailability.problem
+        panel.speechProblem = speechProblem
+        // The person may have installed Claude Code or signed in since the last check.
+        if !responderAvailability.canAnswer { checkResponder() }
         noteOffered = lastTarget
         panel.onAsk = { [weak self, weak panel] words, target, title in
             guard let self else { return }
@@ -708,7 +736,6 @@ final class LiveInk {
         prepare(beside: mark, panel: panel)
         refreshTargets(of: panel)
         if let listening {
-            panel.setListening(listening.listensPastRelease)
             if !typedOver, !listening.words.isEmpty { panel.hear(listening.text) }
         }
         Log.write("[live-ink] note open\(takingKeys ? "" : " without the keys: a menu is still open")")
@@ -962,8 +989,25 @@ final class LiveInk {
     /// Hands the responder ask `id`, whose turn has come.
     private func sendHeld(_ id: LiveAsks.Ask.ID) {
         guard let ask = held.removeValue(forKey: id) else { return }
+        guard let answering = answeringResponder else {
+            Log.write("[live-ink] not sending id=\(id): Claude Code cannot answer")
+            return failed(LiveResponder.Failure(reason: responderAvailability.problem ?? "", detail: "claude \(responderAvailability)"), for: id)
+        }
         Log.write("[live-ink] sending id=\(id)")
-        responder.ask(ask)
+        answering.ask(ask)
+        if !Settings.shared.data.liveInkAskedClaude { Settings.shared.update { $0.liveInkAskedClaude = true } }
+    }
+
+    /// Asks Claude Code whether it is installed and signed in: when live ink turns on, and when a note
+    /// opens while it could not answer. The answer decides whether a note aimed at Claude can be asked.
+    func checkResponder() {
+        Task { @MainActor [weak self] in
+            let availability = await LiveResponder.availability()
+            guard let self else { return }
+            self.responderAvailability = availability
+            self.note?.responderProblem = availability.problem
+            Log.write("[live-ink] responder \(availability)")
+        }
     }
 
     /// Sends the note to a working session through Send, with the words and where the ink is in the
@@ -1946,7 +1990,6 @@ final class LiveInk {
             // The note stays, and ink drawn now is its ink too.
             chordInterrupted = false
             listening?.pressedAgain()
-            responder.prepare()
             startInking()
         case .ended, .interrupted:
             chordInterrupted = change == .interrupted
@@ -1970,8 +2013,6 @@ final class LiveInk {
         startTap(since: began)
         // The ink takes its colour from what is behind it.
         InkBackdrop.shared.refresh()
-        let ui = Settings.shared.motionUI
-        inking.forEach { $0.overlay.prepareField(ui: ui) }
         let mouse = NSEvent.mouseLocation
         hover(at: CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y))
         // The field waits, so holding the chord on the way to a key, as in a window manager's
@@ -2053,11 +2094,26 @@ final class LiveInk {
             strokeScreenDiagonal = Self.screenDiagonal(at: first)
         }
         // A press that moves is drawing, not tapping.
-        if let first = points.first, let last = points.last, hypot(last.x - first.x, last.y - first.y) > 4 { hover(at: nil) }
+        if let first = points.first, let last = points.last, hypot(last.x - first.x, last.y - first.y) > 4 {
+            hover(at: nil)
+            prepareResponderForStroke()
+        }
         let ui = Settings.shared.data.ui
         let longest = longestLine(for: points, ui: ui)
         let markStyle = ui.markStyle
         inking.forEach { $0.overlay.showPen(points, longest: longest, markStyle: markStyle) }
+    }
+
+    static let screenRecordingNotice = "Live ink needs Screen Recording to see the window under your ink. You can allow it in System Settings."
+    static let speechNotice = "Speaking needs the microphone and speech recognition. You can allow them in System Settings."
+
+    /// Starts Claude Code when the note this ink goes to will be aimed at Claude, so its first answer
+    /// does not wait for a cold start. A note to a session starts no process, and a tap starts none.
+    /// Called on every move of a stroke; `prepare` starts the process only once.
+    private func prepareResponderForStroke() {
+        let noteTarget = note?.target ?? lastTarget
+        guard noteTarget == .responder else { return }
+        answeringResponder?.prepare()
     }
 
     private func strokeEnded(_ points: [CGPoint], on surface: Surface) {
@@ -2145,36 +2201,29 @@ final class LiveInk {
 
     // MARK: The pointer field
 
-    /// The surfaces the pointer lab holds the pointer field on, at the inking level, passing every
-    /// press through.
-    private var labSurfaces: [Surface] = []
-
-    /// Holds the pointer field on every screen for the pointer lab, or lets it go, so what the lab tunes
-    /// is what inking shows.
-    func previewField(_ on: Bool) {
-        guard on != !labSurfaces.isEmpty else { return }
-        labSurfaces = on ? activeSurfaces() : []
-        holdField()
-        if !on { closeEmpty(fade: 0) }
-        Log.write("[live-ink] field preview \(on ? "on" : "off")")
-    }
-
     /// The pointer field's delay passed, or a press came first: the field shows, and listening starts.
     private func showFieldForChord() {
         fieldTimer?.invalidate()
         guard !chordShowsField else { return }
         chordShowsField = true
         holdField()
+        // Screen Recording is what a note reads the window with, so say so before any ink is drawn.
+        // It waits for the field, so a chord on its way to a shortcut says nothing.
+        if !ScreenRecording.granted {
+            let mouse = NSEvent.mouseLocation
+            let pointer = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
+            (inking.first { $0.overlay.globalFrame.contains(pointer) } ?? inking.first)?.overlay.showNotice(Self.screenRecordingNotice, at: pointer)
+        }
         // The field goes to the screen first, so making the recognizer on this thread never holds it back.
         CATransaction.flush()
         listen()
     }
 
     /// Holds the pointer field up, in the current settings, on the surfaces taking ink while the chord
-    /// shows it and on the pointer lab's, and lets it go on every other surface.
+    /// shows it, and lets it go on every other surface.
     private func holdField() {
         let ui = Settings.shared.motionUI
-        let held = (chordShowsField ? inking : []) + labSurfaces
+        let held = chordShowsField ? inking : []
         for surface in surfaces {
             surface.overlay.holdField(held.contains { $0 === surface }, ui: ui)
         }
@@ -2187,17 +2236,19 @@ final class LiveInk {
     private func listen() {
         guard listening == nil else { return }
         let settings = Settings.shared.data
-        guard settings.liveInkSpeech else { return }
+        guard settings.liveInkSpeech else { speechProblem = nil; return }
         guard SpeechPermission.granted else {
             Log.write("[speech] not listening: the microphone or speech recognition is not allowed")
+            speechProblem = Self.speechNotice
             return
         }
         guard let transcriber = SpeechEngine.make() else {
             Log.write("[speech] error no recognizer for \(Locale.current.identifier)")
+            speechProblem = AppleTranscriber.noModel
             return
         }
-        let listening = LiveListening(transcriber: transcriber, until: settings.listenUntil,
-                                      pause: settings.ui.liveInkSpeechPause, quiet: Float(settings.ui.liveInkSpeechQuiet))
+        speechProblem = nil
+        let listening = LiveListening(transcriber: transcriber)
         listening.onWords = { [weak self] words in self?.heard(words) }
         listening.onFinished = { [weak self, weak listening] words in
             guard let self, let listening, self.listening === listening else { return }
@@ -2207,6 +2258,7 @@ final class LiveInk {
             Log.write("[speech] error \(failure.detail)")
             guard let self, let listening, self.listening === listening else { return }
             self.listening = nil
+            self.speechProblem = failure.reason
         }
         self.listening = listening
         typedOver = note.map { !$0.isEmpty } ?? false
@@ -2222,7 +2274,6 @@ final class LiveInk {
     private func doneListening(_ words: [SpokenWord], began: Date) {
         listening = nil
         guard let note else { return }
-        note.setListening(false)
         let text = LiveListening.text(of: words)
         guard !typedOver, !text.isEmpty else { return }
         spoken = (words, began)
@@ -2270,7 +2321,7 @@ final class LiveInk {
     /// full-screen window over every app.
     private func closeEmpty(fade: TimeInterval) {
         let empty = surfaces.filter { surface in
-            surface.marks.isEmpty && !inking.contains { $0 === surface } && !labSurfaces.contains { $0 === surface }
+            surface.marks.isEmpty && !inking.contains { $0 === surface }
         }
         empty.forEach { $0.overlay.close(after: fade) }
         surfaces.removeAll { surface in empty.contains { $0 === surface } }

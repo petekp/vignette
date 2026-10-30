@@ -186,6 +186,13 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(two?["newTextSize"] as? Int, 24, "a version 2 file's values are all choices")
     }
 
+    func testAFileWithLiveInkSwitchInItIsPastTheOffer() {
+        XCTAssertEqual(Settings.migrate(["version": 2, "liveInk": true]).json["liveInkOffered"] as? Bool, true,
+                       "a switch the file already holds was set, so no offer is due")
+        XCTAssertNil(Settings.migrate(["version": 2, "setup": "done"]).json["liveInkOffered"],
+                     "an install that finished setup before live ink has its offer due")
+    }
+
     // MARK: validated
 
     func testValidatedLeavesGoodDataAlone() {

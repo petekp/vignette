@@ -36,21 +36,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let thumbnail = ThumbnailController()
     private let annotator = AnnotationController()
     private lazy var liveInk = LiveInk(mayInk: { [weak self] in !(self?.thumbnail.holdsScreen ?? true) })
-    private let settingsWindow = SettingsWindowController()
+    let settingsWindow = SettingsWindowController()
+    /// Whether the Settings window is showing live ink's one-time offer.
+    var liveInkOfferOpen = false
     private let setupWindow = SetupWindowController()
     private lazy var debugPanel = DebugPanelController(previews: .init(
         thumbnail: { [weak self] in self?.openLast() },
         stack: { [weak self] in self?.toggleRecent() },
         annotator: { [weak self] in self?.annotateLast() },
         intro: { [weak self] in self?.introLab.show() },
-        pointer: { [weak self] in self?.pointerLab.show() },
         check: { [weak self] in self?.checkLab.show() },
         setup: { [weak self] in self?.setupLab.show() }))
     private lazy var introLab = IntroLabController(
         play: { [weak self] window in
             guard let self else { return false }
             return self.introduceMenuBar(from: window, conditions: self.setupConditions(protectedArea: nil),
-                                         usesLiveInk: self.settings.data.usesLiveInk, close: { window.close() }, finished: {})
+                                         usesLiveInk: self.settings.data.liveInk, close: { window.close() }, finished: {})
         },
         iconFrame: { [weak self] in
             self?.visibleStatusButton.flatMap { button in button.window?.convertToScreen(button.convert(button.bounds, to: nil)) }
@@ -58,8 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let checkLab = CheckLabController()
     private lazy var setupLab = SetupLabController(
         callbacks: { [unowned self] in self.setupCallbacks(protectedArea: ScreenshotWatcher.protectedArea(of: self.watchFolder)) })
-    private lazy var pointerLab = PointerLabController(preview: { [weak self] on in self?.liveInk.previewField(on) })
-    private let settings = Settings.shared
+    let settings = Settings.shared
     private var watchFolder: URL { settings.data.folderURL }
     /// One map, so Send submits through the same connections it lists.
     private static let connections: [AgentClient: any AgentConnection] = [.claude: ClaudeCodeConnection(), .codex: CodexConnection()]
@@ -153,7 +153,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             installAgentPlugin: { [weak self] root, done in self?.turnOnAgents([root]) { done($0) } },
             removeAgentPlugin: { [weak self] root, done in self?.removeAgentPlugin(from: root, completion: done) },
             folderDenied: { [weak self] in self?.watcher?.isDenied ?? false },
-            agentFailures: { [weak self] in self?.pluginFailures ?? [:] })
+            agentFailures: { [weak self] in self?.pluginFailures ?? [:] },
+            liveInkOffered: { [weak self] in self?.liveInkOfferOpen ?? false },
+            answerLiveInkOffer: { [weak self] on in self?.answerLiveInkOffer(on) })
         // Before the watcher, so a capture taken during launch already lands the way Vignette needs.
         settings.reconcileApple()
         startDrawings()
@@ -167,7 +169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             startWatching()
         }
         registerHotKey()
-        liveInk.setOn(settings.data.usesLiveInk)
+        liveInk.setOn(settings.data.liveInk)
         settings.onChange = { [weak self] old, new in self?.settingsChanged(old, new) }
         // Setup comes first and has the launch to itself: two windows competing for a first-time
         // user is worse than the plugin offer waiting until the next launch.
@@ -185,7 +187,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             } else {
                 applyLoginItem()
             }
-            startAgentPlugin()
+            // The Settings window shows one tab, so one offer a launch: live ink's waits for the next.
+            if !startAgentPlugin() { offerLiveInk() }
         }
         sessions.refreshKeptLists()
         CheckCoin.compileShaders()
@@ -250,7 +253,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             }
         }
         if new.recentHotkey != old.recentHotkey { registerHotKey() }
-        if new.usesLiveInk != old.usesLiveInk { liveInk.setOn(new.usesLiveInk) }
+        if new.liveInk != old.liveInk { liveInk.setOn(new.liveInk) }
+        if new.liveInk { liveInkOfferOpen = false; if !new.liveInkOffered { settings.update { $0.liveInkOffered = true } } }
+        if new.liveInkChord != old.liveInkChord { liveInk.takeChord() }
         if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem(); showUpdateDot() }
         if new.launchAtLogin != old.launchAtLogin { applyLoginItem() }
     }
@@ -270,9 +275,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// Launch: the offer if it has never been made, then the marketplace written and every
     /// installed plugin brought up to this app's version (`AgentPlugins.launch`). A plugin goes in
     /// by itself only where the skill from before the plugin was, since that person chose the skill.
-    private func startAgentPlugin() {
-        if settings.data.agentSkillChoice == .unasked { offerAgentPlugin() }
+    /// Answers whether the offer was made.
+    private func startAgentPlugin() -> Bool {
+        let offered = settings.data.agentSkillChoice == .unasked && offerAgentPlugin()
         agentPlugins.launch { _ in }
+        return offered
     }
 
     /// The Agents tab's switch, the setup window and `install-skill`. `AgentPlugins` logs each
@@ -322,12 +329,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// The offer, once: the app has never asked and this Mac has an agent directory. The offer is
     /// the Settings window, and the answer is the buttons in it.
     /// Recorded as `off` as it is made, so the question is asked once whatever the user does.
-    private func offerAgentPlugin() {
+    private func offerAgentPlugin() -> Bool {
         let roots = AgentPlugin.roots(home: FileManager.default.homeDirectoryForCurrentUser)
-        guard !roots.isEmpty else { return }
+        guard !roots.isEmpty else { return false }
         settings.update { $0.agentSkill = AgentSkill.off.rawValue }
         Log.write("[plugin] offered \(roots.map(\.lastPathComponent).joined(separator: " "))")
         settingsWindow.show(tab: .agents, activating: false)
+        return true
     }
 
     /// The agent folders whose settings have the plugin on, for the state report.
@@ -702,20 +710,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         case "requests": requests.run(clear: request.clear)
         case "restore-apple-defaults": restoreAppleDefaults()
         case "live-ink-clear":
-            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\" and \"debug\" to true in settings.json"); return }
+            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\" to true in settings.json"); return }
             Commands.ok(cmd, "cleared \(liveInk.clear())")
         case "live-ink-stroke":
-            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\" and \"debug\" to true in settings.json"); return }
+            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\" to true in settings.json"); return }
             guard let points = request.points.flatMap(Commands.points) else {
                 Commands.error(cmd, .invalidPoints, "give &points=x,y;x,y in global top-left points"); return
             }
             Commands.ok(cmd, "\(liveInk.take(points).description) marks=\(liveInk.marks.count)")
         case "live-ink-chord-down", "live-ink-chord-up":
-            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\" and \"debug\" to true in settings.json"); return }
+            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\" to true in settings.json"); return }
             liveInk.chordChanged(cmd == "live-ink-chord-down" ? .began : .ended)
             Commands.ok(cmd, "inking=\(liveInk.isInking)")
         case "live-ink-ask":
-            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\" and \"debug\" to true in settings.json"); return }
+            guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\" to true in settings.json"); return }
             let words = request.message ?? ""
             guard let id = request.session else {
                 switch liveInk.ask(words) {
@@ -746,14 +754,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         case "intro-lab": introLab.show(); Commands.ok("intro-lab")
         case "setup-lab": setupLab.show(); Commands.ok(cmd)
         case "check-lab": checkLab.show(); Commands.ok("check-lab")
-        case "pointer-lab":
-            if let preview = request.preview {
-                pointerLab.hold(preview)
-                Commands.ok(cmd, preview ? "holding the pointer field" : "let the pointer field go")
-            } else {
-                pointerLab.show()
-                Commands.ok(cmd)
-            }
         case "dismiss": thumbnail.dismiss(by: .url); Commands.ok("dismiss")
         case "cancel": Commands.ok("cancel", annotator.cancelForDebug() ? "" : "nothing was open")
         default:
@@ -906,6 +906,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         SetupWindowController.Callbacks(
             conditions: { [unowned self] in setupConditions(protectedArea: protectedArea) },
             agents: { AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser) },
+            claudeAvailability: { await LiveResponder.availability() },
             // `@Published` sends before the change lands, so the window looks a turn later.
             changes: settings.$appleTarget.dropFirst().map { _ in }
                 .merge(with: NotificationCenter.default.publisher(for: AgentTools.found).map { _ in })
@@ -988,7 +989,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     private func missing() -> [Blocker] {
-        missing(in: setupConditions(protectedArea: nil), usesLiveInk: settings.data.usesLiveInk)
+        missing(in: setupConditions(protectedArea: nil), usesLiveInk: settings.data.liveInk)
     }
 
     /// What is missing under `conditions`, for someone who uses live ink or not.
@@ -1062,15 +1063,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if let shortcut { drawItem.badge = NSMenuItemBadge(string: shortcut.holdLabel) }
         menu.addItem(drawItem)
 
-        if settings.data.debug {
-            menu.addItem(.separator())
-            let liveInkItem = NSMenuItem(title: "Live Ink", action: #selector(toggleLiveInk), keyEquivalent: "")
-            liveInkItem.state = settings.data.liveInk ? .on : .off
-            liveInkItem.badge = NSMenuItemBadge(string: "Hold ⌃⌥")
-            menu.addItem(liveInkItem)
-            if settings.data.liveInk {
-                menu.addItem(NSMenuItem(title: "Clear Live Ink", action: #selector(clearLiveInk), keyEquivalent: ""))
-            }
+        menu.addItem(.separator())
+        let liveInkItem = NSMenuItem(title: "Live Ink", action: #selector(toggleLiveInk), keyEquivalent: "")
+        liveInkItem.state = settings.data.liveInk ? .on : .off
+        liveInkItem.badge = NSMenuItemBadge(string: "Hold \(settings.data.liveInkChordChoice.glyphs)")
+        menu.addItem(liveInkItem)
+        if settings.data.liveInk {
+            menu.addItem(NSMenuItem(title: "Clear Live Ink", action: #selector(clearLiveInk), keyEquivalent: ""))
         }
 
         // The same two switches, under the same heading, as the Settings window's Screenshots tab.

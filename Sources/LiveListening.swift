@@ -4,30 +4,16 @@ import QuartzCore
 /// When live ink stops listening, from the input's level and the chord: a pure value, so the rule
 /// has tests. Times are seconds on one clock, whichever the caller uses.
 struct ListeningEnd: Equatable {
-    let until: ListenUntil
-    /// How long a quiet spell after the chord is let go ends listening, with `until` at `.pause`.
-    let pause: TimeInterval
-    /// The level under which the input is quiet.
-    let quiet: Float
-    /// How long listening goes on after the chord is let go, with `until` at `.release`, so the end
-    /// of the last word is heard.
+    /// How long listening goes on after the chord is let go, so the end of the last word is heard.
     static let tail: TimeInterval = 0.3
-    /// Listening never runs longer than this, whatever the level says.
+    /// Listening never runs longer than this.
     static let longest: TimeInterval = 60
 
-    private(set) var began: TimeInterval
+    let began: TimeInterval
     private(set) var released: TimeInterval?
-    private(set) var lastLoud: TimeInterval?
 
-    init(until: ListenUntil, pause: TimeInterval, quiet: Float, began: TimeInterval) {
-        self.until = until
-        self.pause = pause
-        self.quiet = quiet
+    init(began: TimeInterval) {
         self.began = began
-    }
-
-    mutating func heard(level: Float, at time: TimeInterval) {
-        if level >= quiet { lastLoud = time }
     }
 
     /// The chord was let go.
@@ -39,10 +25,7 @@ struct ListeningEnd: Equatable {
     func isOver(at time: TimeInterval) -> Bool {
         if time >= began + Self.longest { return true }
         guard let released else { return false }
-        switch until {
-        case .release: return time >= released + Self.tail
-        case .pause: return time >= max(released, lastLoud ?? released) + pause
-        }
+        return time >= released + Self.tail
     }
 }
 
@@ -67,9 +50,9 @@ final class LiveListening {
 
     static func text(of words: [SpokenWord]) -> String { words.map(\.text).joined(separator: " ") }
 
-    init(transcriber: Transcriber, until: ListenUntil, pause: TimeInterval, quiet: Float) {
+    init(transcriber: Transcriber) {
         self.transcriber = transcriber
-        end = ListeningEnd(until: until, pause: pause, quiet: quiet, began: CACurrentMediaTime())
+        end = ListeningEnd(began: CACurrentMediaTime())
     }
 
     /// Starts listening and answers at once: the microphone starts on its own queue. `failed` runs on
@@ -80,11 +63,10 @@ final class LiveListening {
             self.words = words
             self.onWords?(words)
         }
-        let onLevel: @MainActor @Sendable (Float) -> Void = { [weak self] level in self?.end.heard(level: level, at: CACurrentMediaTime()) }
-        microphone.start(into: transcriber, onLevel: onLevel) { [weak self] failure in
+        microphone.start(into: transcriber) { [weak self] failure in
             guard let self, !self.finishing else { return }
             guard let failure else {
-                Log.write("[speech] listening engine=\(self.transcriber.name) until=\(self.end.until.rawValue)")
+                Log.write("[speech] listening engine=\(self.transcriber.name)")
                 return
             }
             self.finishing = true
@@ -100,10 +82,6 @@ final class LiveListening {
     }
 
     func released() { end.release(at: CACurrentMediaTime()) }
-
-    /// Whether it goes on listening once the chord is let go, waiting for a pause, rather than ending
-    /// with the chord's release.
-    var listensPastRelease: Bool { end.until == .pause }
 
     func pressedAgain() { end.pressAgain() }
 

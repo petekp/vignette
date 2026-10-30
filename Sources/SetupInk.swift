@@ -2,124 +2,6 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// Placeholder copy for setup's live ink pages, until Pete picks the words.
-enum SetupInkCopy {
-    static let costNote = "When you ask, Claude sees a picture of the window, its title and its URL, through your own Claude Code. An ask costs about one to four cents."
-    /// macOS asks to quit and reopen an app it has just let record the screen, since the grant
-    /// reaches only a new process.
-    static let reopenNote = "Once you allow Screen Recording, macOS asks to quit and reopen \(Identity.name). Setup opens again on this page."
-}
-
-// MARK: The title
-
-/// The live ink page's title, "Live Ink" in cursive: the centre lines a hand writes it along, in three
-/// strokes, "Live", the i's dot, then "Ink". The page writes them in the real ink, through the pen
-/// the person's own strokes are drawn with.
-enum SetupInkTitle {
-    /// In points, y down, from the start of the baseline, in the order the pen goes.
-    static let strokes: [[CGPoint]] = [
-        [(34, -46), (44, -64), (55, -80), (62, -88), (57, -92), (48, -86), (40, -70), (33, -50), (26, -30), (18, -13), (10, -3),
-         (1, 2), (-7, 0), (-7, -6), (2, -9), (15, -6), (27, 0), (38, -5), (45, -16), (49, -26), (47, -14), (48, -3), (55, 0),
-         (62, -8), (66, -26), (69, -10), (73, 0), (79, -10), (84, -26), (88, -21), (95, -19), (102, -21), (107, -27), (102, -31),
-         (96, -25), (95, -11), (101, -1), (111, 0), (121, -6)],
-        [(49, -43), (52, -44), (54, -41), (52, -38), (49, -39), (48, -41), (50, -43)],
-        [(147, -36), (154, -60), (166, -78), (178, -84), (175, -72), (169, -46), (162, -18), (155, -3), (145, 2), (138, -4),
-         (145, -10), (160, -9), (172, -7), (178, -14), (180, -26), (180, -12), (180, 0), (183, -13), (190, -24), (198, -26),
-         (201, -17), (201, -5), (205, 0), (212, -5), (218, -24), (224, -56), (230, -80), (225, -88), (218, -76), (215, -46),
-         (213, -16), (213, 0), (217, -12), (224, -22), (232, -26), (236, -20), (230, -13), (221, -11), (229, -6), (236, -1),
-         (246, -3)],
-    ].map { $0.map { CGPoint(x: $0.0, y: $0.1) } }
-
-    /// Room round the lines for the ink's width and glow, in points.
-    private static let margin: CGFloat = 18
-
-    private static let extent = InkStroke.bounds(of: strokes.flatMap { ArrowBody.Curve(through: $0).samples })
-
-    /// The room the title takes on the page.
-    static var size: CGSize { CGSize(width: extent.width + 2 * margin, height: extent.height + 2 * margin) }
-
-    /// Stroke `index` in a room whose top-left is `origin`.
-    static func stroke(_ index: Int, in origin: CGPoint) -> [CGPoint] {
-        let shift = CGPoint(x: origin.x + margin - extent.minX, y: origin.y + margin - extent.minY)
-        return strokes[index].map { CGPoint(x: $0.x + shift.x, y: $0.y + shift.y) }
-    }
-}
-
-// MARK: A hand
-
-/// The pointer's events a hand sends as it draws along a line, each with its time from when the pen
-/// landed: closer together where the line turns, as a hand slows there, and where it lands and lifts.
-/// The ink's width follows their spacing, as it does for the person's own strokes.
-struct HandStroke: Equatable {
-    let times: [TimeInterval]
-    let points: [CGPoint]
-
-    var duration: TimeInterval { times.last ?? 0 }
-
-    /// A hand taking `duration` to draw the curve through `controls`, sending `rate` events a second.
-    init(through controls: [CGPoint], duration: TimeInterval, rate: Double = 120) {
-        let path = ArrowBody.Curve(through: controls)
-        let curve = path.samples
-        guard curve.count > 1, duration > 0 else {
-            times = curve.map { _ in 0 }
-            points = curve
-            return
-        }
-        // The time to each point of the curve, at a speed that drops where it turns and at its ends.
-        let lengths = path.lengths
-        let total = max(lengths.last ?? 0, .ulpOfOne)
-        var reached: [Double] = [0]
-        for index in 1..<curve.count {
-            let along = lengths[index] / total
-            let ends = min(InkHand.ease(along / 0.12), InkHand.ease((1 - along) / 0.12))
-            let speed = (0.35 + 0.65 * (1 - Self.turn(at: index, in: curve))) * (0.3 + 0.7 * ends)
-            reached.append(reached[index - 1] + Double(lengths[index] - lengths[index - 1]) / Double(speed))
-        }
-        let scale = duration / max(reached.last ?? 1, .ulpOfOne)
-        var times: [TimeInterval] = []
-        var points: [CGPoint] = []
-        var at = 1
-        for event in 0...Int((duration * rate).rounded(.up)) {
-            let time = min(Double(event) / rate, duration)
-            while at < curve.count - 1, reached[at] * scale < time { at += 1 }
-            let before = reached[at - 1] * scale, after = reached[at] * scale
-            let t = after > before ? min(max(CGFloat((time - before) / (after - before)), 0), 1) : 1
-            let a = curve[at - 1], b = curve[at]
-            times.append(time)
-            points.append(CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t))
-        }
-        self.times = times
-        self.points = points
-    }
-
-    /// The events sent by `elapsed` seconds after the pen landed.
-    func events(by elapsed: TimeInterval) -> [CGPoint] {
-        let count = times.firstIndex { $0 > elapsed } ?? times.count
-        return Array(points.prefix(count))
-    }
-
-    /// Where the hand is `elapsed` seconds after the pen landed, between the events either side.
-    func position(at elapsed: TimeInterval) -> CGPoint? {
-        guard let first = points.first else { return nil }
-        guard let after = times.firstIndex(where: { $0 > elapsed }) else { return points.last }
-        guard after > 0 else { return first }
-        let t = CGFloat((elapsed - times[after - 1]) / (times[after] - times[after - 1]))
-        let a = points[after - 1], b = points[after]
-        return CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
-    }
-
-    /// How sharply the curve turns at `index`, from 0 for straight to 1 for a right angle or more.
-    private static func turn(at index: Int, in curve: [CGPoint]) -> CGFloat {
-        let reach = 2
-        let a = curve[max(index - reach, 0)], b = curve[index], c = curve[min(index + reach, curve.count - 1)]
-        let one = CGVector(dx: b.x - a.x, dy: b.y - a.y), two = CGVector(dx: c.x - b.x, dy: c.y - b.y)
-        let lengths = hypot(one.dx, one.dy) * hypot(two.dx, two.dy)
-        guard lengths > 0 else { return 0 }
-        let cosine = (one.dx * two.dx + one.dy * two.dy) / lengths
-        return min(acos(min(max(cosine, -1), 1)) / (.pi / 2), 1)
-    }
-}
-
 // MARK: The demo
 
 /// What the live ink page shows when it appears, as steps at times from then. Pure, so a test can
@@ -678,7 +560,7 @@ final class SetupInkGuide {
             // Under the line below the rows, the room nothing else on the page takes.
             let page = (rows + footer).reduce(CGRect.null) { $0.union($1) }
             guard !page.isNull else { return [] }
-            placed = [LiveAnswerLayout.note("Hold ⌃⌥ and draw anywhere", near: page, scene: scene, obstacles: rows + footer, sizes: sizes)]
+            placed = [LiveAnswerLayout.note("Hold \(Settings.shared.data.liveInkChordChoice.glyphs) and draw anywhere", near: page, scene: scene, obstacles: rows + footer, sizes: sizes)]
         }
         return placed.map { mark in
             var mark = LiveWindows.translated(mark, by: back)
@@ -709,6 +591,8 @@ enum SetupInkKeys {
 /// demo plays once when it appears.
 struct LiveInkPage: View {
     @ObservedObject var player: SetupInkPlayer
+    /// Why Claude cannot answer, or nil when it can. Setup says so in place of the line about asking Claude.
+    let claudeProblem: String?
     @ObservedObject private var settings = Settings.shared
     @StateObject private var held = HeldModifiers()
 
@@ -731,15 +615,18 @@ struct LiveInkPage: View {
                 // As tall as the grown keys from the start, so only the line's words move as they grow.
                 .frame(height: SetupInkKeys.grown)
                 .inkAnchor(SetupInkPlayer.lineAnchors[0])
-                Text("Then ask Claude about it, or send it to a Claude Code or Codex session.")
+                // The page has no room for a third line, so why Claude cannot answer takes this one's place.
+                Text(claudeProblem ?? "Then ask Claude about it, or send it to a Claude Code or Codex session.")
                     .foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 340)
+                    .contentTransition(.opacity)
                     .opacity(words)
                     .inkAnchor(SetupInkPlayer.lineAnchors[1])
                     .offset(y: player.lineTwoDrop)
                     .animation(Anim.spring(SetupInkPlayer.makingRoom * settings.motionScale), value: player.lineTwoDrop)
             }
             .animation(Anim.spring(0.5 * settings.motionScale), value: player.wordsShown)
+            .animation(Anim.spring(0.5 * settings.motionScale), value: claudeProblem)
             .animation(Anim.spring(SetupInkDemo.growing * settings.motionScale, bounce: 0.2), value: player.keysGrown)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -758,13 +645,15 @@ struct LiveInkPage: View {
 
     private var keys: some View {
         let size = player.keysGrown ? SetupInkKeys.grown : SetupInkKeys.size
+        let pair = settings.data.liveInkChordChoice.keys
         return HStack(spacing: SetupInkKeys.spacing(height: size)) {
-            key("⌃", down: player.keysDown || held.flags.contains(.control), size: size)
-            key("⌥", down: player.keysDown || held.flags.contains(.option), size: size)
+            ForEach(pair, id: \.glyph) { cap in
+                key(cap.glyph, down: player.keysDown || held.flags.contains(cap.flag), size: size)
+            }
         }
         .padding(.horizontal, SetupInkKeys.padding)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Control and Option")
+        .accessibilityLabel(pair.map(\.name).joined(separator: " and "))
     }
 
     /// A key, lit in the ink's colour while it is held, since holding it is what lets the ink draw.
@@ -797,7 +686,7 @@ struct LiveInkSetupPage: View {
             .padding(.top, 60)
             Form {
                 Section {
-                    PermissionRow(symbol: "hand.draw", title: "Accessibility", reason: "So you can draw while holding ⌃⌥.",
+                    PermissionRow(symbol: "hand.draw", title: "Accessibility", reason: "So you can draw while holding \(Settings.shared.data.liveInkChordChoice.glyphs).",
                                   status: trusted ? .granted : .ask, isDefault: !trusted,
                                   spot: (guide.spots, accessibility.button, accessibility.words)) {
                         callbacks.askAccessibility()

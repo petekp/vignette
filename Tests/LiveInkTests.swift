@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import XCTest
 
 final class LiveInkTests: XCTestCase {
@@ -6,38 +7,38 @@ final class LiveInkTests: XCTestCase {
 
     // MARK: When listening ends
 
-    func testListeningUntilReleaseEndsJustAfterTheChordIsLetGo() {
-        var end = ListeningEnd(until: .release, pause: 1.2, quiet: 0.4, began: 0)
-        end.heard(level: 0.9, at: 1)
+    func testListeningEndsJustAfterTheChordIsLetGo() {
+        var end = ListeningEnd(began: 0)
         XCTAssertFalse(end.isOver(at: 5), "while the chord is held, listening goes on")
         end.release(at: 5)
         XCTAssertFalse(end.isOver(at: 5 + ListeningEnd.tail - 0.01))
         XCTAssertTrue(end.isOver(at: 5 + ListeningEnd.tail))
     }
 
-    func testListeningUntilAPauseWaitsForTheLastLoudMomentAfterRelease() {
-        var end = ListeningEnd(until: .pause, pause: 1.2, quiet: 0.4, began: 0)
-        end.release(at: 2)
-        end.heard(level: 0.8, at: 2.5)
-        end.heard(level: 0.1, at: 3)
-        XCTAssertFalse(end.isOver(at: 3.6), "still within the pause after the last word")
-        XCTAssertTrue(end.isOver(at: 3.71))
-    }
-
-    func testListeningUntilAPauseEndsAfterThePauseWhenNothingIsSaidAfterRelease() {
-        var end = ListeningEnd(until: .pause, pause: 1.2, quiet: 0.4, began: 0)
-        end.heard(level: 0.9, at: 1)
-        end.release(at: 4)
-        XCTAssertFalse(end.isOver(at: 5))
-        XCTAssertTrue(end.isOver(at: 5.21))
-    }
-
     func testPressingTheChordAgainKeepsListening() {
-        var end = ListeningEnd(until: .release, pause: 1.2, quiet: 0.4, began: 0)
+        var end = ListeningEnd(began: 0)
         end.release(at: 1)
         end.pressAgain()
         XCTAssertFalse(end.isOver(at: 10), "drawing more is part of the same note")
         XCTAssertTrue(end.isOver(at: ListeningEnd.longest), "but never past the longest listening")
+    }
+
+    // MARK: Which pair holds live ink
+
+    @MainActor func testEveryPairCanSitBesideADoubleTap() {
+        for chord in LiveInkChord.allCases {
+            for tap in ShortcutSetting.doubleTaps {
+                XCTAssertNil(chord.refusal(against: HotKeySpec.parse(tap)), "\(chord.glyphs) beside \(tap)")
+            }
+        }
+    }
+
+    func testAPairInsideTheStacksKeyCombinationIsRefusedFromEitherSide() {
+        let controlOptionS = HotKeySpec.key(keyCode: 1, modifiers: UInt32(controlKey | optionKey | cmdKey))
+        XCTAssertNotNil(LiveInkChord.controlOption.refusal(against: controlOptionS), "pressing ⌃⌥⌘S holds ⌃⌥ first")
+        XCTAssertNotNil(LiveInkChord.controlOption.refusal(ofStackShortcut: controlOptionS))
+        XCTAssertNil(LiveInkChord.controlShift.refusal(against: controlOptionS), "⌃⇧ is not part of ⌃⌥⌘S")
+        XCTAssertNil(LiveInkChord.controlShift.refusal(ofStackShortcut: controlOptionS))
     }
 
     // MARK: How long a note card's turn is waited on

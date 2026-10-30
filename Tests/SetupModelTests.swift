@@ -13,7 +13,7 @@ final class SetupModelTests: XCTestCase {
     }
 
     func testNotNowInAllOfSetupGoesOnToTheAgents() {
-        let model = SetupModel(callbacks: withClaude, scope: .whole, start: .liveInk, offersLiveInk: true)
+        let model = SetupModel(callbacks: withClaude, scope: .whole, start: .liveInk)
         var closed = false
         model.done = { closed = true }
         model.useLiveInk(false, animation: .default)
@@ -25,7 +25,7 @@ final class SetupModelTests: XCTestCase {
     }
 
     func testNotNowClosesLiveInkAlone() {
-        let model = SetupModel(callbacks: withClaude, scope: .liveInk, start: .liveInk, offersLiveInk: true)
+        let model = SetupModel(callbacks: withClaude, scope: .liveInk, start: .liveInk)
         var closed = false
         model.done = { closed = true }
         model.useLiveInk(false, animation: .default)
@@ -47,7 +47,7 @@ final class SetupModelTests: XCTestCase {
     }
 
     func testStartingOnLiveInkPermissionsHoldsThemAfterUseLiveInk() {
-        let model = SetupModel(callbacks: .init(), scope: .whole, start: .liveInkSetup, offersLiveInk: true)
+        let model = SetupModel(callbacks: .init(), scope: .whole, start: .liveInkSetup)
         XCTAssertEqual(model.page, .liveInkSetup)
         XCTAssertEqual(model.pages, [.welcome, .shortcut, .liveInk, .liveInkSetup])
     }

@@ -12,7 +12,6 @@ final class DebugPanelController: NSObject, NSWindowDelegate {
         var stack: () -> Void
         var annotator: () -> Void
         var intro: () -> Void
-        var pointer: () -> Void
         var check: () -> Void
         var setup: () -> Void
     }
@@ -138,7 +137,6 @@ struct DebugPanelView: View {
                         Button("Annotator", action: previews.annotator)
                         Divider()
                         Button("Menu Bar Intro Lab", action: previews.intro)
-                        Button("Pointer Lab", action: previews.pointer)
                         Button("Check Lab", action: previews.check)
                         Button("Setup Lab", action: previews.setup)
                         Divider()
@@ -239,7 +237,6 @@ struct DebugPanelView: View {
     private func labName(_ lab: TweakSection.Lab) -> String {
         switch lab {
         case .intro: "Menu Bar Intro Lab"
-        case .pointer: "Pointer Lab"
         case .check: "Check Lab"
         case .setup: "Setup Lab"
         }
@@ -248,7 +245,6 @@ struct DebugPanelView: View {
     private func open(_ lab: TweakSection.Lab) {
         switch lab {
         case .intro: previews.intro()
-        case .pointer: previews.pointer()
         case .check: previews.check()
         case .setup: previews.setup()
         }
@@ -323,11 +319,6 @@ struct TweakRow: View, Equatable {
         case .choice(let path, let options):
             Picker("", selection: Binding(get: { ui[keyPath: path] }, set: { write(path, $0) })) {
                 ForEach(options, id: \.self) { Text($0).tag($0) }
-            }
-            .labelsHidden()
-        case .style(let path, let names, _):
-            Picker("", selection: Binding(get: { Int(ui[keyPath: path].rounded()) }, set: { write(path, Double($0)) })) {
-                ForEach(names.indices, id: \.self) { Text(names[$0]).tag($0) }
             }
             .labelsHidden()
         }
@@ -406,7 +397,7 @@ extension TweakSpec {
     /// The setting's value in `ui`, to compare.
     func value(in ui: UITweaks) -> AnyHashable {
         switch control {
-        case .number(let path, _, _, _, _), .style(let path, _, _): ui[keyPath: path]
+        case .number(let path, _, _, _, _): ui[keyPath: path]
         case .integer(let path, _): ui[keyPath: path]
         case .colour(let path), .font(let path), .choice(let path, _): ui[keyPath: path]
         }
@@ -417,7 +408,6 @@ extension TweakSpec {
         let defaults = UITweaks()
         switch control {
         case .number(let path, _, let step, let unit, _): return Self.format(defaults[keyPath: path], step: step) + (unit.isEmpty ? "" : " \(unit)")
-        case .style(let path, let names, _): return names[min(max(Int(defaults[keyPath: path].rounded()), 0), names.count - 1)]
         case .integer(let path, _): return "\(defaults[keyPath: path])"
         case .colour(let path), .font(let path), .choice(let path, _): return defaults[keyPath: path]
         }

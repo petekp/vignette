@@ -61,6 +61,8 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         }
         /// The agents the last page offers the plugin to.
         var agents: () -> [AgentPluginStatus] = { [] }
+        /// Whether Claude Code is installed and signed in, asked when the live ink page is reached.
+        var claudeAvailability: () async -> LiveResponder.Availability = { .checking }
         /// Sends, on the main thread once the change has landed, when something `conditions` or
         /// `agents` reads has changed, so the window looks now rather than at its next poll.
         var changes: AnyPublisher<Void, Never> = Empty().eraseToAnyPublisher()
@@ -123,7 +125,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         callbacks.askedForScreenRecording = { SetupModel.returnsToLiveInkSetup = true }
         callbacks.closed = { [weak self] model in self?.record(model) }
         let data = settings.data
-        let reopened = data.debug && data.liveInk && SetupModel.returnsToLiveInkSetup
+        let reopened = data.liveInk && SetupModel.returnsToLiveInkSetup
         if reopened { Log.write("[setup] reopened on live ink's permissions") }
         open(callbacks: callbacks, scope: .whole, start: reopened ? .liveInkSetup : .welcome)
     }
@@ -145,7 +147,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             NSApp.activate(ignoringOtherApps: true)
             return win
         }
-        let model = SetupModel(callbacks: callbacks, scope: scope, start: start, offersLiveInk: settings.data.debug)
+        let model = SetupModel(callbacks: callbacks, scope: scope, start: start)
         model.granted = { [weak self] in self?.granted() }
         model.folderAnswered = { [weak self] access in self?.folderAnswered(access) }
         model.dropFocus = { [weak self] in self?.window?.makeFirstResponder(nil) }
@@ -253,6 +255,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         if model.seen.folder == .ask { model.callbacks.askFolder() }
         settings.update {
             $0.setup = SetupState.done.rawValue
+            if model.sawLiveInk { $0.liveInkOffered = true }
             if let choice = model.launchAtLoginChoice { $0.launchAtLogin = choice }
         }
         UserDefaults.standard.set(true, forKey: SetupWindowController.doneOnThisMacKey)
@@ -291,9 +294,6 @@ final class SetupModel: ObservableObject {
     var folderAnswered: (FolderAccess) -> Void = { _ in }
     var done: () -> Void = {}
     let scope: Scope
-    /// Whether all of setup includes live ink's pages. They are still being designed, so they show
-    /// only with `debug`.
-    let offersLiveInk: Bool
     /// The live ink page's demo, kept here so going back to the page shows where it rested.
     let inkPlayer = SetupInkPlayer()
     let inkGuide = SetupInkGuide()
@@ -309,20 +309,26 @@ final class SetupModel: ObservableObject {
     /// keeps its focus ring on the screen, at full strength, until it has faded out.
     var dropFocus: () -> Void = {}
 
-    @Published var page = Page.welcome
+    @Published var page = Page.welcome {
+        didSet { reached(page) }
+    }
+    /// Whether Claude Code can answer live ink, as the live ink page last found it.
+    @Published private(set) var claudeAnswer = LiveResponder.Availability.checking
     /// Whether the last move was forward, which decides the side the pages slide to.
     @Published var forward = true
     /// The agents whose switch is on. All that can take the plugin to start: the user installed
     /// Vignette to work with them, and a switch they can see is still their choice.
     @Published var chosen: Set<URL>
     private(set) var sawAgents = false
+    /// Whether live ink's page was shown, which makes its offer: a setup closed before it leaves the
+    /// offer for the Settings window.
+    private(set) var sawLiveInk = false
 
     /// Opens on `start`, or on the first page when `start` is not among them. Starting on live ink's
     /// permissions is starting after Use Live Ink, as a reopen after asking for Screen Recording does.
-    init(callbacks: SetupWindowController.Callbacks, scope: Scope = .whole, start: Page = .welcome, offersLiveInk: Bool = false) {
+    init(callbacks: SetupWindowController.Callbacks, scope: Scope = .whole, start: Page = .welcome) {
         self.callbacks = callbacks
         self.scope = scope
-        self.offersLiveInk = offersLiveInk
         seen = callbacks.conditions()
         let agents = callbacks.agents()
         self.agents = agents
@@ -335,6 +341,8 @@ final class SetupModel: ObservableObject {
         changes = callbacks.changes.sink { [weak self] in
             MainActor.assumeIsolated { self?.look(includingAgents: true) }
         }
+        // `page`'s observer does not run in `init`.
+        reached(page)
     }
 
     private var changes: AnyCancellable?
@@ -383,15 +391,29 @@ final class SetupModel: ObservableObject {
     /// without the plugin until they reload.
     var installsIntoClaude: Bool { claude.map { !$0.installed && chosen.contains($0.root) } ?? false }
 
-    var pages: [Page] {
-        Self.pages(scope: scope, offersLiveInk: offersLiveInk, usesLiveInk: usesLiveInk, hasAgents: !agents.isEmpty)
+    /// Live ink's pages record the offer as made, and its first page asks whether Claude Code can answer.
+    private func reached(_ page: Page) {
+        if page == .liveInk || page == .liveInkSetup { sawLiveInk = true }
+        if page == .liveInk { checkClaude() }
     }
 
-    static func pages(scope: Scope, offersLiveInk: Bool, usesLiveInk: Bool, hasAgents: Bool) -> [Page] {
+    /// Asks Claude Code again, so the live ink page says why Claude cannot answer, if it cannot.
+    func checkClaude() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.claudeAnswer = await self.callbacks.claudeAvailability()
+        }
+    }
+
+    var pages: [Page] {
+        Self.pages(scope: scope, usesLiveInk: usesLiveInk, hasAgents: !agents.isEmpty)
+    }
+
+    static func pages(scope: Scope, usesLiveInk: Bool, hasAgents: Bool) -> [Page] {
         let liveInk: [Page] = [.liveInk] + (usesLiveInk ? [.liveInkSetup] : [])
         switch scope {
         case .liveInk: return liveInk
-        case .whole: return [.welcome, .shortcut] + (offersLiveInk ? liveInk : []) + (hasAgents ? [.agents] : [])
+        case .whole: return [.welcome, .shortcut] + liveInk + (hasAgents ? [.agents] : [])
         }
     }
     var index: Int { pages.firstIndex(of: page) ?? 0 }
@@ -483,7 +505,7 @@ struct SetupView: View {
         switch page {
         case .welcome: welcome
         case .shortcut: shortcut
-        case .liveInk: LiveInkPage(player: model.inkPlayer)
+        case .liveInk: LiveInkPage(player: model.inkPlayer, claudeProblem: model.claudeAnswer.problem)
         case .liveInkSetup:
             LiveInkSetupPage(guide: model.inkGuide, trusted: model.seen.trusted, screenRecording: model.seen.screenRecording,
                              callbacks: model.callbacks)

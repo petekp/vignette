@@ -28,21 +28,20 @@ final class GPUTimes: @unchecked Sendable {
     }
 }
 
-/// Live ink's pointer field (docs/live-ink-cursor-2026-10-10.md): the ring round the pointer while
-/// the chord is held, in one of several styles (docs/live-ink-pointer-variants-2026-10-10.md). A
-/// Metal shader draws it over a live picture of the screen, which it bends. Without that picture,
-/// because Screen Recording is refused or the stream stopped, its light still draws and nothing bends.
+/// Live ink's pointer field (docs/live-ink-cursor-2026-10-10.md): the lamp round the pointer while
+/// the chord is held (docs/live-ink-pointer-variants-2026-10-10.md). A Metal shader draws it into a
+/// layer of its own. The lamp does not bend what is under it, so the field reads no picture of the
+/// screen.
 ///
-/// It is hidden until its holder shows it, and fades in once its first frame is drawn, so it never
-/// shows the screen as it was before the chord went down. It reads the pointer and the button
-/// itself, once a refresh, from its display link, and draws only from there. The ring has a layer
-/// only as big as it, moved with it, so a frame draws and composites a few hundred points square
-/// rather than the screen. Drawing from each
-/// frame's arrival queued a main-thread block per frame: the run loop never got back to commit the
-/// layer, so every `nextDrawable()` waited out its one-second timeout and the app stopped answering.
+/// It is hidden until its holder shows it, and fades in once its first frame is drawn. It reads the
+/// pointer and the button itself, once a refresh, from its display link, and draws only from there.
+/// The ring has a layer only as big as it, moved with it, so a frame draws and composites a few
+/// hundred points square rather than the screen. It draws from its display link, not from a block on
+/// the main queue per refresh: the run loop never got back to commit the layer, so every
+/// `nextDrawable()` waited out its one-second timeout and the app stopped answering.
 @MainActor
 final class PointerField: NSObject {
-    private static let metal: (device: MTLDevice, queue: MTLCommandQueue, ring: MTLRenderPipelineState, blank: MTLTexture)? = {
+    private static let metal: (device: MTLDevice, queue: MTLCommandQueue, ring: MTLRenderPipelineState)? = {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue(),
               let library = device.makeDefaultLibrary() else { return nil }
         func pipeline(_ fragment: String) -> MTLRenderPipelineState? {
@@ -52,23 +51,17 @@ final class PointerField: NSObject {
             descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
             return try? device.makeRenderPipelineState(descriptor: descriptor)
         }
-        // Drawing with no picture of the screen still binds one; the shader reads none of it.
-        let blankDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 1, height: 1, mipmapped: false)
-        guard let ring = pipeline("ringFragment"), let blank = device.makeTexture(descriptor: blankDescriptor) else { return nil }
-        return (device, queue, ring, blank)
+        guard let ring = pipeline("ringFragment") else { return nil }
+        return (device, queue, ring)
     }()
 
     /// What the overlay hosts, under the marks so the ink stays sharp, and what fades.
     let layer = CALayer()
     /// The ring's layer, as big as the ring can reach. It presents in the transaction that places it,
-    /// so the ring's picture and its place change in the same frame.
+    /// so the ring's drawing and its place change in the same frame.
     private let ringLayer: CAMetalLayer
-    private let feed = ScreenFeed()
-    /// How long the GPU took over each drawing since the field came up, logged with the feed's frames.
+    /// How long the GPU took over each drawing since the field came up, logged when it goes down.
     private let gpuTimes = GPUTimes()
-    private var textures: CVMetalTextureCache?
-    /// The texture made from the newest frame, kept while that frame is the newest.
-    private var texture: (frame: CVPixelBuffer, texture: CVMetalTexture)?
     private var link: CADisplayLink?
     private var ui = UITweaks()
     /// The ink's two colours in the layer's colour space, the ice and the deep blue, and which of them
@@ -78,19 +71,11 @@ final class PointerField: NSObject {
     private var contrast = InkContrast(UITweaks())
     private var motion = PointerFieldMotion()
 
-    /// The screen it covers, in AppKit's global points, which the pointer is read against; its size
-    /// in pixels, which the picture is taken at; its display; and the window the picture leaves out.
+    /// The screen it covers, in AppKit's global points, which the pointer is read against.
     private var screenFrame = CGRect.zero
-    private var pixels = CGSize.zero
-    private var display: CGDirectDisplayID?
-    private var excluding: CGWindowID = 0
 
     /// Its holder wants it up.
     private var held = false
-    /// The chord went down: the picture starts now, so it is there by the time the field shows.
-    private var prepared = false
-    /// Held or prepared at the last update, so a new chord tries the picture again.
-    private var readied = false
     /// Ticking and drawing. It fades in at its first drawing.
     private var isUp = false
     /// Its opacity is on, or on its way there.
@@ -99,15 +84,10 @@ final class PointerField: NSObject {
     private var fadeOut: Int?
     private var fades = 0
     private var hidden: [() -> Void] = []
-    private var streaming = false
-    /// The screen's picture could not be had since the chord went down, so nothing bends: Screen
-    /// Recording is refused, or the stream stopped.
-    private var pictureFailed = false
     /// The settings changed since the last drawing.
     private var dirty = false
-    /// When the field came up, and when its picture was asked for, for the first frame's log line.
+    /// When the field came up, for the first frame's log line.
     private var started: CFTimeInterval = 0
-    private var asked: CFTimeInterval = 0
 
     init(scale: CGFloat) {
         ringLayer = Self.metalLayer(scale: scale)
@@ -115,13 +95,6 @@ final class PointerField: NSObject {
         layer.anchorPoint = .zero
         layer.opacity = 0
         layer.addSublayer(ringLayer)
-        if let metal = Self.metal {
-            CVMetalTextureCacheCreate(nil, nil, metal.device, nil, &textures)
-        }
-        feed.onStopped = { [weak self] error in
-            Log.write("[live-ink] field feed stopped: \(error)")
-            self?.lostPicture()
-        }
     }
 
     private static func metalLayer(scale: CGFloat) -> CAMetalLayer {
@@ -139,12 +112,9 @@ final class PointerField: NSObject {
         return layer
     }
 
-    /// Covers `screen`, whose picture leaves out the window `excluding`. Again when the screens change.
-    func place(on screen: NSScreen, display: CGDirectDisplayID, excluding window: CGWindowID) {
+    /// Covers `screen`. Again when the screens change.
+    func place(on screen: NSScreen) {
         screenFrame = screen.frame
-        pixels = CGSize(width: screen.frame.width * screen.backingScaleFactor, height: screen.frame.height * screen.backingScaleFactor)
-        self.display = display
-        excluding = window
         guard Self.metal != nil else { return }
         link?.invalidate()
         link = screen.displayLink(target: self, selector: #selector(tick))
@@ -152,7 +122,7 @@ final class PointerField: NSObject {
         link?.isPaused = !isUp
     }
 
-    /// The settings it draws with. It starts or stops the screen's picture as they now need it.
+    /// The settings it draws with.
     func apply(_ ui: UITweaks) {
         self.ui = ui
         func p3(_ hex: String, _ fallback: CGColor) -> SIMD3<Float> {
@@ -168,16 +138,9 @@ final class PointerField: NSObject {
         update()
     }
 
-    /// Readies it as the chord goes down, so its picture is there by the time it shows.
-    func prepare() {
-        prepared = true
-        update()
-    }
-
-    /// Holds it up, or lets it go: it fades out, and the picture stops once it has.
+    /// Holds it up, or lets it go: it fades out.
     func show(_ on: Bool) {
         held = on
-        if !on { prepared = false }
         update()
     }
 
@@ -189,7 +152,6 @@ final class PointerField: NSObject {
     /// Stops for good, at once: the overlay is closing.
     func tearDown() {
         held = false
-        prepared = false
         isUp = false
         fadeOut = nil
         link?.invalidate()
@@ -199,14 +161,8 @@ final class PointerField: NSObject {
     }
 
     private func update() {
-        let readying = held || prepared
-        // Each chord tries the picture again: a refusal or a stream error may be over by now.
-        if readying, !readied { pictureFailed = false }
-        readied = readying
         let wanted = held && Self.metal != nil && ui.ringShows
         if wanted, !isUp { comeUp() } else if !wanted, isUp { goDown() }
-        let wantsPicture = (readying || fadeOut != nil) && Self.metal != nil && ui.ringBends && !pictureFailed
-        if wantsPicture, !streaming { startFeed() } else if !wantsPicture, streaming { stopFeed() }
     }
 
     /// Up from the pointer, with the ring growing in from nothing.
@@ -223,6 +179,7 @@ final class PointerField: NSObject {
     private func goDown() {
         isUp = false
         link?.isPaused = true
+        Log.write("[live-ink] field gpu \(gpuTimes.take())")
         guard faded else { settled(); return }
         fades += 1
         let generation = fades
@@ -240,36 +197,6 @@ final class PointerField: NSObject {
         let waiting = hidden
         hidden = []
         waiting.forEach { $0() }
-    }
-
-    private func startFeed() {
-        guard let display else { return }
-        streaming = true
-        asked = CACurrentMediaTime()
-        Task { @MainActor [weak self, feed, pixels, excluding] in
-            do {
-                try await feed.start(display: display, pixels: pixels, excluding: [excluding])
-            } catch {
-                Log.write("[live-ink] field feed could not start: \(error)")
-                self?.lostPicture()
-            }
-        }
-    }
-
-    private func stopFeed() {
-        streaming = false
-        feed.stop()
-        texture = nil
-        if let textures { CVMetalTextureCacheFlush(textures, 0) }
-        Log.write("[live-ink] field feed stopped frames=\(feed.frameCount) \(gpuTimes.take())")
-    }
-
-    /// Draws on without the screen's picture: the ring glows and nothing bends.
-    private func lostPicture() {
-        streaming = false
-        texture = nil
-        pictureFailed = true
-        dirty = true
     }
 
     /// The pointer now, in the layer's points.
@@ -294,19 +221,13 @@ final class PointerField: NSObject {
         let pressed = LiveInkTap.isButtonDown && CGRect(origin: .zero, size: screenFrame.size).contains(pointer)
         let moved = motion.step(to: now, pointer: pointer, pressed: pressed, deep: deepUnderPointer(), ui: ui,
                                 colourSettling: 0.3 * Settings.shared.motionScale)
-        let needsPicture = ui.ringBends && !pictureFailed
-        let picture = needsPicture ? feed.take() : nil
-        // Bending waits for the first frame of the screen.
-        if needsPicture, picture == nil { return }
-        // It draws only when the screen, its motion or the settings changed, or every refresh while the
-        // lamp breathes or drifts.
-        guard dirty || picture?.fresh == true || moved || ui.lampLives else { return }
+        // It draws only when its motion or the settings changed, or every refresh while the lamp
+        // breathes or drifts.
+        guard dirty || moved || ui.lampLives else { return }
         dirty = false
-        draw(picture?.frame)
+        draw()
         if !faded {
-            // `ms` is how long the field waited for the picture once it was wanted, `stream-ms` how long
-            // since the picture was asked for, as the chord went down.
-            if needsPicture { Log.write("[live-ink] field first frame ms=\(Int((now - started) * 1000)) stream-ms=\(Int((now - asked) * 1000))") }
+            Log.write("[live-ink] field first frame ms=\(Int((now - started) * 1000))")
             fade(in: true)
         }
     }
@@ -332,28 +253,16 @@ final class PointerField: NSObject {
     }
 
     /// Draws the ring, and places and presents it in one transaction.
-    private func draw(_ frame: CVPixelBuffer?) {
-        guard let metal = Self.metal, let textures else { return }
+    private func draw() {
+        guard let metal = Self.metal else { return }
         let size = layer.bounds.size
         guard size.width > 0, size.height > 0 else { return }
-        var screen = metal.blank
-        if let frame {
-            if texture?.frame !== frame {
-                var made: CVMetalTexture?
-                CVMetalTextureCacheCreateTextureFromImage(nil, textures, frame, nil, .bgra8Unorm,
-                                                          CVPixelBufferGetWidth(frame), CVPixelBufferGetHeight(frame), 0, &made)
-                texture = made.map { (frame, $0) }
-            }
-            guard let read = texture.flatMap({ CVMetalTextureGetTexture($0.texture) }) else { return }
-            screen = read
-        }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
         let area = ringArea(on: size)
         ringLayer.isHidden = area == nil
-        guard let area, let ring = render(ringLayer, metal.ring, area: area, screen: screen,
-                                          uniforms: uniforms(size: size, hasPicture: frame != nil)) else { return }
+        guard let area, let ring = render(ringLayer, metal.ring, area: area, uniforms: uniforms(size: size)) else { return }
         ring.commands.commit()
         // A layer that presents with its transaction shows a drawable only once it is scheduled.
         ring.commands.waitUntilScheduled()
@@ -361,7 +270,7 @@ final class PointerField: NSObject {
     }
 
     /// The part of the screen the ring can reach, stretched as far as it goes, on the screen's pixels
-    /// so its picture is not resampled; nil when none of it is on this screen or it is off.
+    /// so it is not resampled; nil when none of it is on this screen or it is off.
     private func ringArea(on size: CGSize) -> CGRect? {
         guard ui.ringShows else { return nil }
         let scale = ringLayer.contentsScale
@@ -374,7 +283,7 @@ final class PointerField: NSObject {
     }
 
     /// Draws `pipeline` into `target`, placed over `area` of the screen, and answers what to present.
-    private func render(_ target: CAMetalLayer, _ pipeline: MTLRenderPipelineState, area: CGRect, screen: MTLTexture,
+    private func render(_ target: CAMetalLayer, _ pipeline: MTLRenderPipelineState, area: CGRect,
                         uniforms: FieldUniforms) -> (commands: MTLCommandBuffer, drawable: CAMetalDrawable)? {
         guard let queue = Self.metal?.queue else { return nil }
         target.frame = area
@@ -390,19 +299,16 @@ final class PointerField: NSObject {
         uniforms.origin = SIMD2(Float(area.minX), Float(area.minY))
         uniforms.area = SIMD2(Float(area.width), Float(area.height))
         encoder.setRenderPipelineState(pipeline)
-        encoder.setFragmentTexture(screen, index: 0)
         encoder.setFragmentBytes(&uniforms, length: MemoryLayout<FieldUniforms>.stride, index: 0)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
-        // The capture's buffer must outlive the GPU's read of it.
-        commands.addCompletedHandler { [gpuTimes, texture] buffer in
-            withExtendedLifetime(texture) {}
+        commands.addCompletedHandler { [gpuTimes] buffer in
             gpuTimes.add(buffer.gpuEndTime - buffer.gpuStartTime)
         }
         return (commands, drawable)
     }
 
-    private func uniforms(size: CGSize, hasPicture: Bool) -> FieldUniforms {
+    private func uniforms(size: CGSize) -> FieldUniforms {
         var uniforms = FieldUniforms()
         let colour = ice + (deep - ice) * Float(motion.deepness)
         uniforms.color = SIMD4(colour, 1)
@@ -412,22 +318,15 @@ final class PointerField: NSObject {
         uniforms.lampLife = SIMD4(Float(ui.liveInkLampBreath), Float(max(ui.liveInkLampBreathSeconds, 0.1)),
                                   Float(ui.liveInkLampEnergy), Float(ui.liveInkLampDrift))
         uniforms.size = SIMD2(Float(size.width), Float(size.height))
-        uniforms.hasPicture = hasPicture ? 1 : 0
         if ui.ringShows {
-            uniforms.ringStyle = UInt32(ui.ringStyle)
             uniforms.ringCentre = SIMD2(Float(motion.centre.x), Float(motion.centre.y))
             uniforms.ringVelocity = SIMD2(Float(motion.velocity.dx), Float(motion.velocity.dy))
-            uniforms.ringHotspot = SIMD2(Float(motion.hotspot.x), Float(motion.hotspot.y))
             uniforms.ringRadius = Float(motion.radius)
             uniforms.ringReach = Float(ui.ringReach)
-            uniforms.ringBend = hasPicture ? Float(ui.liveInkFieldBend) : 0
-            uniforms.ringSplit = hasPicture ? Float(ui.liveInkFieldSplit) : 0
             uniforms.ringGlow = Float(ui.liveInkFieldGlow)
             uniforms.ringStretch = Float(ui.liveInkFieldStretch)
-            uniforms.ringGlass = SIMD4(Float(ui.liveInkFieldZoom), Float(ui.liveInkFieldClear),
-                                       Float(ui.liveInkFieldShine), Float(ui.liveInkFieldShade))
-            uniforms.ringShape = SIMD4(Float(ui.liveInkFieldSquareness), Float(ui.liveInkFieldBreak),
-                                       Float(ui.liveInkFieldSpread), Float(ui.liveInkFieldDepth))
+            uniforms.ringClear = Float(ui.liveInkFieldClear)
+            uniforms.ringSpread = Float(ui.liveInkFieldSpread)
             // Brighter while the ring is smaller than its size: as it grows in, and while pressing.
             let ringSize = max(CGFloat(ui.liveInkFieldSize), 1)
             uniforms.ringPress = Float(min(max((ringSize - motion.radius) / (ringSize * 0.2), 0), 1))
@@ -459,13 +358,6 @@ struct PointerFieldMotion {
 
     /// A pointer speed, in points a second, that gives the lamp all its energy.
     static let fastSpeed: CGFloat = 1600
-
-    /// The arrow's tip under the ring, which Lens magnifies about. Below a radius of 18 pt it moves
-    /// toward the ring's centre, so it stays inside the part a lens leaves flat.
-    var hotspot: CGPoint {
-        let pull = min(1, 0.5 * radius / (hypot(Self.ringOffset.dx, Self.ringOffset.dy) * 1.25))
-        return CGPoint(x: centre.x - Self.ringOffset.dx * pull, y: centre.y - Self.ringOffset.dy * pull)
-    }
 
     /// Starts over round `pointer` at `now`, with no ring, so the ring grows in.
     mutating func reset(at pointer: CGPoint, now: CFTimeInterval, deep: Bool = false) {
@@ -518,65 +410,38 @@ struct PointerFieldMotion {
 /// The shader's uniforms, in the order and alignment of `FieldUniforms` in PointerField.metal.
 struct FieldUniforms {
     var color = SIMD4<Float>(repeating: 0)
-    var ringGlass = SIMD4<Float>(repeating: 0)
-    var ringShape = SIMD4<Float>(repeating: 0)
     var size = SIMD2<Float>(repeating: 0)
     var origin = SIMD2<Float>(repeating: 0)
     var area = SIMD2<Float>(repeating: 0)
     var ringCentre = SIMD2<Float>(repeating: 0)
     var ringVelocity = SIMD2<Float>(repeating: 0)
-    var ringHotspot = SIMD2<Float>(repeating: 0)
-    var ringStyle: UInt32 = 0
-    var hasPicture: UInt32 = 0
     var ringRadius: Float = 0
-    var ringBend: Float = 0
-    var ringSplit: Float = 0
     var ringGlow: Float = 0
     var ringStretch: Float = 0
     var ringPress: Float = 0
     var ringReach: Float = 0
+    var ringClear: Float = 0
+    var ringSpread: Float = 0
     var time: Float = 0
     var ringEnergy: Float = 0
     var lampLife = SIMD4<Float>(repeating: 0)
 }
 
-// What the field draws, decided from the settings in one place. The styles are numbers in the file,
-// so they are rounded and kept in range here.
+// What the field draws, decided from the settings in one place.
 extension UITweaks {
-    /// 0 Glass, 1 Lens, 2 Squircle, 3 Droplet, 4 Lamp, 5 Caustic.
-    fileprivate var ringStyle: Int { min(max(Int(liveInkFieldStyle.rounded()), 0), 5) }
-
     /// The lamp moves on its own, so it draws every refresh.
-    fileprivate var lampLives: Bool { ringStyle == 4 && ringShows && (liveInkLampBreath > 0 || liveInkLampDrift > 0) }
+    fileprivate var lampLives: Bool { ringShows && (liveInkLampBreath > 0 || liveInkLampDrift > 0) }
 
-    /// The ring bends the screen, which needs a live picture of it.
-    fileprivate var ringBends: Bool {
-        guard liveInkFieldSize > 0 else { return false }
-        switch ringStyle {
-        case 1: return liveInkFieldBend > 0 || liveInkFieldSplit > 0 || liveInkFieldZoom > 1
-        case 4: return false
-        case 5: return liveInkFieldBend > 0
-        default: return liveInkFieldBend > 0 || liveInkFieldSplit > 0
-        }
-    }
     /// The ring shows round the pointer while the chord is held.
-    fileprivate var ringShows: Bool {
-        liveInkFieldSize > 0 && (ringBends || liveInkFieldGlow > 0
-            || ([1, 5].contains(ringStyle) && (liveInkFieldShine > 0 || liveInkFieldShade > 0)))
-    }
+    fileprivate var ringShows: Bool { liveInkFieldSize > 0 && liveInkFieldGlow > 0 }
+
     /// How far from its centre the ring draws anything, at its most stretched. The ring's layer is
-    /// this far each way, so it is capped at 600 pt.
+    /// this far each way, so it is capped at 600 pt. The lamp's pool grows with its breath and its
+    /// energy, as the shader's `S` does.
     fileprivate var ringReach: CGFloat {
         let size = CGFloat(liveInkFieldSize), stretch = CGFloat(liveInkFieldStretch)
-        let glass = (size * 1.8 + 24) * (1 + 1.5 * stretch)
-        let reach: CGFloat
-        switch ringStyle {
-        case 3: reach = max(glass, size * (2.5 + 2.4 * stretch) + 8)
-        // The lamp's pool grows with its breath and its energy, as the shader's `S` does.
-        case 4: reach = (3 * CGFloat(liveInkFieldSpread) * size + 8) * (1 + 0.5 * stretch)
+        let reach = (3 * CGFloat(liveInkFieldSpread) * size + 8) * (1 + 0.5 * stretch)
             * (1 + 0.5 * CGFloat(liveInkLampBreath) + 0.35 * CGFloat(liveInkLampEnergy))
-        default: reach = glass
-        }
         return min(reach, 600)
     }
 }

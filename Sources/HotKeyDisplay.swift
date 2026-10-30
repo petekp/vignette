@@ -110,9 +110,9 @@ extension HotKeySpec {
     /// macOS's screenshots, and ⌃ with Space or an arrow switches input sources and spaces.
     static func refusal(keyCode: UInt32, modifiers: UInt32) -> String? {
         let glyphs = HotKeySpec.key(keyCode: keyCode, modifiers: modifiers).glyphs
-        if modifiers == UInt32(cmdKey) { return "\(glyphs) is a command in every app. Add ⌥ or ⌃." }
-        if modifiers == UInt32(cmdKey | shiftKey), [20, 21, 23].contains(keyCode) { return "\(glyphs) takes screenshots. Try another combination." }
-        if modifiers == UInt32(controlKey), [49, 123, 124, 125, 126].contains(keyCode) { return "macOS uses \(glyphs). Try another combination." }
+        if modifiers == UInt32(cmdKey) { return "\(glyphs) is a command in every app. You can add ⌥ or ⌃." }
+        if modifiers == UInt32(cmdKey | shiftKey), [20, 21, 23].contains(keyCode) { return "\(glyphs) takes screenshots. You can pick another combination." }
+        if modifiers == UInt32(controlKey), [49, 123, 124, 125, 126].contains(keyCode) { return "macOS uses \(glyphs). You can pick another combination." }
         return nil
     }
 
@@ -126,7 +126,7 @@ extension HotKeySpec {
         return mods
     }
 
-    private static func eventModifiers(_ modifiers: UInt32) -> NSEvent.ModifierFlags {
+    static func eventModifiers(_ modifiers: UInt32) -> NSEvent.ModifierFlags {
         var flags: NSEvent.ModifierFlags = []
         if modifiers & UInt32(cmdKey) != 0 { flags.insert(.command) }
         if modifiers & UInt32(shiftKey) != 0 { flags.insert(.shift) }
@@ -135,7 +135,7 @@ extension HotKeySpec {
         return flags
     }
 
-    private static func modifierGlyphs(_ modifiers: UInt32) -> String {
+    static func modifierGlyphs(_ modifiers: UInt32) -> String {
         var text = ""
         if modifiers & UInt32(controlKey) != 0 { text += "⌃" }
         if modifiers & UInt32(optionKey) != 0 { text += "⌥" }
