@@ -118,13 +118,15 @@ final class LiveResponder {
     }
 
     /// Asks once the process is ready, one ask at a time: the next comes once this one has answered,
-    /// failed or been cancelled.
+    /// failed or been cancelled. After a failure it starts the process again, and a start that fails
+    /// again answers the ask with why.
     func ask(_ ask: Ask) {
         if answered >= Self.conversationLimit, current == nil, pending == nil {
             Log.write("[live-ink] responder: \(answered) asks; starting a new conversation")
             stop()
         }
         pending = ask
+        if case .failed = state { state = .stopped }
         prepare()
         sendNext()
     }
