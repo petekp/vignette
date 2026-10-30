@@ -34,7 +34,10 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
 - A note aimed at a responder that cannot answer says why. When the other can answer, the note then
   names it: "Codex can answer instead."
 - The responder the note is aimed at starts as the first stroke moves
-  (`LiveInk.prepareResponderForStroke`). A note to a session starts no process.
+  (`LiveInk.prepareResponderForStroke`). A note to a session starts no process. Before the note
+  opens, that is the responder the note will start on, decided as the note decides it
+  (`LiveNotePopover.startingResponder`): the stroke lists the sessions once, as the note
+  does, so the agent used last starts, and Codex on a Mac where only Codex can answer.
 
 ## Claude Code's
 

@@ -444,18 +444,10 @@ final class LiveInk {
             "pair": Settings.shared.data.liveInkChordChoice.glyphs,
             "escape": LiveEscape.next(escapeSnapshot)?.rawValue ?? NSNull(),
             "escapeHeld": escapeKey != nil,
-            "ask": asks.newest.map(Self.json(of:)) ?? NSNull(),
-            "asks": asks.asks.map(Self.json(of:)),
+            "ask": asks.newest.map(\.stateJSON) ?? NSNull(),
+            "asks": asks.asks.map(\.stateJSON),
             "queued": asks.queued.count,
         ]
-    }
-
-    private static func json(of ask: LiveAsks.Ask) -> [String: Any] {
-        var json: [String: Any] = ["id": ask.id, "phase": ask.phase.rawValue, "about": ask.about.count, "picture": ask.picture,
-                                   "toSession": ask.toSession]
-        if let reason = ask.reason { json["reason"] = reason }
-        if let say = ask.say, case .text(let text) = say.geometry { json["sayLength"] = text.text.count }
-        return json
     }
 
     /// The buttons of the newest answer that has them.
@@ -898,7 +890,7 @@ final class LiveInk {
         // still open; planned now, the menu would be gone from the picture.
         let captured = reply == nil ? prepared.flatMap { $0.ink == Set(person.map(\.id)) ? $0 : nil } : nil
         let plan = captured?.plan ?? picturePlan(for: about)
-        Log.write("[live-ink] asking id=\(id) new=\(fresh.count) about=\(about.count) words=\(trimmed.split(whereSeparator: \.isWhitespace).count) queued=\(asks.queued.count) picture=\(Self.describe(plan))")
+        Log.write("[live-ink] asking id=\(id) new=\(fresh.count) about=\(about.count) words=\(trimmed.split(whereSeparator: \.isWhitespace).count) queued=\(asks.queued.count) picture=\(plan.forLog)")
         let early = captured?.packet
         if reply == nil { prepared = nil }
         let inkWindows = inkWindows(of: person)
@@ -944,7 +936,7 @@ final class LiveInk {
         let asked = about.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
         let near = packet.lines(near: asked)
         Log.write("[live-ink] packet ms=\(Int(Date().timeIntervalSince(started) * 1000)) app=\(packet.app ?? "none") lines=\(packet.lines.count) near=\(near.count) bytes=\(packet.picture.count)\(packet.detail == nil ? "" : " detail")"
-                  + Self.describeArea(of: packet))
+                  + packet.areaForLog)
         held[id] = LiveResponder.Ask(
             content: { [weak self] conversation in
                 guard let self else { return [] }
@@ -1126,22 +1118,6 @@ final class LiveInk {
 
     /// The window a mark is on, or goes onto once the menu it was drawn over has closed.
     private func window(of id: Mark.ID) -> CGWindowID? { windows.window(of: id) ?? pinsAfterMenus[id] }
-
-    private static func describe(_ plan: LivePacket.Plan) -> String {
-        switch plan {
-        case .window(let id): id.map { "window \($0)" } ?? "screen"
-        case .area(let rect, let windows, let alone):
-            "area \(Int(rect.minX)),\(Int(rect.minY)),\(Int(rect.width)),\(Int(rect.height)) windows=\(windows.map(String.init).joined(separator: ","))"
-                + " alone=\(alone.map { "\($0.window):covered=\($0.covered.count),outside=\($0.outside.count)" }.joined(separator: ";"))"
-        }
-    }
-
-    private static func describeArea(of packet: LivePacket) -> String {
-        guard case .area = packet.subject else { return "" }
-        let frame = packet.frame
-        return " area=\(Int(frame.minX)),\(Int(frame.minY)),\(Int(frame.width)),\(Int(frame.height)) windows=\(packet.windows.count)"
-            + " alone=\(packet.alone.count) aloneBytes=\(packet.alone.map { String($0.picture.count) }.joined(separator: ","))"
-    }
 
     /// Shows the note against its ink, where a hand would write it, which needs the window's frame
     /// and text from a glance at the window: the one started as the stroke ended, which also serves
@@ -2076,10 +2052,32 @@ final class LiveInk {
 
     /// Starts the responder the note this ink goes to will be aimed at, so its first answer does not
     /// wait for a cold start. A note to a session starts no process, and a tap starts none. Called on
-    /// every move of a stroke; `prepare` starts the process only once.
+    /// every move of a stroke; `prepare` starts the process only once. With no note open, it is the
+    /// one the next note will start on, which needs the sessions listed, once a stroke.
     private func prepareResponderForStroke() {
-        guard let client = (note?.target ?? lastTarget).responder.map({ responders.conversing ?? $0 }) else { return }
-        responders.prepare(note?.target.responder ?? client)
+        if let note {
+            if let client = note.target.responder { responders.prepare(client) }
+            return
+        }
+        if lastTarget.session == nil, let client = responders.conversing { return responders.prepare(client) }
+        guard let listSessions else { return prepareNextNote(from: nil) }
+        guard listedForStroke != strokeBegan else { return }
+        listedForStroke = strokeBegan
+        var prepared = false
+        listSessions { [weak self] candidates in
+            guard candidates.complete, !prepared else { return }
+            prepared = true
+            self?.prepareNextNote(from: candidates)
+        }
+    }
+
+    /// The stroke whose move listed the sessions for `prepareResponderForStroke`, by when it began.
+    private var listedForStroke: Date?
+
+    private func prepareNextNote(from candidates: DestinationChoice.Candidates?) {
+        let client = LiveNotePopover.startingResponder(listed: candidates, remembered: lastTarget.session,
+                                                       conversing: responders.conversing, among: responders.offers)
+        if let client { responders.prepare(client) }
     }
 
     private func strokeEnded(_ points: [CGPoint], on surface: Surface) {

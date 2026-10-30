@@ -48,6 +48,16 @@ extension LiveNotePopover {
         return .responder(responders.first?.client ?? .claude)
     }
 
+    /// The responder a new note starts on, as `start` decides it once `candidates` are listed, with
+    /// `remembered` the session the note before went to and no pick yet; nil when it starts on a
+    /// session. With no listing, the sessions are taken to be none.
+    static func startingResponder(listed candidates: DestinationChoice.Candidates?, remembered: AgentDestination?,
+                          conversing: AgentClient?, among responders: [Responder]) -> AgentClient? {
+        guard let candidates else { return start(pick: nil, handPicked: nil, conversing: conversing, responders: responders, list: []).responder }
+        let answer = DestinationChoice.choose(candidates, for: .liveNote(.remembered(remembered)))
+        return start(pick: answer.pick, handPicked: nil, conversing: conversing, responders: responders, list: answer.list).responder
+    }
+
     /// What a note aimed at `responder` says when it cannot answer: why, then the agent that can
     /// answer instead, when one can.
     static func problem(of responder: Responder?, among responders: [Responder]) -> String? {
