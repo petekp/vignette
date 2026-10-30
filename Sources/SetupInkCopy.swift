@@ -16,14 +16,13 @@ enum SetupInkCopy {
 
     /// Setup's live ink page, after the line about drawing, when an agent can answer: the one that
     /// will (`ResponderStatus.askLine`).
-    static func askLine(codex: Bool) -> String {
-        codex ? "Then ask Codex about it, or send it to a Claude Code or Codex session."
-            : "Then ask Claude about it, or send it to a Claude Code or Codex session."
+    static func askLine(agent: AgentClient) -> String {
+        "Then ask \(name(agent)) about it, or send it to a Claude Code or Codex session."
     }
 
-    /// Why setup asks for Screen Recording, naming the agent that will answer (`ResponderStatus.codexAlone`).
-    static func screenRecordingReason(codex: Bool) -> String {
-        codex ? "So Codex can see the window you drew on." : "So Claude can see the window you drew on."
+    /// Why setup asks for Screen Recording, naming the agent that will answer (`ResponderStatus.namedAgent`).
+    static func screenRecordingReason(agent: AgentClient) -> String {
+        "So \(name(agent)) can see the window you drew on."
     }
 
     /// macOS asks to quit and reopen an app it has just let record the screen, since the grant
@@ -38,8 +37,11 @@ enum SetupInkCopy {
     static let liveInkScreenRecordingReason = "Lets Vignette see the window under your ink when you ask about it. macOS may ask you to reopen Vignette after you allow it."
 
     /// The one-time offer to an install that finished setup before live ink had a page, naming the
-    /// agent that will answer (`ResponderStatus.codexAlone`).
-    static func offer(pair: String, codex: Bool) -> String {
-        "Live ink is new. Holding \(pair) lets you draw over any app and ask \(codex ? "Codex" : "Claude") about what you drew."
+    /// agent that will answer (`ResponderStatus.namedAgent`).
+    static func offer(pair: String, agent: AgentClient) -> String {
+        "Live ink is new. Holding \(pair) lets you draw over any app and ask \(name(agent)) about what you drew."
     }
+
+    /// What a note calls `agent`.
+    private static func name(_ agent: AgentClient) -> String { LiveNotePopover.Responder.able(agent).name }
 }

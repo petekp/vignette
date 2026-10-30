@@ -45,24 +45,25 @@ final class ResponderStatus: ObservableObject {
     /// Whether Codex is installed, once its check has answered.
     var codexInstalled: Bool { codex == .ready || codex == .signedOut }
 
-    /// Whether Codex is the one agent that can answer, now or once it is signed in: it is installed
-    /// and Claude Code cannot answer. Setup then offers Codex's sign-in, since without it the person
-    /// would finish setup with live ink unable to answer, and names Codex where it would name Claude.
-    var codexAlone: Bool { codexInstalled && !claude.canAnswer }
+    /// The agent setup and the offer name as the one that will answer: Codex where it is the one that
+    /// can, now or once it is signed in, since it is installed and Claude Code cannot answer; else
+    /// Claude. Where it is Codex, setup offers Codex's sign-in, since without it the person would
+    /// finish setup with live ink unable to answer.
+    var namedAgent: AgentClient { codexInstalled && !claude.canAnswer ? .codex : .claude }
 
     /// Whether setup's permissions page still asks for Codex's sign-in.
-    var codexSignInLeft: Bool { codexAlone && codex != .ready }
+    var codexSignInLeft: Bool { namedAgent == .codex && codex != .ready }
 
     /// Whether setup's Codex row shows Sign In to Codex…, which it does while the sign-in is left and
     /// not waiting in the browser.
     var offersCodexSignIn: Bool { codexSignInLeft && signIn != .waiting }
 
-    var costNote: String { SetupInkCopy.costNote(claude: claude.canAnswer, codex: codex == .ready || codexAlone) }
+    var costNote: String { SetupInkCopy.costNote(claude: claude.canAnswer, codex: codex == .ready || namedAgent == .codex) }
 
     /// Setup's live ink page's line after the one about drawing: who to ask, or why Claude cannot
     /// answer when neither agent can.
     var askLine: String {
-        claude.canAnswer || codexAlone ? SetupInkCopy.askLine(codex: codexAlone) : ClaudeDriver.problem(claude) ?? ""
+        claude.canAnswer || namedAgent == .codex ? SetupInkCopy.askLine(agent: namedAgent) : ClaudeDriver.problem(claude) ?? ""
     }
 
     /// Asks each of `clients` whether it can answer, off the main thread, and runs `changed` after
@@ -175,8 +176,8 @@ struct CodexSignInRow: View {
     }
 }
 
-/// The row for Codex's sign-in on setup's permissions page for live ink, while `codexAlone`. Its
-/// Sign In is the step after the permissions, which the guide points at.
+/// The row for Codex's sign-in on setup's permissions page for live ink, while setup names Codex
+/// (`namedAgent`). Its Sign In is the step after the permissions, which the guide points at.
 struct CodexSetupSection: View {
     @ObservedObject var status: ResponderStatus
     let spots: ScreenSpots
@@ -185,7 +186,7 @@ struct CodexSetupSection: View {
     private let step = SetupInkGuide.Step.codexSignIn
 
     var body: some View {
-        if status.codexAlone {
+        if status.namedAgent == .codex {
             Section {
                 CodexSignInRow(status: status, signInTitle: "Sign In to Codex…", offersSignOut: false, isDefault: permissionsDone,
                                spot: (spots, step.button, step.words))
@@ -202,7 +203,7 @@ struct LiveInkSetupTop: ViewModifier {
     @ObservedObject var status: ResponderStatus
 
     func body(content: Content) -> some View {
-        content.padding(.top, status.codexAlone ? 30 : 60)
+        content.padding(.top, status.namedAgent == .codex ? 30 : 60)
     }
 }
 
@@ -217,7 +218,7 @@ struct LiveInkSetupFooter: View {
     /// Room under the rows for the label beside the next button: an Allow button, or Sign In to
     /// Codex… while Codex's row shows it. Once Codex is signed in or signing in, the guide's note
     /// needs the room under these lines instead.
-    private var roomAbove: CGFloat { !status.codexAlone || status.offersCodexSignIn ? 30 : 8 }
+    private var roomAbove: CGFloat { status.namedAgent != .codex || status.offersCodexSignIn ? 30 : 8 }
 
     var body: some View {
         Section {} footer: {

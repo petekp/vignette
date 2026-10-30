@@ -8,7 +8,7 @@ struct LiveInkOfferSection: View {
 
     var body: some View {
         Section {
-            Text(SetupInkCopy.offer(pair: pair, codex: responders.codexAlone))
+            Text(SetupInkCopy.offer(pair: pair, agent: responders.namedAgent))
             HStack {
                 Button("Not Now") { answer(false) }
                 Button("Turn On") { answer(true) }

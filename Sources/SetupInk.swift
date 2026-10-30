@@ -323,10 +323,10 @@ final class SetupInkPlayer: ObservableObject {
         guard var place = LiveAnswerLayout.noteHang(LiveNotePopover.placementSize, for: global, scene: scene) else { return }
         place.anchor = loop.mark.id
         let note = LiveNotePopover(at: place)
-        let codex = responders?.codexAlone == true
-        if codex { note.offer([.codex], conversing: nil) }
+        let agent = responders?.namedAgent ?? .claude
+        note.offer([.able(agent)], conversing: nil)
         note.setSessions(DestinationChoice.Candidates(destinations: Self.sessions, complete: true, fresh: true))
-        Log.write("[setup] live ink demo note responder=\(codex ? "codex" : "claude")")
+        Log.write("[setup] live ink demo note responder=\(agent.rawValue)")
         self.note = note
         let staged = place.offsetBy(dx: -origin.x, dy: -origin.y)
         // A press on the note takes the keys, and letting go of them goes back to the setup window.
@@ -486,7 +486,7 @@ struct LiveInkSetupPage: View {
                     }
                     .screenSpot(accessibility.row, in: guide.spots)
                     PermissionRow(symbol: "rectangle.dashed.badge.record", title: "Screen Recording",
-                                  reason: SetupInkCopy.screenRecordingReason(codex: responders.codexAlone),
+                                  reason: SetupInkCopy.screenRecordingReason(agent: responders.namedAgent),
                                   status: screenRecording ? .granted : .ask,
                                   isDefault: trusted && !screenRecording, button: askedScreenRecording ? "Open Settings…" : "Allow…",
                                   spot: (guide.spots, recording.button, recording.words)) {

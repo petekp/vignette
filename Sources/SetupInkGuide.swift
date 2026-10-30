@@ -55,14 +55,14 @@ final class SetupInkGuide {
     /// they are drawn as.
     private var pointing: Pointing?
     private var aimedAt: CGRect?
-    private var agent: String?
+    private var agent: AgentClient?
     private var shown: [Mark] = []
     private var leaving: [Mark.ID: LiveMarksLayer.Finish] = [:]
     private var dark = Set<Mark.ID>()
 
     /// Points at `target` as `agent` once the page is on the screen, asked again until it is, and
     /// again when what it points at changes size, as a button does when its title changes.
-    func point(at target: Pointing, as agent: String) {
+    func point(at target: Pointing, as agent: AgentClient) {
         let aim = aim(of: target)
         let moved = aim.map { aim in aimedAt.map { abs($0.width - aim.width) > 2 || abs($0.height - aim.height) > 2 } ?? true } ?? false
         guard target != pointing || moved || agent != self.agent, let frame = stage.globalFrame else { return }
@@ -77,7 +77,7 @@ final class SetupInkGuide {
         shown = shown + new
         if stage.isDark { dark.formUnion(new.filter { $0.kind != .text }.map(\.id)) }
         draw(drawingOn: Set(new.map(\.id)))
-        Log.write("[setup] live ink pointing at \(target) marks=\(new.count) agent=\(agent)")
+        Log.write("[setup] live ink pointing at \(target) marks=\(new.count) agent=\(agent.rawValue)")
         guard !old.isEmpty else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + LiveMarksLayer.finishDuration(.dismissed)) { [weak self] in
             guard let self else { return }
@@ -113,7 +113,7 @@ final class SetupInkGuide {
 
     /// The marks for `target`, drawn as `agent`, in the stage's points, with the stage at `frame` in
     /// global top-left points.
-    private func marks(for target: Pointing, as agent: String, onStageAt frame: CGRect) -> [Mark] {
+    private func marks(for target: Pointing, as agent: AgentClient, onStageAt frame: CGRect) -> [Mark] {
         let back = CGVector(dx: -frame.minX, dy: -frame.minY)
         // The stage's frame rather than the window's: the first pointing can come while the page is
         // still sliding in, or before a new window's first layout, and the marks move with the page.
@@ -139,11 +139,11 @@ final class SetupInkGuide {
             let page = (rows + footer).reduce(CGRect.null) { $0.union($1) }
             guard !page.isNull else { return [] }
             placed = [LiveAnswerLayout.note("Hold \(Settings.shared.data.liveInkChordChoice.glyphs) and draw anywhere", near: page, scene: scene,
-                                            obstacles: rows + footer + header + codex, sizes: sizes, agent: agent)]
+                                            obstacles: rows + footer + header + codex, sizes: sizes, agent: agent.rawValue)]
         }
         return placed.map { mark in
             var mark = LiveWindows.translated(mark, by: back)
-            if mark.agent { mark.agentName = agent }
+            if mark.agent { mark.agentName = agent.rawValue }
             return mark
         }
     }

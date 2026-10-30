@@ -33,6 +33,9 @@ extension LiveNotePopover {
         static let claude = Responder(client: .claude, name: "Claude", problem: nil, canPick: true)
         /// Codex, as setup's note offers it where only Codex can answer.
         static let codex = Responder(client: .codex, name: "Codex", problem: nil, canPick: true)
+
+        /// `agent`, able to answer, as setup's note offers it.
+        static func able(_ agent: AgentClient) -> Responder { agent == .codex ? .codex : .claude }
     }
 
     /// The target a note starts on once its sessions are listed, newest first in `list`: the session

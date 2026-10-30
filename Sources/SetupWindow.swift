@@ -341,7 +341,7 @@ final class SetupModel: ObservableObject {
         let responders = callbacks.responders
         inkGuide.point(at: SetupInkGuide.Pointing(trusted: seen.trusted, screenRecording: seen.screenRecording,
                                                   codexSignIn: responders.codexSignInLeft, signingIn: responders.signIn == .waiting),
-                       as: (responders.codexAlone ? AgentClient.codex : .claude).rawValue)
+                       as: responders.namedAgent)
     }
 
     var claude: AgentPluginStatus? { agents.first { $0.client == .claude } }
