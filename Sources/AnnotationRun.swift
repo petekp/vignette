@@ -12,6 +12,7 @@ import Foundation
 struct AnnotationRun: Equatable {
     enum Event: Equatable {
         case annotate([ScreenshotKey])      // a list: the first opens and the rest queue; replaces any queue
+        case page(ScreenshotKey, isRepeat: Bool)   // Left or Right in the editor: this file opens as a click on its card would
         case shown(Opening)          // the flight landed and the annotator became visible
         case parked(Opening)         // the editor finished parking
         case cancel(RunEnding)       // Esc, a click outside, Cmd+W, the shortcut: the run ends
@@ -81,6 +82,8 @@ struct AnnotationRun: Equatable {
     var opening: Opening? { transition.opening }
     var key: ScreenshotKey? { transition.opening?.key }
     var isActive: Bool { transition.isActive }
+    /// The image Left and Right move on from: the one open or on its way, or the one a park opens next.
+    var heading: ScreenshotKey? { transition.heading?.key }
     /// The editor's window takes presses now, so a press on its flight goes straight to it.
     var takesPresses: Bool { opening != nil && lift.takesPresses }
 
@@ -105,12 +108,10 @@ struct AnnotationRun: Equatable {
     private mutating func step(_ event: Event) -> [Effect] {
         switch event {
         case .annotate(let keys):
-            guard let first = keys.first else { return [] }
-            queue = Array(keys.dropFirst())
-            total = keys.count
-            opened = 1
-            fromQueue = nil
-            return forward(.annotate(mint(first)))
+            return open(keys, paged: false)
+        case .page(let key, let isRepeat):
+            guard takesPage(isRepeat: isRepeat) else { return [] }
+            return open([key], paged: true)
         case .shown(let opening):
             return forward(.shown(opening))
         case .parked(let opening):
@@ -161,9 +162,27 @@ struct AnnotationRun: Equatable {
         }
     }
 
-    private mutating func mint(_ key: ScreenshotKey) -> Opening {
+    /// A page acts while there is an image to move on from. A key's repeat waits until the image
+    /// before it is in the annotator, so a held key steps at the flight's own pace and no flight
+    /// turns around under it.
+    func takesPage(isRepeat: Bool) -> Bool {
+        guard transition.heading != nil else { return false }
+        if case .annotating = phase { return true }
+        return !isRepeat
+    }
+
+    private mutating func open(_ keys: [ScreenshotKey], paged: Bool) -> [Effect] {
+        guard let first = keys.first else { return [] }
+        queue = Array(keys.dropFirst())
+        total = keys.count
+        opened = 1
+        fromQueue = nil
+        return forward(.annotate(mint(first, paged: paged)))
+    }
+
+    private mutating func mint(_ key: ScreenshotKey, paged: Bool = false) -> Opening {
         minted += 1
-        return Opening(id: minted, key: key)
+        return Opening(id: minted, key: key, paged: paged)
     }
 
     /// The flight into the editor lifts once, when the last of its three conditions comes in.
@@ -279,6 +298,7 @@ extension AnnotationRun.Event: CustomStringConvertible {
     var description: String {
         switch self {
         case .annotate(let keys): return "annotate(\(keys.map(short).joined(separator: ", ")))"
+        case .page(let key, let isRepeat): return "page(\(short(key))\(isRepeat ? " repeat" : ""))"
         case .shown(let o): return "shown(\(o))"
         case .parked(let o): return "parked(\(o))"
         case .cancel(let how): return how == .back ? "cancel" : "cancel(\(how))"
