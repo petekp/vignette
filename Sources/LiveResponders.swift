@@ -17,7 +17,7 @@ final class LiveResponders {
     /// near its ink not sent yet.
     private var pictures: [AgentClient: (conversation: Int, subject: LivePacket.Subject, text: String, lines: Set<String>)] = [:]
 
-    init(drivers: [any ResponderDriver] = [ClaudeDriver(), CodexDriver()]) {
+    init(drivers: [any ResponderDriver] = [ClaudeDriver()] + (CodexSignIn.defaultHome.map { [CodexDriver(home: $0)] } ?? [])) {
         all = Dictionary(uniqueKeysWithValues: drivers.map { ($0.client, LiveResponder(driver: $0)) })
         NotificationCenter.default.addObserver(forName: .codexSignInChanged, object: nil, queue: .main) { [weak self] note in
             MainActor.assumeIsolated { self?.codexSignInChanged(signedIn: note.userInfo?["signedIn"] as? Bool ?? false) }

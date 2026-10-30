@@ -49,15 +49,9 @@ final class CodexDriver: ResponderDriver {
     private var runs = 0
 
     /// `binary` finds `codex` (`LiveResponder.codexBinary`).
-    init(binary: @escaping () -> String? = LiveResponder.codexBinary,
-         home: URL = CodexDriver.defaultHome) {
+    init(binary: @escaping () -> String? = LiveResponder.codexBinary, home: URL) {
         self.binary = binary
         self.home = home
-    }
-
-    /// Vignette's own Codex home: none of the person's config, instructions, memories or sessions.
-    nonisolated static var defaultHome: URL {
-        Identity.applicationSupportURL.appendingPathComponent("live-ink/codex-home", isDirectory: true)
     }
 
     func start(report: @escaping (ResponderEvent) -> Void) -> ResponderRefusal? {

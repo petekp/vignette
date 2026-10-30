@@ -56,7 +56,7 @@ extension LiveResponder {
                 }
             }
         case .codex:
-            guard codexBinary() != nil else { return .notInstalled }
+            guard codexBinary() != nil, CodexSignIn.defaultHome != nil else { return .notInstalled }
             return await withCheckedContinuation { continuation in
                 DispatchQueue.global(qos: .utility).async {
                     continuation.resume(returning: CodexSignIn.isSignedIn() ? .ready : .signedOut)

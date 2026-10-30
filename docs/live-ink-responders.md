@@ -101,6 +101,9 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
   answer (`CodexSignInRow`). Without
   setup's row, a person with Codex alone would finish setup with no agent that can answer. Setup's
   row has no Sign Out.
+- A test launch (`VIGNETTE_SETTINGS`) that leaves the home folder in place has no Codex home, so it
+  offers no Codex and cannot sign in or out: that folder holds the person's own sign-in
+  (`CodexSignIn.home(in:)`). `CFFIXED_USER_HOME` moves it, as the end-to-end runner does.
 - Sign Out runs Codex's own `account/logout` in that home. It asks OpenAI to revoke the tokens,
   waiting up to 10 s, then deletes the sign-in. `CodexLogin.signOut` gives Codex 15 s, then removes
   `auth.json` itself if it is still there, since the folder is Vignette's.

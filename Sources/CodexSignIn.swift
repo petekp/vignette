@@ -1,14 +1,30 @@
 import AppKit
 
-/// How Codex's responder is signed in. Its Codex home is Vignette's own (`CodexDriver.defaultHome`),
+/// How Codex's responder is signed in. Its Codex home is Vignette's own (`defaultHome`),
 /// so it is signed in on its own, once, through Codex's browser login, and Codex keeps that sign-in in
 /// `auth.json` there and renews it itself. The person's own Codex folder is never read
 /// (docs/adr/0026-codex-answers-live-ink-too.md).
 enum CodexSignIn {
+    /// Vignette's own Codex home: none of the person's config, instructions, memories or sessions.
+    /// None in a test launch that left the home folder in place (`home(in:environment:personHome:)`).
+    nonisolated static let defaultHome = home(in: Identity.applicationSupportURL)
+
+    /// The Codex home in `folder`, the app's Application Support folder. A test launch
+    /// (`VIGNETTE_SETTINGS`) gets none while that folder is the person's own, since it holds their
+    /// sign-in, as `AgentPlugin.guarded` keeps it out of `~/.codex`. `CFFIXED_USER_HOME` moves it.
+    nonisolated static func home(in folder: URL, environment: [String: String] = ProcessInfo.processInfo.environment,
+                                 personHome: URL = AgentPlugin.personHome) -> URL? {
+        let home = folder.appendingPathComponent("live-ink/codex-home", isDirectory: true)
+        let own = personHome.appendingPathComponent("Library/Application Support").resolvingSymlinksInPath().path + "/"
+        guard Launch.isTest(in: environment), folder.resolvingSymlinksInPath().path.hasPrefix(own) else { return home }
+        Log.write("[live-ink] test launch: left \(home.path) alone; launch with CFFIXED_USER_HOME to use Codex")
+        return nil
+    }
+
     /// Whether Vignette's Codex home holds a ChatGPT sign-in. Only whether the tokens are there is
     /// read. It reads a file, so it runs off the main thread.
-    nonisolated static func isSignedIn(home: URL = CodexDriver.defaultHome) -> Bool {
-        guard let data = try? Data(contentsOf: home.appendingPathComponent("auth.json")),
+    nonisolated static func isSignedIn(home: URL? = CodexSignIn.defaultHome) -> Bool {
+        guard let home, let data = try? Data(contentsOf: home.appendingPathComponent("auth.json")),
               let auth = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let tokens = auth["tokens"] as? [String: Any] else { return false }
         return (tokens["refresh_token"] as? String).map { !$0.isEmpty } ?? false
@@ -51,7 +67,7 @@ final class CodexLogin {
     static let notSignedIn = "The sign-in to Codex didn't finish. You can try again."
 
     private let binary: () -> String?
-    private let home: URL
+    private let home: URL?
     private let open: (URL) -> Void
     private var process: JSONLinesProcess?
     private var done: ((Outcome) -> Void)?
@@ -60,7 +76,7 @@ final class CodexLogin {
     private var loginID: String?
     private var limit: Timer?
 
-    init(binary: @escaping () -> String? = LiveResponder.codexBinary, home: URL = CodexDriver.defaultHome,
+    init(binary: @escaping () -> String? = LiveResponder.codexBinary, home: URL? = CodexSignIn.defaultHome,
          open: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) }) {
         self.binary = binary
         self.home = home
@@ -72,6 +88,7 @@ final class CodexLogin {
         guard self.done == nil else { return }
         self.done = done
         guard let binary = binary() else { return finish(.failed(reason: Self.couldNotStart, detail: "no codex")) }
+        guard let home else { return finish(.failed(reason: Self.couldNotStart, detail: "no Codex home in a test launch")) }
         guard !Self.isTaken(Self.callbackPort) else {
             return finish(.failed(reason: Self.portTaken, detail: "port \(Self.callbackPort) is taken"))
         }
@@ -103,7 +120,8 @@ final class CodexLogin {
 
     /// Signs `home` out with Codex's own logout, which also revokes the tokens with OpenAI, then
     /// removes `auth.json` if it is still there, since the folder is Vignette's. `done` runs once.
-    static func signOut(binary: String?, home: URL = CodexDriver.defaultHome, done: @escaping () -> Void) {
+    static func signOut(binary: String?, home: URL? = CodexSignIn.defaultHome, done: @escaping () -> Void) {
+        guard let home else { return done() }
         var process: JSONLinesProcess?
         var finished = false
         let finish = {
