@@ -45,29 +45,13 @@ enum CodexIsolation {
     static let catalogLimit: TimeInterval = 10
 
     /// `codex debug models` run in `home`, with what adds tools taken out. It blocks, so it runs off the
-    /// main thread. Standard error is left out, so a warning cannot spoil the JSON.
+    /// main thread.
     static func catalog(binary: String, home: URL) -> Data? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: binary)
-        process.arguments = ["debug", "models"]
-        process.environment = Subprocess.environment(for: binary, adding: ["CODEX_HOME": home.path])
-        process.currentDirectoryURL = home
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        process.standardInput = FileHandle.nullDevice
-        do {
-            try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
-            try process.run()
-        } catch {
-            return nil
-        }
-        let watchdog = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + catalogLimit, execute: watchdog)
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        watchdog.cancel()
-        return process.terminationStatus == 0 ? strippedCatalog(data) : nil
+        guard (try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)) != nil,
+              let run = Subprocess.run(binary, ["debug", "models"], timeout: catalogLimit, environment: ["CODEX_HOME": home.path],
+                                       folder: home, includingErrors: false),
+              run.status == 0, !run.timedOut else { return nil }
+        return strippedCatalog(Data(run.output.utf8))
     }
 
     /// A codex file as it is now: the path it was found at, and the size and modification date of
