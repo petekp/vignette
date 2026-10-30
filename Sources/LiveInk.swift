@@ -711,6 +711,8 @@ final class LiveInk {
         let panel = LiveNotePopover(at: first, target: lastTarget)
         panel.responderProblem = responderAvailability.problem
         panel.speechProblem = speechProblem
+        // The person may have installed Claude Code or signed in since the last check.
+        if !responderAvailability.canAnswer { checkResponder() }
         noteOffered = lastTarget
         panel.onAsk = { [weak self, weak panel] words, target, title in
             guard let self else { return }
@@ -994,13 +996,14 @@ final class LiveInk {
         if !Settings.shared.data.liveInkAskedClaude { Settings.shared.update { $0.liveInkAskedClaude = true } }
     }
 
-    /// Asks Claude Code whether it is installed and signed in, when live ink turns on and when setup
-    /// shows its live ink page. The answer decides whether a note aimed at Claude can be asked.
+    /// Asks Claude Code whether it is installed and signed in: when live ink turns on, and when a note
+    /// opens while it could not answer. The answer decides whether a note aimed at Claude can be asked.
     func checkResponder() {
         Task { @MainActor [weak self] in
             let availability = await LiveResponder.availability()
             guard let self else { return }
             self.responderAvailability = availability
+            self.note?.responderProblem = availability.problem
             Log.write("[live-ink] responder \(availability)")
         }
     }

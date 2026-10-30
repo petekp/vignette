@@ -47,10 +47,14 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     var onTyped: (() -> Void)?
     private(set) var target: Target
     /// Why Claude cannot answer, or nil when it can. A note aimed at Claude says why in place of its
-    /// prompt, and Claude's row in the target menu cannot be picked.
-    var responderProblem: String?
+    /// prompt, and Claude's row in the target menu says why and cannot be picked.
+    var responderProblem: String? {
+        didSet { if responderProblem != oldValue { showPlaceholder() } }
+    }
     /// Why speech cannot listen, or nil when it can. The empty note says so in place of its prompt.
-    var speechProblem: String?
+    var speechProblem: String? {
+        didSet { if speechProblem != oldValue { showPlaceholder() } }
+    }
     /// The title a card sent to the target shows, as the target is shown now (`SessionMenu.cardTitle`).
     private var targetTitle = ""
     /// The note's own pick, which each session list resolves: the session picked last until the
@@ -288,10 +292,14 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private func showTargets() {
         guard let window = content.window else { return }
         let menu = NSMenu()
-        let responder = NSMenuItem(title: "Claude, on the screen", action: #selector(pickTarget(_:)), keyEquivalent: "")
+        // The menu enables every item whose action it can send, so Claude's row has none while it cannot answer.
+        let responder = NSMenuItem(title: "Claude, on the screen", action: responderProblem == nil ? #selector(pickTarget(_:)) : nil, keyEquivalent: "")
         responder.image = SessionMenu.logo(for: .claude)
         responder.state = target == .responder ? .on : .off
-        responder.isEnabled = responderProblem == nil
+        if let responderProblem {
+            responder.toolTip = responderProblem
+            if #available(macOS 14.4, *) { responder.subtitle = responderProblem }
+        }
         responder.target = self
         menu.addItem(responder)
         var search: SessionMenuSearch?
