@@ -32,11 +32,18 @@ final class LiveNotice: NSView {
 
     override var isFlipped: Bool { true }
 
-    /// Places the notice so its top-left is `origin` in its superview's coordinates, and fades it in.
-    func show(at origin: CGPoint) {
+    /// Clear of the arrow's tip, below and to the right of it.
+    private static let offset = CGPoint(x: 16, y: 20)
+
+    /// Places the notice below and to the right of `point`, kept inside `bounds`, both in its
+    /// superview's coordinates, and fades it in.
+    func show(beside point: CGPoint, within bounds: CGRect) {
         label.sizeToFit()
         let inset: CGFloat = 10
-        frame = CGRect(origin: origin, size: CGSize(width: label.frame.width + 2 * inset, height: label.frame.height + 2 * inset))
+        let size = CGSize(width: label.frame.width + 2 * inset, height: label.frame.height + 2 * inset)
+        let x = min(max(point.x + Self.offset.x, bounds.minX), bounds.maxX - size.width)
+        let y = min(max(point.y + Self.offset.y, bounds.minY), bounds.maxY - size.height)
+        frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
         label.frame.origin = CGPoint(x: inset, y: inset)
         fade(to: 1)
         hideTimer = Timer.scheduledTimer(withTimeInterval: Self.duration, repeats: false) { [weak self] _ in

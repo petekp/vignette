@@ -2014,12 +2014,7 @@ final class LiveInk {
         // The ink takes its colour from what is behind it.
         InkBackdrop.shared.refresh()
         let mouse = NSEvent.mouseLocation
-        let pointer = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
-        hover(at: pointer)
-        // Screen Recording is what an ask reads the window with, so say so before any ink is drawn.
-        if !ScreenRecording.granted, let surface = inking.first(where: { $0.overlay.globalFrame.contains(pointer) }) ?? inking.first {
-            surface.overlay.showNotice(Self.screenRecordingNotice, at: pointer)
-        }
+        hover(at: CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y))
         // The field waits, so holding the chord on the way to a key, as in a window manager's
         // Control-Option-arrow, does not flash it. A press shows it at once.
         fieldTimer?.invalidate()
@@ -2212,6 +2207,13 @@ final class LiveInk {
         guard !chordShowsField else { return }
         chordShowsField = true
         holdField()
+        // Screen Recording is what a note reads the window with, so say so before any ink is drawn.
+        // It waits for the field, so a chord on its way to a shortcut says nothing.
+        if !ScreenRecording.granted {
+            let mouse = NSEvent.mouseLocation
+            let pointer = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
+            (inking.first { $0.overlay.globalFrame.contains(pointer) } ?? inking.first)?.overlay.showNotice(Self.screenRecordingNotice, at: pointer)
+        }
         // The field goes to the screen first, so making the recognizer on this thread never holds it back.
         CATransaction.flush()
         listen()

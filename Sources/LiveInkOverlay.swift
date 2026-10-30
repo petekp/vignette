@@ -141,7 +141,7 @@ final class LiveInkOverlay: NSPanel {
         notice?.hide()
         let view = LiveNotice(text: text)
         canvas.addSubview(view)
-        view.show(at: CGPoint(x: point.x - canvas.origin.x, y: point.y - canvas.origin.y))
+        view.show(beside: CGPoint(x: point.x - canvas.origin.x, y: point.y - canvas.origin.y), within: canvas.bounds)
         notice = view
     }
 
