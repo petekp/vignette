@@ -6,6 +6,8 @@ import AppKit
 final class LiveNotice: NSView {
     /// How long the notice stays up, before its fade-out.
     static let duration: TimeInterval = 4
+    /// The widest its text runs before it wraps.
+    static let width: CGFloat = 260
 
     private let label: NSTextField
     private var hideTimer: Timer?
@@ -17,7 +19,7 @@ final class LiveNotice: NSView {
         label.textColor = .labelColor
         label.lineBreakMode = .byWordWrapping
         label.maximumNumberOfLines = 3
-        label.preferredMaxLayoutWidth = 260
+        label.preferredMaxLayoutWidth = Self.width
         addSubview(label)
         wantsLayer = true
         layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.94).cgColor
@@ -38,7 +40,7 @@ final class LiveNotice: NSView {
     /// Places the notice below and to the right of `point`, kept inside `bounds`, both in its
     /// superview's coordinates, and fades it in.
     func show(beside point: CGPoint, within bounds: CGRect) {
-        label.sizeToFit()
+        label.frame.size = label.sizeThatFits(NSSize(width: Self.width, height: .greatestFiniteMagnitude))
         let inset: CGFloat = 10
         let size = CGSize(width: label.frame.width + 2 * inset, height: label.frame.height + 2 * inset)
         let x = min(max(point.x + Self.offset.x, bounds.minX), bounds.maxX - size.width)
