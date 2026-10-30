@@ -284,10 +284,8 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     /// What the empty note says: what Return does with its target.
     private func showPlaceholder() {
-        let targetProblem = target == .responder ? responderProblem : nil
-        let askedClaude = Settings.shared.data.liveInkAskedClaude
-        let prompt = target == .responder ? (askedClaude ? Self.askPlaceholder : Self.firstAskPlaceholder) : Self.sendPlaceholder
-        content.field.placeholderString = targetProblem ?? speechProblem ?? prompt
+        content.field.placeholderString = NoteContent.prompt(toClaude: target == .responder, responderProblem: responderProblem,
+                                                             speechProblem: speechProblem, askedClaude: Settings.shared.data.liveInkAskedClaude)
         refit()
     }
 

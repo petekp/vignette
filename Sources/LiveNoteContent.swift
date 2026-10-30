@@ -70,3 +70,13 @@ final class NoteContent: NSView {
         }
     }
 }
+
+extension NoteContent {
+    /// What the empty note says. Why Claude cannot answer comes first. Before the first ask to Claude,
+    /// what Claude sees comes next, ahead of why speech cannot listen, since it says what leaves the Mac.
+    static func prompt(toClaude: Bool, responderProblem: String?, speechProblem: String?, askedClaude: Bool) -> String {
+        if toClaude, let responderProblem { return responderProblem }
+        if toClaude, !askedClaude { return LiveNotePopover.firstAskPlaceholder }
+        return speechProblem ?? (toClaude ? LiveNotePopover.askPlaceholder : LiveNotePopover.sendPlaceholder)
+    }
+}
