@@ -726,7 +726,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\" to true in settings.json"); return }
             let words = request.message ?? ""
             guard let id = request.session else {
-                switch liveInk.ask(words, to: liveInk.scriptAgent) {
+                switch liveInk.ask(words, to: liveInk.noteAgent) {
                 case .success: Commands.ok(cmd, "asking")
                 case .failure(let failure): Commands.error(cmd, .liveInkNotAsked, failure.reason)
                 }

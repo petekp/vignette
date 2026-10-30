@@ -30,7 +30,7 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
   can aim one note at the other. A reply from an answer's button or its Reply field goes to the
   agent that gave the answer.
 - A script's `live-ink-ask` with no session asks the open note's responder, else the one a new note
-  starts on, with the sessions taken to be none (`LiveInk.scriptAgent`).
+  starts on, with the sessions taken to be none (`LiveInk.noteAgent`).
 - Codex is offered unless its check found no `codex`. A responder that is not installed or not
   signed in cannot be picked. Its row says why in its tooltip, and under its name on macOS 14.4 and
   later. One whose process stopped can be picked, and starts again at the next ask, unless Codex's
@@ -40,8 +40,10 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
 - The responder the note is aimed at starts as the first stroke moves
   (`LiveInk.prepareResponderForStroke`). A note to a session starts no process. Before the note
   opens, that is the responder the note will start on, decided as the note decides it
-  (`LiveNotePopover.startingResponder`): the stroke lists the sessions once, as the note
-  does, so the agent used last starts, and Codex on a Mac where only Codex can answer.
+  (`LiveNotePopover.startingResponder`), so the agent used last starts, and Codex on a Mac where
+  only Codex can answer. The stroke lists the sessions once a chord hold, and only while a
+  responder the note could start on has no process. The note opens with that listing rather
+  than listing again, so the two cannot disagree.
 
 ## Claude Code's
 

@@ -101,7 +101,7 @@ final class LiveInk {
     /// Esc, held while `LiveEscape` has a step for it.
     private var escapeKey: HotKey?
     /// The note's target picked last, which the next note starts on.
-    private var lastTarget: LiveNotePopover.Target = .responder(.claude)
+    private var lastTarget: LiveNotePopover.Target?
     /// The target the open note started on, for `SendContext`.
     private var noteOffered: LiveNotePopover.Target?
     /// The asks since the screen was last cleared, and each mark's part in them.
@@ -376,29 +376,6 @@ final class LiveInk {
         windows.restyle()
         showMarks()
         holdField()
-    }
-
-    /// How far past a stroke's edge a tap still erases it. Wider than the editor's hit margin: nothing
-    /// shows which mark a tap would erase, and while inking a tap does nothing else.
-    nonisolated static let eraseReach: CGFloat = 12
-
-    /// The index of the mark a tap at `point` erases: the topmost note it is on, or whose stroke it is
-    /// near, or else the smallest ellipse it is inside, since a circled thing is where a hand goes to
-    /// take the circle off. `noteBox` gives what a note draws, an agent's badge included, so a tap on
-    /// the badge or beside it erases the note, as generous as `eraseReach`.
-    nonisolated static func markToErase(at point: CGPoint, in marks: [Mark], markStyle: MarkStyle,
-                                        noteBox: (Mark) -> CGRect? = { _ in nil }) -> Int? {
-        let near = marks.lastIndex { mark in
-            if let box = noteBox(mark) { return box.contains(point) }
-            guard let distance = EditorGeometry.strokeDistance(from: point, to: mark, pointScale: 1) else { return false }
-            return distance <= markStyle.strokeWidth / 2 + eraseReach
-        }
-        if let near { return near }
-        let around = marks.indices.compactMap { index -> (index: Int, area: CGFloat)? in
-            guard case .ellipse(let frame) = marks[index].geometry, EditorGeometry.ellipse(frame, contains: point) else { return nil }
-            return (index, frame.width * frame.height)
-        }
-        return around.min { $0.area < $1.area }?.index
     }
 
     var stateJSON: [String: Any] {
@@ -690,11 +667,14 @@ final class LiveInk {
             note.takeKeys()
             return true
         }
-        let panel = LiveNotePopover(at: first, target: lastTarget)
+        let panel = LiveNotePopover(at: first, target: lastTarget ?? .responder(noteAgent))
         panel.offer(responders.offers, conversing: responders.conversing)
+        // It opens with the sessions this hold listed, or lists them itself.
+        let listed = listing?.hold == inkings ? listing?.candidates : nil
+        if let listed { panel.setSessions(listed) }
         panel.speechProblem = speechProblem
         if !responders.unable.isEmpty { checkResponder(responders.unable) }
-        noteOffered = lastTarget
+        noteOffered = panel.target
         panel.onAsk = { [weak self, weak panel] words, target, title in
             guard let self else { return }
             self.stopListening()
@@ -713,7 +693,7 @@ final class LiveInk {
         note = panel
         hang(panel, from: mark, at: first, takingKeys: takingKeys)
         prepare(beside: mark, panel: panel)
-        refreshTargets(of: panel)
+        if listing?.hold != inkings { refreshTargets(of: panel) }
         if let listening {
             if !typedOver, !listening.words.isEmpty { panel.hear(listening.text) }
         }
@@ -832,9 +812,9 @@ final class LiveInk {
     /// The marks on the screen, and the conversations about to take their notes' places.
     private var shownIDs: Set<Mark.ID> { Set(marks.map(\.id)).union(handingTo.values) }
 
-    /// The agent a script's `live-ink-ask` with no session asks: the open note's responder, else the
-    /// one a new note starts on (`LiveNotePopover.start`), with the sessions taken to be none.
-    var scriptAgent: AgentClient {
+    /// The open note's responder, else the one a new note starts on before its sessions are listed
+    /// (`LiveNotePopover.start`). A script's `live-ink-ask` with no session asks it.
+    var noteAgent: AgentClient {
         note?.target.responder
             ?? LiveNotePopover.start(pick: nil, handPicked: nil, conversing: responders.conversing, responders: responders.offers, list: []).agent
     }
@@ -2054,29 +2034,33 @@ final class LiveInk {
     /// Starts the responder the note this ink goes to will be aimed at, so its first answer does not
     /// wait for a cold start. A note to a session starts no process, and a tap starts none. Called on
     /// every move of a stroke; `prepare` starts the process only once. With no note open, it is the
-    /// one the next note will start on, which needs the sessions listed, once a stroke.
+    /// one the next note will start on, which needs the sessions listed: once a chord hold, while a
+    /// responder a note could start on has no process, and decided on the first complete answer. The
+    /// note opens with that listing, and gets its later answers.
     private func prepareResponderForStroke() {
         if let note {
             if let client = note.target.responder { responders.prepare(client) }
             return
         }
-        if lastTarget.session == nil, let client = responders.conversing { return responders.prepare(client) }
+        if lastTarget?.session == nil, let client = responders.conversing { return responders.prepare(client) }
+        guard listing?.hold != inkings, responders.anyToStart else { return }
+        let hold = inkings
+        listing = (hold, nil)
         guard let listSessions else { return prepareNextNote(from: nil) }
-        guard listedForStroke != strokeBegan else { return }
-        listedForStroke = strokeBegan
-        var prepared = false
         listSessions { [weak self] candidates in
-            guard candidates.complete, !prepared else { return }
-            prepared = true
-            self?.prepareNextNote(from: candidates)
+            guard let self, listing?.hold == hold else { return }
+            let decides = candidates.complete && listing?.candidates?.complete != true
+            listing?.candidates = candidates
+            if hold == inkings { note?.setSessions(candidates) }
+            if decides { prepareNextNote(from: candidates) }
         }
     }
 
-    /// The stroke whose move listed the sessions for `prepareResponderForStroke`, by when it began.
-    private var listedForStroke: Date?
+    /// The chord hold whose stroke listed the sessions, by `inkings`, and the listing's latest answer.
+    private var listing: (hold: Int, candidates: DestinationChoice.Candidates?)?
 
     private func prepareNextNote(from candidates: DestinationChoice.Candidates?) {
-        let client = LiveNotePopover.startingResponder(listed: candidates, remembered: lastTarget.session,
+        let client = LiveNotePopover.startingResponder(listed: candidates, remembered: lastTarget?.session,
                                                        conversing: responders.conversing, among: responders.offers)
         if let client { responders.prepare(client) }
     }

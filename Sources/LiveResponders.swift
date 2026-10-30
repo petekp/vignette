@@ -44,6 +44,9 @@ final class LiveResponders {
         }
     }
 
+    /// Whether a responder a note could start on has no process, so `prepare` would start one.
+    var anyToStart: Bool { offers.contains { $0.canPick && all[$0.client]?.state == .stopped } }
+
     /// The agents the last check found unable to answer, which a note opening checks again: the person
     /// may have installed one or signed in since.
     var unable: [AgentClient] { AgentClient.allCases.filter { !(availability[$0]?.canAnswer ?? true) } }
