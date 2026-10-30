@@ -24,18 +24,6 @@ import AppKit
 /// `FocusReturn` at once (`letGoOfKeys`) rather than when AppKit's fade ends.
 @MainActor
 final class LiveNotePopover: NSObject, NSTextFieldDelegate {
-    enum Target: Equatable {
-        /// Claude, kept running by Vignette, which draws its answer on the screen.
-        case responder
-        /// A working session, through Send. Its answer is drawn beside the ink when it comes.
-        case session(AgentDestination)
-
-        var session: AgentDestination? {
-            if case .session(let destination) = self { return destination }
-            return nil
-        }
-    }
-
     /// The words typed, trimmed, the target, and the title a card sent to it shows, when the person
     /// presses Return.
     var onAsk: ((String, Target, _ title: String) -> Void)?
@@ -49,7 +37,11 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// Why Claude cannot answer, or nil when it can. A note aimed at Claude says why in place of its
     /// prompt, and Claude's row in the target menu says why and cannot be picked.
     var responderProblem: String? {
-        didSet { if responderProblem != oldValue { showTarget() } }
+        didSet {
+            guard responderProblem != oldValue else { return }
+            showTarget()
+            if let candidates { setSessions(candidates) }
+        }
     }
     /// Why speech cannot listen, or nil when it can. The empty note says so in place of its prompt.
     var speechProblem: String? {
@@ -75,6 +67,8 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// Where the caret was when the note lost the keys, which it takes back with them.
     private var caret: NSRange?
     private var sessions: [AgentDestination] = []
+    /// The last session list, which a change in whether Claude can answer resolves again.
+    private var candidates: DestinationChoice.Candidates?
     private var closing = false
     /// Waiting to look as the conversation does before handing over to it, which `fadeAway` can stop.
     private var handingOver = false
@@ -210,6 +204,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// The working sessions to offer after the responder. The list can arrive in several answers, a
     /// kept one and fresh ones; `DestinationChoice` says which target each one starts the note on.
     func setSessions(_ candidates: DestinationChoice.Candidates) {
+        self.candidates = candidates
         let answer = DestinationChoice.choose(candidates, for: .liveNote(ownPick))
         // The menu lists the sessions Vignette can start after the running ones (`SessionMenu.ranked`).
         sessions = answer.list + answer.startable
