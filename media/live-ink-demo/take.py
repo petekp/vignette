@@ -300,7 +300,7 @@ class Take:
         self.hand('chord', 'down')
         self.pause(0.3)
         self.hand('chord', 'up')
-        self.wait(lambda s: s['responder']['state'] == 'ready', 30, 'the responder')
+        self.wait(lambda s: s['responders']['claude']['state'] == 'ready', 30, 'the responder')
         self.glide(300, 640, 0.8)
         pids = [self.chrome, self.textedit, self.ghostty, self.vignette, *self.desktop]
         recorder = subprocess.Popen([RECORD, movie, '0', *map(str, pids)], stdout=subprocess.PIPE, text=True)
