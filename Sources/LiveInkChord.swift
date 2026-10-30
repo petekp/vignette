@@ -25,6 +25,12 @@ enum LiveInkChord: String, CaseIterable {
     /// The pair as the keys read on the menu bar, such as "⌃⌥".
     var glyphs: String { HotKeySpec.modifierGlyphs(HotKeySpec.carbonModifiers(flags)) }
 
+    /// The pair's keys in the order macOS writes them, each with its glyph and its name for VoiceOver.
+    var keys: [(flag: NSEvent.ModifierFlags, glyph: String, name: String)] {
+        [(NSEvent.ModifierFlags.control, "⌃", "Control"), (.option, "⌥", "Option"), (.shift, "⇧", "Shift"), (.command, "⌘", "Command")]
+            .filter { flags.contains($0.flag) }
+    }
+
     /// Whether pressing `shortcut` holds this pair first. The chord begins as the pair goes down, so
     /// the stack's shortcut would start live ink, which takes the pointer and lets go of the focus,
     /// as the stack comes up. A double tap never does: `ModifierTap` counts a modifier pressed alone.
