@@ -218,8 +218,8 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         let answer = DestinationChoice.choose(candidates, for: .liveNote(ownPick))
         // The menu lists the sessions Vignette can start after the running ones (`SessionMenu.ranked`).
         sessions = answer.list + answer.startable
-        // Without Claude, a note with no session picked has nothing to answer it, so it opens on the first session.
-        let defaultTarget: Target = responderProblem == nil ? .responder : sessions.first.map(Target.session) ?? .responder
+        // Without Claude, a note with no pick opens on the first running session; only a person starts one.
+        let defaultTarget: Target = responderProblem == nil ? .responder : answer.list.first.map(Target.session) ?? .responder
         let found: Target = answer.pick.map(Target.session) ?? defaultTarget
         guard found != target else { return }
         show(found)
