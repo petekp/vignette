@@ -7,7 +7,7 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
 | Part | Where |
 | --- | --- |
 | The pair and its refusals | `LiveInkChord.swift`, `LiveInk.takeChord` |
-| The offer | `LiveInkOffer.swift`: `AppDelegate.offerLiveInk`, `LiveInkOfferSection` |
+| The offer | `AppDelegate.offerLiveInk` (`AppDelegate+LiveInkOffer.swift`), `LiveInkOfferSection` |
 | Whether Claude Code can answer | `LiveResponderAvailability.swift`, `LiveInk.checkResponder` |
 | A notice beside the pointer | `LiveNotice.swift`, `LiveInkOverlay.showNotice` |
 

@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 
 extension AppDelegate {
     /// The one-time live ink offer, for an install that finished setup without seeing live ink's page. It
@@ -20,22 +19,5 @@ extension AppDelegate {
             ScreenRecording.request()
         }
         Log.write("[settings] live ink offer \(on ? "turned on" : "not now")")
-    }
-}
-
-/// Live ink's one-time offer, at the top of the General tab.
-struct LiveInkOfferSection: View {
-    let pair: String
-    let answer: (Bool) -> Void
-
-    var body: some View {
-        Section {
-            Text(SetupInkCopy.offer(pair: pair))
-            HStack {
-                Button("Not Now") { answer(false) }
-                Button("Turn On") { answer(true) }
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
     }
 }
