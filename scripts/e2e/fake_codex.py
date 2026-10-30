@@ -7,11 +7,16 @@ Vignette ends the server once it has its answers, so nothing after the last one 
 Each line carries its process and the time it was written, and an exception is a line of its own,
 since Vignette drops codex's standard error.
 
-It speaks only what Vignette asks of codex: `app-server` answers `initialize` and `thread/list`
-(`AppServer.swift`), and `queue --thread <id> --message <line>` succeeds, as the real one does once
-the thread's engine has the line (`CodexConnection.submit`). A thread whose id is a line of
-`<folder>/gone` was deleted: queueing to it fails with the real CLI's words. Anything else succeeds
-and does nothing.
+It speaks only what Vignette asks of codex: `app-server` answers `initialize`, `thread/list` and
+`thread/read` (`AppServer.swift`), and `queue --thread <id> --message <line>` succeeds, as the real
+one does once the thread's engine has the line (`CodexConnection.submit`). A thread whose id is a
+line of `<folder>/gone` was deleted: queueing to it fails with the real CLI's words. Anything else
+succeeds and does nothing.
+
+Each thread's rollout is `<folder>/rollouts/rollout-<id>.jsonl`, which `thread/read` names as its
+`path`. A queued line becomes a turn there, as the real engine writes one (`CodexRollout.swift`):
+`task_started`, the line as a user message, and `task_complete` once the number of seconds in
+`<folder>/turn-seconds` has passed, 1 without it.
 
 It also answers as live ink's responder (`CodexDriver`): `debug models` prints a catalog, and
 `app-server` reads the account, lists two models, and runs turns. The account is signed in while
@@ -27,6 +32,8 @@ taken ports.
 import json
 import os
 import re
+import shlex
+import subprocess
 import sys
 import time
 import traceback
@@ -45,6 +52,30 @@ def main():
         print('Error: failed to queue session message: thread/queue/add failed: failed to read thread: '
               f'invalid thread-store request: no rollout found for thread id {args[2]} (code -32603)', file=sys.stderr)
         sys.exit(1)
+    elif args[:2] == ['queue', '--thread'] and '--message' in args:
+        take_turn(folder, args[2], args[args.index('--message') + 1])
+
+
+def rollout(folder, thread):
+    return os.path.join(folder, 'rollouts', f'rollout-{thread}.jsonl')
+
+
+def take_turn(folder, thread, line):
+    """Writes the turn that takes `line` into the thread's rollout, and ends it from a process of its
+    own once `<folder>/turn-seconds` have passed, after this one has answered."""
+    path = rollout(folder, thread)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    turn = f'turn-{time.time_ns()}'
+    entries = [{'type': 'event_msg', 'payload': {'type': 'task_started', 'turn_id': turn}},
+               {'type': 'response_item', 'payload': {'type': 'message', 'role': 'user',
+                                                     'content': [{'type': 'input_text', 'text': line}]}}]
+    with open(path, 'a') as f:
+        f.write(''.join(json.dumps(e) + '\n' for e in entries))
+    seconds = open(os.path.join(folder, 'turn-seconds')).read().strip() if os.path.exists(os.path.join(folder, 'turn-seconds')) else '1'
+    end = json.dumps({'type': 'event_msg', 'payload': {'type': 'task_complete', 'turn_id': turn, 'last_agent_message': 'Done.'}})
+    subprocess.Popen(['/bin/sh', '-c', f'sleep {shlex.quote(seconds)}; printf "%s\\n" {shlex.quote(end)} >> {shlex.quote(path)}'],
+                     start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    record(folder, {'turn': turn, 'thread': thread, 'endsAfter': seconds})
 
 
 def gone(folder):
@@ -73,6 +104,10 @@ def serve(folder, args):
         record(folder, {'args': args, 'answered': method})
         if method == 'thread/list':
             answer = {'id': message['id'], 'result': {'data': threads, 'nextCursor': None}}
+        elif method == 'thread/read':
+            found = next((t for t in threads if t['id'] == params.get('threadId')), None)
+            answer = ({'id': message['id'], 'result': {'thread': dict(found, path=rollout(folder, found['id']))}} if found else
+                      {'id': message['id'], 'error': {'code': -32603, 'message': f"no rollout found for thread id {params.get('threadId')}"}})
         elif method == 'initialize':
             answer = {'id': message['id'], 'result': {'userAgent': 'fake-codex'}}
         elif method == 'account/read':
