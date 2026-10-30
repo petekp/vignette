@@ -59,7 +59,7 @@ struct SettingsData: Codable, Equatable {
     var sendInstructions = SettingsData.defaultSendInstructions  // the words after the image in the line Send puts in a session
     var annotateOnCapture = false            // a new capture opens in the annotator instead of showing a thumbnail
     var copyOnCapture = true                 // a new capture goes to the clipboard as it lands
-    var liveInk = false                      // holding Control and Option draws on the screen itself; needs Accessibility
+    var liveInk = false                      // holding `liveInkChord` draws on the screen itself; needs Accessibility
     var liveInkOffered = false               // whether live ink's one-time offer was made to an install that finished setup before it had a page
     var liveInkAskedClaude = false           // whether a live ink ask has gone to Claude, which ends the line that says what Claude sees
     var liveInkChord = LiveInkChord.standard.rawValue  // the two modifiers that hold live ink on: ⌃⌥ unless another pair is chosen
