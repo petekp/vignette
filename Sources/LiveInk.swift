@@ -708,7 +708,6 @@ final class LiveInk {
         prepare(beside: mark, panel: panel)
         refreshTargets(of: panel)
         if let listening {
-            panel.setListening(listening.listensPastRelease)
             if !typedOver, !listening.words.isEmpty { panel.hear(listening.text) }
         }
         Log.write("[live-ink] note open\(takingKeys ? "" : " without the keys: a menu is still open")")
@@ -1970,8 +1969,6 @@ final class LiveInk {
         startTap(since: began)
         // The ink takes its colour from what is behind it.
         InkBackdrop.shared.refresh()
-        let ui = Settings.shared.motionUI
-        inking.forEach { $0.overlay.prepareField(ui: ui) }
         let mouse = NSEvent.mouseLocation
         hover(at: CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y))
         // The field waits, so holding the chord on the way to a key, as in a window manager's
@@ -2145,20 +2142,6 @@ final class LiveInk {
 
     // MARK: The pointer field
 
-    /// The surfaces the pointer lab holds the pointer field on, at the inking level, passing every
-    /// press through.
-    private var labSurfaces: [Surface] = []
-
-    /// Holds the pointer field on every screen for the pointer lab, or lets it go, so what the lab tunes
-    /// is what inking shows.
-    func previewField(_ on: Bool) {
-        guard on != !labSurfaces.isEmpty else { return }
-        labSurfaces = on ? activeSurfaces() : []
-        holdField()
-        if !on { closeEmpty(fade: 0) }
-        Log.write("[live-ink] field preview \(on ? "on" : "off")")
-    }
-
     /// The pointer field's delay passed, or a press came first: the field shows, and listening starts.
     private func showFieldForChord() {
         fieldTimer?.invalidate()
@@ -2171,10 +2154,10 @@ final class LiveInk {
     }
 
     /// Holds the pointer field up, in the current settings, on the surfaces taking ink while the chord
-    /// shows it and on the pointer lab's, and lets it go on every other surface.
+    /// shows it, and lets it go on every other surface.
     private func holdField() {
         let ui = Settings.shared.motionUI
-        let held = (chordShowsField ? inking : []) + labSurfaces
+        let held = chordShowsField ? inking : []
         for surface in surfaces {
             surface.overlay.holdField(held.contains { $0 === surface }, ui: ui)
         }
@@ -2196,8 +2179,7 @@ final class LiveInk {
             Log.write("[speech] error no recognizer for \(Locale.current.identifier)")
             return
         }
-        let listening = LiveListening(transcriber: transcriber, until: settings.listenUntil,
-                                      pause: settings.ui.liveInkSpeechPause, quiet: Float(settings.ui.liveInkSpeechQuiet))
+        let listening = LiveListening(transcriber: transcriber)
         listening.onWords = { [weak self] words in self?.heard(words) }
         listening.onFinished = { [weak self, weak listening] words in
             guard let self, let listening, self.listening === listening else { return }
@@ -2222,7 +2204,6 @@ final class LiveInk {
     private func doneListening(_ words: [SpokenWord], began: Date) {
         listening = nil
         guard let note else { return }
-        note.setListening(false)
         let text = LiveListening.text(of: words)
         guard !typedOver, !text.isEmpty else { return }
         spoken = (words, began)
@@ -2270,7 +2251,7 @@ final class LiveInk {
     /// full-screen window over every app.
     private func closeEmpty(fade: TimeInterval) {
         let empty = surfaces.filter { surface in
-            surface.marks.isEmpty && !inking.contains { $0 === surface } && !labSurfaces.contains { $0 === surface }
+            surface.marks.isEmpty && !inking.contains { $0 === surface }
         }
         empty.forEach { $0.overlay.close(after: fade) }
         surfaces.removeAll { surface in empty.contains { $0 === surface } }

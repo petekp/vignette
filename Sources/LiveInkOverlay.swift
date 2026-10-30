@@ -89,7 +89,7 @@ final class LiveInkOverlay: NSPanel {
     func fit(to screen: NSScreen) {
         setFrame(screen.frame, display: false)
         canvas.fit(origin: CGPoint(x: screen.frame.minX, y: StateReport.primaryHeight - screen.frame.maxY))
-        canvas.field.place(on: screen, display: display, excluding: CGWindowID(windowNumber))
+        canvas.field.place(on: screen)
     }
 
     /// The screen it covers, in global top-left points, the marks' coordinates.
@@ -134,15 +134,8 @@ final class LiveInkOverlay: NSPanel {
         canvas.showPen(points, longest: longest, markStyle: markStyle)
     }
 
-    /// Readies the pointer field as the chord goes down, so its picture of the screen is there by the
-    /// time it shows.
-    func prepareField(ui: UITweaks) {
-        canvas.field.apply(ui)
-        canvas.field.prepare()
-    }
-
     /// Holds the pointer field up in `ui`'s settings, or lets it go. Held, it raises the overlay to the
-    /// inking level without taking presses, so the pointer lab shows it where inking does.
+    /// inking level without taking presses.
     func holdField(_ on: Bool, ui: UITweaks) {
         holdsField = on
         raise()

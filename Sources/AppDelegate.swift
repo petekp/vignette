@@ -43,7 +43,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         stack: { [weak self] in self?.toggleRecent() },
         annotator: { [weak self] in self?.annotateLast() },
         intro: { [weak self] in self?.introLab.show() },
-        pointer: { [weak self] in self?.pointerLab.show() },
         check: { [weak self] in self?.checkLab.show() },
         setup: { [weak self] in self?.setupLab.show() }))
     private lazy var introLab = IntroLabController(
@@ -58,7 +57,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let checkLab = CheckLabController()
     private lazy var setupLab = SetupLabController(
         callbacks: { [unowned self] in self.setupCallbacks(protectedArea: ScreenshotWatcher.protectedArea(of: self.watchFolder)) })
-    private lazy var pointerLab = PointerLabController(preview: { [weak self] on in self?.liveInk.previewField(on) })
     private let settings = Settings.shared
     private var watchFolder: URL { settings.data.folderURL }
     /// One map, so Send submits through the same connections it lists.
@@ -746,14 +744,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         case "intro-lab": introLab.show(); Commands.ok("intro-lab")
         case "setup-lab": setupLab.show(); Commands.ok(cmd)
         case "check-lab": checkLab.show(); Commands.ok("check-lab")
-        case "pointer-lab":
-            if let preview = request.preview {
-                pointerLab.hold(preview)
-                Commands.ok(cmd, preview ? "holding the pointer field" : "let the pointer field go")
-            } else {
-                pointerLab.show()
-                Commands.ok(cmd)
-            }
         case "dismiss": thumbnail.dismiss(by: .url); Commands.ok("dismiss")
         case "cancel": Commands.ok("cancel", annotator.cancelForDebug() ? "" : "nothing was open")
         default:

@@ -36,7 +36,7 @@ The names in brackets are `// MARK:` sections.
 | The agent pulling focus: rack focus, the tour, the loupe | `LiveFocus.swift`, `LiveInk.swift` (Pulling focus) |
 | The answer's ×, its buttons and Reply's field, pointing at an action | `LiveInk.swift` (Dismissing and actions), `LiveAnswerActions.swift`, `LiveDismissButton.swift` |
 | Marks staying on their window: moving with it, covered by windows in front, fading as it minimises | `LiveWindows.swift` |
-| The pointer field (the ring round the pointer) while inking, the Pointer Lab | `PointerField.swift`, `PointerField.metal`, `ScreenFeed.swift`, `PointerLab.swift`, `LiveInk.swift` (The pointer field) |
+| The pointer field (the lamp round the pointer) while inking | `PointerField.swift`, `PointerField.metal`, `LiveInk.swift` (The pointer field) |
 | Whether a session's turn changed what the ink was on | `LiveChange.swift`, `LiveNoteCards.swift` (`look(again:)`, which compares the notes on one window; `before`) |
 
 ## Checking a change
@@ -194,28 +194,20 @@ The names in brackets are `// MARK:` sections.
   removed on 2026-10-12 as too much. The default style is Lamp, a soft pool of light in the ink's
   colours, the ice over dark content and deep blue over light, that breathes, brightens with the
   pointer's speed and has light drifting inside it
-  (`docs/live-ink-lamp-and-stroke-colour-2026-10-12.md`). In its first
-  style, Glass, it bends the screen under it towards its crest, parts red from blue there, and glows
-  in a lighter shade of the person's colour. Inside the ring nothing moves, so what the pointer is on
-  stays where it is.
+  (`docs/live-ink-lamp-and-stroke-colour-2026-10-12.md`). It is the only style: the other five (Glass,
+  Lens, Squircle, Droplet and Caustic) were removed, with the screen picture they bent. The lamp
+  draws no picture of the screen, so the field never starts Screen Recording.
   It is centred a little below and right of the arrow's tip, round the arrow's middle, and macOS
   draws the real arrow above it. It grows in as it shows, tightens and brightens while the button
   is down, and stretches along the way it moves. Each refresh the field reads the pointer and the
   button from its display link (`NSEvent.mouseLocation`, `LiveInkTap.isButtonDown`), so the
   ring is sprung towards where the pointer is then, not where the last event put it. Its motion is
   a pure value, `PointerFieldMotion`.
-- The field draws from a live picture of the display (`ScreenFeed`). The picture starts when the
-  chord goes down, leaves out the overlay by its window id, and stops once the field has faded
-  out, or as the chord is let go when the field never showed. While it runs, macOS shows its recording indicator. The layer fades in from its first
-  frame, so it never shows the screen as it was. It draws only from its display link: drawing on
-  each frame's arrival starved the main thread until the app hung. The ring has a layer only as big
-  as it can reach, moved with it and presented in the same transaction, so a frame draws a few
-  hundred points square rather than the screen. A style made only of light (Lamp) starts no
-  picture. With no Screen Recording or a stream error, the light still draws and nothing bends, and
-  the next chord tries the picture again. The
-  Pointer Lab (`vignette://pointer-lab`, needs `debug`) tunes the ring and the whole field
-  (`ui.liveInkField*`). Its "Hold on screen" keeps the field up at the inking level while presses
-  pass through, and a press anywhere then tightens the ring.
+- The field fades in from its first frame. It draws only from its display link: drawing on each
+  frame's arrival starved the main thread until the app hung. The ring has a layer only as big as it
+  can reach, moved with it and presented in the same transaction, so a frame draws a few hundred
+  points square rather than the screen. Its numbers are in the Pointer section of Tweak UI
+  (`ui.liveInkField*`, `ui.liveInkLamp*`).
   `LiveInk.holdField` is the one place that holds the field up: on the surfaces taking ink while
   the chord shows it, and on the lab's while the lab holds it. An overlay closes only once its
   field has faded out (`PointerField.whenHidden`).
@@ -348,9 +340,7 @@ The names in brackets are `// MARK:` sections.
   listening and keeps the words; Esc, an ask and clearing drop them. Standing aside stops listening,
   and the note keeps what it heard. Words already in the note when listening starts stay, and what is
   said then does not replace them. `ListeningEnd`
-  decides the end: `liveInkListenUntil` is `release` (0.3 s after the chord is let go) or `pause`
-  (the input under `ui.liveInkSpeechQuiet` for `ui.liveInkSpeechPause` after release), and never
-  past 60 s. With `liveInkSendWhenQuiet`, the final words are sent as Return sends them. Speech is
+  decides the end: listening stops 0.3 s after the chord is let go, and never past 60 s. With `liveInkSendWhenQuiet`, the final words are sent as Return sends them. Speech is
   turned into words on the Mac only: `Transcriber` is the interface every engine conforms to,
   `SpeechEngine.make` picks one, and `AppleTranscriber` refuses to run without an on-device model
   rather than send audio to Apple. The Settings switch asks for the microphone and speech

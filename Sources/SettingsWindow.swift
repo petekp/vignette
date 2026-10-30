@@ -308,12 +308,6 @@ struct SettingsView: View {
                     }
                 }
                 if settings.data.liveInkSpeech {
-                    Picker("Stop listening", selection: Binding(get: { settings.data.listenUntil }, set: { until in
-                        settings.update { $0.liveInkListenUntil = until.rawValue }
-                    })) {
-                        Text("When you let go of Control and Option").tag(ListenUntil.release)
-                        Text("When you pause").tag(ListenUntil.pause)
-                    }
                     Toggle("Ask when you stop talking", isOn: binding(\.liveInkSendWhenQuiet))
                 }
             }

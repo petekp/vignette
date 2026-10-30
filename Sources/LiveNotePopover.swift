@@ -74,8 +74,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private var sent = false
     /// The target's menu is up. It takes the keys while it is, and `popUp` returns when it closes.
     private(set) var menuOpen = false
-    /// Listening to the person, which the empty note says.
-    private var listening = false
     private var watching: [NSObjectProtocol] = []
 
     /// For `SendContext.menu`: when the note opened, and the menu's picks.
@@ -84,7 +82,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     static let askPlaceholder = "Ask about this"
     static let sendPlaceholder = "Send to session"
-    static let listeningPlaceholder = "Listening…"
 
     /// The body at the height it is placed for, three lines of words, so it can grow without covering
     /// what it was placed clear of.
@@ -267,10 +264,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         showPlaceholder()
     }
 
-    /// What the empty note says: that it is listening, else what Return does with its target.
+    /// What the empty note says: what Return does with its target.
     private func showPlaceholder() {
-        content.field.placeholderString = listening ? Self.listeningPlaceholder
-            : target == .responder ? Self.askPlaceholder : Self.sendPlaceholder
+        content.field.placeholderString = target == .responder ? Self.askPlaceholder : Self.sendPlaceholder
     }
 
     /// The list of targets, under the target, or beside the note when the screen has no room below it,
@@ -373,12 +369,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         // The caret follows the words, so typing after them adds to the end.
         (content.field.currentEditor() as? NSTextView)?.setSelectedRange(NSRange(location: (words as NSString).length, length: 0))
         refit()
-    }
-
-    /// Says in the empty note that it is listening, or that it is waiting for typing.
-    func setListening(_ listening: Bool) {
-        self.listening = listening
-        showPlaceholder()
     }
 
     /// Asks as Return does.
