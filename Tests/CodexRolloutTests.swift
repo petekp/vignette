@@ -161,6 +161,21 @@ final class CodexRolloutTests: XCTestCase {
         XCTAssertEqual(asked, 1)
     }
 
+    func testAWatchedThreadThatMovesToAnotherFileIsReadFromThatFilesStart() throws {
+        let file = try rolloutFile([])
+        let tracker = CodexTurns()
+        tracker.sending(note, to: "thread", rollout: .at(file.path))
+        XCTAssertEqual(tracker.turn(of: "thread") { _ in .unknown }, .waiting)
+        let moved = file.deletingLastPathComponent().appendingPathComponent("rollout-2026-10-30T01-00-00-thread.jsonl")
+        try Data([started("a"), user(note), completed("a")].map { $0 + Data("\n".utf8) }.joined()).write(to: moved)
+        let second = "From Vignette: a second note. requests/BBBB-2222/image.png"
+        tracker.sending(second, to: "thread", rollout: .at(moved.path))
+        try append(Data([started("b"), user(second)].map { $0 + Data("\n".utf8) }.joined()), to: moved)
+        XCTAssertEqual(tracker.turn(of: "thread") { _ in .unknown }, .busy, "the first line's turn in the new file is read too")
+        try append(completed("b") + Data("\n".utf8), to: moved)
+        XCTAssertEqual(tracker.turn(of: "thread") { _ in .unknown }, .idle)
+    }
+
     func testALineSentBeforeTheThreadHasARolloutWaitsAndAReadThatNamesNoFileReadsAsNoTurn() throws {
         let clock = Clock()
         let tracker = CodexTurns(now: { clock.now })

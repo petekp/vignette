@@ -153,15 +153,17 @@ final class CodexTurns: Sendable {
     }
 
     /// `line` is going to `thread`, whose rollout `thread/read` found just before. A thread already
-    /// watched at that path is read on from where it stopped; otherwise the reading starts at the
-    /// file's end as it is now, or at its start when the file is not there yet.
+    /// watched is read on from where it stopped, or from the start of a file it moved to, which can
+    /// hold the turn of a line sent earlier. A thread not watched yet is read from the file's end as
+    /// it is now, or from its start when the file is not there yet.
     func sending(_ line: String, to thread: String, rollout: Path) {
         let time = now()
         watches.withLock { watches in
+            let watched = watches[thread] != nil
             var watch = watches[thread] ?? Watch(grew: time, asked: time)
             if case .at(let path) = rollout, path != watch.path {
                 watch.path = path
-                watch.offset = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? UInt64 ?? 0
+                watch.offset = watched ? 0 : (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? UInt64 ?? 0
                 watch.partial = Data()
             } else if rollout == .unnamed {
                 watch.move(to: .unnamed, at: time)
