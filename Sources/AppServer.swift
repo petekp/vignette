@@ -145,6 +145,8 @@ enum AppServer {
         process.standardInput = input
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
+        // Writing to a process that has gone would otherwise end Vignette with SIGPIPE.
+        _ = fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
         do { try process.run() } catch { return [] }
 
         let wanted = requests.filter { $0.contains("\"id\"") }.count
