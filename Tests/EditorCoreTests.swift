@@ -840,6 +840,26 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertEqual(frame(core.drawing.marks.first), CGRect(x: 100, y: 100, width: 100, height: 100))
     }
 
+    func testLeftAndRightPageOnlyWithNothingSelectedNothingTypedNoDragAndNoModifier() {
+        func pages(_ effects: [Core.Effect]) -> Bool { effects.contains { if case .page = $0 { return true }; return false } }
+        var core = core()
+        XCTAssertEqual(core.key(.left), [.page(.older, isRepeat: false)])
+        XCTAssertEqual(core.key(.right, isRepeat: true), [.page(.newer, isRepeat: true)])
+        XCTAssertFalse(pages(core.key(.up)))
+        for modifiers: Core.Modifiers in [.shift, .option, .command, .control] { XCTAssertFalse(pages(core.key(.left, modifiers)), "\(modifiers)") }
+
+        core.press(100, 100)
+        core.dragTo(300, 300)
+        XCTAssertFalse(pages(core.key(.left)), "an arrow during a drag cancels it")
+        XCTAssertNil(core.gesture)
+
+        var selected = self.core([text("note", 100, 100)])
+        XCTAssertFalse(pages(selected.key(.left)), "a selection is nudged")
+        selected.key(.returnKey, .shift)
+        XCTAssertNotNil(selected.typing)
+        XCTAssertFalse(pages(selected.key(.right)), "the caret moves while typing")
+    }
+
     // MARK: Typing
 
     func testATextThatEndsWithNoTextIsRemoved() {
@@ -1145,6 +1165,17 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertEqual(onlyAgents.undoSteps.count, 0)
     }
 
+    func testAScreenshotReachedByAPageOpensWithNothingSelectedSoTheArrowsKeepPaging() {
+        var core = Core()
+        let marks = [rect(100, 100, 100, 100)]
+        _ = core.reduce(.open(Drawing(key: "/tmp/shot.png", pixels: Self.image, pointScale: 1, marks: marks), style: .standard,
+                              metrics: .standard, markStyle: .standard, selectsNewest: false))
+        XCTAssertEqual(core.tool, .select)
+        XCTAssertEqual(core.selection, [])
+        XCTAssertEqual(core.key(.left), [.page(.older, isRepeat: false)])
+        XCTAssertEqual(core.drawing.marks, marks)
+    }
+
     func testAgentsMarksJoinTheOpenDrawingAsOneUndoStepEvenWhileTextIsTyped() {
         var core = core()
         _ = core.reduce(.setTool(.text))
@@ -1206,47 +1237,6 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertEqual(core.selection, [drawing.marks[0].id])
         core.drag(from: (100, 150), to: (300, 300), .control)
         XCTAssertEqual(core.drawing, drawing)
-    }
-}
-
-extension EditorCore {
-    @discardableResult
-    mutating func press(_ x: CGFloat, _ y: CGFloat, _ modifiers: Modifiers = [], count: Int = 1, time: TimeInterval = 0) -> [Effect] {
-        reduce(.pointerPressed(Pointer(location: CGPoint(x: x, y: y), modifiers: modifiers, time: time), clickCount: count))
-    }
-
-    @discardableResult
-    mutating func dragTo(_ x: CGFloat, _ y: CGFloat, _ modifiers: Modifiers = [], time: TimeInterval = 1) -> [Effect] {
-        reduce(.pointerDragged(Pointer(location: CGPoint(x: x, y: y), modifiers: modifiers, time: time)))
-    }
-
-    @discardableResult
-    mutating func release(_ x: CGFloat, _ y: CGFloat, _ modifiers: Modifiers = [], time: TimeInterval = 1) -> [Effect] {
-        reduce(.pointerReleased(Pointer(location: CGPoint(x: x, y: y), modifiers: modifiers, time: time)))
-    }
-
-    @discardableResult
-    mutating func move(_ x: CGFloat, _ y: CGFloat) -> [Effect] {
-        reduce(.pointerMoved(Pointer(location: CGPoint(x: x, y: y))))
-    }
-
-    /// A press, a drag through the middle and on to `to`, and a release there: the effects of all four.
-    @discardableResult
-    mutating func drag(from: (CGFloat, CGFloat), to: (CGFloat, CGFloat), _ modifiers: Modifiers = []) -> [Effect] {
-        press(from.0, from.1, modifiers)
-            + dragTo((from.0 + to.0) / 2, (from.1 + to.1) / 2, modifiers)
-            + dragTo(to.0, to.1, modifiers)
-            + release(to.0, to.1, modifiers)
-    }
-
-    @discardableResult
-    mutating func click(_ x: CGFloat, _ y: CGFloat, _ modifiers: Modifiers = [], count: Int = 1) -> [Effect] {
-        press(x, y, modifiers, count: count) + release(x, y, modifiers, time: 0.05)
-    }
-
-    @discardableResult
-    mutating func key(_ key: Key, _ modifiers: Modifiers = [], shift: Bool = false, isRepeat: Bool = false) -> [Effect] {
-        reduce(.keyDown(key, shift ? modifiers.union(.shift) : modifiers, isRepeat: isRepeat))
     }
 }
 

@@ -38,6 +38,8 @@ final class EditorView: NSView {
     var onLeaveCanvas: ((_ backward: Bool) -> Void)?
     /// M or P: the host puts the keys in the message field beside Send, when there is one.
     var onFocusMessage: (() -> Void)?
+    /// Left or Right with nothing selected: the host opens the screenshot beside this one.
+    var onPage: ((EditorCore.Page, _ isRepeat: Bool) -> Void)?
     /// A press on the canvas, which takes the keyboard's focus back from the toolbar.
     var onPress: (() -> Void)?
     /// A key reached the editor.
@@ -130,7 +132,8 @@ final class EditorView: NSView {
     /// decoded at any size, or nil until its decode arrives (`setImage`); it fills the drawing's
     /// `pixels`, shown at `picture` in the view. The strokes are on screen when this returns; each
     /// text follows a moment later, once its bitmap is drawn off the main thread.
-    func open(_ drawing: Drawing, image: CGImage?, picture: CGRect, style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle) {
+    func open(_ drawing: Drawing, image: CGImage?, picture: CGRect, style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle,
+              selectsNewest: Bool = true) {
         stopTimers()
         heldArrows = []
         screenshotName = URL(fileURLWithPath: drawing.key).deletingPathExtension().lastPathComponent
@@ -140,7 +143,7 @@ final class EditorView: NSView {
         self.picture.open(image, pixels: drawing.pixels)
         CATransaction.commit()
         placedPicture = picture
-        handle(.open(drawing, style: style, metrics: metrics, markStyle: markStyle))
+        handle(.open(drawing, style: style, metrics: metrics, markStyle: markStyle, selectsNewest: selectsNewest))
         dropLingering()
         guard core.isOpen else {
             Log.write("[editor] error open-refused \(screenshotName): pixels=\(drawing.pixels.width)x\(drawing.pixels.height) pointScale=\(drawing.pointScale)")
@@ -298,6 +301,7 @@ final class EditorView: NSView {
                                  userInfo: [.announcement: words, .priority: NSAccessibilityPriorityLevel.high.rawValue])
         case .leaveCanvas(let backward): onLeaveCanvas?(backward)
         case .focusMessage: onFocusMessage?()
+        case .page(let page, let isRepeat): onPage?(page, isRepeat)
         case .close: onClose?()
         case .done(let drawing): onDone?(drawing)
         case .send(let drawing): onSend?(drawing)
@@ -833,25 +837,6 @@ final class EditorView: NSView {
     override func isAccessibilityElement() -> Bool { true }
     override func accessibilityRole() -> NSAccessibility.Role? { .image }
     override func accessibilityLabel() -> String? { screenshotName }
-}
-
-/// Hosts the picture's and the overlay's layers, y down. It takes no events: the editor view does.
-private final class CanvasView: NSView {
-    let host = CALayer()
-
-    /// AppKit sets a layer-hosting view's root layer geometry from the view, overwriting a flag set on
-    /// the layer, so the view itself must be flipped for its sublayers to run y down.
-    override var isFlipped: Bool { true }
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        layer = host
-        wantsLayer = true
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 extension EditorView: OpenDrawing {
