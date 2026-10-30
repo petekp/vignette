@@ -25,9 +25,10 @@ isolation check's posts that provider the request the real codex sends, with `<f
 a tool to it. Any other turn answers `<folder>/answer.json`, or "A fake answer.".
 
 And as Vignette's sign-in to Codex (`CodexLogin`): `account/login/start` with type `chatgpt` answers
-a page, then with `<folder>/login-completes` writes a fake `auth.json` into `CODEX_HOME` and
-reports the login completed. With `<folder>/login-port-busy` it answers the real codex's error for
-taken ports.
+a page on a closed port of this Mac, so the browser that opens it reaches nothing, then with
+`<folder>/login-completes` writes a fake `auth.json` into `CODEX_HOME` and reports the login
+completed. With `<folder>/login-port-busy` it answers the real codex's error for taken ports.
+`account/logout` removes `auth.json`, as the real one does once it has asked OpenAI to revoke it.
 """
 import json
 import os
@@ -119,12 +120,16 @@ def serve(folder, args):
                 answer = {'id': message['id'], 'error': {'code': -32603, 'message': 'failed to start login server: Port 127.0.0.1:1457 is already in use'}}
             else:
                 print(json.dumps({'id': message['id'], 'result': {'type': 'chatgpt', 'loginId': 'login-1',
-                                  'authUrl': 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2F127.0.0.1%3A1455%2Fauth%2Fcallback'}}), flush=True)
+                                  'authUrl': 'http://127.0.0.1:9/oauth/authorize?redirect_uri=http%3A%2F%2F127.0.0.1%3A1455%2Fauth%2Fcallback'}}), flush=True)
                 if os.path.exists(os.path.join(folder, 'login-completes')):
                     with open(os.path.join(home, 'auth.json'), 'w') as f:
                         json.dump({'auth_mode': 'chatgpt', 'tokens': {'access_token': 'fake', 'refresh_token': 'fake', 'id_token': 'fake', 'account_id': 'fake'}}, f)
                     emit('account/login/completed', {'loginId': 'login-1', 'success': True, 'error': None})
                 continue
+        elif method == 'account/logout':
+            if os.path.exists(os.path.join(home, 'auth.json')):
+                os.remove(os.path.join(home, 'auth.json'))
+            answer = {'id': message['id'], 'result': {}}
         elif method == 'model/list':
             answer = {'id': message['id'], 'result': {'data': [{'model': 'gpt-6-astra', 'isDefault': False},
                                                                {'model': 'gpt-5.5', 'isDefault': True}]}}
