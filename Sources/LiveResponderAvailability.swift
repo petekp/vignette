@@ -42,13 +42,6 @@ extension LiveResponder {
         AgentTools.forSessions("VIGNETTE_CODEX") { CodexConnection.binary() }
     }
 
-    /// Whether a responder can answer, for setup: Claude Code's, or else Codex's, or why Claude cannot.
-    static func availability() async -> Availability {
-        let claude = await availability(of: .claude)
-        guard !claude.canAnswer else { return claude }
-        return await availability(of: .codex).canAnswer ? .ready : claude
-    }
-
     /// Whether `client` is installed and signed in. Claude Code's check runs `claude auth status`,
     /// which sends no message and costs nothing; a `claude` whose answer cannot be read counts as
     /// ready, and the first ask then reports what the process says. Codex's reads whether

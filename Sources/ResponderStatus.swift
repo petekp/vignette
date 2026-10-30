@@ -39,11 +39,21 @@ final class ResponderStatus: ObservableObject {
     /// Whether Codex is installed, once its check has answered.
     var codexInstalled: Bool { codex == .ready || codex == .signedOut }
 
-    var costNote: String { SetupInkCopy.costNote(claude: claude.canAnswer, codex: codex == .ready) }
+    /// Whether Codex is the one agent that can answer, now or once it is signed in: it is installed
+    /// and Claude Code cannot answer. Setup then offers Codex's sign-in, since without it the person
+    /// would finish setup with live ink unable to answer, and names Codex where it would name Claude.
+    var codexAlone: Bool { codexInstalled && !claude.canAnswer }
 
-    /// Whether setup's permissions page for live ink offers Codex's sign-in: without it, a person
-    /// with Codex alone would finish setup with live ink unable to answer.
-    var setupOffersCodexSignIn: Bool { codexInstalled && !claude.canAnswer }
+    /// Whether setup's permissions page still asks for Codex's sign-in.
+    var codexSignInLeft: Bool { codexAlone && codex != .ready }
+
+    var costNote: String { SetupInkCopy.costNote(claude: claude.canAnswer, codex: codex == .ready || codexAlone) }
+
+    /// Setup's live ink page's line after the one about drawing: who to ask, or why Claude cannot
+    /// answer when neither agent can.
+    var askLine: String {
+        claude.canAnswer || codexAlone ? SetupInkCopy.askLine(codex: codexAlone) : claude.problem ?? ""
+    }
 
     /// Looks again: Codex each time, since its check reads one file, and Claude Code at most every
     /// `claudeRecheck`.
@@ -59,12 +69,6 @@ final class ResponderStatus: ObservableObject {
             let found = await LiveResponder.availability(of: .claude)
             if let self, found != claude { claude = found }
         }
-    }
-
-    /// Whether either agent can answer, for setup's live ink page: Claude Code's answer, unless only
-    /// Codex can.
-    func answer() async -> LiveResponder.Availability {
-        live ? await LiveResponder.availability() : .checking
     }
 
     func startSignIn() {
@@ -114,6 +118,10 @@ struct CodexSignInRow: View {
     let signInTitle: String
     /// Setup leaves signing out to Settings.
     let offersSignOut: Bool
+    /// Whether Sign In carries the window's default button, as setup's next step does.
+    var isDefault = false
+    /// Names the button and the row's words in `spots`, for what is drawn over the row.
+    var spot: (spots: ScreenSpots, button: String, words: String)?
 
     static let line = "Codex can answer live ink after a sign-in of its own, apart from the Codex app's."
     static let waiting = "You can finish signing in in your browser."
@@ -137,27 +145,32 @@ struct CodexSignInRow: View {
                         Button("Sign Out") { status.signOut() }.disabled(status.signIn == .signingOut)
                     }
                 } else {
-                    Button(signInTitle) { status.startSignIn() }
+                    Button(signInTitle) { status.startSignIn() }.keyboardShortcut(isDefault ? .defaultAction : nil)
+                        .screenSpot(spot?.button ?? "", in: spot?.spots)
                 }
             } label: {
-                Text(title)
+                Text(title).screenSpot(spot?.words ?? "", in: spot?.spots)
                 if case .failed(let reason) = status.signIn, !isSignedIn { Text(reason) }
             }
         }
     }
 }
 
-/// The row for Codex's sign-in on setup's permissions page for live ink, while
-/// `setupOffersCodexSignIn`. Live ink's guide keeps its marks off it.
+/// The row for Codex's sign-in on setup's permissions page for live ink, while `codexAlone`. Its
+/// Sign In is the step after the permissions, which the guide points at.
 struct CodexSetupSection: View {
     @ObservedObject var status: ResponderStatus
     let spots: ScreenSpots
+    /// Whether both permissions are allowed, which makes the sign-in the next step.
+    let permissionsDone: Bool
+    private let step = SetupInkGuide.Step.codexSignIn
 
     var body: some View {
-        if status.setupOffersCodexSignIn {
+        if status.codexAlone {
             Section {
-                CodexSignInRow(status: status, signInTitle: "Sign In to Codex…", offersSignOut: false)
-                    .screenSpot(SetupInkGuide.codexSignIn, in: spots)
+                CodexSignInRow(status: status, signInTitle: "Sign In to Codex…", offersSignOut: false, isDefault: permissionsDone,
+                               spot: (spots, step.button, step.words))
+                    .screenSpot(step.row, in: spots)
             }
         }
     }
@@ -170,7 +183,7 @@ struct LiveInkSetupTop: ViewModifier {
     @ObservedObject var status: ResponderStatus
 
     func body(content: Content) -> some View {
-        content.padding(.top, status.setupOffersCodexSignIn ? 30 : 60)
+        content.padding(.top, status.codexAlone ? 30 : 60)
     }
 }
 
@@ -184,7 +197,7 @@ struct LiveInkSetupFooter: View {
 
     /// Room under the rows for the label pointing at the next Allow button. Codex's row stands in
     /// that room when it shows, and the guide's note needs the room under these lines instead.
-    private var roomAbove: CGFloat { status.setupOffersCodexSignIn ? 8 : 30 }
+    private var roomAbove: CGFloat { status.codexAlone ? 8 : 30 }
 
     var body: some View {
         Section {} footer: {

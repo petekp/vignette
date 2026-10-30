@@ -13,6 +13,19 @@ enum SetupInkCopy {
             "When you ask, Claude sees a picture of the window, its title and URL, through your own Claude Code. An ask costs about one to four cents."
         }
     }
+
+    /// Setup's live ink page, after the line about drawing, when an agent can answer: the one that
+    /// will (`ResponderStatus.askLine`).
+    static func askLine(codex: Bool) -> String {
+        codex ? "Then ask Codex about it, or send it to a Claude Code or Codex session."
+            : "Then ask Claude about it, or send it to a Claude Code or Codex session."
+    }
+
+    /// Why setup asks for Screen Recording, naming the agent that will answer (`ResponderStatus.codexAlone`).
+    static func screenRecordingReason(codex: Bool) -> String {
+        codex ? "So Codex can see the window you drew on." : "So Claude can see the window you drew on."
+    }
+
     /// macOS asks to quit and reopen an app it has just let record the screen, since the grant
     /// reaches only a new process.
     static let reopenNote = "Once you allow Screen Recording, macOS asks to quit and reopen \(Identity.name). Setup opens again on this page."

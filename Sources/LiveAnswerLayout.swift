@@ -576,13 +576,12 @@ enum LiveAnswerLayout {
     /// Where a reply's words wrap in a body `size` wide.
     private static func replyWrap(_ size: CGSize) -> CGFloat { size.width - ReplyContent.insets.left - ReplyContent.insets.right }
 
-    /// A note of `text` in the agent's style, placed beside `near`, with `below` points of room
-    /// kept under it.
-    /// `byPerson` makes it the person's note, measured in their font.
+    /// A note of `text` by the agent named `agent`, or the person's when it is nil, in its writer's
+    /// style, placed beside `near`, with `below` points of room kept under it.
     static func note(_ text: String, near: CGRect, scene: Scene, obstacles: [CGRect], sizes: Sizes, below: CGFloat = 0,
-                     byPerson: Bool = false) -> Mark {
+                     agent: String? = agentName) -> Mark {
         let mark = Mark(geometry: .text(Mark.Text(origin: .zero, text: text, wrap: sizes.textWidth, size: sizes.textSize)),
-                        agent: !byPerson, agentName: agentName)
+                        agent: agent != nil, agentName: agent)
         let box = noteBox(mark, sizes: sizes) ?? CGRect(x: 0, y: 0, width: sizes.textWidth, height: sizes.textSize * 2)
         let spot = place(CGSize(width: box.width, height: box.height + below), near: near, room: scene.room, obstacles: obstacles)
         return moved(mark, box: box, to: spot.origin, sizes: sizes)

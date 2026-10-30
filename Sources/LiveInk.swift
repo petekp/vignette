@@ -1063,7 +1063,7 @@ final class LiveInk {
         let scene = scene(for: packet)
         return spot.map { LiveAnswerLayout.note(words, at: $0, sizes: answerSizes) }
             ?? LiveAnswerLayout.note(words, near: near, scene: scene, obstacles: LiveAnswerLayout.obstacles(in: scene), sizes: answerSizes,
-                                     byPerson: true)
+                                     agent: nil)
     }
 
     /// Shows marks the ask has set leaving (`LiveAsks.finishing`) going, and removes them once they have.

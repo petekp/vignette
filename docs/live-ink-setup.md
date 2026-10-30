@@ -25,7 +25,10 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
   answer (`CodexSetupSection`). `docs/live-ink-responders.md` has the sign-in. The page's height is
   fixed, so while the row shows, the title starts higher and the cost line sits closer to the row
   (`LiveInkSetupTop`, `LiveInkSetupFooter`). That keeps room under the cost line for the guide's
-  note, which keeps off the title and the row.
+  note, which keeps off the title and the row. With both permissions allowed, Sign In to Codex… is
+  the next step: the guide's Then this points at it and it is the default button, and nothing is
+  pointed at while the sign-in waits in the browser (`SetupInkGuide.Pointing`). On that Mac the
+  guide's note, Screen Recording's reason, the cost line and the live ink page's line name Codex.
 - What leaves the Mac is said in three places (`SetupInkCopy.costNote`): under the switch, on
   setup's permissions page, and in the note's prompt until the first ask to that agent
   (`liveInkAskedClaude`, `liveInkAskedCodex`). Until then it comes before why speech cannot listen
