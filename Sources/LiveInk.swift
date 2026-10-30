@@ -669,9 +669,10 @@ final class LiveInk {
         }
         let panel = LiveNotePopover(at: first, target: lastTarget ?? .responder(noteAgent))
         panel.offer(responders.offers, conversing: responders.conversing)
-        // It opens with the sessions this hold listed, or lists them itself.
-        let listed = listing?.hold == inkings ? listing?.candidates : nil
-        if let listed { panel.setSessions(listed) }
+        // It opens with the sessions this hold listed, and gets their later answers, or lists them itself.
+        let held = listing?.hold == inkings ? listing : nil
+        held?.note = panel
+        if let listed = held?.candidates { panel.setSessions(listed) }
         panel.speechProblem = speechProblem
         if !responders.unable.isEmpty { checkResponder(responders.unable) }
         noteOffered = panel.target
@@ -693,7 +694,7 @@ final class LiveInk {
         note = panel
         hang(panel, from: mark, at: first, takingKeys: takingKeys)
         prepare(beside: mark, panel: panel)
-        if listing?.hold != inkings { refreshTargets(of: panel) }
+        if held == nil { refreshTargets(of: panel) }
         if let listening {
             if !typedOver, !listening.words.isEmpty { panel.hear(listening.text) }
         }
@@ -2044,20 +2045,16 @@ final class LiveInk {
         }
         if lastTarget?.session == nil, let client = responders.conversing { return responders.prepare(client) }
         guard listing?.hold != inkings, responders.anyToStart else { return }
-        let hold = inkings
-        listing = (hold, nil)
+        let listing = LiveInkHoldListing(hold: inkings)
+        self.listing = listing
         guard let listSessions else { return prepareNextNote(from: nil) }
         listSessions { [weak self] candidates in
-            guard let self, listing?.hold == hold else { return }
-            let decides = candidates.complete && listing?.candidates?.complete != true
-            listing?.candidates = candidates
-            if hold == inkings { note?.setSessions(candidates) }
-            if decides { prepareNextNote(from: candidates) }
+            guard let self, self.listing === listing else { return }
+            if listing.answer(candidates) { prepareNextNote(from: candidates) }
         }
     }
 
-    /// The chord hold whose stroke listed the sessions, by `inkings`, and the listing's latest answer.
-    private var listing: (hold: Int, candidates: DestinationChoice.Candidates?)?
+    private var listing: LiveInkHoldListing?
 
     private func prepareNextNote(from candidates: DestinationChoice.Candidates?) {
         let client = LiveNotePopover.startingResponder(listed: candidates, remembered: lastTarget?.session,

@@ -43,7 +43,8 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
   (`LiveNotePopover.startingResponder`), so the agent used last starts, and Codex on a Mac where
   only Codex can answer. The stroke lists the sessions once a chord hold, and only while a
   responder the note could start on has no process. The note opens with that listing rather
-  than listing again, so the two cannot disagree.
+  than listing again, so the two cannot disagree, and gets the listing's later answers however
+  often the chord is pressed after (`LiveInkHoldListing`).
 
 ## Claude Code's
 
