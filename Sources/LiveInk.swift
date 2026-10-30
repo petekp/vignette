@@ -37,7 +37,7 @@ final class LiveInk {
     /// the raised overlays would cover and take presses from.
     private let mayInk: () -> Bool
 
-    private let responder = LiveResponder()
+    private let responder = LiveResponder(driver: ClaudeDriver())
     /// Whether Claude Code is installed and signed in, as the last check found (`checkResponder`).
     private(set) var responderAvailability = LiveResponder.Availability.checking
     /// The responder that answers a note aimed at Claude, or nil while Claude Code cannot answer. This is
@@ -963,14 +963,14 @@ final class LiveInk {
                 let unsent = near.filter { !sent.contains($0.id) }
                 self?.lastPicture = (conversation, packet.subject, packet.textSignature, sent.union(unsent.map(\.id)))
                 _ = self?.asks.reduce(.pictureSent(fresh: !same, for: id))
-                var content: [[String: Any]] = []
+                var content: [LiveResponder.Part] = []
                 if !same {
-                    content.append(Self.image(packet.picture))
-                    if let detail = packet.detail { content.append(Self.image(detail.png)) }
-                    for window in packet.alone { content.append(Self.image(window.picture)) }
+                    content.append(.picture(packet.picture))
+                    if let detail = packet.detail { content.append(.picture(detail.png)) }
+                    for window in packet.alone { content.append(.picture(window.picture)) }
                 }
-                if let lines = LivePacket.textLines(unsent) { content.append(["type": "text", "text": lines]) }
-                content.append(["type": "text", "text": packet.message(note: note, ink: person, new: new, freshPicture: !same)])
+                if let lines = LivePacket.textLines(unsent) { content.append(.text(lines)) }
+                content.append(.text(packet.message(note: note, ink: person, new: new, freshPicture: !same)))
                 return content
             },
             onSay: { [weak self] say in self?.showSay(say, near: asked, packet: packet, for: id) },
@@ -1362,10 +1362,6 @@ final class LiveInk {
         _ = asks.reduce(.conversed(reply, for: id))
         drawingOn.insert(reply.id)
         put([reply], window: nil, for: id)
-    }
-
-    private static func image(_ png: Data) -> [String: Any] {
-        ["type": "image", "source": ["type": "base64", "media_type": "image/png", "data": png.base64EncodedString()]]
     }
 
     private func scene(for packet: LivePacket, answering id: LiveAsks.Ask.ID? = nil) -> LiveAnswerLayout.Scene {
