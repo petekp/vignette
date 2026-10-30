@@ -105,8 +105,9 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
   waiting up to 10 s, then deletes the sign-in. `CodexLogin.signOut` gives Codex 15 s, then removes
   `auth.json` itself if it is still there, since the folder is Vignette's.
 - A sign-in or a sign-out posts `codexSignInChanged`. `LiveResponders` takes Codex's availability
-  from it, and starts Codex's process afresh at the next ask, so a failure from before no longer
-  holds. A process in the middle of an ask is left to finish it.
+  from it, and starts Codex's process afresh, so neither the old sign-in nor a failure from before
+  holds. A process in the middle of an ask or a start is left to finish it and replaced at the next
+  ask or stroke. The new conversation has seen no picture, so its first ask sends one.
 
 ## In `[state]`
 

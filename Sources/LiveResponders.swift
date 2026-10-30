@@ -25,14 +25,25 @@ final class LiveResponders {
     }
 
     /// Vignette's Codex home was signed in or out in Settings or setup, so neither its last check nor
-    /// why its process last failed holds any more. A process in the middle of an ask is left to end
-    /// it; any other starts afresh at the next ask.
+    /// why its process last failed holds any more, and its process has the old sign-in.
     private func codexSignInChanged(signedIn: Bool) {
         availability[.codex] = signedIn ? .ready : .signedOut
         Log.write("[live-ink] responder \(signedIn ? "ready" : "signedOut") agent=codex source=signIn")
-        guard let old = all[.codex], old.state != .asking, old.state != .starting else { return }
+        codexSignInChangedSince = true
+        replaceCodexAfterSignIn()
+    }
+
+    /// Codex's sign-in changed since its process started.
+    private var codexSignInChangedSince = false
+
+    /// Starts Codex afresh after a sign-in change: now, or once an ask or start under way ends, at the
+    /// next ask or stroke. The new conversation has no picture yet, so its first ask sends one.
+    private func replaceCodexAfterSignIn() {
+        guard codexSignInChangedSince, let old = all[.codex], old.state != .asking, old.state != .starting else { return }
+        codexSignInChangedSince = false
         old.stop()
         all[.codex] = LiveResponder(driver: old.driver)
+        pictures[.codex] = nil
     }
 
     /// The agents a note offers, Claude first: Claude always, and Codex unless its check found no
@@ -71,6 +82,7 @@ final class LiveResponders {
     /// Starts `client`'s process ahead of an ask, so its first answer does not wait for a cold start.
     func prepare(_ client: AgentClient) {
         guard availability[client]?.canAnswer ?? false else { return }
+        if client == .codex { replaceCodexAfterSignIn() }
         all[client]?.prepare()
     }
 
@@ -78,12 +90,13 @@ final class LiveResponders {
     /// answer.
     func ask(_ ask: LiveResponder.Ask, to client: AgentClient) -> LiveResponder.Failure? {
         let checked = availability[client] ?? .checking
-        guard checked.canAnswer, let responder = all[client] else {
+        guard checked.canAnswer, all[client] != nil else {
             Log.write("[live-ink] not asking: \(client.rawValue) cannot answer")
             return LiveResponder.Failure(reason: checked.problem(for: client) ?? "", detail: "\(client.rawValue) \(checked)")
         }
         conversing = client
-        responder.ask(ask)
+        if client == .codex { replaceCodexAfterSignIn() }
+        all[client]?.ask(ask)
         guard !Self.asked(client) else { return nil }
         Settings.shared.update {
             switch client {
