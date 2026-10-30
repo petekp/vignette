@@ -55,8 +55,7 @@ final class ClaudeDriver: ResponderDriver {
                                            onEnd: { [weak self] status in self?.ended(status) })
         } catch {
             Log.write("[live-ink] responder error launch \(error.localizedDescription)")
-            return ResponderRefusal(failure: LiveResponder.Failure(reason: "Vignette couldn't start Claude Code.", detail: error.localizedDescription),
-                                    problem: "Vignette couldn't start Claude Code.")
+            return ResponderRefusal(reason: "Vignette couldn't start Claude Code.", detail: error.localizedDescription)
         }
         self.report = report
         totalCost = 0
@@ -130,7 +129,7 @@ final class ClaudeDriver: ResponderDriver {
             guard !failed else {
                 Log.write("[live-ink] responder error warm-up \(detail)")
                 let reason = reason(forError: detail)
-                report?(.refused(ResponderRefusal(failure: LiveResponder.Failure(reason: reason, detail: detail), problem: reason)))
+                report?(.refused(ResponderRefusal(reason: reason, detail: detail)))
                 return
             }
             report?(.ready("ms=\(milliseconds) cost=\(cost)"))
