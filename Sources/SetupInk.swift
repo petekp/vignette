@@ -674,7 +674,7 @@ enum SetupInkKeys {
 /// demo plays once when it appears.
 struct LiveInkPage: View {
     @ObservedObject var player: SetupInkPlayer
-    /// Why Claude cannot answer, or nil when it can. Setup says so under the line about asking Claude.
+    /// Why Claude cannot answer, or nil when it can. Setup says so in place of the line about asking Claude.
     let claudeProblem: String?
     @ObservedObject private var settings = Settings.shared
     @StateObject private var held = HeldModifiers()
@@ -698,23 +698,15 @@ struct LiveInkPage: View {
                 // As tall as the grown keys from the start, so only the line's words move as they grow.
                 .frame(height: SetupInkKeys.grown)
                 .inkAnchor(SetupInkPlayer.lineAnchors[0])
-                Text("Then ask Claude about it, or send it to a Claude Code or Codex session.")
+                // The page has no room for a third line, so why Claude cannot answer takes this one's place.
+                Text(claudeProblem ?? "Then ask Claude about it, or send it to a Claude Code or Codex session.")
                     .foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 340)
+                    .contentTransition(.opacity)
                     .opacity(words)
                     .inkAnchor(SetupInkPlayer.lineAnchors[1])
                     .offset(y: player.lineTwoDrop)
                     .animation(Anim.spring(SetupInkPlayer.makingRoom * settings.motionScale), value: player.lineTwoDrop)
-                if let claudeProblem {
-                    Text(claudeProblem)
-                        .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 340)
-                        .opacity(words)
-                        // Under the line above wherever the demo's note moves it.
-                        .offset(y: player.lineTwoDrop)
-                        .animation(Anim.spring(SetupInkPlayer.makingRoom * settings.motionScale), value: player.lineTwoDrop)
-                        .transition(.opacity)
-                }
             }
             .animation(Anim.spring(0.5 * settings.motionScale), value: player.wordsShown)
             .animation(Anim.spring(0.5 * settings.motionScale), value: claudeProblem)

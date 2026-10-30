@@ -117,7 +117,7 @@ The menu bar menu names the switch as the General tab does.
 | The note's placeholder, with Claude as its target (`LiveNotePopover.askPlaceholder`) | Ask about this |
 | The same, until the first ask to Claude (`LiveNotePopover.firstAskPlaceholder`) | Ask about this. Claude sees the window's picture, title and URL. |
 | The note's placeholder, with a session as its target (`LiveNotePopover.sendPlaceholder`) | Send to session |
-| The note's placeholder with Claude as its target, Claude's row in the target menu under its name, and setup's live ink page under the line about asking Claude, when Claude Code is not found (`LiveResponder.Availability.problem`) | Vignette couldn't find Claude Code. You can send your ink to a session. |
+| The note's placeholder with Claude as its target, Claude's row in the target menu under its name, and setup's live ink page in place of its line about asking Claude, when Claude Code is not found (`LiveResponder.Availability.problem`) | Vignette couldn't find Claude Code. You can send your ink to a session. |
 | The same, when Claude Code is signed out | Claude Code isn't signed in. You can sign in by running claude in Terminal. |
 | The note's placeholder, with speech on and its permission missing (`LiveInk.speechNotice`) | Speaking needs the microphone and speech recognition. You can allow them in System Settings. |
 | The note's placeholder, when speech could not start | The reason it gives: This Mac can't turn speech into words on its own yet. / Speech recognition isn't available right now. / Vignette couldn't find a microphone. / Vignette couldn't start the microphone. / Vignette couldn't start listening. |
