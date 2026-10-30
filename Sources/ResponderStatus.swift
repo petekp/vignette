@@ -41,6 +41,10 @@ final class ResponderStatus: ObservableObject {
 
     var costNote: String { SetupInkCopy.costNote(claude: claude.canAnswer, codex: codex == .ready) }
 
+    /// Whether setup's permissions page for live ink offers Codex's sign-in: without it, a person
+    /// with Codex alone would finish setup with live ink unable to answer.
+    var setupOffersCodexSignIn: Bool { codexInstalled && !claude.canAnswer }
+
     /// Looks again: Codex each time, since its check reads one file, and Claude Code at most every
     /// `claudeRecheck`.
     func look() {
@@ -143,25 +147,57 @@ struct CodexSignInRow: View {
     }
 }
 
-/// The row for Codex's sign-in on setup's permissions page for live ink, only while Codex is
-/// installed and Claude Code cannot answer: without it, a person with Codex alone would finish
-/// setup with live ink unable to answer.
+/// The row for Codex's sign-in on setup's permissions page for live ink, while
+/// `setupOffersCodexSignIn`. Live ink's guide keeps its marks off it.
 struct CodexSetupSection: View {
     @ObservedObject var status: ResponderStatus
+    let spots: ScreenSpots
 
     var body: some View {
-        if status.codexInstalled, !status.claude.canAnswer {
-            Section { CodexSignInRow(status: status, signInTitle: "Sign In to Codex…", offersSignOut: false) }
+        if status.setupOffersCodexSignIn {
+            Section {
+                CodexSignInRow(status: status, signInTitle: "Sign In to Codex…", offersSignOut: false)
+                    .screenSpot(SetupInkGuide.codexSignIn, in: spots)
+            }
         }
     }
 }
 
-/// Setup's cost line, `SetupInkCopy.costNote`, for the agents that can answer. It is always on the
-/// page, so it is what looks at them when the page appears.
-struct ResponderCostNote: View {
+/// Where setup's permissions page for live ink starts its title. The page's height is fixed, so
+/// while Codex's row shows, the title starts higher to keep room under the cost line for the
+/// guide's note.
+struct LiveInkSetupTop: ViewModifier {
     @ObservedObject var status: ResponderStatus
 
+    func body(content: Content) -> some View {
+        content.padding(.top, status.setupOffersCodexSignIn ? 30 : 60)
+    }
+}
+
+/// The lines under setup's permissions for live ink: why macOS may reopen Vignette, while Screen
+/// Recording is missing, and what leaves the Mac, for the agents that can answer. It is always on
+/// the page, so it is what looks at the agents when the page appears.
+struct LiveInkSetupFooter: View {
+    @ObservedObject var status: ResponderStatus
+    let spots: ScreenSpots
+    let reopens: Bool
+
+    /// Room under the rows for the label pointing at the next Allow button. Codex's row stands in
+    /// that room when it shows, and the guide's note needs the room under these lines instead.
+    private var roomAbove: CGFloat { status.setupOffersCodexSignIn ? 8 : 30 }
+
     var body: some View {
-        Text(status.costNote).onAppear { status.look() }
+        Section {} footer: {
+            VStack(alignment: .leading, spacing: 6) {
+                if reopens { Text(SetupInkCopy.reopenNote) }
+                Text(status.costNote)
+            }
+            .font(.caption).foregroundStyle(.secondary)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .screenSpot(SetupInkGuide.footer, in: spots)
+            .padding(.top, roomAbove)
+            .onAppear { status.look() }
+        }
     }
 }

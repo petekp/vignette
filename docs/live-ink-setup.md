@@ -22,7 +22,10 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
   never sees it, and a showing offer leaves when the switch goes on. A settings file written before the offer existed that already holds `liveInk`
   counts as offered (`Settings.migrate`), since the switch in it was set by the person or by setup.
 - Setup's permissions page offers Codex's sign-in while Codex is installed and Claude Code can't
-  answer (`CodexSetupSection`). `docs/live-ink-responders.md` has the sign-in.
+  answer (`CodexSetupSection`). `docs/live-ink-responders.md` has the sign-in. The page's height is
+  fixed, so while the row shows, the title starts higher and the cost line sits closer to the row
+  (`LiveInkSetupTop`, `LiveInkSetupFooter`). That keeps room under the cost line for the guide's
+  note, which keeps off the title and the row.
 - What leaves the Mac is said in three places (`SetupInkCopy.costNote`): under the switch, on
   setup's permissions page, and in the note's prompt until the first ask to that agent
   (`liveInkAskedClaude`, `liveInkAskedCodex`). Until then it comes before why speech cannot listen

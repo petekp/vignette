@@ -483,6 +483,8 @@ final class SetupInkGuide {
     let stage = SetupInkStage()
     let spots = ScreenSpots()
     static let footer = "footer"
+    static let header = "header"
+    static let codexSignIn = "codexSignIn"
     private static let rows = [Permission.accessibility.row, Permission.screenRecording.row]
 
     /// What the marks shown point at, and where it was then, in global top-left points.
@@ -526,10 +528,11 @@ final class SetupInkGuide {
         draw()
     }
 
-    /// What `target`'s marks are laid out round, in global top-left points.
+    /// What `target`'s marks are laid out round, in global top-left points. The note's takes in
+    /// Codex's row, so the note is laid out again when the row changes.
     private func aim(of target: Pointing) -> CGRect? {
         if let next = target.permissions?.next { return spots.global(next.button) }
-        return Self.rows.compactMap(spots.global).reduce(CGRect.null) { $0.union($1) }
+        return (Self.rows + [Self.codexSignIn]).compactMap(spots.global).reduce(CGRect.null) { $0.union($1) }
     }
 
     private func draw(drawingOn: Set<Mark.ID> = []) {
@@ -544,13 +547,16 @@ final class SetupInkGuide {
         // The stage's frame rather than the window's: the first pointing can come while the page is
         // still sliding in, or before a new window's first layout, and the marks move with the page.
         let room = frame.insetBy(dx: 12, dy: 12)
-        // The labels keep off the other row and the words of their own, as an answer keeps off the
-        // person's notes, and cover the line under the rows as little as they can.
+        // The labels keep off the other row, the words of their own and Codex's row, as an answer
+        // keeps off the person's notes, and cover the title and the line under the rows as little as
+        // they can.
         let rows = Self.rows.compactMap(spots.global)
         let footer = [Self.footer].compactMap(spots.global)
+        let header = [Self.header].compactMap(spots.global)
+        let codex = [Self.codexSignIn].compactMap(spots.global)
         let permissions = target.permissions
-        let keptOff = permissions.map { [$0.other.row, $0.next.words].compactMap(spots.global) } ?? []
-        let scene = LiveAnswerLayout.Scene(room: room, ink: [], text: footer, notes: keptOff, screen: nil)
+        let keptOff = (permissions.map { [$0.other.row, $0.next.words].compactMap(spots.global) } ?? []) + codex
+        let scene = LiveAnswerLayout.Scene(room: room, ink: [], text: footer + header, notes: keptOff, screen: nil)
         let sizes = LiveAnswerLayout.Sizes(ui: Settings.shared.data.ui)
         let placed: [Mark]
         if let permissions {
@@ -560,7 +566,8 @@ final class SetupInkGuide {
             // Under the line below the rows, the room nothing else on the page takes.
             let page = (rows + footer).reduce(CGRect.null) { $0.union($1) }
             guard !page.isNull else { return [] }
-            placed = [LiveAnswerLayout.note("Hold \(Settings.shared.data.liveInkChordChoice.glyphs) and draw anywhere", near: page, scene: scene, obstacles: rows + footer, sizes: sizes)]
+            placed = [LiveAnswerLayout.note("Hold \(Settings.shared.data.liveInkChordChoice.glyphs) and draw anywhere", near: page, scene: scene,
+                                            obstacles: rows + footer + header + codex, sizes: sizes)]
         }
         return placed.map { mark in
             var mark = LiveWindows.translated(mark, by: back)
@@ -668,7 +675,8 @@ struct LiveInkSetupPage: View {
                 Text("Set Up Live Ink").font(.title).bold()
                 Text("macOS asks for two permissions.").foregroundStyle(.secondary)
             }
-            .padding(.top, 60)
+            .screenSpot(SetupInkGuide.header, in: guide.spots)
+            .modifier(LiveInkSetupTop(status: callbacks.responders))
             Form {
                 Section {
                     PermissionRow(symbol: "hand.draw", title: "Accessibility", reason: "So you can draw while holding \(Settings.shared.data.liveInkChordChoice.glyphs).",
@@ -688,19 +696,8 @@ struct LiveInkSetupPage: View {
                     }
                     .screenSpot(recording.row, in: guide.spots)
                 }
-                CodexSetupSection(status: callbacks.responders)
-                Section {} footer: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        if !screenRecording { Text(SetupInkCopy.reopenNote) }
-                        ResponderCostNote(status: callbacks.responders)
-                    }
-                    .font(.caption).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .screenSpot(SetupInkGuide.footer, in: guide.spots)
-                    // Room under the rows for the label pointing at the next Allow button.
-                    .padding(.top, 30)
-                }
+                CodexSetupSection(status: callbacks.responders, spots: guide.spots)
+                LiveInkSetupFooter(status: callbacks.responders, spots: guide.spots, reopens: !screenRecording)
             }
             .formStyle(.grouped).scrollDisabled(true).fixedSize(horizontal: false, vertical: true)
         }
