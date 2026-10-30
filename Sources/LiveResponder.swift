@@ -127,8 +127,9 @@ final class LiveResponder {
     }
 
     /// Stops the process, which ends the conversation; the next ask starts a new one. An ask under
-    /// way or pending gets no answer and no failure.
+    /// way or pending gets no answer and no failure. A failure stays until the next ask.
     func stop() {
+        if case .failed = state { return shutDown(nil, state: state) }
         shutDown(nil, state: .stopped)
     }
 
