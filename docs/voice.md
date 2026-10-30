@@ -89,7 +89,7 @@ to turn it on.
 | Under setup's agents while Claude Code is on (`ClaudeReadRule.setupNote`) | | Claude Code will open the drawings you send without asking you first. You can change this in Settings. |
 | Live ink (`liveInk`), in the General tab | Live ink | Holding *pair* lets you draw over any app. A click on a mark while you hold them erases it. Then, on a line of its own, what leaves the Mac (`SetupInkCopy.costNote`): When you ask, Claude sees a picture of the window, its title and URL, through your own Claude Code. An ask costs about one to four cents. |
 | Speaking while drawing (`liveInkSpeech`), under Live ink | Speak while you draw | What you say goes into the note beside your ink. Your voice stays on this Mac. |
-| When the ask goes (`liveInkSendWhenQuiet`), an experiment | Ask when you stop talking | |
+| When the ask goes (`liveInkSendWhenQuiet`), an experiment | Ask when you let go | |
 
 *pair* is the live ink chord as glyphs, ⌃⌥ unless another is chosen (`LiveInkChord.glyphs`).
 

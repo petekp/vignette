@@ -346,7 +346,7 @@ struct SettingsView: View {
                     }
                 }
                 if settings.data.liveInkSpeech {
-                    Toggle("Ask when you stop talking", isOn: binding(\.liveInkSendWhenQuiet))
+                    Toggle("Ask when you let go", isOn: binding(\.liveInkSendWhenQuiet))
                 }
             }
         }
