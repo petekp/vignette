@@ -72,11 +72,32 @@ final class NoteContent: NSView {
 }
 
 extension NoteContent {
+    static let askPlaceholder = "Ask about this"
+    /// Until the first ask to Claude, the prompt says what Claude sees (`SetupInkCopy.costNote`).
+    static let firstAskPlaceholder = "Ask about this. Claude sees the window's picture, title and URL."
+    static let sendPlaceholder = "Send to session"
+
     /// What the empty note says. Why Claude cannot answer comes first. Before the first ask to Claude,
     /// what Claude sees comes next, ahead of why speech cannot listen, since it says what leaves the Mac.
     static func prompt(toClaude: Bool, responderProblem: String?, speechProblem: String?, askedClaude: Bool) -> String {
         if toClaude, let responderProblem { return responderProblem }
-        if toClaude, !askedClaude { return LiveNotePopover.firstAskPlaceholder }
-        return speechProblem ?? (toClaude ? LiveNotePopover.askPlaceholder : LiveNotePopover.sendPlaceholder)
+        if toClaude, !askedClaude { return Self.firstAskPlaceholder }
+        return speechProblem ?? (toClaude ? Self.askPlaceholder : Self.sendPlaceholder)
     }
+
+    /// Shows `text` as the empty field's prompt, cross-fading from the one before when `fading`.
+    func showPrompt(_ text: String, fading: Bool) {
+        guard field.placeholderString != text else { return }
+        let duration = Self.promptFade * Settings.shared.motionScale
+        if fading, duration > 0 {
+            let fade = CATransition()
+            fade.type = .fade
+            fade.duration = duration
+            field.wantsLayer = true
+            field.layer?.add(fade, forKey: "prompt")
+        }
+        field.placeholderString = text
+    }
+
+    private static let promptFade: TimeInterval = 0.2
 }

@@ -89,11 +89,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private var openedAt: CFTimeInterval
     private let menuPicks = MenuPickLog(surface: "note")
 
-    static let askPlaceholder = "Ask about this"
-    /// Until the first ask to Claude, the prompt says what Claude sees (`SetupInkCopy.costNote`).
-    static let firstAskPlaceholder = "Ask about this. Claude sees the window's picture, title and URL."
-    static let sendPlaceholder = "Send to session"
-
     /// The body at the height it is placed for, three lines of words, so it can grow without covering
     /// what it was placed clear of.
     static var placementSize: CGSize { NoteLayout.size(lines: 3) }
@@ -284,8 +279,8 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     /// What the empty note says: what Return does with its target.
     private func showPlaceholder() {
-        content.field.placeholderString = NoteContent.prompt(toClaude: target == .responder, responderProblem: responderProblem,
-                                                             speechProblem: speechProblem, askedClaude: Settings.shared.data.liveInkAskedClaude)
+        content.showPrompt(NoteContent.prompt(toClaude: target == .responder, responderProblem: responderProblem,
+                                              speechProblem: speechProblem, askedClaude: Settings.shared.data.liveInkAskedClaude), fading: revealed)
         refit()
     }
 
