@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "24"
+  version: "25"
 ---
 
 # Vignette
@@ -16,8 +16,10 @@ command is a `vignette://` URL. Each one answers with one line in `~/Library/Log
 
 ```sh
 file=$(osascript -l JavaScript -e 'function run(argv) { return encodeURIComponent(argv[0]) }' "/abs/path/Checkout at 390px.png")
-open -g "vignette://add?file=$file&agent=claude&session=$CLAUDE_CODE_SESSION_ID"  # from Claude Code
-open -g "vignette://add?file=$file&agent=codex&session=$CODEX_THREAD_ID"          # from Codex
+title=$(osascript -l JavaScript -e 'function run(argv) { return encodeURIComponent(argv[0]) }' "Checkout at 390 px")
+description=$(osascript -l JavaScript -e 'function run(argv) { return encodeURIComponent(argv[0]) }' "After the fix: the total stays on one line")
+open -g "vignette://add?file=$file&title=$title&description=$description&agent=claude&session=$CLAUDE_CODE_SESSION_ID"  # from Claude Code
+open -g "vignette://add?file=$file&title=$title&description=$description&agent=codex&session=$CODEX_THREAD_ID"          # from Codex
 ```
 
 - `add` copies the file into the watch folder and shows its thumbnail. It leaves the clipboard
