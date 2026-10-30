@@ -178,6 +178,38 @@ first turn. Updating that CLI is the fix, and it is outside Vignette.
 
 ## Progress log
 
+### 2026-10-30, Codex responder and result cards (CLI 0.165.0-alpha.1.2)
+
+Building the Codex responder and Codex result cards found these on 0.165. Each was checked against
+a real `codex` on a scratch Codex home.
+
+- **The spike's switches no longer leave a turn with no tools.** The catalog's `gpt-6` entries have
+  `tool_mode: "code_mode_only"` and `multi_agent_version: "v2"`, which add code-mode tools (`exec`,
+  `wait`) and collaboration tools (`spawn_agent` and others). `use_responses_lite: true` carries
+  tools inside `input` as an `additional_tools` item. The catalog Vignette writes
+  (`CodexIsolation.strippedCatalog`) sets `apply_patch_tool_type` and `tool_mode` null,
+  `multi_agent_version` to `"disabled"`, `experimental_supported_tools` to `[]` and
+  `use_responses_lite` to false. With it, the warm-up's request has `tools: []`, `instructions: ""`,
+  and only the prompt and the warm-up in `input`.
+- **An unknown feature name stops the server:** `Error: Unknown feature flag: <name>`, exit 1.
+- **`CODEX_HOME/AGENTS.md` is always sent,** as a user message, whatever `project_doc_max_bytes`
+  says, even for an untrusted project (`app-server/src/message_processor.rs`,
+  `core/src/agents_md.rs`). So the responder runs on a Codex home of Vignette's own. With an
+  `AGENTS.md` put in that home, the isolation check refused the server before anything reached the
+  model.
+- **`-c mcp_servers={}` merges rather than replaces** the configured servers.
+  `-c mcp_servers.<name>.enabled=false` turns one off.
+- **A second server's `thread/read` names the rollout of a thread another engine holds** (`path`).
+  The live file is `sessions/<y>/<m>/<d>/rollout-<time>-<id>.jsonl`.
+- **A queued line is a `response_item` message with role `user`** in the rollout, with no
+  `turn_id`, between that turn's `task_started` and its end. Two lines queued together were two
+  turns, each holding its line as it was sent.
+- **`model/list` answers with no sign-in:** 9 models, `gpt-6-astra` among them.
+- **`auth.json` is still written in place** (`FileAuthStorage::save` opens it for truncation), guarded
+  by a mutex inside one process only.
+- **Signed out, a turn on the default provider** goes to `api.openai.com` and fails with 401 after
+  about 15 s of retries.
+
 ### 2026-10-25, live ink spike (CLI 0.164.0-alpha.11.1)
 
 A spike measured Codex as a live ink responder and looked for a way to see a Codex turn end.

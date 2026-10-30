@@ -9,8 +9,6 @@ final class JSONLinesProcess {
     /// Writes go here: a picture is megabytes, and the pipe takes 64 KB at a time.
     private let writer = DispatchQueue(label: "vignette.live-responder.write")
     private let relay: Relay
-    /// The last of the process's standard error, for the log and for words about why it ended.
-    private(set) var errorTail = ""
 
     var pid: Int32 { process.processIdentifier }
 
@@ -44,15 +42,12 @@ final class JSONLinesProcess {
             let data = handle.availableData
             if data.isEmpty { handle.readabilityHandler = nil } else { lines.append(data) }
         }
-        stderr.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        stderr.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             if data.isEmpty { handle.readabilityHandler = nil; return }
             guard let text = String(data: data, encoding: .utf8) else { return }
             DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.errorTail = String((self.errorTail + text).suffix(2000))
-                }
+                MainActor.assumeIsolated { relay.errorTail = String((relay.errorTail + text).suffix(2000)) }
             }
         }
         process.terminationHandler = { ended in
@@ -85,9 +80,9 @@ final class JSONLinesProcess {
         writer.async { try? input.close() }
     }
 
-    /// The last line of standard error, cut for the log.
+    /// The last line of standard error, cut for the log and for words about why it ended.
     var lastErrorLine: String {
-        errorTail.split(separator: "\n").last.map { String($0.prefix(200)) } ?? ""
+        relay.errorTail.split(separator: "\n").last.map { String($0.prefix(200)) } ?? ""
     }
 }
 
@@ -95,6 +90,8 @@ final class JSONLinesProcess {
 private final class Relay: @unchecked Sendable {
     var onLine: (@MainActor ([String: Any]) -> Void)?
     var onEnd: (@MainActor (Int32) -> Void)?
+    /// The last of the process's standard error.
+    var errorTail = ""
     init(onLine: @escaping @MainActor ([String: Any]) -> Void, onEnd: @escaping @MainActor (Int32) -> Void) {
         self.onLine = onLine
         self.onEnd = onEnd
