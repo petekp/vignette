@@ -46,6 +46,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// The person typed in the note, which takes over from what they say.
     var onTyped: (() -> Void)?
     private(set) var target: Target
+    /// Why Claude cannot answer, or nil when it can. A note aimed at Claude says why in place of its
+    /// prompt, and Claude's row in the target menu cannot be picked.
+    var responderProblem: String?
     /// The title a card sent to the target shows, as the target is shown now (`SessionMenu.cardTitle`).
     private var targetTitle = ""
     /// The note's own pick, which each session list resolves: the session picked last until the
@@ -207,7 +210,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         let answer = DestinationChoice.choose(candidates, for: .liveNote(ownPick))
         // The menu lists the sessions Vignette can start after the running ones (`SessionMenu.ranked`).
         sessions = answer.list + answer.startable
-        let found: Target = answer.pick.map(Target.session) ?? .responder
+        // Without Claude, a note with no session picked has nothing to answer it, so it opens on the first session.
+        let defaultTarget: Target = responderProblem == nil ? .responder : sessions.first.map(Target.session) ?? .responder
+        let found: Target = answer.pick.map(Target.session) ?? defaultTarget
         guard found != target else { return }
         show(found)
     }
@@ -266,7 +271,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     /// What the empty note says: what Return does with its target.
     private func showPlaceholder() {
-        content.field.placeholderString = target == .responder ? Self.askPlaceholder : Self.sendPlaceholder
+        content.field.placeholderString = target == .responder ? responderProblem ?? Self.askPlaceholder : Self.sendPlaceholder
     }
 
     /// The list of targets, under the target, or beside the note when the screen has no room below it,
@@ -277,6 +282,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         let responder = NSMenuItem(title: "Claude, on the screen", action: #selector(pickTarget(_:)), keyEquivalent: "")
         responder.image = SessionMenu.logo(for: .claude)
         responder.state = target == .responder ? .on : .off
+        responder.isEnabled = responderProblem == nil
         responder.target = self
         menu.addItem(responder)
         var search: SessionMenuSearch?

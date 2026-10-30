@@ -38,6 +38,11 @@ final class LiveInk {
     private let mayInk: () -> Bool
 
     private let responder = LiveResponder()
+    /// Whether Claude Code is installed and signed in, as the last check found (`checkResponder`).
+    private(set) var responderAvailability = LiveResponder.Availability.checking
+    /// The responder that answers a note aimed at Claude, or nil while Claude Code cannot answer. This is
+    /// the one place live ink picks its responder: a Codex responder (decision 11) is chosen here too.
+    private var answeringResponder: LiveResponder? { responderAvailability.canAnswer ? responder : nil }
     /// The marks drawn on an app's window, which stay on it (docs/live-ink-step3-2026-10-05.md). The
     /// surfaces keep the rest: marks drawn where no window is.
     private let windows = LiveWindows()
@@ -200,6 +205,7 @@ final class LiveInk {
     func setOn(_ on: Bool) {
         guard on != isOn else { return }
         if on {
+            checkResponder()
             LivePacket.warmUp()
             InkMarkLayer.warmUp(scale: NSScreen.main?.backingScaleFactor ?? 2)
             chord = ModifierChord([.control, .option], tag: "live-ink", name: "the chord") { [weak self] change in
@@ -428,6 +434,7 @@ final class LiveInk {
             "dismiss": dismissButton.map { button -> Any in StateReport.topLeft(button.frame, primaryHeight: StateReport.primaryHeight) } ?? NSNull(),
             "noteTarget": note.map { panel -> Any in panel.target == .responder ? "responder" : "session" } ?? NSNull(),
             "responder": responder.stateJSON,
+            "claude": String(describing: responderAvailability),
             "escape": LiveEscape.next(escapeSnapshot)?.rawValue ?? NSNull(),
             "escapeHeld": escapeKey != nil,
             "ask": asks.newest.map(Self.json(of:)) ?? NSNull(),
@@ -687,6 +694,7 @@ final class LiveInk {
             return true
         }
         let panel = LiveNotePopover(at: first, target: lastTarget)
+        panel.responderProblem = responderAvailability.problem
         noteOffered = lastTarget
         panel.onAsk = { [weak self, weak panel] words, target, title in
             guard let self else { return }
@@ -961,8 +969,23 @@ final class LiveInk {
     /// Hands the responder ask `id`, whose turn has come.
     private func sendHeld(_ id: LiveAsks.Ask.ID) {
         guard let ask = held.removeValue(forKey: id) else { return }
+        guard let answering = answeringResponder else {
+            Log.write("[live-ink] not sending id=\(id): Claude Code cannot answer")
+            return failed(LiveResponder.Failure(reason: responderAvailability.problem ?? "", detail: "claude \(responderAvailability)"), for: id)
+        }
         Log.write("[live-ink] sending id=\(id)")
-        responder.ask(ask)
+        answering.ask(ask)
+    }
+
+    /// Asks Claude Code whether it is installed and signed in, when live ink turns on and when setup
+    /// shows its live ink page. The answer decides whether a note aimed at Claude can be asked.
+    func checkResponder() {
+        Task { @MainActor [weak self] in
+            let availability = await LiveResponder.availability()
+            guard let self else { return }
+            self.responderAvailability = availability
+            Log.write("[live-ink] responder \(availability)")
+        }
     }
 
     /// Sends the note to a working session through Send, with the words and where the ink is in the
@@ -1945,7 +1968,6 @@ final class LiveInk {
             // The note stays, and ink drawn now is its ink too.
             chordInterrupted = false
             listening?.pressedAgain()
-            responder.prepare()
             startInking()
         case .ended, .interrupted:
             chordInterrupted = change == .interrupted
@@ -2048,6 +2070,7 @@ final class LiveInk {
         if let first = points.first, strokeBegan == nil {
             strokeBegan = Date()
             strokeScreenDiagonal = Self.screenDiagonal(at: first)
+            prepareResponderForStroke()
         }
         // A press that moves is drawing, not tapping.
         if let first = points.first, let last = points.last, hypot(last.x - first.x, last.y - first.y) > 4 { hover(at: nil) }
@@ -2055,6 +2078,14 @@ final class LiveInk {
         let longest = longestLine(for: points, ui: ui)
         let markStyle = ui.markStyle
         inking.forEach { $0.overlay.showPen(points, longest: longest, markStyle: markStyle) }
+    }
+
+    /// Starts Claude Code when the note this ink goes to will be aimed at Claude, so its first answer
+    /// does not wait for a cold start. A note to a session starts no process, and a tap starts none.
+    private func prepareResponderForStroke() {
+        let noteTarget = note?.target ?? lastTarget
+        guard noteTarget == .responder else { return }
+        answeringResponder?.prepare()
     }
 
     private func strokeEnded(_ points: [CGPoint], on surface: Surface) {
