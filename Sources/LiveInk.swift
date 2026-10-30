@@ -2092,10 +2092,12 @@ final class LiveInk {
         if let first = points.first, strokeBegan == nil {
             strokeBegan = Date()
             strokeScreenDiagonal = Self.screenDiagonal(at: first)
-            prepareResponderForStroke()
         }
         // A press that moves is drawing, not tapping.
-        if let first = points.first, let last = points.last, hypot(last.x - first.x, last.y - first.y) > 4 { hover(at: nil) }
+        if let first = points.first, let last = points.last, hypot(last.x - first.x, last.y - first.y) > 4 {
+            hover(at: nil)
+            prepareResponderForStroke()
+        }
         let ui = Settings.shared.data.ui
         let longest = longestLine(for: points, ui: ui)
         let markStyle = ui.markStyle
@@ -2107,6 +2109,7 @@ final class LiveInk {
 
     /// Starts Claude Code when the note this ink goes to will be aimed at Claude, so its first answer
     /// does not wait for a cold start. A note to a session starts no process, and a tap starts none.
+    /// Called on every move of a stroke; `prepare` starts the process only once.
     private func prepareResponderForStroke() {
         let noteTarget = note?.target ?? lastTarget
         guard noteTarget == .responder else { return }
