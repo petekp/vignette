@@ -27,7 +27,7 @@ The names in brackets are `// MARK:` sections.
 | Where an answer's marks and words go on a result card | `ResultCard.swift`, `LiveAnswer.swift` (`cardMarks`), `AgentMarks.swift` (`AgentMark.note`) |
 | What an ask sends | `LivePacket.swift` |
 | Speaking while drawing | `LiveInk.swift` (Listening), `LiveListening.swift`, `Microphone.swift`, `Transcriber.swift`, `AppleTranscriber.swift` |
-| Claude and Codex on the screen: which answers, their processes, stopping one turn (`docs/live-ink-responders.md`) | `LiveResponders.swift`, `LiveResponder.swift`, `ClaudeDriver.swift`, `CodexDriver.swift` |
+| Claude and Codex on the screen (`docs/live-ink-responders.md`) | `LiveResponders.swift`, `LiveResponder.swift`, `ClaudeDriver.swift`, `CodexDriver.swift`, `CodexIsolation.swift`, `CodexSignIn.swift` |
 | Esc: which step is next, the hotkey that holds it | `LiveEscape.swift`, `LiveInk.swift` (Esc), `HotKey.swift` |
 | The answer: reading it, drawing it, steps | `LiveAnswer.swift`, `LiveInk.swift` (Answering) |
 | The reply's popover, the conversation: its question, its row, its words, what it is laid over | `LiveReplyPopover.swift`, `LiveInkOverlay.swift` (`LiveMarksLayer.showPopover`) |
