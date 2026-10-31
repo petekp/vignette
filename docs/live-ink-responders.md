@@ -88,7 +88,7 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
   is then the thread's first turn, and when it fails, not interrupted, the start fails as a failed
   warm-up does: the process stops and Codex shows why (`ResponderEvent.firstTurnFailed`).
 - A refused check is not run again until Vignette restarts or the `codex` at that path is another
-  file, by its size or modification date (`CodexIsolation.Stamp`). The check's answer holds for
+  file, by its size or modification date (`BinaryStamp`). The check's answer holds for
   one file. Until then an ask to Codex is answered at once with the refusal, and starts nothing:
   `[live-ink] responder codex not started: the isolation check refused this codex`.
 - Each ask is one `turn/start` with the pictures as `data:` URLs and the strict answer schema
