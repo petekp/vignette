@@ -196,9 +196,11 @@ final class LiveResponder {
         armTimer()
         let find = driver.binary
         Task { [weak self] in
-            let found = await Task.detached(priority: .userInitiated) { () -> (binary: String, file: BinaryStamp?)? in
-                find().map { ($0, BinaryStamp(path: $0)) }
-            }.value
+            // A dispatch queue, not a detached task: the lookup can wait for the login shell, and a
+            // wait on one of Swift's few cooperative threads stalls every task queued behind it.
+            let found: (binary: String, file: BinaryStamp?)? = await withCheckedContinuation { found in
+                DispatchQueue.global(qos: .userInitiated).async { found.resume(returning: find().map { ($0, BinaryStamp(path: $0)) }) }
+            }
             guard let self, start == starts, running else { return }
             launch(found)
         }

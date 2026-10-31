@@ -73,7 +73,12 @@ final class ResponderStatus: ObservableObject {
         for client in clients {
             guard let driver = Self.drivers[client] else { continue }
             Task { [weak self] in
-                let found = await Task.detached(priority: .utility) { driver.availability() }.value
+                // A dispatch queue, not a detached task: Claude Code's check waits for `claude auth
+                // status`, and a wait on one of Swift's few cooperative threads stalls every task
+                // queued behind it.
+                let found: LiveResponder.Availability = await withCheckedContinuation { found in
+                    DispatchQueue.global(qos: .utility).async { found.resume(returning: driver.availability()) }
+                }
                 guard let self else { return }
                 if availability[client] != found { availability[client] = found }
                 Log.write("[live-ink] responder \(found) agent=\(client.rawValue)")

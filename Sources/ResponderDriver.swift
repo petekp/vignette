@@ -68,7 +68,7 @@ enum ResponderEvent {
 
 /// One agent client's side of the responder: the process it runs, and what it writes and reads.
 @MainActor
-protocol ResponderDriver: AnyObject {
+protocol ResponderDriver: AnyObject, Sendable {
     var client: AgentClient { get }
     /// The agent's name in what the person reads.
     var name: String { get }
