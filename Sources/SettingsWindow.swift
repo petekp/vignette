@@ -2,36 +2,6 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// One tab of the Settings window: a toolbar item, the window title while it is up, and one form.
-enum SettingsTab: String, CaseIterable {
-    case general, screenshots, agents, developer
-
-    var name: String {
-        switch self {
-        case .general: return "General"
-        case .screenshots: return "Screenshots"
-        case .agents: return "Agents"
-        case .developer: return "Developer"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .general: return "gearshape"
-        case .screenshots: return "camera.viewfinder"
-        case .agents: return "sparkles"
-        case .developer: return "wrench.and.screwdriver"
-        }
-    }
-
-    var itemIdentifier: NSToolbarItem.Identifier { NSToolbarItem.Identifier("settings.\(rawValue)") }
-
-    init?(itemIdentifier: NSToolbarItem.Identifier) {
-        guard let tab = SettingsTab.allCases.first(where: { $0.itemIdentifier == itemIdentifier }) else { return nil }
-        self = tab
-    }
-}
-
 /// A thin editor over settings.json. Every control writes straight to the file.
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate {
@@ -110,7 +80,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDeleg
             toolbar.insertItem(withItemIdentifier: identifier, at: toolbar.items.count)
         } else if !debug, let index {
             toolbar.removeItem(at: index)
-            if tab == .developer { select(.general, animated: window?.isVisible == true) }
+            if tab == .developer {
+                if window?.isVisible == true { select(.general, animated: true) } else { tab = .general }
+            }
         }
     }
 
@@ -181,8 +153,15 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDeleg
         select(tab, animated: true)
     }
 
+    /// A closed window keeps no form, so the form's poll ends with it. `show` makes a new one.
     func windowWillClose(_ notification: Notification) {
-        DispatchQueue.main.async { FocusReturn.shared.restore(reason: "settings closed") }
+        DispatchQueue.main.async { [self] in
+            if window?.isVisible == false {
+                window?.contentView = nil
+                hosting = nil
+            }
+            FocusReturn.shared.restore(reason: "settings closed")
+        }
     }
 }
 
