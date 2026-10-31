@@ -220,11 +220,11 @@ struct SettingsView: View {
         .frame(width: SettingsView.width)
         .onAppear(perform: look)
         .onReceive(poll) { _ in look() }
-        // Asking the agents reads Codex's sign-in and can run `claude auth status`, so the General
-        // tab asks as it appears and as its window becomes key, not on the poll.
-        .onAppear { if tab == .general { responders.look() } }
+        // Asking the agents can run `claude auth status`, so the General tab asks as it appears and
+        // as its window becomes key, not on the poll.
+        .onAppear { if tab == .general { responders.look(afresh: true) } }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
-            if tab == .general, (note.object as? NSWindow)?.contentView is NSHostingView<SettingsView> { responders.look() }
+            if tab == .general, (note.object as? NSWindow)?.contentView is NSHostingView<SettingsView> { responders.look(afresh: true) }
         }
     }
 

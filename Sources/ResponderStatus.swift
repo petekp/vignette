@@ -33,6 +33,7 @@ final class ResponderStatus: ObservableObject {
     private let live: Bool
     private var login: CodexLogin?
     private var claudeAsked: Date?
+    private var claudeAsking = false
 
     private init(live: Bool) {
         self.live = live
@@ -88,11 +89,16 @@ final class ResponderStatus: ObservableObject {
     }
 
     /// Looks again for a window: Codex each time, since its check reads one file, and Claude Code at
-    /// most every `claudeRecheck`, since its check runs `claude`.
-    func look() {
-        let claudeDue = claudeAsked.map { Date().timeIntervalSince($0) >= Self.claudeRecheck } ?? true
-        if claudeDue, live { claudeAsked = Date() }
-        check(claudeDue ? [.codex, .claude] : [.codex])
+    /// most every `claudeRecheck`, since its check runs `claude`. A look for the person's own act is
+    /// `afresh`: it asks Claude Code unless an earlier look's ask is still under way, so a sign-in
+    /// made since shows at once.
+    func look(afresh: Bool = false) {
+        check([.codex])
+        let claudeDue = afresh ? !claudeAsking : claudeAsked.map { Date().timeIntervalSince($0) >= Self.claudeRecheck } ?? true
+        guard claudeDue, live else { return }
+        claudeAsked = Date()
+        claudeAsking = true
+        check([.claude]) { [weak self] in self?.claudeAsking = false }
     }
 
     func startSignIn() {
