@@ -102,7 +102,7 @@ final class LiveInk {
     private var escapeKey: HotKey?
     /// The note's target picked last, which the next note starts on.
     private var lastTarget: LiveNotePopover.Target?
-    /// The target the open note started on, for `SendContext`.
+    /// The target the open note started on, before its listing answered, for `SendContext`.
     private var noteOffered: LiveNotePopover.Target?
     /// The asks since the screen was last cleared, and each mark's part in them.
     private var asks = LiveAsks()
@@ -667,7 +667,8 @@ final class LiveInk {
             note.takeKeys()
             return true
         }
-        let panel = LiveNotePopover(at: first, target: lastTarget ?? .responder(noteAgent))
+        let offered = lastTarget ?? .responder(noteAgent)
+        let panel = LiveNotePopover(at: first, target: offered)
         panel.offer(responders.offers, conversing: responders.conversing)
         // It opens with the sessions this hold listed, and gets their later answers, or lists them itself.
         let held = listing?.hold == inkings ? listing : nil
@@ -675,7 +676,7 @@ final class LiveInk {
         if let listed = held?.candidates { panel.setSessions(listed) }
         panel.speechProblem = speechProblem
         if !responders.unable.isEmpty { checkResponder(responders.unable) }
-        noteOffered = panel.target
+        noteOffered = offered
         panel.onAsk = { [weak self, weak panel] words, target, title in
             guard let self else { return }
             self.stopListening()
@@ -2345,15 +2346,6 @@ final class LiveInk {
             surface.marks = surface.marks.map { mark in moves[mark.id].map { LiveWindows.translated(mark, by: $0) } ?? mark }
         }
         Log.write("[live-ink] moved \(moves.count) onto the screen")
-    }
-
-    /// The least offset that puts `rect` inside `frame`, or its top-left corner at `frame`'s on a side
-    /// where it is the larger.
-    private static func offset(moving rect: CGRect, into frame: CGRect) -> CGVector {
-        func shift(_ min: CGFloat, _ max: CGFloat, _ low: CGFloat, _ high: CGFloat) -> CGFloat {
-            Mark.shiftInside(from: min - low, to: max - low, within: high - low) ?? low - min
-        }
-        return CGVector(dx: shift(rect.minX, rect.maxX, frame.minX, frame.maxX), dy: shift(rect.minY, rect.maxY, frame.minY, frame.maxY))
     }
 
     /// The diagonal of the screen holding `point`, in points.
