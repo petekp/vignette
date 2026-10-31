@@ -99,9 +99,10 @@ then, with the session's answer drawn on it when it gave one. One turn that answ
 cards on a window makes one result card.
 
 **Responder**:
-The `claude` process Vignette keeps running to answer live ink: the person's own Claude Code, with
-none of their settings and no tools, which sees only what an ask sends. It is not an agent session:
-nothing lists it, and it cannot be sent a drawing.
+An agent Vignette keeps running to answer live ink on the screen: a `claude` process on the person's
+own Claude Code, or a `codex app-server` on a Codex home of Vignette's own. Each has none of the
+person's settings and no tools, and sees only what an ask sends. A responder is not an agent
+session: nothing lists it, and it cannot be sent a drawing.
 _Avoid_: Live agent, assistant
 
 **Ask**:
@@ -168,7 +169,7 @@ _Avoid_: Target
 **Destination choice**:
 Vignette's pick of the session Send or a live ink note starts on, before the person picks one, and
 the order Send's menu lists the sessions in. A note starts on the session the note before it was
-sent to. When there is none, or it is not found again, the note starts on the responder, which is
+sent to. When there is none, or it is not found again, the note starts on a responder, which is
 not a destination.
 _Avoid_: Default target
 

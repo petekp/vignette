@@ -8,32 +8,6 @@ import CoreGraphics
 /// beside it, so every mark here is placed clear of what is already there: the person's ink, the
 /// window's text, and the marks of the answer placed before it.
 enum LiveAnswerLayout {
-    /// What the layout keeps clear of, and where it may draw.
-    struct Scene {
-        /// The window the answer is about, less a margin: nothing is drawn outside it.
-        var room: CGRect
-        /// The person's marks, in global top-left points.
-        var ink: [Mark]
-        /// The window's text lines, in global top-left points.
-        var text: [CGRect]
-        /// The tags of the person's notes, in global top-left points.
-        var notes: [CGRect] = []
-        /// The visible screen the window is on. A popover is a window of its own, so it may hang past
-        /// the window's edge, and AppKit keeps it on this; nil keeps it in `room`.
-        var screen: CGRect? = nil
-    }
-
-    struct Sizes {
-        /// A note's font size, in pt.
-        var textSize: CGFloat
-        /// The widest a note wraps at, in pt.
-        var textWidth: CGFloat
-        var style: TextStyle
-    }
-
-    /// The agent named on the answer's notes, whose badge and logo they carry.
-    static let agentName = "claude"
-
     /// The answer's marks: its reply first, then each mark it points with, and a mark's label beside
     /// it. The reply is a popover hung from the first mark it points with, so the words lead along the
     /// mark to what it points at, placed with that mark's label so that neither covers the other. It
@@ -41,14 +15,15 @@ enum LiveAnswerLayout {
     /// points in steps, whose marks come and go. `targets` holds each answer mark's target in global top-left
     /// points, or nil for one whose target was not found, which is dropped. `streamed` is the reply
     /// as it streamed in, which keeps where it hangs and its id: it is being read. `quote` is the
-    /// words of the note the person asked with, which the reply's header quotes. `below` is room kept
+    /// words of the note the person asked with, which the reply's header quotes. `agent` answered, and
+    /// its badge is on the reply and the labels. `below` is room kept
     /// at the foot of the reply, for its buttons. `findings` holds, for each of the answer's marks,
     /// the ids of the mark drawn for it and its label, none for one that was dropped, which the
     /// answer's actions name by index. `tour` holds where the reply hangs while each focus after the
     /// first is shown, by the focus mark's id. `focusable` is false when the answer is on no window
     /// whose capture a focus could blur.
     static func placed(for answer: LiveAnswer, targets: [CGRect?], asked: CGRect, quote: String? = nil, scene: Scene,
-                       sizes: Sizes, streamed: Mark? = nil, below: CGSize = .zero, focusable: Bool = true)
+                       sizes: Sizes, agent: AgentClient, streamed: Mark? = nil, below: CGSize = .zero, focusable: Bool = true)
         -> (marks: [Mark], findings: [[Mark.ID]], tour: [Mark.ID: PopoverPlace]) {
         // A reply that streamed in shows the person's question above its words wherever it hangs.
         let quote = quote ?? streamed?.quote
@@ -75,16 +50,16 @@ enum LiveAnswerLayout {
             // either way a focus is a circle.
             let kind = (answer.steps || !focusable) && answerMark.kind == .focus ? .circle : answerMark.kind
             guard let best = pointing(kind, label: answerMark.label, at: target, zoom: answerMark.zoom, column: column, scene: scene,
-                                      marks: marks, text: text, sizes: sizes),
+                                      marks: marks, text: text, sizes: sizes, agent: agent),
                   let extent = best.mark.shapeExtent else { continue }
             var tag = best.label
             if say == nil, !answer.steps {
                 // Its label goes in the room the reply leaves, and the reply goes where the two cover least.
                 let hung = hung(answer.say, quote: quote, from: best.mark, spots: spots(from: best.mark), scene: scene, marks: marks,
-                                text: text, sizes: sizes, below: below) { body in
+                                text: text, sizes: sizes, agent: agent, below: below) { body in
                     guard let label = answerMark.label else { return (nil, 0) }
                     let spot = self.label(label, of: best.mark, room: scene.room, marks: marks + [body.insetBy(dx: -spacing, dy: -spacing)],
-                                          text: text, sizes: sizes)
+                                          text: text, sizes: sizes, agent: agent)
                     return (spot?.mark, spot?.cost ?? missingLabel)
                 }
                 say = hung.reply
@@ -108,7 +83,7 @@ enum LiveAnswerLayout {
             }
         }
         let reply = say ?? hung(answer.say, quote: quote, from: nil, spots: sides(of: asked), scene: scene, marks: marks, text: text,
-                                sizes: sizes, below: below).reply
+                                sizes: sizes, agent: agent, below: below).reply
         // A tour moves the reply to each focus in turn, hung from it as from the first, with its label
         // put back beside it. The reply's side comes first, so it slides rather than turning round.
         var tour: [Mark.ID: PopoverPlace] = [:]
@@ -116,10 +91,10 @@ enum LiveAnswerLayout {
             for stop in stops.dropFirst() {
                 let spots = spots(from: stop.mark).sorted { $0.edge == first.edge && $1.edge != first.edge }
                 let hung = hung(answer.say, quote: quote, from: stop.mark, spots: spots, scene: scene, marks: staying, text: text,
-                                sizes: sizes, below: below) { body in
+                                sizes: sizes, agent: agent, below: below) { body in
                     guard let tag = stop.label, case .text(let words) = tag.geometry else { return (nil, 0) }
                     let spot = label(words.text, of: stop.mark, room: scene.room, marks: staying + [body.insetBy(dx: -spacing, dy: -spacing)],
-                                     text: text, sizes: sizes, keeping: tag)
+                                     text: text, sizes: sizes, agent: agent, keeping: tag)
                     return (spot?.mark, spot?.cost ?? missingLabel)
                 }
                 guard let place = hung.reply.popover else { continue }
@@ -131,12 +106,13 @@ enum LiveAnswerLayout {
     }
 
     /// A mark pointing at `target`, with `label` beside it, placed as an answer's mark is but with no
-    /// reply to make room for: the mark, then its label when it has room.
-    static func pointer(_ kind: AnswerMark.Kind, label: String?, at target: CGRect, scene: Scene, sizes: Sizes) -> [Mark] {
+    /// reply to make room for: the mark, then its label when it has room. A ring keeps off the notes.
+    static func pointer(_ kind: AnswerMark.Kind, label: String?, at target: CGRect, scene: Scene, sizes: Sizes,
+                        agent: AgentClient) -> [Mark] {
         let marks = personsMarks(in: scene) + [target.insetBy(dx: -4, dy: -4)]
         let text = scene.text.map { $0.insetBy(dx: -2, dy: -2) } + enclosed(in: scene)
         guard let best = pointing(kind, label: label, at: target, zoom: false, column: nil, scene: scene, marks: marks, text: text,
-                                  sizes: sizes) else { return [] }
+                                  sizes: sizes, agent: agent, keepingOff: scene.notes) else { return [] }
         return [best.mark] + (best.label.map { [$0] } ?? [])
     }
 
@@ -146,9 +122,10 @@ enum LiveAnswerLayout {
     /// tail, which later arrows from the same side start level with.
     private static func pointing(_ kind: AnswerMark.Kind, label: String?, at target: CGRect, zoom: Bool,
                                  column: (x: CGFloat, fromRight: Bool)?, scene: Scene, marks: [CGRect], text: [CGRect],
-                                 sizes: Sizes) -> (mark: Mark, label: Mark?)? {
+                                 sizes: Sizes, agent: AgentClient, keepingOff: [CGRect] = []) -> (mark: Mark, label: Mark?)? {
         var best: (mark: Mark, label: Mark?, cost: CGFloat)?
-        for mark in pointers(kind, at: target, scene: scene, obstacles: marks + text, column: column?.x, zoom: zoom) {
+        for mark in pointers(kind, at: target, agent: agent, scene: scene, obstacles: marks + text, column: column?.x, zoom: zoom,
+                             keepingOff: keepingOff) {
             guard let extent = mark.shapeExtent else { continue }
             var total = cost(extent, room: scene.room, obstacles: marks + text)
             if case .arrow(let arrow) = mark.geometry {
@@ -161,7 +138,7 @@ enum LiveAnswerLayout {
             var tag: Mark?
             // A label touches its own mark, so only the others count against it.
             if let label {
-                let spot = self.label(label, of: mark, room: scene.room, marks: marks, text: text, sizes: sizes)
+                let spot = self.label(label, of: mark, room: scene.room, marks: marks, text: text, sizes: sizes, agent: agent)
                 tag = spot?.mark
                 total += spot?.cost ?? missingLabel
             }
@@ -184,9 +161,9 @@ enum LiveAnswerLayout {
     /// room or covers a quarter of itself in `marks`. Answers the label and what its spot costs. A
     /// label already `placed` is moved rather than made again, so it keeps its id.
     private static func label(_ text: String, of mark: Mark, room: CGRect, marks: [CGRect], text lines: [CGRect],
-                              sizes: Sizes, keeping placed: Mark? = nil) -> (mark: Mark, cost: CGFloat)? {
+                              sizes: Sizes, agent: AgentClient, keeping placed: Mark? = nil) -> (mark: Mark, cost: CGFloat)? {
         let words = Mark.Geometry.text(Mark.Text(origin: .zero, text: text, wrap: sizes.textWidth, size: sizes.textSize))
-        var tag = placed ?? Mark(geometry: words, agent: true, agentName: agentName)
+        var tag = placed ?? Mark(geometry: words, agent: true, agentName: agent.rawValue)
         tag.geometry = words
         tag.isLabel = true
         guard let box = noteBox(tag, sizes: sizes) else { return nil }
@@ -200,9 +177,6 @@ enum LiveAnswerLayout {
 
     // MARK: Pointing
 
-    /// A line this many times wider than tall is boxed rather than circled: an ellipse round it
-    /// would cover the lines above and below.
-    static let longLine: CGFloat = 8
     /// An arrow's length, and its gap from what it points at, in pt.
     static let arrowLength: CGFloat = 64
     static let arrowGap: CGFloat = 6
@@ -220,27 +194,27 @@ enum LiveAnswerLayout {
     /// one thing read as one. A circle is kept inside the room, so one round something at the
     /// window's edge is not cut off. `column` adds arrows from either side whose tails stand at that x.
     /// A focus is a rectangle that draws no stroke: the sharp spot round the target, or with `zoom`
-    /// the lens over it, which the rest of the answer keeps clear of.
-    static func pointers(_ kind: AnswerMark.Kind, at target: CGRect, scene: Scene, obstacles: [CGRect], column: CGFloat? = nil,
-                         zoom: Bool = false) -> [Mark] {
+    /// the lens over it, which the rest of the answer keeps clear of. A circle keeps off `keepingOff`.
+    static func pointers(_ kind: AnswerMark.Kind, at target: CGRect, agent: AgentClient, scene: Scene, obstacles: [CGRect], column: CGFloat? = nil,
+                         zoom: Bool = false, keepingOff: [CGRect] = []) -> [Mark] {
         if kind == .focus {
             var mark = Mark(geometry: .rectangle(zoom ? Focus.lens(over: target, in: scene.room) : Focus.spot(around: target)),
-                            agent: true, agentName: agentName)
+                            agent: true, agentName: agent.rawValue)
             mark.focus = FocusPlace(target: target, zoom: zoom)
             return [mark]
         }
         if kind == .circle {
-            let round = inside(circle(around: target), scene.room)
+            let round = inside(circle(around: target, keepingOff: keepingOff), scene.room)
             let frame: CGRect = switch round {
             case .ellipse(let frame), .rectangle(let frame): frame
             default: target
             }
             if !scene.ink.contains(where: { overlapsLoop($0, frame) }) {
-                return [Mark(geometry: round, agent: true, agentName: agentName)]
+                return [Mark(geometry: round, agent: true, agentName: agent.rawValue)]
             }
         }
         return arrows(to: target, room: scene.room, obstacles: obstacles, column: column).map {
-            Mark(geometry: .arrow($0), agent: true, agentName: agentName)
+            Mark(geometry: .arrow($0), agent: true, agentName: agent.rawValue)
         }
     }
 
@@ -250,17 +224,6 @@ enum LiveAnswerLayout {
         case .rectangle(let frame) where !frame.intersection(room).isNull: .rectangle(frame.intersection(room))
         default: geometry
         }
-    }
-
-    /// An ellipse padded round `target`, or a box round a long line.
-    static func circle(around target: CGRect) -> Mark.Geometry {
-        let height = max(target.height, 8)
-        if target.width > height * longLine {
-            return .rectangle(target.insetBy(dx: -max(4, height * 0.3), dy: -max(3, height * 0.25)))
-        }
-        // An ellipse through a rect's corners is √2 its size; a little less keeps it off the
-        // neighbouring lines while the words stay inside.
-        return .ellipse(target.insetBy(dx: -max(8, target.width * 0.18), dy: -max(6, height * 0.4)))
     }
 
     /// Whether `mark` is a loop of the person's that covers most of `frame`, or most of which `frame` covers.
@@ -468,9 +431,10 @@ enum LiveAnswerLayout {
     /// The reply as a popover hung from `ink`, the person's ink the ask was about, off the middle of
     /// one of its sides, clear of the person's marks and notes: an answer that points at nothing, or
     /// that points in steps, and a reply as it streams in, before its marks are known.
-    static func reply(_ text: String, quote: String?, from ink: CGRect, scene: Scene, sizes: Sizes, below: CGSize = .zero) -> Mark {
+    static func reply(_ text: String, quote: String?, from ink: CGRect, scene: Scene, sizes: Sizes, agent: AgentClient,
+                      below: CGSize = .zero) -> Mark {
         hung(text, quote: quote, from: nil, spots: sides(of: ink), scene: scene, marks: personsMarks(in: scene),
-             text: scene.text.map { $0.insetBy(dx: -2, dy: -2) } + enclosed(in: scene), sizes: sizes, below: below).reply
+             text: scene.text.map { $0.insetBy(dx: -2, dy: -2) } + enclosed(in: scene), sizes: sizes, agent: agent, below: below).reply
     }
 
     /// A popover's arrow stands this far off the edge of what it hangs from, in pt, clear of its stroke.
@@ -494,15 +458,15 @@ enum LiveAnswerLayout {
     /// `beside` places a note that must keep clear of the body, such as the mark's label, and answers
     /// what it costs, which counts with the body's.
     private static func hung(_ text: String, quote: String?, from mark: Mark?, spots: [(at: CGRect, edge: PopoverPlace.Edge)],
-                             scene: Scene, marks: [CGRect], text lines: [CGRect], sizes: Sizes, below: CGSize,
+                             scene: Scene, marks: [CGRect], text lines: [CGRect], sizes: Sizes, agent: AgentClient, below: CGSize,
                              beside: (CGRect) -> (note: Mark?, cost: CGFloat) = { _ in (nil, 0) }) -> (reply: Mark, label: Mark?) {
-        let size = ReplyContent.size(text, agent: agentName, quote: quote, foot: below)
+        let size = ReplyContent.size(text, agent: agent.rawValue, quote: quote, foot: below)
         let around = marks + (mark.map { strokes(of: $0, pad: 4) } ?? [])
         let best = hang(size, from: mark?.id, spots: spots, scene: scene, marks: around, text: lines, foot: below,
                         beside: beside)
         var reply = Mark(geometry: .text(Mark.Text(origin: best.place?.body.origin ?? .zero, text: text, wrap: replyWrap(size),
                                                    size: sizes.textSize)),
-                         agent: true, agentName: agentName)
+                         agent: true, agentName: agent.rawValue)
         reply.quote = quote
         reply.popover = best.place
         return (reply, best.note)
@@ -564,9 +528,9 @@ enum LiveAnswerLayout {
     /// as yet with no words, under `question`, hung where the note hung, `place`, with its body where
     /// the note's was. `agent` names who answers, and `answerer` how the row names them when that is
     /// not the agent's name.
-    static func conversation(_ question: String, agent: String, answerer: String? = nil, at place: PopoverPlace, sizes: Sizes) -> Mark {
+    static func conversation(_ question: String, agent: AgentClient, answerer: String? = nil, at place: PopoverPlace, sizes: Sizes) -> Mark {
         var reply = Mark(geometry: .text(Mark.Text(origin: place.body.origin, text: "", wrap: NoteLayout.wordsWidth, size: sizes.textSize)),
-                         agent: true, agentName: agent)
+                         agent: true, agentName: agent.rawValue)
         reply.quote = question
         reply.answerer = answerer
         reply.popover = place
@@ -576,13 +540,12 @@ enum LiveAnswerLayout {
     /// Where a reply's words wrap in a body `size` wide.
     private static func replyWrap(_ size: CGSize) -> CGFloat { size.width - ReplyContent.insets.left - ReplyContent.insets.right }
 
-    /// A note of `text` in the agent's style, placed beside `near`, with `below` points of room
-    /// kept under it.
-    /// `byPerson` makes it the person's note, measured in their font.
+    /// A note of `text` by `agent`, or the person's when it is nil, in its writer's
+    /// style, placed beside `near`, with `below` points of room kept under it.
     static func note(_ text: String, near: CGRect, scene: Scene, obstacles: [CGRect], sizes: Sizes, below: CGFloat = 0,
-                     byPerson: Bool = false) -> Mark {
+                     agent: AgentClient?) -> Mark {
         let mark = Mark(geometry: .text(Mark.Text(origin: .zero, text: text, wrap: sizes.textWidth, size: sizes.textSize)),
-                        agent: !byPerson, agentName: agentName)
+                        agent: agent != nil, agentName: agent?.rawValue)
         let box = noteBox(mark, sizes: sizes) ?? CGRect(x: 0, y: 0, width: sizes.textWidth, height: sizes.textSize * 2)
         let spot = place(CGSize(width: box.width, height: box.height + below), near: near, room: scene.room, obstacles: obstacles)
         return moved(mark, box: box, to: spot.origin, sizes: sizes)
@@ -656,12 +619,5 @@ enum LiveAnswerLayout {
             return total + (shared.isNull ? 0 : shared.width * shared.height)
         }
         return outside * 4 + covered
-    }
-}
-
-extension LiveAnswerLayout.Sizes {
-    /// Live ink's sizes in `ui`.
-    init(ui: UITweaks) {
-        self.init(textSize: ui.liveInkTextSize, textWidth: ui.liveInkTextWidth, style: ui.textStyle)
     }
 }

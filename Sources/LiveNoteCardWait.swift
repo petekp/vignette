@@ -6,7 +6,7 @@ struct NoteCardWait: Equatable {
     enum Phase: Equatable {
         case unsent
         case watching(TurnWatch)
-        /// Sent to a session whose route reports no turns, as a Codex thread's.
+        /// Sent to a session whose route reports no turns.
         case unwatched(sent: Date)
         /// The turn ended and the window round the ink is being looked at again.
         case lookingAgain

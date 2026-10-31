@@ -49,49 +49,6 @@ struct SetupConditions: Equatable {
 /// nobody asked. Here each dialog answers a row that says why it is needed.
 @MainActor
 final class SetupWindowController: NSObject, NSWindowDelegate {
-    /// What the window reads and asks for rather than doing itself: AppDelegate's parts, macOS's
-    /// permissions, and the records setup makes, which `show` supplies. A test run from the Setup
-    /// Lab leaves the records out and supplies the lab's conditions, so trying it changes nothing.
-    struct Callbacks {
-        /// Asked again on every look rather than read once: a grant, or a folder filled while the
-        /// window is open, is what the window is asking for.
-        var conditions: () -> SetupConditions = {
-            SetupConditions(trusted: true, screenRecording: true, protectedArea: nil, folder: .granted,
-                            hasScreenshots: false, saveTarget: "file", menuBarIconVisible: true)
-        }
-        /// The agents the last page offers the plugin to.
-        var agents: () -> [AgentPluginStatus] = { [] }
-        /// Whether Claude Code is installed and signed in, asked when the live ink page is reached.
-        var claudeAvailability: () async -> LiveResponder.Availability = { .checking }
-        /// Sends, on the main thread once the change has landed, when something `conditions` or
-        /// `agents` reads has changed, so the window looks now rather than at its next poll.
-        var changes: AnyPublisher<Void, Never> = Empty().eraseToAnyPublisher()
-        /// Starts the watcher, whose first read of a protected folder is what raises macOS's prompt.
-        var askFolder: () -> Void = {}
-        /// After a refusal. macOS doesn't ask twice, so the answer is changed where it keeps it.
-        var openFolderSettings: () -> Void = {}
-        var askAccessibility: () -> Void = {}
-        var askScreenRecording: () -> Void = {}
-        var openScreenRecordingSettings: () -> Void = {}
-        /// Sets ⌘⇧5's Save to back to a folder.
-        var saveToFolder: () -> Void = {}
-        /// The Open at login setting as setup opens. The welcome page's switch starts from it.
-        var launchAtLogin: () -> Bool = { true }
-        var installAgentPlugin: ([URL]) -> Void = { _ in }
-        /// Flies the closing window into the menu bar icon, with a popover naming what the conditions
-        /// setup saw leave missing for someone who uses live ink or not. Calls `close` once the window
-        /// may close, and `finished` once the intro has gone. False when there is no intro, and the
-        /// window closes as any window does.
-        var introduceMenuBar: (NSWindow, SetupConditions, _ usesLiveInk: Bool, _ close: @escaping () -> Void,
-                               _ finished: @escaping () -> Void) -> Bool = { _, _, _, _, _ in false }
-        /// The answer on the live ink page: live ink on or off.
-        var choseLiveInk: (Bool) -> Void = { _ in }
-        /// Screen Recording was asked for, which macOS answers by asking to quit and reopen the app.
-        var askedForScreenRecording: () -> Void = {}
-        /// The window closed.
-        var closed: (SetupModel) -> Void = { _ in }
-    }
-
     private let settings = Settings.shared
     private var window: NSWindow?
     private var model: SetupModel?
@@ -312,8 +269,6 @@ final class SetupModel: ObservableObject {
     @Published var page = Page.welcome {
         didSet { reached(page) }
     }
-    /// Whether Claude Code can answer live ink, as the live ink page last found it.
-    @Published private(set) var claudeAnswer = LiveResponder.Availability.checking
     /// Whether the last move was forward, which decides the side the pages slide to.
     @Published var forward = true
     /// The agents whose switch is on. All that can take the plugin to start: the user installed
@@ -341,11 +296,16 @@ final class SetupModel: ObservableObject {
         changes = callbacks.changes.sink { [weak self] in
             MainActor.assumeIsolated { self?.look(includingAgents: true) }
         }
+        // Live ink's agents decide a button and words on setup's pages too.
+        responderChanges = callbacks.responders.objectWillChange.sink { [weak self] _ in
+            MainActor.assumeIsolated { self?.objectWillChange.send() }
+        }
         // `page`'s observer does not run in `init`.
         reached(page)
     }
 
     private var changes: AnyCancellable?
+    private var responderChanges: AnyCancellable?
 
     /// Reads the conditions again, and moves a row that changed on setup's spring. The agents are read
     /// too only `includingAgents`, on `Callbacks.changes`: reading them reads files, too much for every
@@ -375,10 +335,13 @@ final class SetupModel: ObservableObject {
         if before.folder != .ask, before.folder != folder, folder == .granted || folder == .refused { folderAnswered(folder) }
     }
 
-    /// Points live ink's guide at the next permission to allow, while its page shows.
+    /// Points live ink's guide at the next step, while its page shows, as the agent setup names.
     func pointGuide() {
         guard page == .liveInkSetup else { return }
-        inkGuide.point(at: SetupInkGuide.Pointing(trusted: seen.trusted, screenRecording: seen.screenRecording))
+        let responders = callbacks.responders
+        inkGuide.point(at: SetupInkGuide.Pointing(trusted: seen.trusted, screenRecording: seen.screenRecording,
+                                                  codexSignIn: responders.codexSignInLeft, signingIn: responders.signIn == .waiting),
+                       as: responders.namedAgent)
     }
 
     var claude: AgentPluginStatus? { agents.first { $0.client == .claude } }
@@ -391,18 +354,10 @@ final class SetupModel: ObservableObject {
     /// without the plugin until they reload.
     var installsIntoClaude: Bool { claude.map { !$0.installed && chosen.contains($0.root) } ?? false }
 
-    /// Live ink's pages record the offer as made, and its first page asks whether Claude Code can answer.
+    /// Live ink's pages record the offer as made, and its first page asks which agent can answer.
     private func reached(_ page: Page) {
         if page == .liveInk || page == .liveInkSetup { sawLiveInk = true }
-        if page == .liveInk { checkClaude() }
-    }
-
-    /// Asks Claude Code again, so the live ink page says why Claude cannot answer, if it cannot.
-    func checkClaude() {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            self.claudeAnswer = await self.callbacks.claudeAvailability()
-        }
+        if page == .liveInk { callbacks.responders.look() }
     }
 
     var pages: [Page] {
@@ -505,10 +460,10 @@ struct SetupView: View {
         switch page {
         case .welcome: welcome
         case .shortcut: shortcut
-        case .liveInk: LiveInkPage(player: model.inkPlayer, claudeProblem: model.claudeAnswer.problem)
+        case .liveInk: LiveInkPage(player: model.inkPlayer, responders: model.callbacks.responders)
         case .liveInkSetup:
             LiveInkSetupPage(guide: model.inkGuide, trusted: model.seen.trusted, screenRecording: model.seen.screenRecording,
-                             callbacks: model.callbacks)
+                             callbacks: model.callbacks, responders: model.callbacks.responders)
         case .agents: agents
         }
     }
@@ -682,7 +637,7 @@ struct SetupView: View {
         case .welcome: return seen.protectedArea == nil || seen.folder == .granted
         case .shortcut: return (!settings.data.usesDoubleTap || seen.trusted) && seen.folder == .granted && seen.saveTarget == "file"
         case .liveInk: return true
-        case .liveInkSetup: return seen.trusted && seen.screenRecording
+        case .liveInkSetup: return seen.trusted && seen.screenRecording && !model.callbacks.responders.codexSignInLeft
         case .agents: return true
         }
     }

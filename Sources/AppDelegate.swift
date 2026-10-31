@@ -93,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         terminateSignal?.resume()
         AppLocation.ejectDiskImageIfAsked()
         NSApp.setActivationPolicy(.accessory)
-        NSApp.mainMenu = AppDelegate.makeMainMenu()
+        NSApp.mainMenu = MainMenu.make()
         let settingsSource = Launch.isTest ? " (VIGNETTE_SETTINGS) screencapture=\(AppleScreencapture.domainName)" : ""
         Log.writeLaunch("[app] launched \(BuildInfo.current.description) watching \(watchFolder.path) settings \(Settings.fileURL.path)\(settingsSource)")
         if let type = AppleScreencapture.string("type"), !ScreenshotWatcher.isCandidate("screenshot.\(type)") {
@@ -723,7 +723,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\" to true in settings.json"); return }
             let words = request.message ?? ""
             guard let id = request.session else {
-                switch liveInk.ask(words) {
+                switch liveInk.ask(words, to: liveInk.noteAgent) {
                 case .success: Commands.ok(cmd, "asking")
                 case .failure(let failure): Commands.error(cmd, .liveInkNotAsked, failure.reason)
                 }
@@ -738,7 +738,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 if let session = candidates.destinations.first(where: { $0.id == id }) {
                     answered = true
                     let title = SessionMenu.cardTitle(of: SessionMenu.row(of: session, among: candidates.destinations))
-                    switch liveInk.ask(words, sendingTo: (session, title)) {
+                    switch liveInk.ask(words, to: session.client, sendingTo: (session, title)) {
                     case .success: Commands.ok(cmd, "sending to \(session.project)")
                     case .failure(let failure): Commands.error(cmd, .liveInkNotAsked, failure.reason)
                     }
@@ -878,7 +878,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         SetupWindowController.Callbacks(
             conditions: { [unowned self] in setupConditions(protectedArea: protectedArea) },
             agents: { AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser) },
-            claudeAvailability: { await LiveResponder.availability() },
+            responders: .shared,
             // `@Published` sends before the change lands, so the window looks a turn later.
             changes: settings.$appleTarget.dropFirst().map { _ in }
                 .merge(with: NotificationCenter.default.publisher(for: AgentTools.found).map { _ in })

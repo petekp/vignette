@@ -273,6 +273,18 @@ final class AgentPluginTests: XCTestCase {
                        [scratch.appendingPathComponent(".codex")], "a config folder named in the environment is still the person's")
     }
 
+    func testATestLaunchNeverGetsThePersonsOwnCodexHomeForLiveInk() {
+        let person = dir.appendingPathComponent("person"), scratch = dir.appendingPathComponent("scratch")
+        let support = "Library/Application Support/com.example.vignette"
+        let own = person.appendingPathComponent(support), moved = scratch.appendingPathComponent(support)
+        let test = ["VIGNETTE_SETTINGS": "/tmp/x/settings.json"]
+        XCTAssertEqual(CodexSignIn.home(in: own, environment: [:], personHome: person)?.path, own.appendingPathComponent("live-ink/codex-home").path,
+                       "an ordinary launch")
+        XCTAssertNil(CodexSignIn.home(in: own, environment: test, personHome: person))
+        XCTAssertEqual(CodexSignIn.home(in: moved, environment: test, personHome: person)?.path, moved.appendingPathComponent("live-ink/codex-home").path,
+                       "with CFFIXED_USER_HOME")
+    }
+
     func testLaunchInstallsNothingWhereNothingWas() throws {
         let home = dir.appendingPathComponent("home")
         try FileManager.default.createDirectory(at: home.appendingPathComponent(".codex"), withIntermediateDirectories: true)

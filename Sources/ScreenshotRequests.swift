@@ -77,6 +77,8 @@ final class ScreenshotRequests {
     private var pendingCleanupWrites: Set<String> = []
     /// The sends between Send and their line reaching the client.
     private var sendGrace = SendGrace()
+    /// The requests not handed over yet whose session's turn a note will read (`send`'s `watchingTurn`).
+    private var watchedTurns: Set<String> = []
     private let now: () -> TimeInterval
     private let schedule: (TimeInterval, @escaping @MainActor @Sendable () -> Void) -> Void
 
@@ -93,127 +95,6 @@ final class ScreenshotRequests {
         self.now = now
         self.schedule = schedule
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    }
-
-    // MARK: The records
-
-    /// One screenshot request: where it went, and how far it got. `address` is the whole identity
-    /// of the destination, so Reply goes back to the same conversation and never to a guessed one.
-    struct Record: Codable {
-        let id: String
-        let created: Date
-        let destinationID: String
-        let destinationName: String
-        let address: AgentAddress
-        let addressGuard: AddressGuard
-        /// The screenshot the drawing was made on, for the log and the picker. Not a path: the
-        /// original stays the person's and may be moved or deleted without touching this request.
-        let source: String
-        /// The source's path as the watch folder spelled it when the request was made. A record from
-        /// before this field has only `source`, which a current folder completes.
-        var sourceKey: String? = nil
-        var status: Status
-        /// Why the client did not take the request, for a listing after a restart. Empty when it
-        /// did: an accepted submission says only what the address already says.
-        var detail: String
-        /// When the request's line was handed to the client. Nil while it has not been, and for a
-        /// request cancelled in its grace period, which a clear also ends as `cleared`.
-        var handedOver: Date? = nil
-        /// How the session is started before the line goes in, when it was not running at Send.
-        var start: SessionStart? = nil
-
-        enum Status: String, Codable {
-            /// Stored and not yet handed to the client: in its grace, or about to be.
-            case prepared
-            /// The client took it. Not proof that a model has read the image.
-            case submitted
-            /// The call did not answer. It may have arrived, so it is never resubmitted.
-            case uncertain
-            case failed
-            /// The person cleared it: no new reply is accepted, unpublished imports are cancelled.
-            case cleared
-        }
-
-        /// Whether a reply may still be accepted for this request.
-        var takesReplies: Bool { status != .cleared }
-    }
-
-    /// One reply to one request, and where its import has reached.
-    struct Reply: Codable {
-        let id: String
-        let requestID: String
-        let digest: String
-        /// True when the reply supplied its own PNG; false means it draws on the request's image.
-        let hasImage: Bool
-        let marks: [AgentMark]
-        /// An answer to live ink, which comes without marks or an image (`ReplyProtocol.Bundle`).
-        var answer: LiveAnswer? = nil
-        /// What the agent says the reply shows, recorded on the published file (`Agent.record(title:on:)`).
-        var title: AgentTitle? = nil
-        var stage: Stage
-        var destination: URL?
-        /// Where the person renamed the published file to, inside the watch folder. Nil while it
-        /// keeps its reserved name. Only a published reply has one, and a published file is never
-        /// deleted, so this is never a place cleanup removes a file from.
-        var renamedTo: URL?
-        var needsOutputCleanup: Bool?
-        /// The person deleted the published file. Publication still happened and is not undone.
-        var deleted = false
-        var errorCode: String?
-        /// For an answer, once it is drawn: the indexes of its marks that were not.
-        var notDrawn: [Int]?
-
-        enum Stage: String, Codable {
-            /// Vignette owns every byte. The helper may release its bundle.
-            case accepted
-            /// The watch-folder name is reserved and excluded from everything.
-            case reserved
-            /// The card exists and is ordinary. The one publication point.
-            case published
-            /// An answer live ink made a result card of itself, from a fresh capture of its window.
-            /// That card is an ordinary file, so the reply has no file of its own.
-            case shown
-            /// The import stopped; the payload is kept and the name stays excluded.
-            case failed
-            /// The request was cleared before this reply was published.
-            case cancelled
-        }
-
-        /// What a card of this reply draws on `canvas`: its marks, or, for an answer whose window could
-        /// not be captured, the answer's words beside its first mark and a ring round each mark's box.
-        /// A mark that names only words is left out, since nothing finds words in the request's picture.
-        func cardMarks(on canvas: LiveAnswer.Canvas?) -> [AgentMark] {
-            guard let answer else { return marks }
-            return answer.cardMarks(targets: answer.marks.map(\.box), on: canvas)
-        }
-
-        /// The answer's marks a card leaves out: those that name only words.
-        var undrawnOnCard: [Int] {
-            guard let answer else { return [] }
-            return answer.marks.indices.filter { answer.marks[$0].box == nil }
-        }
-
-        /// The reserved watch-folder name. Derived, so a record and its file cannot drift apart.
-        var fileName: String { ReplyProtocol.replyFileName(id) }
-
-        var outputURL: URL? {
-            guard let destination, destination.isFileURL, destination.path.hasPrefix("/"),
-                  destination.lastPathComponent == fileName else { return nil }
-            return destination.standardizedFileURL
-        }
-
-        /// Where the published file is now.
-        var publishedURL: URL? { renamedTo?.standardizedFileURL ?? outputURL }
-
-        var publication: ReplyProtocol.Receipt.Publication {
-            if deleted { return .removed }
-            switch stage {
-            case .accepted, .reserved: return .pending
-            case .published, .shown: return .ready
-            case .failed: return .failed
-            case .cancelled: return .cancelled
-            }
-        }
     }
 
     // MARK: Loading, before anything reads the watch folder
@@ -368,10 +249,12 @@ final class ScreenshotRequests {
     /// on the main thread: once this answers, the request exists whatever the client does next, and
     /// the annotator may close. The client gets the line `grace` seconds later, or at once when that
     /// is 0 (`SendGrace`); the submission then runs off the main thread and reports through `[send]`
-    /// and `callbacks.delivered`. Throws a `Refusal` when no live request was admitted.
+    /// and `callbacks.delivered`. Throws a `Refusal` when no live request was admitted. `watchingTurn`
+    /// says a live ink note will read the session's turn once the line is in.
     @discardableResult
     func send(png: Data, source: ScreenshotKey, to destination: AgentDestination, message: String? = nil,
-              instructions: String = SettingsData.defaultSendInstructions, grace: TimeInterval = 0) throws -> Record {
+              instructions: String = SettingsData.defaultSendInstructions, grace: TimeInterval = 0,
+              watchingTurn: Bool = false) throws -> Record {
         let open = requests.values.filter { $0.status != .cleared }.sorted { $0.created < $1.created }
         guard open.count <= Self.maxLiveRequests else {
             Log.write("[send] error \(CommandError.writeFailed.rawValue) too many open requests: \(open.count)")
@@ -432,6 +315,7 @@ final class ScreenshotRequests {
         // The message travels in the line only: it is the person's words, so neither the record
         // nor the log keeps it.
         let line = Self.requestLine(record: record, root: root, message: message, instructions: instructions)
+        if watchingTurn { watchedTurns.insert(id) }
         run(sendGrace.handle(.sent(request: id, line: line, grace: grace, at: now())))
         return record
     }
@@ -453,11 +337,13 @@ final class ScreenshotRequests {
                 }
                 submit(record, line: line)
             case .discard(let id):
+                watchedTurns.remove(id)
                 do { try clear(id) }
                 catch { Log.write("[send] error \(CommandError.writeFailed.rawValue) could not clear \(id): \(error.localizedDescription)") }
                 Log.write("[send] cancelled request=\(id) before it was sent")
                 if let record = requests[id] { callbacks.cancelled(record) }
             case .dropped(let id):
+                watchedTurns.remove(id)
                 Log.write("[send] cancelled request=\(id) before it was sent: its request was cleared")
                 if let record = requests[id] { callbacks.cancelled(record) }
             }
@@ -477,6 +363,7 @@ final class ScreenshotRequests {
     /// Answers the outcome at once, and never calls `completion`, when the record has no client to ask.
     private func handOver(_ record: Record, line: String, detail: String,
                           completion: @escaping @Sendable (SubmissionOutcome) -> Void) -> SubmissionOutcome? {
+        let watchingTurn = watchedTurns.remove(record.id) != nil
         guard let connection = connections[record.address.client] else {
             return .notSubmitted(code: .noAgent, detail: "no connection for \(record.address.client.rawValue)",
                                  reason: SubmissionOutcome.internalReason)
@@ -491,7 +378,7 @@ final class ScreenshotRequests {
         do { try write(going) }
         catch { Log.write("[send] error \(CommandError.writeFailed.rawValue) could not store \(record.id): \(error.localizedDescription)") }
         let destination = AgentDestination(id: record.destinationID, name: record.destinationName, address: record.address, start: record.start)
-        connection.submit(line, to: destination, completion: completion)
+        connection.submit(line, to: destination, watchingTurn: watchingTurn, completion: completion)
         return nil
     }
 

@@ -87,7 +87,7 @@ to turn it on.
 | --- | --- | --- |
 | Claude Code may open sent drawings (`ClaudeReadRule`), in the Agents tab | Let Claude Code open drawings without asking | Otherwise Claude Code stops to ask you in its terminal each time you send one. This adds a permission to Claude Code's settings for these drawings only. |
 | Under setup's agents while Claude Code is on (`ClaudeReadRule.setupNote`) | | Claude Code will open the drawings you send without asking you first. You can change this in Settings. |
-| Live ink (`liveInk`), in the General tab | Live ink | Holding *pair* lets you draw over any app. A click on a mark while you hold them erases it. Then, on a line of its own, what leaves the Mac (`SetupInkCopy.costNote`): When you ask, Claude sees a picture of the window, its title and URL, through your own Claude Code. An ask costs about one to four cents. |
+| Live ink (`liveInk`), in the General tab | Live ink | Holding *pair* lets you draw over any app. A click on a mark while you hold them erases it. Then, on a line of its own, what leaves the Mac (`SetupInkCopy.costNote`), from the table at the end of this section. |
 | Speaking while drawing (`liveInkSpeech`), under Live ink | Speak while you draw | What you say goes into the note beside your ink. Your voice stays on this Mac. |
 | When the ask goes (`liveInkSendWhenQuiet`), an experiment | Ask when you let go | |
 
@@ -102,80 +102,29 @@ to turn it on.
 | The same, for ⌘⇧3, ⌘⇧4 or ⌘⇧5 | *keys* takes screenshots. You can pick another combination. |
 | The same, for ⌃ with Space or an arrow | macOS uses *keys*. You can pick another combination. |
 | Live ink's one-time offer, at the top of the General tab | Live ink is new. Holding *pair* lets you draw over any app and ask Claude about what you drew. Buttons: Not Now, Turn On |
+| The same, where Codex is installed and Claude Code can't answer (`ResponderStatus.namedAgent`) | Live ink is new. Holding *pair* lets you draw over any app and ask Codex about what you drew. Buttons: Not Now, Turn On |
 
-### Live ink
+What leaves the Mac (`SetupInkCopy.costNote`) is a line under the Live ink switch and on setup's
+live ink permissions page. It names the agents that can answer.
 
-The menu bar menu names the switch as the General tab does.
+| Agents that can answer | Words |
+| --- | --- |
+| Claude Code, or neither | When you ask, Claude sees a picture of the window, its title and URL, through your own Claude Code. An ask costs about one to four cents. |
+| Codex alone, or Codex before its sign-in where Claude Code can't answer | When you ask, Codex sees a picture of the window, its title and URL, through your ChatGPT account. An ask counts toward your plan's usage limit. |
+| Both | When you ask, Claude or Codex sees a picture of the window, its title and URL. An ask to Claude costs about one to four cents. One to Codex counts toward your ChatGPT plan's usage limit. |
+
+Setup's live ink pages name Codex where Codex is installed and Claude Code can't answer
+(`ResponderStatus.namedAgent`), and Claude elsewhere. The guide's label is Start here beside
+Accessibility's Allow…, and Then this beside Screen Recording's Allow… and Sign In to Codex….
 
 | Where | Words |
 | --- | --- |
-| The menu's switch, with a badge | Live Ink, badge "Hold *pair*" |
-| The menu, while live ink is on, greyed out with no marks | Clear Live Ink |
-| The General tab, under the switch while Accessibility is missing and the double tap is not asking for it (`liveInkAccessibilityReason`) | Needs Accessibility permission. Lets Vignette notice *pair* held down in any app. |
-| The menu's first item while Accessibility is missing | Allow Accessibility for Live Ink…, or for the Shortcut and Live Ink… when the double tap needs it too |
-| The menu bar intro's popover, while Accessibility is missing | Live ink needs Accessibility. Click the icon to allow it. (The shortcut and live ink need Accessibility, when both do.) |
-| The General tab, under the switch while Screen Recording is missing (`liveInkScreenRecordingReason`) | Needs Screen Recording permission. Lets Vignette see the window under your ink when you ask about it. macOS may ask you to reopen Vignette after you allow it. |
-| The menu's first item while Screen Recording is missing | Allow Screen Recording for Live Ink… |
-| The menu bar intro's popover, while Screen Recording is missing | Live ink needs Screen Recording. Click the icon to allow it. |
-| The note's placeholder, with Claude as its target (`NoteContent.askPlaceholder`) | Ask about this |
-| The same, until the first ask to Claude (`NoteContent.firstAskPlaceholder`) | Ask about this. Claude sees the window's picture, title and URL. |
-| The note's placeholder, with a session as its target (`NoteContent.sendPlaceholder`) | Send to session |
-| The note's placeholder with Claude as its target, Claude's row in the target menu under its name, and setup's live ink page in place of its line about asking Claude, when Claude Code is not found (`LiveResponder.Availability.problem`) | Vignette couldn't find Claude Code. You can send your ink to a session. |
-| The same, when Claude Code is signed out | Claude Code isn't signed in. You can sign in by running claude in Terminal. |
-| The note's placeholder, with speech on and its permission missing (`LiveInk.speechNotice`) | Speaking needs the microphone and speech recognition. You can allow them in System Settings. |
-| The note's placeholder, when speech could not start | The reason it gives: This Mac can't turn speech into words on its own yet. / Speech recognition isn't available right now. / Vignette couldn't find a microphone. / Vignette couldn't start the microphone. / Vignette couldn't start listening. |
-| Beside the pointer, as the pointer field comes up without Screen Recording (`LiveInk.screenRecordingNotice`) | Live ink needs Screen Recording to see the window under your ink. You can allow it in System Settings. |
-| The note's Return hint, ↩, and its tooltip | Return asks |
-| The last of a reply's buttons (`LiveAnswerActions.replyTitle`) | Reply |
-| The field Reply opens, empty | Reply to *agent* |
-| The button beside that field (`LiveAnswerActions.cancelTitle`) | Cancel |
-| The General tab, under the speech switch while a permission is missing (`liveInkSpeechReason`) | Needs microphone and speech recognition permission. Lets Vignette hear what you say while you draw. The words are made on this Mac. |
-| macOS's microphone prompt (`NSMicrophoneUsageDescription`) | Vignette hears what you say while you draw, and turns it into words on this Mac. |
-| macOS's speech recognition prompt (`NSSpeechRecognitionUsageDescription`) | Vignette turns what you say while you draw into words, on this Mac. |
-| The note's target, and its tooltip | Claude ⌄, "Claude answers on the screen." / *title* ⌄, whose tooltip is the row's title, its second line and its repository |
-| The target's menu | Claude, on the screen; then the sessions under a heading for each repository, "Other folders" last |
-| The search field, the first row of both target menus | Search sessions |
-| The row when what was typed matches no session | No session matches |
-| Below the five rows, in both target menus, once more than five sessions are active: one submenu per project, after a separator | The project's header text, with the number of its sessions as a badge |
-| A session's row in the target menus | The herdr tab's label without a leading "*repository*:", else the session's name. Under it: the worktree, the branch when it is not the default, and the session's goal from the inbox mod, or its name when that adds to the title. A folder with no repository shows its path from home. A row with no herdr tab and no goal shows the session's name, then its worktree, subfolder, branch and how long ago it was used |
-| The badge on a row | Needs you (the inbox mod has an open question for you), else Working (a turn is running) |
-| Two rows in one group with the same title | The title and, in parentheses, the first of the herdr tab, the worktree and the branch that tells them apart, else #1 and #2 by when they started |
-| The destination control in the bar | The row's title; its tooltip is the title, the second line and the repository |
-| The destination control when no session runs and some can be started (`ToolbarView.chooseSession`) | Choose a session; its tooltip: No session is running. You can continue a past one or start a new one. |
-| A project's rows when it has no running session (`SessionMenu.continueLast`, `newSession`) | Continue last session, under it the worktree, branch, the session's name and how long ago it was used / New session, under it the worktree and branch |
-| The destination control, and the note's target, once a row of a project with no running session is picked (`SessionMenu.lastSession(in:)`, `newSession(in:)`) | Last session in *project* / New session in *project*; the tooltip keeps the menu row's words |
+| The live ink page, under the line about drawing (`SetupInkCopy.askLine`) | Then ask Claude about it, or send it to a Claude Code or Codex session. On that Mac: Then ask Codex about it, … |
+| Screen Recording's reason on the permissions page (`SetupInkCopy.screenRecordingReason`) | So Claude can see the window you drew on. On that Mac: So Codex can see the window you drew on. |
 
-#### In the conversation's row, or on the ink
+### Live ink
 
-Vignette's own words about an ask. With the conversation up, they go in its row after the name, and
-a reason whose subject is the answerer goes on from the name: **Claude** couldn't answer. You can ask
-again.
-Without one, they are a note beside the ink it was about, in the person's colour.
-
-| When | Words |
-| --- | --- |
-| A session did not take the note | Not sent. Then the reason, as on a card. |
-| No Screen Recording | Live ink needs Screen Recording permission to see the screen. |
-| The capture failed | Vignette couldn't see the screen. / Vignette couldn't capture the window. |
-| No `claude` found | Vignette couldn't find Claude Code. You can send your ink to a session. |
-| Claude Code is signed out | Claude Code isn't signed in. You can sign in by running claude in Terminal. |
-| The usage limit | Claude's usage limit is reached for now. |
-| No answer in 45 s | Claude took too long to answer. You can ask again. |
-| The answer did not parse | Vignette couldn't draw Claude's answer. You can ask again. |
-| Anything else | Claude couldn't answer. You can ask again. |
-| The CLI started with tools | Live ink stopped Claude, which started with tools. |
-
-#### What VoiceOver reads
-
-| Element | Label |
-| --- | --- |
-| The note's field (its placeholder is read after it) | Note |
-| The note's target | Goes to Claude / Goes to *title* |
-| A reply's question | Your question |
-| A reply's answer | Answer |
-
-The note's ↩ hint and a reply's logo are hidden from VoiceOver, since the field and the name beside the
-logo say the same.
+Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
 
 ### A copy, on its card ("Not copied")
 

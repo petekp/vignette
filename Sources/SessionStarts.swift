@@ -3,7 +3,7 @@ import Foundation
 /// How Vignette starts a Claude Code session that is not running, for a send a person aimed at it.
 /// A destination with a `start` is not running: sending to it starts `claude` in a new herdr tab in
 /// its folder, waits until the plugin's inbox holds the session, and then writes the line as a send
-/// to a running session does (`ClaudeCodeConnection.submit(_:to:completion:)`).
+/// to a running session does (`ClaudeCodeConnection.submit(_:to:watchingTurn:completion:)`).
 enum SessionStart: Equatable, Codable, Sendable {
     /// `claude --resume <id>` in `folder`: the project's last session, under its own id. Claude Code
     /// keeps the id when it resumes; only `--fork-session` makes a new one.

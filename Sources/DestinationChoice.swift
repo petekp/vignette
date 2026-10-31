@@ -173,6 +173,14 @@ enum DestinationChoice {
         }
     }
 
+    /// The responder that answers live ink when nobody picked one: of `answering`, the agents whose
+    /// responder can answer, the one whose session was used last, else the first of them. `list` is
+    /// in Send's order, so its first session of one of those agents is the one used last. A Codex
+    /// thread's time is its `recencyAt`, and a Claude Code session's its transcript's last entry.
+    static func responder(among list: [AgentDestination], answering: [AgentClient]) -> AgentClient? {
+        list.lazy.map(\.client).first(where: answering.contains) ?? answering.first
+    }
+
     /// Send's order: the session used last first. A session with no time comes after every one
     /// with a time, and a tie goes by name.
     static func newestFirst(_ a: AgentDestination, _ b: AgentDestination) -> Bool {

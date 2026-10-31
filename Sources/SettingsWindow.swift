@@ -2,36 +2,6 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// One tab of the Settings window: a toolbar item, the window title while it is up, and one form.
-enum SettingsTab: String, CaseIterable {
-    case general, screenshots, agents, developer
-
-    var name: String {
-        switch self {
-        case .general: return "General"
-        case .screenshots: return "Screenshots"
-        case .agents: return "Agents"
-        case .developer: return "Developer"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .general: return "gearshape"
-        case .screenshots: return "camera.viewfinder"
-        case .agents: return "sparkles"
-        case .developer: return "wrench.and.screwdriver"
-        }
-    }
-
-    var itemIdentifier: NSToolbarItem.Identifier { NSToolbarItem.Identifier("settings.\(rawValue)") }
-
-    init?(itemIdentifier: NSToolbarItem.Identifier) {
-        guard let tab = SettingsTab.allCases.first(where: { $0.itemIdentifier == itemIdentifier }) else { return nil }
-        self = tab
-    }
-}
-
 /// A thin editor over settings.json. Every control writes straight to the file.
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDelegate {
@@ -110,7 +80,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDeleg
             toolbar.insertItem(withItemIdentifier: identifier, at: toolbar.items.count)
         } else if !debug, let index {
             toolbar.removeItem(at: index)
-            if tab == .developer { select(.general, animated: window?.isVisible == true) }
+            if tab == .developer {
+                if window?.isVisible == true { select(.general, animated: true) } else { tab = .general }
+            }
         }
     }
 
@@ -181,8 +153,15 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDeleg
         select(tab, animated: true)
     }
 
+    /// A closed window keeps no form, so the form's poll ends with it. `show` makes a new one.
     func windowWillClose(_ notification: Notification) {
-        DispatchQueue.main.async { FocusReturn.shared.restore(reason: "settings closed") }
+        DispatchQueue.main.async { [self] in
+            if window?.isVisible == false {
+                window?.contentView = nil
+                hosting = nil
+            }
+            FocusReturn.shared.restore(reason: "settings closed")
+        }
     }
 }
 
@@ -201,6 +180,7 @@ struct SettingsView: View {
     let callbacks: SettingsWindowController.Callbacks
 
     @ObservedObject private var settings = Settings.shared
+    @ObservedObject private var responders = ResponderStatus.shared
     /// What is on disk for each agent, read on show and after every switch.
     @State private var agentRows = AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser)
     /// Why the last install or removal failed, by agent directory. The switch shows what the agent's
@@ -240,6 +220,12 @@ struct SettingsView: View {
         .frame(width: SettingsView.width)
         .onAppear(perform: look)
         .onReceive(poll) { _ in look() }
+        // Asking the agents can run `claude auth status`, so the General tab asks as it appears and
+        // as its window becomes key, not on the poll.
+        .onAppear { if tab == .general { responders.look(afresh: true) } }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+            if tab == .general, (note.object as? NSWindow)?.contentView is NSHostingView<SettingsView> { responders.look(afresh: true) }
+        }
     }
 
     private func look() {
@@ -299,8 +285,9 @@ struct SettingsView: View {
             })) {
                 Text("Live ink")
                 Text("Holding \(settings.data.liveInkChordChoice.glyphs) lets you draw over any app. A click on a mark while you hold them erases it.")
-                Text(SetupInkCopy.costNote)
+                Text(responders.costNote)
             }
+            CodexSignInRow(status: responders, signInTitle: "Sign In…", offersSignOut: true)
             Picker("Hold to draw", selection: Binding(get: { settings.data.liveInkChordChoice }, set: { chord in
                 let refusal = chord.refusal(against: HotKeySpec.parse(settings.data.recentHotkey))
                 withAnimation(Self.noticeMotion) { chordRefusal = refusal }
@@ -568,54 +555,6 @@ struct SaveToPicker: View {
         panel.directoryURL = settings.data.folderURL
         guard panel.runModal() == .OK, let url = panel.url else { return }
         settings.update { $0.screenshotsFolder = (url.standardizedFileURL.path as NSString).abbreviatingWithTildeInPath }
-    }
-}
-
-/// One row for every permission, in setup and in Settings: a symbol, what is needed, why, and
-/// Allow…. A check replaces the button once it is granted. A refusal swaps the symbol for a
-/// warning, and Allow… then opens Privacy & Security, since macOS doesn't ask twice.
-struct PermissionRow: View {
-    enum Status { case ask, refused, granted }
-    let symbol: String
-    let title: String
-    var reason: String?
-    let status: Status
-    /// Setup gives the window's default button to the next step still to take.
-    var isDefault = false
-    /// macOS's own prompt is up and has not been answered.
-    var busy = false
-    var button = "Allow…"
-    /// Names the button and the row's words in `spots`, for what is drawn over the row.
-    var spot: (spots: ScreenSpots, button: String, words: String)?
-    let allow: () -> Void
-
-    var body: some View {
-        LabeledContent {
-            if status == .granted {
-                Image(systemName: "checkmark.circle.fill").font(.title3).foregroundStyle(Color.installed)
-                    .accessibilityLabel("Allowed")
-            } else {
-                Button(button, action: allow).keyboardShortcut(isDefault && !busy ? .defaultAction : nil).disabled(busy)
-                    .screenSpot(spot?.button ?? "", in: spot?.spots)
-            }
-        } label: {
-            Label {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                    if let reason {
-                        Text(reason).font(.subheadline).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .screenSpot(spot?.words ?? "", in: spot?.spots)
-            } icon: {
-                if status == .refused {
-                    Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)
-                } else {
-                    Image(systemName: symbol).foregroundStyle(.secondary)
-                }
-            }
-        }
     }
 }
 
@@ -892,25 +831,6 @@ struct ShortcutSetting: View {
                         settings.update { $0.recentHotkey = value }
                     }
                 })
-    }
-}
-
-/// Screen Recording, which live ink's asks need to capture the window under the ink. Nothing else in
-/// Vignette needs it: setup's picture of its own window is ScreenCaptureKit's capture of the app's
-/// own windows, which needs no permission.
-enum ScreenRecording {
-    static var granted: Bool { CGPreflightScreenCaptureAccess() }
-
-    /// Raises macOS's own alert, which it shows once for an app; after that this does nothing, and the
-    /// row under the switch opens the pane. Only a switch the person turned on calls this.
-    static func request() {
-        guard !granted else { return }
-        Log.write("[live-ink] asking for Screen Recording")
-        _ = CGRequestScreenCaptureAccess()
-    }
-
-    static func openSystemSettings() {
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
     }
 }
 
