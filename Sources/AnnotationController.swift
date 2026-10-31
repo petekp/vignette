@@ -1,5 +1,4 @@
 import AppKit
-import ScreenCaptureKit
 
 /// Hosts the drawing editor in a borderless window. Lifecycle: `prepare` opens the image in the
 /// window, ordered in invisible, and gives it the keys; `show` reveals it once the card's flight
@@ -555,20 +554,19 @@ final class AnnotationController {
         stopProbe()
         current = nil
         park()
-        // The title fades out while the zoom fits, and the flight leaves once both are done, so the
-        // title never flies or hangs over the stack.
-        var faded = false, fitted = false, answered = false
-        let next = { [weak self] in
-            guard faded, fitted, !answered else { return }
-            answered = true
+        fitBeforeHide { [weak self] in
             self?.hideWindows()
             completion?()
         }
-        let fade = Settings.shared.motionUI.agentTitleFade
-        titleView.show(false, duration: fade) { faded = true; next() }
-        // A fade that never reports arriving still lets the window come down.
-        if !faded { DispatchQueue.main.asyncAfter(deadline: .now() + fade + 0.3) { faded = true; next() } }
-        fitBeforeHide { fitted = true; next() }
+    }
+
+    /// The agent's title as it is drawn now, for the flight taking `key` home, which carries it from
+    /// here. The block stops drawing with the frame (`hideWindows`).
+    func takeTitle(of key: ScreenshotKey) -> TransitionLayer.Caption? {
+        guard opened?.key == key, let frameView, let image = titleView.picture() else { return nil }
+        let offset = CGPoint(x: titleView.frame.minX - frameView.frame.minX, y: frameView.frame.maxY - titleView.frame.maxY)
+        return TransitionLayer.Caption(image: image, offset: offset, frameWidth: frameView.frame.width,
+                                       opacity: titleView.alphaValue)
     }
 
     private func stopProbe() {
@@ -603,9 +601,12 @@ final class AnnotationController {
         // window left the frame empty for 4 to 9 frames before the flight showed (measured). So the
         // frame is hidden in the commit that starts the flight moving, and the window goes once the
         // display has shown it. The flight casts the shadow from this turn, so it is never doubled.
+        // The title goes in that commit too, the one the flight shows its copy in (`leavingAnnotator`).
         frameView?.layer?.shadowOpacity = 0
-        titleView.show(false, duration: 0)
-        removal.start(on: window?.screen, hide: { [weak self] in self?.frameView?.isHidden = true }) { [weak self] in
+        removal.start(on: window?.screen, hide: { [weak self] in
+            self?.frameView?.isHidden = true
+            self?.titleView.show(false, duration: 0)
+        }) { [weak self] in
             guard let self else { return }
             window?.orderOut(nil)
             // The window is out of sight, so the screenshot and the marks' layers are let go.
@@ -829,7 +830,7 @@ final class AnnotationWindow: NSWindow {
 /// `StackLayout.titleWrapWidth`. Its text keeps its size at any zoom. It lives in the annotator's
 /// window beside the frame, and `AnnotationController.moveFrame` places it, so it moves with the
 /// frame in the same commit. It is fileprivate, so nothing outside the editor can draw it: not a
-/// card, a flight, a rendering, a stitch or a send.
+/// card, a rendering, a stitch or a send. The flight home carries a picture of it (`picture`).
 @MainActor
 fileprivate final class AgentTitleView: NSView {
     private let titleField = AgentTitleView.label()
@@ -896,20 +897,24 @@ fileprivate final class AgentTitleView: NSView {
         }
     }
 
-    /// Fades the block in or out over `duration`, then answers. At 0, or with nothing to fade, it
-    /// answers at once. A later call takes over the fade, and this one never answers.
-    func show(_ shown: Bool, duration: Double, then done: (() -> Void)? = nil) {
+    /// Fades the block in or out over `duration`. A later call takes over the fade.
+    func show(_ shown: Bool, duration: Double) {
         let target: CGFloat = shown && title != nil ? 1 : 0
         visible = target == 1
-        guard alphaValue != target, duration > 0 else {
-            fade.set(target)
-            done?()
-            return
-        }
-        fade.animate(to: target, duration: duration) { done?() }
+        guard alphaValue != target, duration > 0 else { return fade.set(target) }
+        fade.animate(to: target, duration: duration)
     }
 
     private lazy var fade = Tween(initial: 0) { [weak self] alpha in self?.alphaValue = alpha }
+
+    /// The block as drawn, at full opacity, or nil while none of it shows.
+    func picture() -> NSImage? {
+        guard title != nil, alphaValue > 0, let rep = bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
+        cacheDisplay(in: bounds, to: rep)
+        let image = NSImage(size: bounds.size)
+        image.addRepresentation(rep)
+        return image
+    }
 
     /// The block's frame for `[state]`, in the window's coordinates, or nil while it is not shown.
     var shownFrame: NSRect? { visible ? frame : nil }
@@ -960,30 +965,5 @@ fileprivate final class AgentTitleView: NSView {
 
     private static func text(_ string: String?, _ font: NSFont, _ colour: NSColor) -> NSAttributedString {
         NSAttributedString(string: string ?? "", attributes: [.font: font, .foregroundColor: colour])
-    }
-}
-
-/// The screen behind an agent's title, for its ink. Needs Screen Recording, which the caller checks
-/// first: asked without it, ScreenCaptureKit raises macOS's prompt.
-fileprivate enum TitleBackdrop {
-    /// The brightness, sRGB encoded from 0 to 1, of each `cell`-wide part of the screen under `rect`,
-    /// in global top-left points, with Vignette's own windows left out, so the dim is not in it. Nil
-    /// when the screen could not be read.
-    static func brightness(in rect: CGRect, cell: CGFloat) async -> [Double]? {
-        guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
-              let display = content.displays.first(where: { $0.frame.intersects(rect) }) else { return nil }
-        let part = rect.intersection(display.frame)
-        guard !part.isNull, part.width >= 1, part.height >= 1 else { return nil }
-        let own = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
-        let filter = SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
-        let configuration = SCStreamConfiguration()
-        configuration.sourceRect = part.offsetBy(dx: -display.frame.minX, dy: -display.frame.minY)
-        // A pixel every two points, as live ink reads the screen.
-        configuration.width = max(1, Int(part.width / 2))
-        configuration.height = max(1, Int(part.height / 2))
-        configuration.showsCursor = false
-        guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration),
-              let luminance = LivePacket.Luminance(image, frame: part, columns: max(1, Int(part.width / cell))) else { return nil }
-        return luminance.cells.map { Double($0) / 255 }
     }
 }

@@ -77,6 +77,69 @@ page behind it stays light grey and a dark one stays dark, so no one colour read
 - `[annotate] title ink=<white or black> source=<backdrop or appearance> …` logs each pick, with the
   luminances measured.
 
+## Leaving with the image (2026-10-30)
+
+The title leaves on the flight home, at the same moment as the image. Nothing waits for it: the
+flight starts when it would for an image with no title. A zoomed editor still springs back to the
+fitted frame first, and the title follows the frame there as it does during a zoom.
+
+- **The picture.** The flight carries a picture of the block (`TransitionLayer.Caption`). The
+  editor takes it in the turn the flight is added (`AnnotationController.takeTitle`), as the block
+  is drawn then, ink and opacity included. The picture sits in the flight's view above the image,
+  before the bow, so it bows, swells and scales with the image, as if pinned to its top-left
+  corner. A wide title never hangs past a shrinking card.
+- **The handover.** The editor keeps drawing the block until the next turn. Then its `Removal`
+  hides the frame and the block together, and the flight starts moving and shows its picture
+  (`leavingAnnotator`, cleared by `TransitionLayer.annotatorStoppedDrawing`). So the title passes
+  from the editor's window to the flight's in one commit. A swap is the exception: `prepare` hides
+  the block in the turn the flight is added, so the flight shows its picture in that turn.
+- **Why the next turn.** The flight's first frame reaches the screen 1 to 3 frames after the
+  editor's changes from the same turn (measured in `vignette-e2e`). Hidden in the flight's first
+  turn, the block was gone for those frames before the flight showed it: the title blinked.
+- **Why not the editor's own view.** The flight's place comes from a SwiftUI spring, its bow and
+  its swell, which nothing outside the layer can read each frame. And in a swap the editor's window
+  and its title belong to the next image in the same turn.
+- **The fade.** The picture fades from its opacity at the handover to 0 over `ui.agentTitleFade`
+  from the flight's start, as a spring, and never longer than half of `ui.expandDuration`. A
+  spring is within 0.1% of its target at 1.5 times its duration, so the title is gone by the time
+  the image first reaches its slot, before it settles over the stack. The fade reuses the setting
+  the fade in uses, so one number sets how the title comes and goes.
+- **Every way out.** Done, Esc, Send, a swap, a dismissal and a lone thumbnail flying off the
+  screen all fly home through `ThumbnailController.returnCard`, `flyAway` or the dismissal's
+  flight, and each one takes the title. With no flight home (the file removed while open, or a
+  lone thumbnail the dismissal takes with the panel) the title goes with the frame, in the turn
+  after the exit started.
+- **Motion 0 and Reduce Motion.** The fade is 0, so no flight carries a title. The block goes with
+  the frame in the turn after the exit, and the flight lands at once.
+
+### Measured
+
+In `vignette-e2e`, recorded at 60 frames a second with `screencapture -v`, two runs of seven
+exits. A take counts only when the recording dropped no frame within 0.1 s of the title's first
+change. A dropped frame is a gap of more than 25 ms between two frames. The host's load dropped
+frames in most of the second run.
+
+The title is never missing. At the start of the fade it is drawn twice, by the editor and by the
+flight, for 0 to 2 frames: 6 frames over 8 takes, 0.75 a take.
+
+| Way out | Takes | Frames drawn twice |
+|---|---|---|
+| Done | 1 | 2 |
+| Esc | 2 | 1, 0 |
+| Esc over the stack | 2 | 0, 1 |
+| Done, zoomed | 1 | 0 |
+| A dismissal | 1 | 0 |
+| Send | 1 | 2 |
+| A swap | 0 | |
+
+The double is the same lag the other way round. In the turn they share, the flight layer's
+changes can reach the screen up to 2 frames before the editor window's, so the flight's picture
+shows while the editor's block is still on screen. The cause of the lag, and whether a Mac's own
+GPU shows it, are not known yet.
+
+The flight leaves in the frame in which the toolbar starts to go, in all 5 takes measured. Before
+this change, the title faded in place first and the flight left 283 to 400 ms after the exit.
+
 ## Checked in the VM
 
 On a 1024 by 768 screen in `vignette-e2e`, in dark mode, driven through the end-to-end suite's

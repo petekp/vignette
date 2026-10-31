@@ -124,6 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.annotatorBelow = { [weak self] in self?.annotator.spaceBelow ?? 0 }
         thumbnail.annotatorAbove = { [weak self] shot, wrap in self?.annotator.spaceAbove(for: shot, wrap: wrap) ?? 0 }
         thumbnail.annotatorMarks = { [weak self] in self?.annotator.editor.marks }
+        thumbnail.annotatorTitle = { [weak self] key in self?.annotator.takeTitle(of: key) }
         thumbnail.onAnnotatorHide = { [weak self] hidden in self?.annotator.hide { hidden() } }
         thumbnail.onAnnotatorAbandon = { [weak self] in self?.annotator.abandon() }
         thumbnail.onAnnotatorPress = { [weak self] event, key in self?.annotator.take(event, for: key) }
@@ -670,11 +671,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         Log.write("[drag] cards=\(cards.count) drawings=\(drawn)")
         return items
-    }
-
-    private static func renderingPaths(_ urls: [URL]) -> String {
-        let data = try? JSONEncoder().encode(urls.map(\.path))
-        return data.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
     }
 
     // MARK: URL commands: vignette://<command>[?file=/path&file=/other]. See Commands.swift.
