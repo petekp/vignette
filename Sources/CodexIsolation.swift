@@ -45,16 +45,36 @@ enum CodexIsolation {
     static let catalogLimit: TimeInterval = 10
 
     /// Runs `codex debug models` in `home` and writes it, with what adds tools taken out, to
-    /// `model-catalog.json` there. Answers that file, or nil when either step failed. It blocks, so
-    /// it runs off the main thread.
-    static func writeCatalog(binary: String, home: URL) -> URL? {
+    /// `model-catalog.json` there, unless `claim` was withdrawn by then. Answers that file, or nil
+    /// when a step failed or the claim was withdrawn. It blocks, so it runs off the main thread.
+    static func writeCatalog(binary: String, home: URL, claim: CatalogClaim) -> URL? {
         let file = home.appendingPathComponent("model-catalog.json")
         guard (try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)) != nil,
               let run = Subprocess.run(binary, ["debug", "models"], timeout: catalogLimit, environment: ["CODEX_HOME": home.path],
                                        folder: home, includingErrors: false),
               run.status == 0, !run.timedOut, let catalog = strippedCatalog(Data(run.output.utf8)),
-              (try? catalog.write(to: file, options: .atomic)) != nil else { return nil }
+              claim.write({ (try? catalog.write(to: file, options: .atomic)) != nil }) else { return nil }
         return file
+    }
+
+    /// A start's claim on the catalog file, which its stop withdraws. The write and the withdrawal
+    /// take one lock, so a start that has stopped writes nothing over a newer start's catalog.
+    final class CatalogClaim: @unchecked Sendable {
+        private let lock = NSLock()
+        private var withdrawn = false
+
+        func withdraw() {
+            lock.lock()
+            withdrawn = true
+            lock.unlock()
+        }
+
+        /// Runs `write` while the claim holds, and answers what it answers, or false once withdrawn.
+        func write(_ write: () -> Bool) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return !withdrawn && write()
+        }
     }
 
     /// Why the warm-up's request to the model is not the request Vignette means to send, or nil

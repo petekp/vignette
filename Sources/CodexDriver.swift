@@ -103,7 +103,7 @@ final class CodexDriver: ResponderDriver {
 /// One start of Codex's responder, from the check to the stop: its server, the check's provider,
 /// how far the start has got, and the turn under way. Every callback holds it weakly, so once the
 /// driver drops it at `stop` nothing it began reports. The check's catalog, from `codex debug
-/// models`, is still made to its end, and launches nothing.
+/// models`, is still read to its end, but writes nothing and launches nothing.
 @MainActor
 private final class CodexRun {
     /// How far the start has got: the check's thread and the model it runs on, then the thread asks
@@ -120,6 +120,7 @@ private final class CodexRun {
     private let report: (ResponderEvent) -> Void
     private var session: AppServerSession?
     private var check: CodexCheckProvider?
+    private let catalogClaim = CodexIsolation.CatalogClaim()
     private var phase = Phase.starting
     /// The turn under way on the thread asks go to, from its `turn/started`.
     private var turn: String?
@@ -139,8 +140,9 @@ private final class CodexRun {
         let check = try CodexCheckProvider()
         self.check = check
         let run = WeakRun(self)
+        let claim = catalogClaim
         check.start { port in
-            let catalog = port == nil ? nil : CodexIsolation.writeCatalog(binary: binary, home: home)
+            let catalog = port == nil ? nil : CodexIsolation.writeCatalog(binary: binary, home: home, claim: claim)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { run.value?.launch(binary, port: port, catalog: catalog) }
             }
@@ -182,7 +184,10 @@ private final class CodexRun {
         session?.call("turn/interrupt", ["threadId": thread, "turnId": turn]) { _ in }
     }
 
+    deinit { catalogClaim.withdraw() }
+
     func stop() {
+        catalogClaim.withdraw()
         session?.stop()
         session = nil
         check?.stop()
