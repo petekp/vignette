@@ -50,6 +50,20 @@ final class StackModelTests: XCTestCase {
         XCTAssertEqual(reports.map(\.removed), [[], [model.cards[2].id]])
     }
 
+    func testThePagesBesideAScreenshotAreTheNextImagesInTheColumnPassingOverRecordings() {
+        let model = model(cards: 4)
+        let recording = URL(fileURLWithPath: "/tmp/recording.mov").screenshotKey
+        model.cards[1] = Card(id: UUID(), shot: Screenshot(key: recording), image: nil, pointSize: NSSize(width: 100, height: 100),
+                              size: NSSize(width: 100, height: 100), agent: nil)
+        let keys = model.cards.map(\.shot.key)
+        XCTAssertEqual(model.neighbor(of: keys[0], .older)?.shot.key, keys[2])
+        XCTAssertEqual(model.neighbor(of: keys[2], .newer)?.shot.key, keys[0])
+        XCTAssertEqual(model.neighbor(of: keys[2], .older)?.shot.key, keys[3])
+        XCTAssertNil(model.neighbor(of: keys[0], .newer), "the newest")
+        XCTAssertNil(model.neighbor(of: keys[3], .older), "the oldest")
+        XCTAssertNil(model.neighbor(of: URL(fileURLWithPath: "/tmp/elsewhere.png").screenshotKey, .older), "not in the column")
+    }
+
     func testEveryCardOnScreenThatTheStackShowsStaysAndOnlyTheOthersEnter() {
         let model = model(cards: 3)
         let onScreen = model.cards.map { ($0.shot.key, $0.id) }

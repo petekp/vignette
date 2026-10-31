@@ -7,12 +7,14 @@ import Foundation
 struct Opening: Hashable {
     let id: Int
     let key: ScreenshotKey
+    /// Left or Right in the editor asked for it, so it opens with nothing selected.
+    var paged = false
 
     static func == (a: Opening, b: Opening) -> Bool { a.id == b.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 
     func renamed(from old: ScreenshotKey, to new: ScreenshotKey) -> Opening {
-        key == old ? Opening(id: id, key: new) : self
+        key == old ? Opening(id: id, key: new, paged: paged) : self
     }
 }
 
@@ -76,6 +78,16 @@ struct AnnotatorTransition: Equatable {
     }
 
     var isActive: Bool { phase != .idle }
+
+    /// The image a page moves on from: the one in the annotator or on its way there, or the one a
+    /// park opens next. Nil while the annotator closes, finishes or leaves.
+    var heading: Opening? {
+        switch phase {
+        case .idle: return nil
+        case .flyingOut(let o), .annotating(let o), .parking(_, then: .annotate(let o)): return o
+        case .parking: return nil
+        }
+    }
 
     mutating func reduce(_ event: Event) -> [Effect] {
         if case .renamed(let old, let new) = event {
@@ -185,8 +197,10 @@ struct AnnotatorTransition: Equatable {
             case .annotate(let o2):
                 // A later request wins, unless the panel is already leaving or the card is gone.
                 // Re-requesting the image that is finishing changes nothing: it is coming back anyway.
+                // One leaving for another image opens again after its park.
                 switch next {
-                case .annotate, .close: phase = .parking(o, then: o2.key == o.key ? .close : .annotate(o2))
+                case .annotate: phase = .parking(o, then: .annotate(o2))
+                case .close: phase = .parking(o, then: o2.key == o.key ? .close : .annotate(o2))
                 case .finish: if o2.key != o.key { phase = .parking(o, then: .annotate(o2)) }
                 case .dismiss, .remove: break
                 }

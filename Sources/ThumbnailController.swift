@@ -148,7 +148,7 @@ final class ThumbnailController: NSObject {
     private var pinnedScreen: NSScreen?
     /// Where on screen the file in `annotate`'s request was captured, until its `prepare` uses it.
     private var captureOrigin: (key: ScreenshotKey, rect: NSRect)?
-    private var screen: NSScreen {
+    var screen: NSScreen {
         if let pinned = pinnedScreen, NSScreen.screens.contains(pinned) { return pinned }
         return NSScreen.main ?? NSScreen.screens[0]
     }
@@ -213,7 +213,7 @@ final class ThumbnailController: NSObject {
 
     /// The cards as they are drawn now: at the stack's full width, or narrowed for the annotator.
     private var cardSizes: [NSSize] { model.cards.map { layout.drawn($0.size) } }
-    private var ui: UITweaks { Settings.shared.motionUI }
+    var ui: UITweaks { Settings.shared.motionUI }
     private var layout: StackLayout { StackLayout.current.at(widthScale: model.widthScale) }
     private var showsStrip: Bool { model.isStack && model.inSelectionMode }
 
@@ -427,6 +427,15 @@ final class ThumbnailController: NSObject {
     func annotationFinished(quick: Bool) {
         guard quick else { return send(.finish) }
         if visible { dismiss(by: .quickDone) } else { send(.dismiss(.finished)) }
+    }
+
+    /// Left or Right in the editor: the screenshot beside the one the editor shows or is opening, in
+    /// the corner's order, or a beep at either end. A key's repeat never beeps.
+    func page(_ page: EditorCore.Page, isRepeat: Bool) {
+        guard run.takesPage(isRepeat: isRepeat), let from = run.heading else { return }
+        guard let next = model.neighbor(of: from, page) else { if !isRepeat { NSSound.beep() }; return }
+        if let index = model.cards.firstIndex(where: { $0.id == next.id }) { scrollToReveal(index) }
+        send(.page(next.shot.key, isRepeat: isRepeat))
     }
 
     /// The editor has the screenshot for `opening`.
@@ -832,6 +841,7 @@ final class ThumbnailController: NSObject {
             onTakesScreen?()
             sessionCard = card
             leaveTimer?.invalidate()
+            for page in [EditorCore.Page.older, .newer] { prefetchFlightImage(model.neighbor(of: key, page)?.id) }
             // The selection stays: the card comes back to its slot, and a queued run needs the rest
             // of it to still be there when the last card is done.
             _ = model.outCards.insert(card.id)
@@ -1003,17 +1013,6 @@ final class ThumbnailController: NSObject {
         if over { model.hoveredCard = card.id } else if model.hoveredCard == card.id { model.hoveredCard = nil }
     }
 
-    /// The marks a flight carries: `drawing` with every text drawn at `scale` device px to a px, the
-    /// larger of the flight's two ends, over the whole image, and showing the bitmaps `sources` have
-    /// until its own arrive. Nil for a drawing with no marks.
-    private func flightMarks(_ drawing: Drawing?, scale: CGFloat, adopting sources: [MarkLayers?]) -> MarkLayers? {
-        guard let drawing, !drawing.marks.isEmpty else { return nil }
-        let marks = MarkLayers(pixels: drawing.pixels, queue: MarkLayers.textQueue)
-        marks.setScale(screen.backingScaleFactor)
-        marks.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: ui.textStyle, markStyle: ui.markStyle, adopting: sources.compactMap { $0 })
-        return marks
-    }
-
     /// The flight from `card` to the annotator at `frame` carries the drawing the editor has just
     /// opened, which is what it hands over to; the card's own until the editor has one.
     private func outFlightMarks(for card: Card, to frame: NSRect) -> MarkLayers? {
@@ -1040,18 +1039,6 @@ final class ThumbnailController: NSObject {
     private func takeFlightTexts(_ card: Card) {
         guard let flying = flights.marks(of: card.id), let editor = annotatorMarks(), editor.drawing?.key == card.shot.key.path else { return }
         editor.adopt(from: flying)
-    }
-
-    /// Device px per image px of the editor's texts in the annotator at `frame`, fitted: the editor's
-    /// own sum, so a flight's texts and the editor's are the same bitmaps.
-    private func annotatorTextScale(_ frame: NSRect, _ pixels: PixelSize) -> CGFloat {
-        pixels.width > 0 ? frame.width / CGFloat(pixels.width) * screen.backingScaleFactor : 0
-    }
-
-    /// Device px per image px of a card's texts, at the card's `size` at rest.
-    private func cardTextScale(_ size: NSSize, _ pixels: PixelSize) -> CGFloat {
-        guard pixels.width > 0, pixels.height > 0 else { return 0 }
-        return max(size.width / CGFloat(pixels.width), size.height / CGFloat(pixels.height)) * screen.backingScaleFactor
     }
 
     private func targetFrame(for card: Card) -> NSRect {

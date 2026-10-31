@@ -140,6 +140,19 @@ final class AnnotatorTransitionTests: XCTestCase {
         XCTAssertEqual(t.reduce(.parked(again)), [.returnCard(again, copied: false), .prepare(next)])
     }
 
+    func testRequestingTheImageParkingForASwapOpensItAgainAfterThePark() {
+        var t = T()
+        _ = t.reduce(.annotate(a)); _ = t.reduce(.shown(a))
+        XCTAssertEqual(t.reduce(.annotate(b)), [.park(a)])
+        XCTAssertEqual(t.heading, b)
+        let again = Opening(id: 3, key: "a")
+        XCTAssertEqual(t.reduce(.annotate(again)), [])
+        XCTAssertEqual(t.heading, again)
+        XCTAssertEqual(t.reduce(.parked(a)), [.returnCard(a, copied: false), .prepare(again)])
+        _ = t.reduce(.shown(again)); _ = t.reduce(.close)
+        XCTAssertNil(t.heading, "nothing to move on from while the annotator closes")
+    }
+
     // MARK: Random sequences
 
     /// Plays random events against the reducer with an environment that answers `park` with

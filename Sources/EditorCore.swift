@@ -1,42 +1,6 @@
 import CoreGraphics
 import Foundation
 
-/// The editor's sizes and timings that a person tunes by feel, given at open from the tweaks.
-/// Sizes are in screen pt unless they say otherwise; `standard` holds the numbers `docs/editor.md`
-/// gives.
-struct EditorMetrics: Equatable {
-    /// How far a press travels before it is a drag.
-    var dragDistance: CGFloat
-    /// Added to a stroke's half-width on screen to make its hit band.
-    var hitMargin: CGFloat
-    /// A corner handle's hit area: a square this wide, centred on the corner.
-    var cornerHitSize: CGFloat
-    /// An edge handle's hit area: a strip this wide along the whole side.
-    var edgeHitSize: CGFloat
-    /// A mark shorter than this along an axis has its handles' hit areas outside it on that axis.
-    var smallSide: CGFloat
-    /// The drawn corner square.
-    var handleSize: CGFloat
-    /// An arrow dot's drawn radius and its hit radius.
-    var dotRadius: CGFloat
-    var dotHitRadius: CGFloat
-    /// A new rectangle's shortest side and a new arrow's shortest length.
-    var smallestRectangle: CGFloat
-    var shortestArrow: CGFloat
-    /// A Text tool press becomes a wrap-width drag after this wait, in seconds, and this much
-    /// sideways travel.
-    var textDragDelay: TimeInterval
-    var textDragDistance: CGFloat
-    /// The size a new text starts at, typed or pasted, in pt.
-    var newTextSize: CGFloat
-    /// The selection outline's whole width on screen, its light edge included. It runs this far
-    /// outside a mark's ink, so the mark's colour shows.
-    var selectionOutlineWidth: CGFloat
-
-    /// The tweaks' defaults.
-    static let standard = UITweaks().editorMetrics
-}
-
 /// Everything the drawing editor decides, as a reducer with no view in it. The view turns events
 /// into `Input`s, runs the `Effect`s each one returns in order, and draws `drawing`, `overlay` and
 /// the text being typed. It hit-tests nothing itself: `target(at:)` tests a press against the
@@ -86,8 +50,9 @@ struct EditorCore {
 
     enum Input {
         /// A screenshot opens with its drawing, or an empty one whose point scale is the display's.
-        /// `markStyle` is the renderer's, which the selection frame goes around.
-        case open(Drawing, style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle)
+        /// `markStyle` is the renderer's, which the selection frame goes around. `selectsNewest` is
+        /// false for a screenshot reached by Left or Right, which opens with nothing selected.
+        case open(Drawing, style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle, selectsNewest: Bool = true)
         /// The pointer moved with no button held.
         case pointerMoved(Pointer)
         /// The pointer left the canvas.
@@ -275,12 +240,27 @@ struct EditorCore {
         case leaveCanvas(backward: Bool)
         /// M or P: the message that goes with Send.
         case focusMessage
+        /// Left or Right with nothing selected, nothing typed and no drag: the host opens the
+        /// screenshot beside this one, or beeps.
+        case page(Page, isRepeat: Bool)
         /// Ask the host to close the editor.
         case close
         /// Render this drawing and finish.
         case done(Drawing)
         /// Render this drawing and send it; the editor stays open.
         case send(Drawing)
+    }
+
+    enum Page: Equatable {
+        case older, newer
+
+        init?(_ key: Key) {
+            switch key {
+            case .left: self = .older
+            case .right: self = .newer
+            default: return nil
+            }
+        }
     }
 
     enum Caret: Equatable {
@@ -496,8 +476,8 @@ struct EditorCore {
 
     mutating func reduce(_ input: Input) -> [Effect] {
         effects = []
-        if case .open(let drawing, let style, let metrics, let markStyle) = input {
-            open(drawing, style: style, metrics: metrics, markStyle: markStyle)
+        if case .open(let drawing, let style, let metrics, let markStyle, let selectsNewest) = input {
+            open(drawing, style: style, metrics: metrics, markStyle: markStyle, selectsNewest: selectsNewest)
         } else if isOpen {
             if !input.keepsNudge { nudging = false }
             if !input.keepsNoteMark { noteMark = nil }
@@ -591,7 +571,7 @@ struct EditorCore {
 
     // MARK: Opening, parking and handing over
 
-    private mutating func open(_ drawing: Drawing, style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle) {
+    private mutating func open(_ drawing: Drawing, style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle, selectsNewest: Bool) {
         if typing != nil { emit(.endTyping) }
         let zoom = self.zoom, pending = effects
         self = EditorCore()
@@ -605,7 +585,7 @@ struct EditorCore {
         self.markStyle = markStyle
         tool = drawing.marks.isEmpty ? .rectangle : .select
         // The newest mark the person drew, never an agent's.
-        if let newest = drawing.marks.last(where: { !$0.agent }) { selection = [newest.id] }
+        if selectsNewest, let newest = drawing.marks.last(where: { !$0.agent }) { selection = [newest.id] }
         announcedSelection = selection
         reportedTool = tool
         emit(.cancelTimer)
@@ -1351,6 +1331,7 @@ struct EditorCore {
         if let note = noteMark, startsNote(for: note, key, modifiers, isRepeat: isRepeat) { return }
         noteMark = nil
         if key.direction != nil {
+            if selection.isEmpty, modifiers.isEmpty, let page = Page(key) { return emit(.page(page, isRepeat: isRepeat)) }
             if !isRepeat, heldArrows.contains(key) { heldArrows = [] }
             heldArrows.insert(key)
             return nudge(by: modifiers.contains(.shift) ? Self.longNudge : Self.nudge)
