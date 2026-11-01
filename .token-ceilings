@@ -1,0 +1,6 @@
+# Files the token-limit pre-commit hook allows over 5,000 tokens: "path ceiling", the ceiling in
+# tokens (bytes / 4). A listed file is blocked only when it grows past its ceiling.
+#
+# ThumbnailController.swift is one class whose sections share private members, so no part of it
+# moves out without widening their access. Splitting it is a task of its own.
+Sources/ThumbnailController.swift 23668

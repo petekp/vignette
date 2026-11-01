@@ -256,7 +256,7 @@ final class ThumbnailController: NSObject {
                 "key": panel.isKeyWindow,
                 "scroll": Int(model.scroll), "viewport": Int(model.viewport), "safeBottom": Int(area.safeBottom),
                 "widthScale": model.widthScale,
-                "panel": StateReport.topLeft(panel.frame, primaryHeight: h),
+                "panel": StateReport.topLeft(panel.frame, primaryHeight: h), "panelOnScreen": panel.isVisible,
                 "strip": stripFrame.map { StateReport.topLeft($0, primaryHeight: h) } as Any,
             ] as [String: Any],
             "transition": ["phase": "\(run.phase)", "annotating": annotating?.shot.key.path as Any, "isActive": run.isActive],
@@ -298,6 +298,9 @@ final class ThumbnailController: NSObject {
     @discardableResult
     func toggleRecent(by request: StackRequest) -> StackToggle {
         let wasStack = keys.isStack
+        // `CornerKeys` takes a panel off screen for an empty corner, and orders it out again if no
+        // stack follows; a lone card on its way home has its panel off screen until it lands.
+        orderPanelIn()
         keys.send(.shortcut(request))
         if keys.isStack { return .shown(model.cards.count) }
         return wasStack ? .dismissed : .empty
@@ -802,6 +805,7 @@ final class ThumbnailController: NSObject {
         // being nobody's, to its `endRun`.
         if model.annotating != run.isActive {
             model.annotating = run.isActive
+            flights.staysUp = run.isActive
             var ending: RunEnding?
             for case .endRun(let how) in effects { ending = how }
             keys.send(run.isActive ? .editorOpened : .editorClosed(ending))
@@ -936,7 +940,10 @@ final class ThumbnailController: NSObject {
         if !model.cards.contains(where: { $0.id == card.id }) {
             // A lone thumbnail left the panel when the annotator opened (see `.show`); it comes back
             // to the corner as an empty slot the flight lands on. No slide-in: the flight is the entrance.
-            if visible { insert(card, entrance: .inPlace) } else { present(cards: [card], entrance: .inPlace) }
+            // The panel goes on screen once the flight covers the slot. Ordered in during this turn,
+            // directly under the flight layer, it held this turn's change to the layer back, and the
+            // image's shadow went missing (docs/exit-panel-2026-11-01.md).
+            if visible { insert(card, entrance: .inPlace) } else { present(cards: [card], entrance: .inPlace, ordersPanel: false) }
             _ = model.outCards.insert(card.id)
         }
         // Shown when the card lands, like every notice on a card still on its way back.
@@ -948,7 +955,8 @@ final class ThumbnailController: NSObject {
         // exact slot, so a card and a shadow put there while the flight still had a few points to
         // go would both step. Nothing is visible before then; the flight covers the slot.
         flights.fly(id: card.id, image: flightImage(for: card), marks: homeFlightMarks(for: card), caption: annotatorTitle(card.shot.key),
-                    from: annotationFrame, to: cardFrame(of: card), leavingAnnotator: true, lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
+                    from: annotationFrame, to: cardFrame(of: card), leavingAnnotator: true, lookFrom: .annotator(ui), lookTo: .card(ui), on: screen,
+                    covered: { [weak self] in self?.orderPanelIn() }, arrived: { [weak self] in
             guard let self else { return }
             self.model.outCards.remove(card.id)
             self.hover(landing: card)
@@ -1439,7 +1447,8 @@ final class ThumbnailController: NSObject {
 
     /// Shows a new column. Cards start past the screen edge and arrive staggered, newest first.
     /// `keepOffscreen` leaves the cards parked past the edge, for a card that is about to fly out from there.
-    private func present(cards: [Card], entrance: Entrance = .slide) {
+    /// Without `ordersPanel`, the panel is laid out but left for `orderPanelIn` to put on screen.
+    private func present(cards: [Card], entrance: Entrance = .slide, ordersPanel: Bool = true) {
         if !visible {
             // A capture opening in the editor shows on the screen it was taken on, where its flight starts.
             pinnedScreen = captureOrigin.flatMap { origin in
@@ -1495,7 +1504,7 @@ final class ThumbnailController: NSObject {
         }
         visible = true
         layoutPanel(shrinkLater: false, animated: false)
-        panel.orderFrontRegardless()
+        if ordersPanel { flights.orderIn(panel) }
         // The offscreen state must be committed before it is cleared, or nothing animates: next run loop turn.
         if entrance == .slide {
             DispatchQueue.main.async { [weak self] in
@@ -1517,7 +1526,16 @@ final class ThumbnailController: NSObject {
         removeOverflow()
         withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = 0 }
         layoutPanel(shrinkLater: false, animated: true)
+        orderPanelIn()
         DispatchQueue.main.async { [weak self] in self?.model.offscreen.remove(card.id) }
+    }
+
+    /// Puts the panel on screen, under the flight layer, while the corner shows cards and the panel
+    /// is not up yet: from a lone card's return until its flight home covers its slot (`returnCard`).
+    /// Ordered after the layout, since a window shows at its current frame the moment it is ordered in.
+    private func orderPanelIn() {
+        guard visible, !panel.isVisible else { return }
+        flights.orderBelow(panel)
     }
 
     /// How far below its slot in `new` each card in `kept` is drawn at `time`, so it starts where it
@@ -1573,6 +1591,7 @@ final class ThumbnailController: NSObject {
             model.lift = lift
             model.scroll = 0
         }
+        orderPanelIn()
         springLifts(lift, from: now, first: { [weak self] in self?.model.offscreen.remove(card.id) }) { [weak self] in
             // The oldest card leaves the top with its transition, once the column is moving.
             guard let self else { return }
