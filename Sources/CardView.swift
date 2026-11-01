@@ -100,9 +100,10 @@ struct CardView: View, Equatable {
             let shape = RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous)
             ZStack {
                 if inSlot {
-                    // The flight draws this border too, so it takes over at once, as the image does.
+                    // The flight draws this border too, so it changes hands at once both ways, as the
+                    // image does. A fade on leaving would outline the empty slot.
                     shape.stroke(.white.opacity(ui.cardBorderOpacity), lineWidth: ui.cardBorderWidth)
-                        .transition(.asymmetric(insertion: .identity, removal: .opacity))
+                        .transition(.identity)
                 }
                 shape.stroke(ringColor, lineWidth: ringWidth)
             }
@@ -183,9 +184,10 @@ struct CardView: View, Equatable {
                 .transition(.opacity)
             }
         }
-        // What is drawn over the card comes in as the card lands: the flight carries only the image
-        // and its border.
-        .landing(inSlot, landing)
+        // What is drawn over the card comes in as the card lands and goes as it leaves: the flight
+        // carries only the image and its border. It leaves on the hover state's reveal, as it does
+        // when the pointer is on the card.
+        .landing(inSlot, landing, leaving: Anim.spring(ui.hoverRevealDuration))
         .animation(Anim.spring((notice == nil ? 0.4 : 0.15) * motion), value: notice?.kind)
         .zIndex(showsHover ? 1 : 0)   // the hover scale may hang over the card below
         .scaleEffect(pressed ? ui.pressScale : (showsHover ? ui.hoverScale : 1))
@@ -241,10 +243,13 @@ struct CardView: View, Equatable {
 }
 
 private extension View {
-    /// `animation` for what changes as a card takes its slot back. Inside a view's own animations,
-    /// it wins over them at that moment. A card leaving keeps the animation the change already has.
-    func landing(_ inSlot: Bool, _ animation: Animation) -> some View {
-        transaction(value: inSlot) { if inSlot { $0.animation = animation } }
+    /// `animation` for what changes as a card takes its slot back, and `leaving` for what changes
+    /// as it gives the slot up. Inside a view's own animations, it wins over them at that moment.
+    /// Without `leaving`, a card leaving keeps the animation the change already has.
+    func landing(_ inSlot: Bool, _ animation: Animation, leaving: Animation? = nil) -> some View {
+        transaction(value: inSlot) { transaction in
+            if inSlot { transaction.animation = animation } else if let leaving { transaction.animation = leaving }
+        }
     }
 }
 
