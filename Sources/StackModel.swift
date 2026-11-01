@@ -1,6 +1,10 @@
 import AppKit
 import SwiftUI
 
+extension Notification.Name {
+    static let annotatingChanged = Notification.Name("\(Identity.bundleID).annotating.changed")
+}
+
 @MainActor
 final class StackModel: ObservableObject {
     @Published var cards: [Card] = []          // index 0 is newest, drawn at the bottom
@@ -22,8 +26,11 @@ final class StackModel: ObservableObject {
     /// A card is in the annotator. The strip stands aside for it: the strip hangs to the left of
     /// the column, which is further left than the room the annotator's frame is kept out of, so
     /// the two would overlap. The selection is untouched and the strip comes back when the session
-    /// ends. Set from `send`, which is the one place the session changes.
-    @Published var annotating = false
+    /// ends. Set from `send`, which is the one place the session changes. Each change posts
+    /// `.annotatingChanged`.
+    @Published var annotating = false {
+        didSet { if annotating != oldValue { NotificationCenter.default.post(name: .annotatingChanged, object: self) } }
+    }
     @Published var notices = CardNotices()     // what each card says: copied, not copied, or where a send went
     /// The selected cards, in the order they were selected. Every action, Stitch included, takes
     /// them in this order, and a card's circle shows its place here.

@@ -422,7 +422,6 @@ struct SetupView: View {
     @ObservedObject private var settings = Settings.shared
     /// How many times the shortcut has fired on this page; each one presses the keycap again.
     @State private var fires = 0
-    @State private var held = false
     @State private var banter = SetupBanter()
     /// Neither the grants nor macOS's folder prompt announce their answers, so the window looks.
     private let poll = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
@@ -453,9 +452,9 @@ struct SetupView: View {
         .onAppear { model.pointGuide() }
         .onReceive(poll) { _ in model.look() }
         .onReceive(NotificationCenter.default.publisher(for: .hotKeyFired)) { _ in fires += 1 }
-        .onReceive(NotificationCenter.default.publisher(for: .hotKeyHeld)) { _ in heardHold() }
-        .onChange(of: model.page) { left, _ in if left == .shortcut { banter.leftPage() } }
-        .onChange(of: settings.data.recentHotkey) { fires = 0; held = false }
+        .answersHolds($banter, on: model.page, rowReady: { model.page == .shortcut && pageIsDone && model.seen.hasScreenshots },
+                      moveOn: next)
+        .onChange(of: settings.data.recentHotkey) { fires = 0; banter.shortcutChanged() }
     }
 
     @ViewBuilder private func page(_ page: SetupModel.Page) -> some View {
@@ -539,8 +538,8 @@ struct SetupView: View {
             // Ahead of `fired`: with nothing in the folder the shortcut opens nothing, so saying
             // it worked would be saying so about an empty corner.
             line("Take a screenshot with ⌘⇧4 first.", symbol: "camera", tint: .accentColor)
-        } else if held, let said = banter.line {
-            SetupBanterLine(line: said, bounce: settings.motionScale > 0 ? banter.holds : 0)
+        } else if let said = banter.line {
+            SetupBanterLine(line: said, bounce: settings.motionScale > 0 ? banter.bounce : 0)
         } else if fires > 0 {
             // The stack has just come up beside this window, so the line points at it, then asks for
             // the hold, the half of the shortcut the caption describes and people miss.
@@ -641,17 +640,6 @@ struct SetupView: View {
         case .liveInk: return true
         case .liveInkSetup: return seen.trusted && seen.screenRecording && !model.callbacks.responders.codexSignInLeft
         case .agents: return true
-        }
-    }
-
-    private var banterShows: Bool { held && model.page == .shortcut && pageIsDone && model.seen.hasScreenshots }
-
-    /// "Bye." presses Continue, unless the row has moved on to something the page still needs.
-    private func heardHold() {
-        withAnimation(Self.spring) { banter.hold(lineShows: banterShows); held = true }
-        guard banter.saysBye else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + SetupBanter.byeDwell) {
-            if banter.saysBye, banterShows { next() }
         }
     }
 

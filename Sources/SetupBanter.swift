@@ -54,27 +54,90 @@ struct SetupBanter: Equatable {
     /// How long "Bye." shows before setup moves on. A time to read it, so the motion setting leaves it alone.
     static let byeDwell: TimeInterval = 1.2
 
-    /// Where the script is: nil before the first hold.
-    private(set) var step: Int?
-    /// Every hold that reached a line, so the line's symbol bounces even when its words stay.
-    private(set) var holds = 0
+    /// Where the script is: `step` is nil before the first hold, `holds` counts the holds that
+    /// reached a line, so the symbol bounces even when the words stay, and `proven` is whether the
+    /// shortcut as it is now was held.
+    private struct Place: Equatable {
+        var step: Int?
+        var holds = 0
+        var proven = false
+    }
+    /// A hold counts at once, and shows once the editor it opened has closed (`reveal`).
+    private var counted = Place()
+    private var shown = Place()
 
-    var line: Line? { step.map { Self.script[$0] } }
-    var saysBye: Bool { step == Self.bye }
+    var line: Line? { shown.proven ? shown.step.map { Self.script[$0] } : nil }
+    var bounce: Int { shown.holds }
+    var saysBye: Bool { shown.step == Self.bye }
 
-    mutating func hold(lineShows: Bool) {
-        guard let step else {
-            self.step = 0
-            holds = 1
+    /// The first hold starts the script wherever it happens. A later one moves it on only while
+    /// `rowReady` and its line shows, and "Bye." stays until the page is left.
+    mutating func hold(rowReady: Bool) {
+        let lineShows = rowReady && line != nil
+        counted.proven = true
+        guard let step = counted.step else {
+            counted.step = 0
+            counted.holds = 1
             return
         }
         guard lineShows else { return }
-        holds += 1
-        if step != Self.bye { self.step = min(step + 1, Self.script.count - 1) }
+        counted.holds += 1
+        if step != Self.bye { counted.step = min(step + 1, Self.script.count - 1) }
+    }
+
+    mutating func reveal() { shown = counted }
+
+    mutating func shortcutChanged() {
+        counted.proven = false
+        shown.proven = false
     }
 
     mutating func leftPage() {
-        if step == Self.bye { step = Self.greeting }
+        if counted.step == Self.bye { counted.step = Self.greeting }
+        if shown.step == Self.bye { shown.step = Self.greeting }
+    }
+}
+
+extension View {
+    /// Answers each hold of the shortcut with `banter`'s next line, once the editor the hold
+    /// opened has closed, and presses Continue through `moveOn` a moment after "Bye.". `rowReady`
+    /// says whether the shortcut page shows and its status row has nothing left to ask.
+    func answersHolds(_ banter: Binding<SetupBanter>, on page: SetupModel.Page, rowReady: @escaping () -> Bool,
+                      moveOn: @escaping () -> Void) -> some View {
+        modifier(SetupBanterHolds(banter: banter, page: page, rowReady: rowReady, moveOn: moveOn))
+    }
+}
+
+private struct SetupBanterHolds: ViewModifier {
+    @Binding var banter: SetupBanter
+    let page: SetupModel.Page
+    let rowReady: () -> Bool
+    let moveOn: () -> Void
+    @State private var editorOpen = false
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .hotKeyHeld)) { _ in
+                banter.hold(rowReady: rowReady())
+                // The hold opens the editor after it posts, in the same turn.
+                DispatchQueue.main.async { if !editorOpen { reveal() } }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .annotatingChanged)) { note in
+                editorOpen = (note.object as? StackModel)?.annotating ?? false
+                if !editorOpen { reveal() }
+            }
+            .onChange(of: page) { left, _ in if left == .shortcut { banter.leftPage() } }
+    }
+
+    private func reveal() {
+        var next = banter
+        next.reveal()
+        guard next != banter else { return }
+        withAnimation(SetupView.spring) { banter = next }
+        guard banter.saysBye else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + SetupBanter.byeDwell) {
+            if banter.saysBye, rowReady() { moveOn() }
+        }
     }
 }
 
