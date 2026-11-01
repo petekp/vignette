@@ -23,10 +23,12 @@ struct CardView: View, Equatable {
     private var isOut: Bool { state.isOut }
     private var isForming: Bool { state.isForming }
     private var offscreen: Bool { state.offscreen }
+    /// The card's image is in its slot, not in the transition layer.
+    private var inSlot: Bool { !isOut && !isForming }
     /// The card itself is under the mouse. A slot whose image is in the transition layer is not:
     /// the flight is what the eye follows, so the hover state arrives with the card that lands.
-    private var showsHover: Bool { hovered && !isOut && !isForming }
-    private var showsCircle: Bool { state.offersSelection && !isOut && !isForming && (hovered || state.inSelectionMode || focused) }
+    private var showsHover: Bool { hovered && inSlot }
+    private var showsCircle: Bool { state.offersSelection && inSlot && (hovered || state.inSelectionMode || focused) }
     private var notice: CardNotices.Notice? { state.notice }
     private var showsButtons: Bool { showsHover && !state.inSelectionMode && notice == nil }
     /// The padding every corner control is given.
@@ -48,7 +50,7 @@ struct CardView: View, Equatable {
 
     var body: some View {
         ZStack {
-            if isOut || isForming {
+            if !inSlot {
                 // The card's image is in the transition layer: in the annotator, or on its way
                 // into a stitch. The slot stays reserved, and empty, so the image is never on
                 // screen twice and the card flies back to the same place.
@@ -73,7 +75,7 @@ struct CardView: View, Equatable {
                                    marks: card.marks, picture: card.image?.size, corner: ui.cardCornerRadius, restSize: card.size)
                     )
                     // The image itself never fades: a card landing from the annotator takes over
-                    // from its flight in one frame, and the hover state around it is what animates.
+                    // from its flight in one frame, and what is drawn over it is what animates.
                     .transition(.identity)
             }
 
@@ -89,18 +91,22 @@ struct CardView: View, Equatable {
             }
         }
         // After the dim, so a selected or focused card keeps its ring while the dim is up. The ring
-        // grows out of the resting border rather than switching on, and shrinks back into it.
+        // grows out of the resting border rather than switching on, and shrinks back into it. It is
+        // there, 0 wide, while the slot is empty, so a card that lands focused grows its ring too.
         .overlay {
-            if !isOut && !isForming {
-                let shape = RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous)
-                ZStack {
+            let shape = RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous)
+            ZStack {
+                if inSlot {
+                    // The flight draws this border too, so it takes over at once, as the image does.
                     shape.stroke(.white.opacity(ui.cardBorderOpacity), lineWidth: ui.cardBorderWidth)
-                    shape.stroke(ringColor, lineWidth: ringWidth)
+                        .transition(.asymmetric(insertion: .identity, removal: .opacity))
                 }
-                .animation(Anim.spring(0.22 * motion), value: ringWidth)
-                .animation(Anim.spring(0.22 * motion), value: selected)
-                .allowsHitTesting(false)
+                shape.stroke(ringColor, lineWidth: ringWidth)
             }
+            // A card leaving its slot drops its ring at once, under the flight that takes its image.
+            .animation(inSlot ? Anim.spring(0.22 * motion) : nil, value: ringWidth)
+            .animation(Anim.spring(0.22 * motion), value: selected)
+            .allowsHitTesting(false)
         }
         // Copy in the bottom-left corner, delete in the bottom-right, both as icons; Copy says its
         // name while the cursor is on it. A click anywhere else on the card draws.
@@ -121,11 +127,11 @@ struct CardView: View, Equatable {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if let agent = card.agent, !isOut, !isForming {
+            if let agent = card.agent, inSlot {
                 AgentBadge(agent: agent, size: ui.selectionCircleSize)
                     .padding(CardView.buttonPad)
                     .transition(.opacity)
-            } else if card.shot.kind == .recording, !isOut, !isForming {
+            } else if card.shot.kind == .recording, inSlot {
                 RecordingBadge(duration: card.duration, size: ui.selectionCircleSize)
                     .padding(CardView.buttonPad)
             }
@@ -157,7 +163,7 @@ struct CardView: View, Equatable {
         // What happened to the card, from the moment it lands until it has said so. One kind of
         // notice cross-fades into the next; a send keeps its overlay as its state changes.
         .overlay {
-            if let notice, !isOut && !isForming {
+            if let notice, inSlot {
                 Group {
                     switch notice {
                     case .copied(let label): CopiedOverlay(corner: ui.cardCornerRadius, label: label)
@@ -170,6 +176,12 @@ struct CardView: View, Equatable {
                 }
                 .transition(.opacity)
             }
+        }
+        // What is drawn over the card comes in as the card lands, with the hover state's reveal: the
+        // flight carries only the image and its border. A card leaving keeps whatever animation
+        // the change already has.
+        .transaction(value: inSlot) { transaction in
+            if inSlot { transaction.animation = Anim.spring(ui.hoverRevealDuration) }
         }
         .animation(Anim.spring((notice == nil ? 0.4 : 0.15) * motion), value: notice?.kind)
         .zIndex(showsHover ? 1 : 0)   // the hover scale may hang over the card below
@@ -190,7 +202,7 @@ struct CardView: View, Equatable {
 
     /// The ring a selected or focused card wears over its resting border. It is 0 wide on any other card.
     private var ringColor: Color { selected ? .accentColor : .white.opacity(0.9) }
-    private var ringWidth: CGFloat { selected || focused ? max(2, ui.cardBorderWidth) : 0 }
+    private var ringWidth: CGFloat { inSlot && (selected || focused) ? max(2, ui.cardBorderWidth) : 0 }
 
     /// Newest (bottom) card first, in and out: the cards nearest the cursor move at once, so a
     /// dismissal feels immediate even when the top of the column is still leaving. The per-card
