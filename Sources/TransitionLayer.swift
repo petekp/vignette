@@ -9,38 +9,6 @@ import SwiftUI
 /// it takes clear pixels too.
 @MainActor
 final class TransitionLayer {
-    /// The ends of the straight path a flight is on, and the shape it follows along it.
-    struct Path {
-        var from: CGPoint = .zero
-        var to: CGPoint = .zero
-        var curve = FlightCurve.straight
-    }
-
-    /// How a flight is drawn: the corner and the shadow of the thing it stands in for. A flight's
-    /// ends are a card in the stack and the annotator window, and the look travels with the frame,
-    /// so the shadow a card has when it lands is the one the flight was already casting.
-    struct Look: Equatable {
-        var corner: CGFloat
-        var shadowOpacity: Double
-        var shadowRadius: CGFloat
-        var shadowY: CGFloat        // down the screen, the way SwiftUI counts it
-        /// How much of the card's border ring and of the matte behind transparent pixels show, 0 to 1.
-        var ring: Double = 1
-        var matte: Double = 1
-
-        static func card(_ ui: UITweaks) -> Look {
-            Look(corner: ui.cardCornerRadius, shadowOpacity: ui.cardShadowOpacity,
-                 shadowRadius: ui.cardShadowRadius, shadowY: ui.cardShadowY)
-        }
-        /// The annotator window's frame view carries exactly this shadow; see `AnnotationController`.
-        static func annotator(_ ui: UITweaks) -> Look {
-            Look(corner: ui.annotationCornerRadius, shadowOpacity: 0.45, shadowRadius: 24, shadowY: 10)
-        }
-        /// A capture where it was taken: the screen's own pixels, with no corners, shadow, ring or
-        /// matte, so the flight's first frame shows nothing the screen did not.
-        static let screen = Look(corner: 0, shadowOpacity: 0, shadowRadius: 0, shadowY: 0, ring: 0, matte: 0)
-    }
-
     struct Flight: Identifiable {
         let id: UUID
         var image: NSImage
@@ -89,6 +57,12 @@ final class TransitionLayer {
     /// its release, since the window server sends the drag and the release to the window that took the press.
     private var pressedFlight: UUID?
     private var pressDown = false
+    /// On screen, clear when it carries nothing, while the editor is open. Ordered in during the
+    /// exit's first turn, the layer reached the screen up to 2 frames after the editor's change from
+    /// that turn, and the image's shadow was missing for those frames (docs/agent-title-2026-10-28.md).
+    var staysUp = false {
+        didSet { if !staysUp { orderOutIfIdle() } }
+    }
     /// Watches the button while a press is down, for a release that never arrives; see `watchRelease`.
     private var releaseWatch: Timer?
     private var screen: NSScreen = NSScreen.main ?? NSScreen.screens[0]
@@ -436,17 +410,38 @@ final class TransitionLayer {
     /// Down once nothing is drawn on it and no press on it is down: the window server sends a
     /// press's drag and release to the window that took the press.
     private func orderOutIfIdle() {
-        if model.flights.isEmpty, model.swallowRects.isEmpty, !pressDown { panel.orderOut(nil) }
+        if !staysUp, model.flights.isEmpty, model.swallowRects.isEmpty, !pressDown { panel.orderOut(nil) }
+    }
+
+    /// Orders `window`, at the layer's level, in under the layer while it stays up, so the next
+    /// flight finds the layer on top without ordering it again; at the front otherwise.
+    func orderIn(_ window: NSWindow) {
+        if staysUp, panel.isVisible { window.order(.below, relativeTo: panel.windowNumber) } else { window.orderFrontRegardless() }
+    }
+
+    /// Orders `window`, at the layer's level, in directly under the layer while the layer is on
+    /// screen, so the flights on it stay above `window`; at the front otherwise.
+    func orderBelow(_ window: NSWindow) {
+        if panel.isVisible { window.order(.below, relativeTo: panel.windowNumber) } else { window.orderFrontRegardless() }
     }
 
     private func showPanel(on screen: NSScreen) {
         self.screen = screen
-        // An empty layer is still up while a press on it is down, and a stack presented meanwhile
-        // is ordered above it; the first flight or swallow rect on it puts it back on top.
-        if !panel.isVisible || panel.frame != screen.frame || model.flights.isEmpty {
+        // An empty layer is still up while a press on it is down or the editor is open, and a
+        // stack presented meanwhile can be ordered above it; a flight or swallow rect puts it back
+        // on top.
+        if !panel.isVisible || panel.frame != screen.frame || !isFrontAtItsLevel {
             panel.setFrame(screen.frame, display: false)
             panel.orderFrontRegardless()
         }
+    }
+
+    /// No other window of this app at the layer's level is ordered above it.
+    private var isFrontAtItsLevel: Bool {
+        let front = (NSWindow.windowNumbers(options: []) ?? []).lazy
+            .compactMap { NSApp.window(withWindowNumber: $0.intValue) }
+            .first { $0.level == self.panel.level }
+        return front === panel
     }
 
     private func local(_ rect: NSRect) -> CGRect {

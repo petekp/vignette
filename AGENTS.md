@@ -246,7 +246,8 @@ The steps below have the details.
    `notCopied`, the reason a copy failed or null; `selected`,
    `focused`, `hovered`, `queue`, the files waiting for the annotator, `visible`, `key`, `isStack`,
    `scroll`, `viewport`, `safeBottom`, the room the Dock keeps under the column, panel,
-   `widthScale`, how wide the stack is drawn, and `strip`, the selection strip's frame or null),
+   `panelOnScreen`, `widthScale`, how wide the stack is drawn, and `strip`, the selection strip's
+   frame or null),
    `transition` (phase), `annotator` (`current`, `frame`, `toolbar`, `windowVisible`, `key`, `tool`,
    and the zoom's own keys, which the zoom bullet below names), `editor` (`open`, `tool`, `marks`
    with each mark's `type`, `frame` and `agent`, `selection` as indexes into `marks`, `typing`,
@@ -827,9 +828,9 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   The layer orders out once it has no flights, no swallow rects and no press down
   (`orderOutIfIdle`), because the window server sends a press's drag and release to the window that
   took the press. `watchRelease` ends a press whose release never arrives, from the button's own
-  state, and logs `[flight] release missed`. A stack presented while the layer is up with no flights
-  is ordered above it at the same level, so the first flight or swallow rect on a layer with no
-  flights brings it back to the front (`showPanel`). A pointer over a flight gives the stack a hover
+  state, and logs `[flight] release missed`. The layer stays up while the editor is open, and a lone
+  card's panel goes on screen under it once the flight home covers the slot
+  (`docs/exit-panel-2026-11-01.md`). A pointer over a flight gives the stack a hover
   exit, so a card landing from the editor takes its hover from where the pointer is
   (`ThumbnailController.hover(landing:)`). `docs/flight-press-2026-09-23.md` has the measurements
   and the two limits that remain: the window server's lag of 6 to about 30 ms, and a press at
