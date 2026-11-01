@@ -263,7 +263,7 @@ final class ThumbnailController: NSObject {
             "screen": ["name": s.localizedName, "frame": StateReport.topLeft(s.frame, primaryHeight: h),
                        "visibleFrame": StateReport.topLeft(s.visibleFrame, primaryHeight: h), "scale": s.backingScaleFactor, "pinned": pinnedScreen != nil],
             "backdrop": keys.backdropState,
-            "dim": ["visible": dim.isVisible, "alpha": dim.alphaValue],
+            "dim": dim.stateJSON,
         ]
     }
 
