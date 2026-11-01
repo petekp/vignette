@@ -25,6 +25,9 @@ struct CardView: View, Equatable {
     private var offscreen: Bool { state.offscreen }
     /// The card's image is in its slot, not in the transition layer.
     private var inSlot: Bool { !isOut && !isForming }
+    /// What is drawn over the card comes in on this as the card lands. It is the spring the notice
+    /// leaves on and its check grows on, so the scrim, the check and the rest arrive together.
+    private var landing: Animation { Anim.spring(0.4 * motion) }
     /// The card itself is under the mouse. A slot whose image is in the transition layer is not:
     /// the flight is what the eye follows, so the hover state arrives with the card that lands.
     private var showsHover: Bool { hovered && inSlot }
@@ -103,6 +106,7 @@ struct CardView: View, Equatable {
                 }
                 shape.stroke(ringColor, lineWidth: ringWidth)
             }
+            .landing(inSlot, landing)
             // A card leaving its slot drops its ring at once, under the flight that takes its image.
             .animation(inSlot ? Anim.spring(0.22 * motion) : nil, value: ringWidth)
             .animation(Anim.spring(0.22 * motion), value: selected)
@@ -137,7 +141,8 @@ struct CardView: View, Equatable {
             }
         }
         .overlay(alignment: .topLeading) {
-            // Its own fade, so a circle that comes with the keyboard's focus fades in as a hovered one does.
+            // Its own fade, so a circle that comes with the keyboard's focus fades in as a hovered one
+            // does. One that comes with a landing card takes the landing's.
             ZStack(alignment: .topLeading) { if showsCircle {
                 SelectionCircle(number: state.selectionNumber, size: ui.selectionCircleSize)
                     .padding(CardView.hitSlop(.topLeading))
@@ -153,6 +158,7 @@ struct CardView: View, Equatable {
                     .padding(CardView.buttonPad)
                     .transition(.opacity)
             } }
+            .landing(inSlot, landing)
             .animation(Anim.spring(0.2 * motion), value: showsCircle)
         }
         .frame(width: size.width, height: size.height)
@@ -177,12 +183,9 @@ struct CardView: View, Equatable {
                 .transition(.opacity)
             }
         }
-        // What is drawn over the card comes in as the card lands, with the hover state's reveal: the
-        // flight carries only the image and its border. A card leaving keeps whatever animation
-        // the change already has.
-        .transaction(value: inSlot) { transaction in
-            if inSlot { transaction.animation = Anim.spring(ui.hoverRevealDuration) }
-        }
+        // What is drawn over the card comes in as the card lands: the flight carries only the image
+        // and its border.
+        .landing(inSlot, landing)
         .animation(Anim.spring((notice == nil ? 0.4 : 0.15) * motion), value: notice?.kind)
         .zIndex(showsHover ? 1 : 0)   // the hover scale may hang over the card below
         .scaleEffect(pressed ? ui.pressScale : (showsHover ? ui.hoverScale : 1))
@@ -234,6 +237,14 @@ struct CardView: View, Equatable {
     /// Dragging a selected card carries the whole selection, in the order it was selected.
     private func dragCards() -> [Card] {
         model.isSelected(card.id) ? model.selectedCards() : [card]
+    }
+}
+
+private extension View {
+    /// `animation` for what changes as a card takes its slot back. Inside a view's own animations,
+    /// it wins over them at that moment. A card leaving keeps the animation the change already has.
+    func landing(_ inSlot: Bool, _ animation: Animation) -> some View {
+        transaction(value: inSlot) { if inSlot { $0.animation = animation } }
     }
 }
 
