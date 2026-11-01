@@ -122,6 +122,51 @@ Accessibility's Allow…, and Then this beside Screen Recording's Allow… and S
 | The live ink page, under the line about drawing (`SetupInkCopy.askLine`) | Then ask Claude about it, or send it to a Claude Code or Codex session. On that Mac: Then ask Codex about it, … |
 | Screen Recording's reason on the permissions page (`SetupInkCopy.screenRecordingReason`) | So Claude can see the window you drew on. On that Mac: So Codex can see the window you drew on. |
 
+### Setup's shortcut page, after the hold (`SetupBanter`)
+
+These lines break the rules above on purpose. Pete wrote them on 2026-11-01, and they stay word for
+word. The first hold of the shortcut says line 1, and each later hold says the next line. A hold
+moves the script on only while its line shows on the shortcut page.
+
+| Hold | Words |
+| --- | --- |
+| 1 | You're a quick learner! Think you got it down? |
+| 2 | Amazing, you did it again! |
+| 3 | Sheesh. You're an expert now. |
+| 4 | You're THE expert, now. |
+| 5 | You've done this before, haven't you? |
+| 6 | The ease with which you do it... marvelous. |
+| 7 | Must feel nice to be so good at something. |
+| 8 | Very good. Let's move on shall we? |
+| 9 | Great. |
+| 10 | Nice. |
+| 11 | Hmm. |
+| 12 | I see what you're doing. |
+| 13 | Okay, ha ha. Let's continue on, yeah? |
+| 14 | Yes, you did it again. |
+| 15 | You're trying to get a rise out of me aren't you. |
+| 16 | Let's get a rise out of the ol' setup menu, very funny. |
+| 17 | Picking on a setup menu is an interesting choice. |
+| 18 | ... |
+| 19 | ..... |
+| 20 | What do you want from me? |
+| 21 | Bro. |
+| 22 | C'mon bro. |
+| 23 | BRUH. |
+| 24 | Okay whatever. I'll just wait here. |
+| 25 | ... |
+| 26 | ... |
+| 27 | ... |
+| 28 | Ugh. |
+| 29 | Fine, that's it. |
+| 30 | One more time and I'm pushing the button myself. |
+| 31 | Bye. Then setup goes on to the next page, as Continue would. |
+| Back on the shortcut page | Hi! Welcome to the setup... oh, it's you. |
+| 32 | Dude. No. |
+| 33 | F%@#! |
+| 34 | I'm out. ✌️ |
+| 35 and after | *The setup assistant has peaced out.* In muted italics, and it stays. |
+
 ### Live ink
 
 Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
