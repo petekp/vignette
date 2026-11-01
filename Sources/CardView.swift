@@ -28,6 +28,9 @@ struct CardView: View, Equatable {
     /// What is drawn over the card comes in on this as the card lands. It is the spring the notice
     /// leaves on and its check grows on, so the scrim, the check and the rest arrive together.
     private var landing: Animation { Anim.spring(0.4 * motion) }
+    /// What is drawn over the card goes on this as the card leaves: the hover state's reveal, which
+    /// it already left on when the pointer was on the card.
+    private var leaving: Animation { Anim.spring(ui.hoverRevealDuration) }
     /// The card itself is under the mouse. A slot whose image is in the transition layer is not:
     /// the flight is what the eye follows, so the hover state arrives with the card that lands.
     private var showsHover: Bool { hovered && inSlot }
@@ -107,9 +110,9 @@ struct CardView: View, Equatable {
                 }
                 shape.stroke(ringColor, lineWidth: ringWidth)
             }
-            .landing(inSlot, landing)
-            // A card leaving its slot drops its ring at once, under the flight that takes its image.
-            .animation(inSlot ? Anim.spring(0.22 * motion) : nil, value: ringWidth)
+            // A card leaving its slot shrinks its ring away with the badge and the notice.
+            .landing(inSlot, landing, leaving: leaving)
+            .animation(Anim.spring(0.22 * motion), value: ringWidth)
             .animation(Anim.spring(0.22 * motion), value: selected)
             .allowsHitTesting(false)
         }
@@ -185,9 +188,8 @@ struct CardView: View, Equatable {
             }
         }
         // What is drawn over the card comes in as the card lands and goes as it leaves: the flight
-        // carries only the image and its border. It leaves on the hover state's reveal, as it does
-        // when the pointer is on the card.
-        .landing(inSlot, landing, leaving: Anim.spring(ui.hoverRevealDuration))
+        // carries only the image and its border.
+        .landing(inSlot, landing, leaving: leaving)
         .animation(Anim.spring((notice == nil ? 0.4 : 0.15) * motion), value: notice?.kind)
         .zIndex(showsHover ? 1 : 0)   // the hover scale may hang over the card below
         .scaleEffect(pressed ? ui.pressScale : (showsHover ? ui.hoverScale : 1))
