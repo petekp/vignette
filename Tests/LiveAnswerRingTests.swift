@@ -1,5 +1,4 @@
 import XCTest
-@testable import Vignette
 
 final class LiveAnswerRingTests: XCTestCase {
     func testAPointersRingKeepsOffTheWordsBesideItsButtonAndItsLabelOffTheLinesBelow() throws {
