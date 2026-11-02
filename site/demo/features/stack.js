@@ -12,8 +12,7 @@ const SCALE = CW / UI.cardMaxWidth;
 const FADE = 19 * SCALE;
 // How far Stitch pushes in on its new card.
 const ZOOM = 4;
-// Oldest first. The newest three are one size, so Stitch makes them one column of whole pages. The
-// stays card answers Drag's question: the stay still waiting for its host.
+// Oldest first. The stays card answers Drag's question: the stay still waiting for its host.
 const SHOTS = [
   [IMAGES.chat, { x: 0, y: 200, w: 1040, h: 650 }, []],
   [IMAGES.itin, whole(IMAGES.itin), PERSON_MARKS.slice(0, 2)],
@@ -23,7 +22,15 @@ const SHOTS = [
     { type: "note", who: "person", x: 40, y: 972, text: "this one" },
   ]],
 ];
-const at = (node, x, y, s = 1) => { node.style.transform = `translate(${x}px, ${y}px) scale(${s})`; };
+// What Stitch joins: a whole page and two region captures, about the same day. Stitch lays them out
+// in one column whose shape a card shows whole, so every badge shows, and each badge sits on plain
+// page at its piece's top-left.
+const PIECES = [
+  [IMAGES.variants, whole(IMAGES.variants), []],
+  [IMAGES.chat, { x: 0, y: 250, w: 1040, h: 550 }, []],
+  [IMAGES.stays, { x: 0, y: 352, w: 1808, h: 600 }, []],
+];
+const at =(node, x, y, s = 1) => { node.style.transform = `translate(${x}px, ${y}px) scale(${s})`; };
 async function tap(key, hold = 0.09) { key.classList.add("down"); await wait(hold); key.classList.remove("down"); }
 
 class Column {
@@ -125,13 +132,13 @@ export class Stitch extends Column {
   static fit = wideFit(318);
   build({ W, H }) {
     const s = this.scene(W, H);
-    const picked = SHOTS.slice(1);
+    const picked = PIECES;
     const plan = stitchLayout(picked.map(([, view]) => view));
     const size = cardSize(plan);
     this.slot = { w: size.w * SCALE, h: size.h * SCALE };
     Object.assign(this.slot, { x: this.R - this.slot.w, y: this.bottom - this.slot.h });
     // The cards above the three, which move down to the new card.
-    this.kept = this.column([[IMAGES.frame, whole(IMAGES.frame), []], SHOTS[0]], this.bottom - 3 * STEP);
+    this.kept = this.column([[IMAGES.frame, whole(IMAGES.frame), []], SHOTS[1]], this.bottom - 3 * STEP);
     this.drop = this.slot.y - UI.cardSpacing - (this.bottom - 3 * STEP);
     this.result = el("div", "cardx");
     place(this.result, this.slot);
@@ -225,7 +232,7 @@ export class Stitch extends Column {
   }
   async play() {
     this.reset();
-    await wait(0.35);
+    await wait(0.15);
     this.stitchRow.classList.add("lit");
     await tap(this.stitchRow, 0.12);
     this.pick(false, true);
