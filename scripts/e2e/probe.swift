@@ -7,6 +7,11 @@
 //   probe pixels <png> x,y …           prints each point's colour as #rrggbb in sRGB, one per line
 //   probe image <file> <w> <h>         writes a test image: bands of grey with a grid, in sRGB, as a
 //                                      JPEG when the name ends in .jpg or .jpeg and a PNG otherwise
+//   probe window <x> <y> <w> <h> <line> …
+//                                      shows a window of black text on white, one line for each
+//                                      argument, at x,y,w,h in global top-left points as [state]
+//                                      gives frames, in front, until it is stopped; prints each
+//                                      line's frame in the same points, its window number, then "up"
 import AppKit
 
 let args = CommandLine.arguments
@@ -107,6 +112,46 @@ func image(_ path: String, _ w: Int, _ h: Int) {
     guard CGImageDestinationFinalize(out) else { fail("cannot write \(path)") }
 }
 
+func window(_ frame: [Double], _ lines: [String]) -> Never {
+    guard frame.count == 4, let primary = NSScreen.screens.first?.frame.height else { fail("window needs x y w h") }
+    let app = NSApplication.shared
+    // A regular app, frontmost: the app live ink gives the keys back to, so it stays in front.
+    app.setActivationPolicy(.regular)
+    let window = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+    window.title = "E2E page"
+    window.appearance = NSAppearance(named: .aqua)
+    window.backgroundColor = .white
+    window.setFrame(NSRect(x: frame[0], y: primary - frame[1] - frame[3], width: frame[2], height: frame[3]), display: false)
+    let labels = lines.map { line -> NSTextField in
+        let label = NSTextField(labelWithString: line)
+        label.font = .systemFont(ofSize: 28)
+        label.textColor = .black
+        return label
+    }
+    let stack = NSStackView(views: labels)
+    stack.orientation = .vertical
+    stack.alignment = .leading
+    stack.spacing = 28
+    stack.edgeInsets = NSEdgeInsets(top: 30, left: 36, bottom: 30, right: 36)
+    stack.translatesAutoresizingMaskIntoConstraints = false
+    let content = window.contentView!
+    content.addSubview(stack)
+    NSLayoutConstraint.activate([stack.topAnchor.constraint(equalTo: content.topAnchor),
+                                 stack.leadingAnchor.constraint(equalTo: content.leadingAnchor)])
+    window.makeKeyAndOrderFront(nil)
+    app.activate(ignoringOtherApps: true)
+    content.layoutSubtreeIfNeeded()
+    for label in labels {
+        let r = window.convertToScreen(label.convert(label.bounds, to: nil))
+        print("line \(Int(r.minX)) \(Int(primary - r.maxY)) \(Int(r.width)) \(Int(r.height))")
+    }
+    print("window \(window.windowNumber)")
+    print("up")
+    fflush(stdout)
+    app.run()
+    exit(0)
+}
+
 guard args.count >= 2 else { fail("usage: probe pasteboard save|restore|types … | pixels <png> x,y … | image <png> w h") }
 switch (args[1], args.count) {
 case ("pasteboard", 4) where args[2] == "save": do { try savePasteboard(to: URL(fileURLWithPath: args[3])) } catch { fail("\(error)") }
@@ -120,5 +165,6 @@ case ("pasteboard", 5) where args[2] == "data":
     do { try data.write(to: URL(fileURLWithPath: args[4])) } catch { fail("\(error)") }
 case ("pixels", _) where args.count >= 4: pixels(args[2], Array(args[3...]))
 case ("image", 5): image(args[2], Int(args[3]) ?? 0, Int(args[4]) ?? 0)
+case ("window", _) where args.count >= 7: window(args[2...5].compactMap(Double.init), Array(args[6...]))
 default: fail("usage: probe pasteboard save|restore|types … | pixels <png> x,y … | image <png> w h")
 }

@@ -17,13 +17,14 @@ to the scenario's. A test launch uses no codex and no herdr unless `VIGNETTE_COD
 `VIGNETTE_HERDR` names one, and every agent session is a fake.
 A Claude Code session is an inbox folder held by a `sleep` process, which is all Send looks for. A
 Codex thread is listed by a fake codex (`fake_codex.py`) that `VIGNETTE_CODEX` names.
+A scenario whose `copy` is 'fresh' runs on a second copy, `build.sh fresh`, granted nothing and
+reset with tccutil before it, for the paths without a permission.
 
 Before any key or click, a scenario reads the test copy's state in the same step and stops unless
 the editor or the stack is up and key. docs/e2e-suite-plan-2026-09-29.md has the design.
 """
 import argparse
 import datetime
-import html
 import json
 import os
 import plistlib
@@ -36,6 +37,8 @@ import sys
 import time
 import urllib.parse
 import uuid
+
+from report import Report
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -61,11 +64,14 @@ def project_identity():
     return name, bundle, scheme
 
 
-def test_copy():
+def test_copy(kind=''):
+    """The copy `build.sh <kind>` builds: '' for the one granted Accessibility and Screen Recording
+    by hand, 'fresh' for the one granted nothing."""
     name, bundle, scheme = project_identity()
-    app_name = f'{name} E2E'
-    path = os.path.join(OUT, 'dd-e2e', 'Build', 'Products', 'Release', f'{app_name}.app')
-    return {'name': app_name, 'bundle': f'{bundle}.e2e', 'scheme': f'{scheme}-e2e', 'path': path,
+    suffix, label = ('e2e-fresh', 'E2E Fresh') if kind == 'fresh' else ('e2e', 'E2E')
+    app_name = f'{name} {label}'
+    path = os.path.join(OUT, f'dd-{suffix}', 'Build', 'Products', 'Release', f'{app_name}.app')
+    return {'kind': kind, 'name': app_name, 'bundle': f'{bundle}.{suffix}', 'scheme': f'{scheme}-{suffix}', 'path': path,
             'executable': os.path.join(path, 'Contents', 'MacOS', app_name), 'relaunchHome': relaunch_home(path)}
 
 
@@ -448,67 +454,6 @@ class App:
         return path
 
 
-# ---- The report --------------------------------------------------------------------------------
-
-
-class Report:
-    def __init__(self, folder):
-        self.folder = folder
-        self.scenarios = []
-        self.current = None
-
-    def begin(self, name, doc):
-        self.current = {'name': name, 'doc': doc, 'steps': [], 'status': 'running', 'images': []}
-        self.scenarios.append(self.current)
-        print(f'{name}', flush=True)
-
-    def step(self, name, status='pass', detail=''):
-        self.current['steps'].append({'name': name, 'status': status, 'detail': detail})
-        mark = {'pass': 'ok  ', 'fail': 'FAIL', 'skip': 'skip', 'note': 'note'}[status]
-        print(f'  {mark} {name}' + (f': {detail}' if detail else ''), flush=True)
-
-    def image(self, path):
-        self.current['images'].append(os.path.relpath(path, self.folder))
-
-    def end(self, status, log=''):
-        self.current['status'] = status
-        self.current['log'] = log
-
-    def write(self):
-        with open(os.path.join(self.folder, 'report.json'), 'w') as f:
-            json.dump(self.scenarios, f, indent=2)
-        rows = []
-        for s in self.scenarios:
-            steps = ''.join(f"<li class='{st['status']}'><b>{html.escape(st['name'])}</b>"
-                            f"{(' · ' + html.escape(st['detail'])) if st['detail'] else ''}</li>" for st in s['steps'])
-            images = ''.join(f"<img src='{html.escape(i)}' alt=''>" for i in s['images'])
-            log = f"<details><summary>Log</summary><pre>{html.escape(s.get('log', ''))}</pre></details>" if s.get('log') else ''
-            rows.append(f"<section class='{s['status']}'><h2>{html.escape(s['name'])} <span>{s['status']}</span></h2>"
-                        f"<p>{html.escape(s['doc'])}</p><ul>{steps}</ul>{images}{log}</section>")
-        passed = sum(s['status'] == 'pass' for s in self.scenarios)
-        page = f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>Vignette E2E</title>
-<style>
-:root {{ --bg: #fff; --fg: #1a1a1a; --muted: #666; --line: #ddd; --pass: #2b8a3e; --fail: #e03131; --skip: #868e96; }}
-@media (prefers-color-scheme: dark) {{ :root {{ --bg: #161616; --fg: #eee; --muted: #999; --line: #333; --pass: #51cf66; --fail: #ff6b6b; }} }}
-body {{ background: var(--bg); color: var(--fg); font: 14px/1.5 -apple-system, system-ui, sans-serif; margin: 0 auto; max-width: 900px; padding: 16px; }}
-section {{ border-top: 1px solid var(--line); padding: 8px 0 16px; }}
-h2 span {{ font-size: 13px; text-transform: uppercase; margin-left: 8px; }}
-section.pass h2 span, li.pass b {{ color: var(--pass); }} section.fail h2 span, li.fail b {{ color: var(--fail); }}
-section.skip h2 span, li.skip b {{ color: var(--skip); }}
-p {{ color: var(--muted); margin: 0 0 8px; }} ul {{ padding-left: 18px; margin: 0 0 8px; }}
-img {{ max-width: 100%; border: 1px solid var(--line); margin: 4px 0; }}
-pre {{ white-space: pre-wrap; font-size: 11px; overflow-wrap: anywhere; }}
-</style>
-<h1>Vignette E2E · {passed} of {len(self.scenarios)} passed</h1>
-<p>{html.escape(os.path.basename(self.folder))}</p>
-{''.join(rows)}"""
-        path = os.path.join(self.folder, 'report.html')
-        with open(path, 'w') as f:
-            f.write(page)
-        return path
-
-
 # ---- Running ---------------------------------------------------------------------------------
 
 
@@ -554,34 +499,42 @@ def restore_pasteboard():
     shutil.rmtree(SAVED_PASTEBOARD)
 
 
-def run(names, with_input, build):
+def all_scenarios():
+    import live_ink
     import scenarios
-    chosen = [s for s in scenarios.ALL if not names or s.__name__ in names]
-    unknown = set(names) - {s.__name__ for s in scenarios.ALL}
+    return scenarios.ALL + live_ink.ALL
+
+
+def run(names, with_input, build):
+    everything = all_scenarios()
+    chosen = [s for s in everything if not names or s.__name__ in names]
+    unknown = set(names) - {s.__name__ for s in everything}
     if unknown:
         sys.exit(f'no scenario named {", ".join(sorted(unknown))}; see `e2e.py list`')
     build_probe()
     if with_input:
         # Compiling takes seconds, longer than a lone thumbnail stays, so it is done before any scenario.
         subprocess.run([INPUT, 'build'], check=True)
-    if build:
-        result = subprocess.run([os.path.join(HERE, 'build.sh')], capture_output=True, text=True)
-        if result.returncode != 0:
-            sys.exit(result.stderr.strip() or 'build failed')
-    copy = test_copy()
-    if not os.path.exists(copy['executable']):
-        sys.exit('no test copy; run without --no-build')
-    if not copy['relaunchHome']:
-        sys.exit('the test copy names no home for a launch with no environment; run without --no-build')
-    for pid in running_pids(copy['executable']):
-        sys.exit(f'a test copy is already running (pid {pid})')
-    # A new build's first run pays macOS's check of it, or is killed by it, so no scenario's launch does.
-    tries, seconds = first_run(copy)
-    line = f'test copy ran once before the scenarios in {seconds * 1000:.0f} ms'
-    if tries > 1:
-        killed = 'try 1' if tries == 2 else f'tries 1 to {tries - 1}'
-        line += f', on try {tries}; macOS killed {killed} (SIGKILL: Gatekeeper refused it)'
-    print(line, flush=True)
+    # A scenario's `copy` names the copy it runs on (`test_copy`); only the copies chosen ones use are built.
+    copies = {kind: test_copy(kind) for kind in sorted({getattr(s, 'copy', '') for s in chosen})}
+    for kind, copy in copies.items():
+        if build:
+            result = subprocess.run([os.path.join(HERE, 'build.sh'), *([kind] if kind else [])], capture_output=True, text=True)
+            if result.returncode != 0:
+                sys.exit(result.stderr.strip() or 'build failed')
+        if not os.path.exists(copy['executable']):
+            sys.exit(f"no {copy['name']}; run without --no-build")
+        if not copy['relaunchHome']:
+            sys.exit(f"{copy['name']} names no home for a launch with no environment; run without --no-build")
+        for pid in running_pids(copy['executable']):
+            sys.exit(f"{copy['name']} is already running (pid {pid})")
+        # A new build's first run pays macOS's check of it, or is killed by it, so no scenario's launch does.
+        tries, seconds = first_run(copy)
+        line = f"{copy['name']} ran once before the scenarios in {seconds * 1000:.0f} ms"
+        if tries > 1:
+            killed = 'try 1' if tries == 2 else f'tries 1 to {tries - 1}'
+            line += f', on try {tries}; macOS killed {killed} (SIGKILL: Gatekeeper refused it)'
+        print(line, flush=True)
 
     folder = os.path.join(OUT, 'runs', datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S'))
     os.makedirs(folder)
@@ -598,9 +551,12 @@ def run(names, with_input, build):
                 report.step('posts keys or clicks; run with --input', 'skip')
                 report.end('skip')
                 continue
-            app = App(copy, os.path.join(folder, scenario.__name__), report)
+            app = App(copies[getattr(scenario, 'copy', '')], os.path.join(folder, scenario.__name__), report)
             try:
                 app.reset_defaults()
+                if app.copy['kind'] == 'fresh':
+                    # Whatever was granted to it by hand since the last run.
+                    subprocess.run(['tccutil', 'reset', 'All', app.copy['bundle']], capture_output=True)
                 scenario(app)
                 report.end('pass', app.log_since(0))
             except Failed as error:
@@ -638,8 +594,7 @@ def main():
     sub.add_parser('restore')
     args = parser.parse_args()
     if args.cmd == 'list':
-        import scenarios
-        for s in scenarios.ALL:
+        for s in all_scenarios():
             first = (s.__doc__ or '').strip().split('\n')[0]
             print(f"{s.__name__:<18} {'input ' if getattr(s, 'needs_input', False) else '      '}{first}")
     elif args.cmd == 'restore':
