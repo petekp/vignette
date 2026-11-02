@@ -1,7 +1,7 @@
 import XCTest
 
 final class AgentConnectionTests: XCTestCase {
-    private let session = "e011fff1-c791-4934-9e61-9307d840a5eb"
+    let session = "e011fff1-c791-4934-9e61-9307d840a5eb"
 
     /// The same panes as `herdr pane list` reports them, which is what the listing reads: every
     /// pane, agent or not, so it says where the focus is even when that pane runs no agent. Here a
@@ -23,7 +23,7 @@ final class AgentConnectionTests: XCTestCase {
 
     /// A connection over inboxes in a temporary folder. Every process id in `running` is taken to
     /// be alive.
-    private func claude(inboxes root: URL, running: Set<Int32> = [101, 102], now: Date = Date()) -> ClaudeCodeConnection {
+    func claude(inboxes root: URL, running: Set<Int32> = [101, 102], now: Date = Date()) -> ClaudeCodeConnection {
         var connection = ClaudeCodeConnection()
         connection.inboxes = root
         connection.transcripts = URL(fileURLWithPath: "/nonexistent/projects")
@@ -34,7 +34,7 @@ final class AgentConnectionTests: XCTestCase {
 
     /// An inbox as the plugin's scripts leave it.
     @discardableResult
-    private func inbox(_ root: URL, pid: Int32, session: String?, cwd: String = "/Users/p/Code/vignette",
+    func inbox(_ root: URL, pid: Int32, session: String?, cwd: String = "/Users/p/Code/vignette",
                        alive: Date? = Date(), past: [String] = [], transcript: URL? = nil) throws -> URL {
         let folder = root.appendingPathComponent("\(pid)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -50,7 +50,7 @@ final class AgentConnectionTests: XCTestCase {
         return folder
     }
 
-    private func temporaryFolder() -> URL {
+    func temporaryFolder() -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("inboxes-\(UUID().uuidString)")
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         return url

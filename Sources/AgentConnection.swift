@@ -236,62 +236,13 @@ struct ClaudeCodeConnection: AgentConnection {
     static let notStarted = "Vignette couldn't open a herdr tab for Claude Code. The log has details."
     static let notUpInTime = "Claude Code didn't open in time. You can send again once it's running."
 
-    /// One inbox, as the plugin's scripts wrote it.
-    struct Inbox: Equatable {
-        let folder: URL
-        let pid: Int32
-        /// The session the process runs now.
-        var session: String?
-        /// The folder Claude Code runs in, which is the session's project.
-        var cwd: String?
-        /// The session's transcript, from the last hook that ran.
-        var transcript: String?
-        /// The sessions the process ran before this one, which `/clear` and `/resume` leave.
-        var past: [String] = []
-        /// When the monitor last said it was running.
-        var alive: Date?
-        /// When the `session` file was created and last written: when the session started in this
-        /// process, and a time to order it by when its transcript has no message yet.
-        var started: Date?
-        var written: Date?
-    }
-
-    /// Every inbox under `root`. Nothing is read beyond the few short files in each.
-    static func inboxes(in root: URL) -> [Inbox] {
-        folders(in: root).compactMap(inbox(at:))
-    }
-
-    /// The folders under `root`, each an inbox when it is named by a process id.
-    static func folders(in root: URL) -> [URL] {
-        (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
-    }
-
-    /// The inbox in `folder`, or nil when the folder is not named by a process id. A folder that has
-    /// gone reads as an inbox with nothing in it.
-    static func inbox(at folder: URL) -> Inbox? {
-        guard let pid = Int32(folder.lastPathComponent), pid > 0 else { return nil }
-        func text(_ name: String) -> String {
-            (try? String(contentsOf: folder.appendingPathComponent(name), encoding: .utf8)) ?? ""
-        }
-        func line(_ name: String) -> String? {
-            let line = text(name).trimmingCharacters(in: .whitespacesAndNewlines)
-            return line.isEmpty ? nil : line
-        }
-        let alive = (try? FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent("alive").path))?[.modificationDate] as? Date
-        let session = try? FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent("session").path)
-        return Inbox(folder: folder, pid: pid, session: line("session"), cwd: line("cwd"), transcript: line("transcript"),
-                     past: text("past").split(whereSeparator: \.isNewline).map(String.init), alive: alive,
-                     started: session?[.creationDate] as? Date, written: session?[.modificationDate] as? Date)
-    }
-
-    /// From the inbox the session was listed from: `waiting` while a request is still in it, since
-    /// the monitor hands requests over only between turns; otherwise the `turn` file the plugin's
-    /// hooks write, `busy` from a prompt to the end of the turn and `idle` after it. Only that one
-    /// folder is read, and it must still be live and hold this exact session, as `submit` checks;
-    /// a folder that has gone or holds another session reads as no turn. It reads files, so it
-    /// never runs on the main thread.
+    /// From the inbox the session was listed from, or for a session Vignette started, the live one
+    /// holding it: `waiting` while a request is still in it, since the monitor hands requests over
+    /// only between turns; otherwise the `turn` file the plugin's hooks write, `busy` from a prompt to
+    /// the end of the turn and `idle` after it. It reads files, so it never runs on the main thread.
     func turn(of destination: AgentDestination) -> SessionTurn? {
-        listedInbox(of: destination).flatMap(Self.turn(of:))
+        guard case .claudeSession(let session) = destination.address else { return nil }
+        return (destination.inbox == nil ? liveInbox(holding: session) : listedInbox(of: destination)).flatMap(Self.turn(of:))
     }
 
     /// The inbox `destination` was listed from, while it is live and still holds that session.

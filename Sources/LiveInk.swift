@@ -44,10 +44,11 @@ final class LiveInk {
     /// The working sessions Send can reach, newest first, as the candidates found so far: once from
     /// the kept lists, then again as each client's fresh answer arrives.
     var listSessions: ((@escaping (DestinationChoice.Candidates) -> Void) -> Void)?
-    /// Sends a note to a session through today's Send, as the card it becomes, which calls the session
-    /// `title`, and answers on the main thread with the request's id, or why it was refused.
+    /// Sends a note to a session through Send, as the card it becomes, which calls the session `title`,
+    /// and answers on the main thread with the request and the session it reached, or why it was refused.
     var sendNote: ((NoteCard, AgentDestination, _ title: String, _ message: String,
-                    @escaping (Result<String, ScreenshotRequests.Refusal>) -> Void) -> Void)?
+                    @escaping (Result<SentNote, ScreenshotRequests.Refusal>) -> Void) -> Void)?
+    typealias SentNote = (request: String, session: AgentDestination)
     /// Withdraws a note sent to a session that is still in its grace (Don't send), by its request id.
     var unsendNote: ((String) -> Void)?
     /// The × that dismisses an answer, shown while the pointer is over its note, and the ask it ends.
@@ -87,7 +88,7 @@ final class LiveInk {
     /// The diagonal of the screen the stroke under way began on, which sets how much line it keeps.
     private var strokeScreenDiagonal: CGFloat?
     /// When each of the person's strokes was drawn, so a spoken note can say which "this" is which.
-    private var strokeTimes: [Mark.ID: (began: Date, ended: Date)] = [:]
+    var strokeTimes: [Mark.ID: (began: Date, ended: Date)] = [:]
     /// Each note asked in, by its ask, on screen until the conversation has taken its place, or until
     /// it fades with nothing to take it.
     private var handing: [LiveAsks.Ask.ID: LiveNotePopover] = [:]
@@ -962,8 +963,10 @@ final class LiveInk {
         sendNote(card, session, title, message) { [weak self] result in
             guard let self else { return }
             switch result {
-            case .success(let request):
+            case .success(let (request, reached)):
                 Log.write("[live-ink] sent to a session request=\(request) marks=\(card.marks.count)")
+                // A row that starts a session is remembered as the session it started, so Return on the next note does not start another.
+                if self.lastTarget == .session(session) { self.lastTarget = .session(reached) }
                 let effects = self.asks.reduce(.arrived(.sentToSession(ink: Set(person.map(\.id))), for: id))
                 if effects == [.withdraw] {
                     Log.write("[live-ink] note withdrawn request=\(request)")
@@ -979,22 +982,6 @@ final class LiveInk {
                 self.failed(LiveResponder.Failure(reason: "Not sent. " + refusal.reason, detail: "send refused"), for: id)
             }
         }
-    }
-
-    /// The spoken words with the numbers of the strokes drawn while they were said put in where each
-    /// was drawn, or nil when the note is not as it was said or no stroke was drawn while speaking.
-    private func numberedNote(_ spoken: (words: [SpokenWord], began: Date)?, packet: LivePacket) -> String? {
-        guard let spoken else { return nil }
-        let strokes = packet.numbers.compactMap { id, number -> SpokenNote.Stroke? in
-            guard let times = strokeTimes[id] else { return nil }
-            let stroke = SpokenNote.Stroke(number: number, start: times.began.timeIntervalSince(spoken.began),
-                                           end: times.ended.timeIntervalSince(spoken.began))
-            // A stroke that ended before listening began belongs to an earlier note.
-            return stroke.end >= 0 ? stroke : nil
-        }
-        guard !strokes.isEmpty else { return nil }
-        Log.write("[speech] numbered strokes=\(strokes.count)")
-        return SpokenNote.marked(spoken.words, strokes: strokes)
     }
 
     /// The person's words as a note beside the ink `about`, at the note panel's tag, `spot`, or clear

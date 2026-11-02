@@ -222,3 +222,13 @@ struct HerdrLauncher: Sendable {
         return (tab, pane)
     }
 }
+
+extension AgentDestination {
+    /// The session a send to this row reached: for a row Vignette starts, the one `record` names, which
+    /// runs once the send is accepted; any other row as it is.
+    func sent(as record: ScreenshotRequests.Record) -> AgentDestination {
+        guard start != nil else { return self }
+        return AgentDestination(id: record.destinationID, name: name, detail: detail, address: record.address, lastUsed: lastUsed,
+                                place: place, branch: branch, hasOwnName: hasOwnName, folder: folder)
+    }
+}
