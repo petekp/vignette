@@ -1,13 +1,15 @@
 // The picture of "Stitch several into one": three cards picked in the stack, stitched into one,
 // over Calendar on the same screen.
-import { el, place, Motion, UI, wait, cardSize, coverRect } from "../vignette.js";
+import { el, place, Motion, UI, wait, tween, cardSize, coverRect } from "../vignette.js";
 import { IMAGES } from "../cards.js";
 import { lerp, clamp, GUTTER, card, shot, whole, selectionStrip, tap } from "./parts.js";
-import { Column, SHOTS, CW, CH, SCALE, BELOW_MENU_BAR, at, deskFit } from "./stack.js";
+import { Column, SHOTS, CW, CH, SCALE, FADE, MENU_BAR, BELOW_MENU_BAR, at, deskFit } from "./stack.js";
 
 // Calendar's day view of the day Stitch's pieces are about, in the screen's points: an hour is
 // HOUR tall from 05:00, and each event is its start, its length in hours, its colour and its title.
 const HOUR = 40;
+// How far into the window, in its points, an event's title or the day's heading can reach.
+const CALENDAR_WORDS = 240;
 const EVENTS = [
   [5.5, 1, "blue", "Leave Greve"],
   [6 + 40 / 60, 1.33, "orange", "Val d’Orcia at sunrise"],
@@ -26,14 +28,16 @@ const calendar = (w) => `<div class="ctool"><span class="lights"><i></i><i></i><
 // rewind's slides of the new card out and of each piece back in.
 const SPRINGS = ["p", "fade", "close", "zoom", "out", "in0", "in1", "in2"];
 // What Stitch joins, in the order they were picked: captures of the chat asking about a day, of
-// that day in the itinerary, and of the stay it ends at. Short, wide captures stack into one column
-// whose shape a card shows whole, and each takes the badge's 32 px floor, so the badges read once
-// the view pushes in. Each badge sits on plain page at its piece's top-left, and the first piece is
-// the narrowest, so the column centres it and its badge clears the card's rounded corner.
+// the stay the day ends at, and of that day in the itinerary. Short, wide captures stack into one
+// column whose shape a card shows whole, and each takes the badge's 32 px floor, so the badges read
+// once the view pushes in. Each badge sits at its piece's top-left, clear of its words: the
+// itinerary's card is taken whole across, with the page's gutter beside it. The widest piece is the
+// middle one, so the column centres the first and the last well inside the card's rounded corners,
+// which trim only matte.
 const PIECES = [
   [IMAGES.chat, { x: 0, y: 284, w: 580, h: 228 }, []],
-  [IMAGES.itin, { x: 1194, y: 650, w: 570, h: 262 }, []],
-  [IMAGES.stays, { x: 24, y: 740, w: 820, h: 220 }, []],
+  [IMAGES.stays, { x: 60, y: 768, w: 788, h: 174 }, []],
+  [IMAGES.itin, { x: 1180, y: 650, w: 605, h: 262 }, []],
 ];
 
 // Stitch.compose's layout and badges: every column count is tried and the one a reader's resize
@@ -84,17 +88,17 @@ export class Stitch extends Column {
     const size = cardSize(plan);
     this.slot = { w: size.w * SCALE, h: size.h * SCALE };
     Object.assign(this.slot, { x: this.R - this.slot.w, y: this.bottom - this.slot.h });
-    // The view pushes in on the screen's bottom-right corner, which stays put, so the screen fills
-    // the picture throughout. It stops once the new card, every piece and badge whole, fills the
-    // picture's height between margins as deep as the screen's margin under it, which holds its
-    // shadow.
-    const margin = H - this.slot.y - this.slot.h;
-    this.zoom = Math.min(H / (this.slot.h + 2 * margin), (W - margin) / (W - this.slot.x));
-    this.focus = this.look = { x: W, y: H };
-    // Calendar's window ends where the push-in takes it past the picture's left edge, so the new
-    // card ends on the wallpaper under the backdrop's blur. Short of the column, it ends under it.
-    const right = Math.min(this.R - CW + 20, W - W / this.zoom - 4);
-    this.screen("Calendar", ["File", "Edit", "View", "Window", "Help"], el("div", "window cal", calendar((right - GUTTER) / SCALE)), { top: BELOW_MENU_BAR, right });
+    // The view pushes in on the new card, the screen's right edge staying put, under the menu bar,
+    // which stays as it is. It stops where the card's badges read and the card above it still shows
+    // a strip under the menu bar, and short of where the picture's left edge would cut a word of
+    // Calendar's: there it shows the right ends of the day's events.
+    this.menu = MENU_BAR * SCALE;
+    const below = 16, peek = 24, keptBottom = this.slot.y - UI.cardSpacing;
+    this.focus = { x: W, y: this.slot.y + this.slot.h };
+    this.look = { x: W, y: H - below };
+    const clearOfWords = W / (W - GUTTER - CALENDAR_WORDS * SCALE);
+    this.zoom = Math.max(clearOfWords, Math.min((this.look.y - this.menu - peek) / (this.focus.y - keptBottom), (W - 16) / (W - this.slot.x)));
+    this.screen("Calendar", ["File", "Edit", "View", "Window", "Help"], el("div", "window cal", calendar((this.R - CW + 20 - GUTTER) / SCALE)), { top: BELOW_MENU_BAR });
     this.showBackdrop(1);
     // Each picked card takes its capture's shape by the stack's card-size rule, newest at the bottom.
     let top = this.bottom + UI.cardSpacing;
@@ -157,14 +161,23 @@ export class Stitch extends Column {
       at(this.result, m.get("out") * this.off, 0);
       this.cards.forEach((c, i) => at(c, m.get(`in${i}`) * this.off, 0));
       const z = m.get("zoom"), k = lerp(1, this.zoom, z);
-      // The cards above leave the view as it pushes in, and take their shadows with them.
-      this.kept.forEach((c) => { c.style.transform = `translateY(${m.get("close") * this.drop}px)`; c.style.opacity = 1 - z; });
-      cam.style.transform = `translate(${lerp(this.focus.x, this.look.x, z) - this.focus.x * k}px, ${lerp(this.focus.y, this.look.y, z) - this.focus.y * k}px) scale(${k})`;
+      this.kept.forEach((c) => { c.style.transform = `translateY(${m.get("close") * this.drop}px)`; });
+      const tx = lerp(this.focus.x, this.look.x, z) - this.focus.x * k, ty = lerp(this.focus.y, this.look.y, z) - this.focus.y * k;
+      cam.style.transform = `translate(${tx}px, ${ty}px) scale(${k})`;
+      // The column fades out at the menu bar wherever the view puts it, and pushed in, under it: the
+      // card above is wider than the new one, so a fade in the open would show Calendar through its
+      // left part and the backdrop through the rest.
+      this.col.style.setProperty("--top", `${(this.menu - ty - z * FADE) / k}px`);
+      this.col.style.setProperty("--fade", `${FADE / k}px`);
     });
     for (const name of SPRINGS) this.m.add(name, 0, name === "zoom" ? 0.001 : 0.002);
     const cam = el("div", "cam");
     cam.append(...s.childNodes);
-    s.append(cam);
+    // The menu bar stays out of the view's push-in, over it.
+    const bar = el("div", "desk pinned");
+    Object.assign(bar.style, { width: this.desk.style.width, height: this.desk.style.height, transform: this.desk.style.transform });
+    bar.append(this.desk.querySelector(".menubar"));
+    s.append(cam, bar);
     return s;
   }
   // FlightCurve: the path bows to the left of one that runs mostly up or down, and the card swells,
@@ -177,7 +190,8 @@ export class Stitch extends Column {
     const bow = Math.min(len * UI.flightArc, UI.flightArcMax * SCALE) * peak, swell = 1 + UI.flightDepth * peak;
     const w = lerp(a.w, b.w, p) * swell, h = lerp(a.h, b.h, p) * swell;
     const cx = lerp(a.x + a.w / 2, b.x + b.w / 2, p) + nx * bow, cy = lerp(a.y + a.h / 2, b.y + b.h / 2, p) + ny * bow;
-    return { x: cx - w / 2, y: cy - h / 2, w, h };
+    // A card swelling at the screen's edge grows away from it, as the panel keeps it on screen.
+    return { x: Math.min(cx - w / 2, this.R - w), y: cy - h / 2, w, h };
   }
   // A flight's image is the card's picture alone, so the selection leaves the pieces as they lift.
   pick(on, lifted = false) {
@@ -190,21 +204,25 @@ export class Stitch extends Column {
     for (const name of SPRINGS) this.m.jump(name, 0);
   }
   final() { this.reset(); this.pick(false); for (const name of ["p", "fade", "close", "zoom"]) this.m.jump(name, 1); }
-  // The view pulls back as the new card slides off the screen's edge on its own. The column opens
-  // up again, and the picked cards slide back into their slots, newest first, already selected.
+  // The view pulls back to the whole screen, and then the new card slides off its edge on its own.
+  // The column opens up again, and the picked cards slide back into their slots, newest first,
+  // already selected.
   async rewind() {
     this.notice.classList.remove("in");
-    const back = this.m.to("zoom", 0, 0.35);
-    await wait(0.1);
-    this.m.to("out", 1, UI.slideOut);
-    await wait(UI.slideOut);
+    await this.push(0, 0.8);
+    await this.m.to("out", 1, UI.slideOut);
     this.cards.forEach((_, i) => this.m.jump(`in${i}`, 1));
     for (const name of ["p", "fade", "out"]) this.m.jump(name, 0);
     this.pick(true);
-    await Promise.all([back, this.m.to("close", 0, UI.relayout), ...[2, 1, 0].map(async (i, n) => {
+    await Promise.all([this.m.to("close", 0, UI.relayout), ...[2, 1, 0].map(async (i, n) => {
       await wait(Math.min(UI.stagger * n, UI.staggerMax));
       await this.m.to(`in${i}`, 0, UI.slideIn, UI.flightBounce);
     })]);
+  }
+  // The view moves as a camera does, easing out of rest and into its stop.
+  push(to, seconds) {
+    const from = this.m.get("zoom");
+    return tween(seconds, (t) => this.m.jump("zoom", lerp(from, to, t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2)));
   }
   async play() {
     this.reset();
@@ -223,6 +241,6 @@ export class Stitch extends Column {
     this.notice.classList.remove("in");
     // The notice's fade, .notice's opacity transition.
     await wait(0.25);
-    await this.m.to("zoom", 1, 0.8);
+    await this.push(1, 1.2);
   }
 }

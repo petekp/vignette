@@ -10,7 +10,7 @@ export const CW = 140, CH = 88, STEP = CH + UI.cardSpacing;
 // The cards' scale against the app's: a 16:10 screenshot's card is 188 pt wide there.
 export const SCALE = CW / UI.cardMaxWidth;
 // StackLayout.inset: the column fades out over the panel's padding at its ends.
-const FADE = 19 * SCALE;
+export const FADE = 19 * SCALE;
 // .menubar's height, in the screen's points, and where what sits on the wallpaper under it starts.
 export const MENU_BAR = 25, BELOW_MENU_BAR = MENU_BAR * SCALE + 14;
 // Oldest first. The stays card answers Drag's question: the stay still waiting for its host.

@@ -2,9 +2,10 @@
    screen): the windows behind the stack, in the screen's points, and the column. */
 .also .feature p { margin-bottom: 22px; }
 /* One picture height across the four (stack.js, DESK_H), set at the tile's foot whatever its copy.
-   Reserved before the pictures load at what they take at the tile's width. */
-.also .feature-pic { flex: none; min-height: 382px; margin-top: auto; }
-@media (max-width: 480px) { .also .feature-pic { min-height: 296px; } }
+   Reserved before the pictures load at what deskFit gives for the picture's width, the tile's
+   content box plus its two 28 px gutters: 332 pt at a scale of width / 375, from 0.86 to 1.15. */
+.also .feature { container-type: inline-size; }
+.also .feature-pic { flex: none; min-height: clamp(285.5px, (100cqi + 56px) * 0.8853, 381.8px); margin-top: auto; }
 .scene .desk { position: absolute; left: 0; top: 0; overflow: hidden; transform-origin: 0 0; }
 .scene .desk .lights { display: flex; gap: 8px; }
 .scene .desk .lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
@@ -48,6 +49,8 @@
 /* Drag (drag.js): Claude Code fills Ghostty's window under its title bar, so the window, not the
    terminal, draws the edge and the shadow. */
 :root .scene .window.ghostty .term-x { border-radius: 0; box-shadow: none; }
+/* Stitch (stitch.js): the menu bar, which stays out of the view's push-in. */
+.scene .desk.pinned { pointer-events: none; }
 /* Stitch (stitch.js): the selection strip over Calendar, on the app's .regularMaterial, which blurs
    the window under it. */
 .scene .qstrip.material { background: rgb(40 40 42 / 0.72); -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); }
