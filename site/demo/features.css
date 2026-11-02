@@ -70,7 +70,7 @@
 /* Several in a row: the stack's column, which narrows while the editor is open, the selection
    strip beside it, and the editor's bar. A row or button lights while its key runs it. */
 .scene.fades { transition: opacity 0.25s; }
-.scene .qcol { position: absolute; transform-origin: 100% 0; }
+.scene .qcol { position: absolute; transform-origin: 100% 100%; }
 .scene .qstrip {
   position: absolute; display: flex; flex-direction: column; gap: 4px; padding: 4px; border-radius: 12px;
   background: rgb(38 38 40 / 0.9); box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.18), 0 4px 10px rgb(0 0 0 / 0.25);
