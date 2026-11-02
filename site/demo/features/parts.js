@@ -57,9 +57,8 @@ export const wideFit = (rest) => (slotW, slotH = 0) => {
 };
 
 // Claude Code in a terminal, as Drag and Agent draw it: the conversation runs off the terminal's
-// top, over the prompt box with its hint line under it. The terminal spans the picture from the
-// gutter and runs off its right and bottom edges. `talk` is the conversation's markup, built from
-// the lines below.
+// top, over the prompt box with its hint line under it. `talk` is the conversation's markup, built
+// from the lines below.
 export const line = (html, cls = "") => `<div class="ln${cls}">${html}</div>`;
 export const said = (html) => line(`<span class="t-said">●</span> ${html}`);
 export const you = (text) => line(text, " t-dim");
@@ -67,16 +66,17 @@ export const gap = line(" ");
 // .term-x's line height, and the prompt box's height with its margin, border and padding.
 export const LINE = 13 * 1.65;
 const BOX = LINE + 20;
-// The hint line ends at most `bottom` down the picture, and at the line that leaves the conversation
-// cut at the picture's top edge between two lines.
-export function claudeCode(W, H, talk, bottom = H - 10) {
+// The terminal fills `r`. Its hint line ends at most `bottom` down, at the line that leaves the
+// conversation cut at the terminal's top edge between two lines; `end` is where, both in the
+// coordinates `r` is in.
+export function claudeCode(talk, r, bottom) {
   const box = '<div class="pbox">&gt; <span class="typed"></span><span class="tcur"></span></div>';
   const t = el("div", "term-x claude", `<pre>${talk}${box}${you("  ? for shortcuts")}</pre>`);
-  const below = 40, rows = LINE + BOX;
-  place(t, { x: GUTTER, y: 0, w: W - GUTTER + 40, h: H + below });
-  const end = rows + Math.floor((bottom - rows) / LINE) * LINE;
-  t.firstChild.style.paddingBottom = `${H + below - end}px`;
-  t.end = end;
+  const rows = LINE + BOX;
+  place(t, r);
+  const end = rows + Math.floor((bottom - r.y - rows) / LINE) * LINE;
+  t.firstChild.style.paddingBottom = `${r.h - end}px`;
+  t.end = r.y + end;
   return t;
 }
 
