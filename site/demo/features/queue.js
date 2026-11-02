@@ -1,10 +1,8 @@
-import { el, Motion, UI, wait } from "../vignette.js";
+import { el, Motion, Spring, UI, wait } from "../vignette.js";
 import { IMAGES } from "../cards.js";
-import { lerp, clamp, GUTTER, card, whole, smallFit } from "./parts.js";
+import { clamp, GUTTER, card, whole, smallFit } from "./parts.js";
+import { Flyer, CW, CH } from "./flight.js";
 
-const CW = 140, CH = 88;
-// How wide the stack is drawn while the editor is open (StackLayout.widthScale).
-const NARROW = 0.8;
 const LIST = [
   [IMAGES.stays, whole(IMAGES.stays), [{ type: "rect", who: "person", x: 40, y: 192, w: 588, h: 86 }]],
   [IMAGES.packing, whole(IMAGES.packing), []],
@@ -24,6 +22,17 @@ const TOOLS = [
   '<path d="M5 17L17 5M9 5h8v8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
   '<text x="11" y="16" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor" font-family="system-ui">Aa</text>',
 ];
+// The stack's top, and the editor's, which sits lower so a flight's bow stays inside the picture.
+const TOP = 4, FRAME_TOP = 48;
+
+// Anim.passesTarget: when the flight's spring first reaches its target, which is when the editor's
+// window, and the bar with it, comes up behind the flight.
+function passesTarget() {
+  const s = new Spring(0, 1e-6).to(1, UI.expand, UI.flightBounce);
+  let t = 0;
+  while (s.moving && s.x < 1) { s.step(1 / 240); t += 1 / 240; }
+  return t;
+}
 
 export class Queue {
   // Three cards picked in turn take their numbers, and the selection strip comes up beside them.
@@ -32,11 +41,11 @@ export class Queue {
   // second flies out to take its place.
   static fit = smallFit(236);
   build({ W, H }) {
-    const s = this.s = el("div", "scene fades");
+    const s = this.s = el("div", "scene");
     s.style.width = `${W}px`; s.style.height = `${H}px`;
-    this.R = W - GUTTER - 10;
+    this.R = W - 24;
     this.col = el("div", "qcol");
-    Object.assign(this.col.style, { left: `${this.R - CW}px`, top: "4px", width: `${CW}px` });
+    Object.assign(this.col.style, { left: `${this.R - CW}px`, top: `${TOP}px`, width: `${CW}px` });
     this.cards = LIST.map(([image, view], i) => {
       const c = card(image, view, [], { x: 0, y: i * (CH + UI.cardSpacing), w: CW, h: CH });
       c.append(el("div", "scircle"));
@@ -45,63 +54,67 @@ export class Queue {
     });
     s.append(this.col);
     this.m = new Motion((m) => { this.col.style.transform = `scale(${m.get("s")})`; }).add("s", 1, 0.0005);
-    const fw = this.R - CW * NARROW - 16 - GUTTER;
-    this.frame = { x: GUTTER, y: 4, w: fw, h: fw * 0.625 };
+    const fw = Math.round((this.R - GUTTER - UI.stackGap) * 0.72);
+    this.frame = { x: GUTTER, y: FRAME_TOP, w: fw, h: fw * 0.625 };
+    // StackLayout.widthScale: the widest the stack can be drawn and still clear the editor by the gap.
+    this.narrow = clamp((this.R - (this.frame.x + this.frame.w + UI.stackGap)) / CW, UI.stackMinScale, 1);
+    // The first two cards as they fly; each takes the editor's frame while it is open. The bar is
+    // after them, as the toolbar's panel sits above the flight layer.
+    const layer = el("div", "flights");
+    s.append(layer);
+    this.flyers = LIST.slice(0, 2).map(([image, view]) => {
+      const c = card(image, view, [], { x: 0, y: 0, w: this.frame.w, h: this.frame.h });
+      c.classList.add("flying");
+      layer.append(c);
+      return new Flyer(c, this.frame);
+    });
     this.bar = el("div", "qbar", `<div class="bar">${TOOLS.map((t, i) => `<span class="tool${i === 1 ? " on" : ""}"><svg viewBox="0 0 22 22" width="22" height="22">${t}</svg></span>`).join("")}<span class="divider"></span><span class="copy">Copy <kbd>↩</kbd></span></div>`);
     Object.assign(this.bar.style, { left: `${this.frame.x + this.frame.w / 2}px`, top: `${this.frame.y + this.frame.h + UI.toolbarGap}px` });
     s.append(this.bar);
     this.copy = this.bar.querySelector(".copy");
-    // The first two cards as they fly; each takes the editor's frame while it is open.
-    this.flyers = LIST.slice(0, 2).map(([image, view]) => {
-      const c = card(image, view, [], { x: 0, y: 0, w: this.frame.w, h: this.frame.h });
-      c.classList.add("flying");
-      s.append(c);
-      return c;
-    });
     this.strip = el("div", "qstrip", ROWS.map(([icon, label, key]) =>
       `<div class="row" data-row="${icon}"><svg viewBox="0 0 20 20" width="15" height="15">${ICONS[icon]}</svg><span>${label}</span><kbd>${key}</kbd></div>`).join(""));
     // Its right edge a strip gap left of the cards, as StackLayout.stripPlacement puts it.
-    Object.assign(this.strip.style, { top: "36px", right: `${W - (this.R - CW) + 12}px` });
+    Object.assign(this.strip.style, { top: `${TOP + 32}px`, right: `${W - (this.R - CW) + 12}px` });
     s.append(this.strip);
     this.drawRow = this.strip.querySelector('[data-row="draw"]');
     return s;
   }
-  slot(i, k) { return { x: this.R - CW * k, y: 4 + i * (CH + UI.cardSpacing) * k, w: CW * k, h: CH * k }; }
+  slot(i, k) { return { x: this.R - CW * k, y: TOP + i * (CH + UI.cardSpacing) * k, w: CW * k, h: CH * k }; }
   pick(i, on) {
     const c = this.cards[i], circle = c.querySelector(".scircle");
     c.classList.toggle("picked", on);
     circle.classList.toggle("on", on);
     if (on) circle.textContent = String(i + 1);
   }
-  // p is 0 at `a` and 1 at `b`; the path bows to one side, as FlightCurve's does.
-  place(c, a, b, p) {
-    const bow = Math.sin(Math.PI * clamp(p, 0, 1)) * 22;
-    const r = { x: lerp(a.x, b.x, p) + bow * 0.5, y: lerp(a.y, b.y, p) + bow, w: lerp(a.w, b.w, p), h: lerp(a.h, b.h, p) };
-    const k = r.w / this.frame.w, lift = b === this.frame ? p : 1 - p;
-    c.style.transform = `translate(${r.x}px, ${r.y}px) scale(${k})`;
-    c.style.borderRadius = `${16 / k}px`;
-    c.style.boxShadow = `0 ${(4 + 14 * lift) / k}px ${(8 + 26 * lift) / k}px rgb(0 0 0 / ${0.35 + 0.2 * lift})`;
+  // Card `i` leaves its slot for the flight layer, or takes it back from the flight that landed there.
+  lift(i, r, look) {
+    this.cards[i].style.visibility = "hidden";
+    this.flyers[i].c.style.visibility = "visible";
+    this.flyers[i].at(r, look);
   }
-  fly(c, a, b) {
-    c.style.visibility = "visible";
-    return new Motion((m) => this.place(c, a, b, m.get("p"))).add("p", 0, 0.0005).to("p", 1, UI.expand, UI.flightBounce);
+  land(i) {
+    this.cards[i].style.visibility = "visible";
+    this.flyers[i].c.style.visibility = "hidden";
   }
   notice(on) {
-    this.cards[0].querySelector(".notice")?.remove();
-    if (!on) return;
+    const old = this.cards[0].querySelector(".notice");
+    if (!on) { old?.remove(); return; }
+    if (old) return;
     const n = el("div", "notice", '<span class="check"></span><b>Copied</b>');
     this.cards[0].append(n);
     requestAnimationFrame(() => n.classList.add("in"));
   }
-  // A press on a strip row or the bar's Copy: the key's own action, lit as it runs.
+  // A press on a strip row or the bar's Copy: the key's own action, lit while its key is down.
   async press(button) {
     button.classList.add("down", "lit");
     await wait(0.16);
-    button.classList.remove("down");
+    button.classList.remove("down", "lit");
   }
   reset() {
     this.cards.forEach((c, i) => { this.pick(i, false); c.style.visibility = "visible"; c.pic.update([]); });
-    this.flyers.forEach((c) => { c.style.visibility = "hidden"; c.pic.update([]); });
+    this.cards[0].querySelector("svg.marks").style.opacity = "";
+    this.flyers.forEach((f) => { f.c.style.visibility = "hidden"; f.c.pic.update([]); });
     this.bar.classList.remove("up");
     this.strip.classList.remove("up");
     for (const b of [this.copy, this.drawRow]) b.classList.remove("down", "lit");
@@ -112,12 +125,10 @@ export class Queue {
   final() {
     this.reset();
     this.cards.forEach((_, i) => this.pick(i, true));
-    this.m.jump("s", NARROW);
+    this.m.jump("s", this.narrow);
     this.cards[0].pic.update(LIST[0][2]);
     this.notice(true);
-    this.cards[1].style.visibility = "hidden";
-    this.flyers[1].style.visibility = "visible";
-    this.place(this.flyers[1], this.frame, this.frame, 1);
+    this.lift(1, this.frame, 1);
     this.bar.classList.add("up");
   }
   async play() {
@@ -132,31 +143,34 @@ export class Queue {
     this.strip.classList.remove("up");
     await wait(0.14);
     const [one, two] = this.flyers;
-    this.cards[0].style.visibility = "hidden";
-    this.m.to("s", NARROW, UI.expand);
-    await this.fly(one, this.slot(0, 1), this.frame);
+    this.lift(0, this.slot(0, 1), 0);
+    this.m.to("s", this.narrow, UI.relayout, UI.flightBounce);
+    const out = one.fly(this.frame, 1);
+    await wait(passesTarget());
     this.bar.classList.add("up");
+    await out;
     await wait(0.2);
     const box = LIST[0][2][0], r = { ...box, w: 0, h: 0 };
-    await new Motion((m) => { const t = m.get("t"); r.w = box.w * t; r.h = box.h * t; one.pic.update([r]); }).add("t", 0, 0.001).to("t", 1, 0.35);
-    one.pic.update(LIST[0][2]);
+    await new Motion((m) => { const t = m.get("t"); r.w = box.w * t; r.h = box.h * t; one.c.pic.update([r]); }).add("t", 0, 0.001).to("t", 1, 0.35);
+    one.c.pic.update(LIST[0][2]);
     await wait(0.4);
     await this.press(this.copy);
-    await wait(0.06);
-    this.cards[1].style.visibility = "hidden";
-    const home = this.fly(one, this.frame, this.slot(0, NARROW)).then(() => {
-      this.cards[0].pic.update(LIST[0][2]);
-      this.cards[0].style.visibility = "visible";
-      one.style.visibility = "hidden";
-      this.notice(true);
-    });
-    await wait(0.05);
-    await Promise.all([home, this.fly(two, this.slot(1, NARROW), this.frame)]);
+    // Copy sends card 1 home marked copied and opens card 2 in the same moment: two flights.
+    this.cards[0].pic.update(LIST[0][2]);
+    const home = one.fly(this.slot(0, this.narrow), 0).then(() => { this.land(0); this.notice(true); });
+    this.lift(1, this.slot(1, this.narrow), 0);
+    await Promise.all([home, two.fly(this.frame, 1)]);
   }
+  // Card 2 goes home as the editor closes and the stack widens; the picks, the drawing and the
+  // notice go.
   async rewind() {
-    this.s.style.opacity = 0;
-    await wait(0.25);
-    this.reset();
-    this.s.style.opacity = 1;
+    this.cards[0].querySelector(".notice")?.classList.remove("in");
+    this.cards.forEach((_, i) => this.pick(i, false));
+    this.cards[0].querySelector("svg.marks").style.opacity = 0;
+    this.bar.classList.remove("up");
+    this.m.to("s", 1, UI.relayout, UI.flightBounce);
+    await this.flyers[1].fly(this.slot(1, 1), 0);
+    this.land(1);
+    await wait(0.15);
   }
 }
