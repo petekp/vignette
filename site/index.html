@@ -20,6 +20,10 @@
 <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="demo/site.css">
+<link rel="stylesheet" href="demo/stage.css">
+<link rel="stylesheet" href="demo/annotator.css">
+<link rel="stylesheet" href="demo/features.css">
+<link rel="stylesheet" href="demo/desk.css">
 </head>
 <body>
 <div class="sheet">
@@ -68,27 +72,30 @@
   </div>
 
   <div class="also">
-    <div class="tile">
+    <div class="tile feature" data-scene="recent">
       <h3>Your recent screenshots</h3>
       <p>Double-tap right Shift and the last ones you took slide in as cards at the edge of your
       screen, newest at the bottom. You can copy, draw on or delete any of them, or select several to
       copy or delete them together.</p>
+      <div class="feature-pic" aria-hidden="true"></div>
     </div>
-    <div class="tile">
+    <div class="tile feature" data-scene="quick">
       <h3>Quicker drawing</h3>
       <p>Click a card to draw on it. Draw a box or an arrow and start typing, and your note appears
-      beside it. Arrows follow your hand, so they can curve around what’s in the way. A stroke that’s
-      nearly straight comes out straight.</p>
+      beside it.</p>
+      <div class="feature-pic" aria-hidden="true"></div>
     </div>
-    <div class="tile">
+    <div class="tile feature" data-scene="stitch">
       <h3>Stitch several into one</h3>
       <p>Select a few cards and press Stitch. It joins them into one image and numbers each piece. Claude shrinks large images before it reads them, so Stitch picks the layout that keeps the most detail.</p>
+      <div class="feature-pic" aria-hidden="true"></div>
     </div>
-    <div class="tile">
+    <div class="tile feature" data-scene="drag">
       <h3>Drag ’n drop</h3>
       <p>Drag a card from your recent screenshots into Claude Code, a chat or Finder, without opening
       your screenshots folder. Select several cards to drag them together. If you drew on a card, the
       image you drop has your drawing on it.</p>
+      <div class="feature-pic" aria-hidden="true"></div>
     </div>
   </div>
 </section>
@@ -106,14 +113,14 @@
 
 <section class="details wrap" aria-labelledby="details">
   <h2 id="details">Made to feel like part of your Mac</h2>
-  <dl>
-    <div class="tile"><dt>Your app stays in front</dt><dd>The stack opens without taking focus from the app you’re in. Close it and you’re right where you were.</dd></div>
-    <div class="tile"><dt>Motion you can interrupt</dt><dd>Cards fly into the editor and back on a spring. Interrupt one and it turns around in mid-air.</dd></div>
-    <div class="tile"><dt>Marks that stand out</dt><dd>A thin white edge keeps every mark visible on any screenshot, dark or light.</dd></div>
-    <div class="tile"><dt>Change it later</dt><dd>Vignette keeps your drawing separate from the screenshot, so you can open it again and move, change or delete any mark.</dd></div>
-    <div class="tile"><dt>Several in a row</dt><dd>Select several cards and press Return. Copy or send one, and the next one opens.</dd></div>
-    <div class="tile"><dt>Your agent can use it too</dt><dd>Every action is a <code>vignette://</code> URL, so your agent can show you screenshots and ask you to draw on them.</dd></div>
-  </dl>
+  <div class="features" id="features">
+    <div class="tile feature" data-scene="front"><h3>Your app stays in front</h3><p>The stack opens without taking focus from the app you’re in. Close it and you’re right where you were.</p><div class="feature-pic" aria-hidden="true"></div></div>
+    <div class="tile feature" data-scene="flight"><h3>Premium details</h3><p>Animations are interruptible and precision-tuned to feel great, even the thousandth time.</p><div class="feature-pic" aria-hidden="true"></div></div>
+    <div class="tile feature" data-scene="arrows"><h3>Draw any arrow</h3><p>The Arrow tool draws like a pencil and puts a head on the end. Curve an arrow around what’s in the way, or keep it straight.</p><div class="feature-pic" aria-hidden="true"></div></div>
+    <div class="tile feature" data-scene="later"><h3>Non-destructive</h3><p>Vignette keeps your drawing separate from the screenshot, so you can open it again and move, change or delete any mark.</p><div class="feature-pic" aria-hidden="true"></div></div>
+    <div class="tile feature" data-scene="queue"><h3>Several in a row</h3><p>Select several cards and press Return. Copy or send one, and the next one opens.</p><div class="feature-pic" aria-hidden="true"></div></div>
+    <div class="tile feature" data-scene="agent"><h3>Your agent can use it too</h3><p>Every action is a <code>vignette://</code> URL, so your agent can show you screenshots and ask you to draw on them.</p><div class="feature-pic" aria-hidden="true"></div></div>
+  </div>
 </section>
 
 </main>
@@ -149,5 +156,6 @@
   }
 </script>
 <script type="module" src="demo/page.js"></script>
+<script type="module" src="demo/features.js"></script>
 </body>
 </html>

@@ -1,0 +1,88 @@
+/* The annotator: a frame sized to the image, its toolbar under it. */
+.frame {
+  position: absolute;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--matte);
+  visibility: hidden;
+  cursor: crosshair;
+  box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.2), 0 18px 40px rgb(0 0 0 / 0.5);
+  touch-action: none;
+}
+.frame.up { visibility: visible; }
+.stage[data-tool="select"] .frame { cursor: default; }
+.stage[data-tool="text"] .frame { cursor: text; }
+.flights { position: absolute; inset: 0; pointer-events: none; }
+.flight, .flight-shadow { position: absolute; transform-origin: 0 0; will-change: transform; }
+.flight { overflow: hidden; background: var(--matte); }
+.flight .pic { transform-origin: 0 0; will-change: transform; }
+.flight-shadow { border-radius: 16px; box-shadow: 0 18px 40px rgb(0 0 0 / 0.85); will-change: transform, opacity; }
+
+/* Hidden, the toolbar is out of the tab order too, once its fade has ended. */
+.toolbar {
+  position: absolute;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-8px) scale(0.97);
+  transition: opacity 0.18s, transform 0.35s var(--spring, ease), visibility 0s 0.18s;
+  pointer-events: none;
+}
+.toolbar.up { opacity: 1; visibility: visible; transform: none; pointer-events: auto; transition-delay: 0s; }
+.bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgb(38 38 40 / 0.9);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.18), 0 8px 24px rgb(0 0 0 / 0.4);
+  color: rgb(255 255 255 / 0.88);
+  font: 600 13px/1 var(--sans);
+}
+.bar button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.12s, transform 0.2s var(--spring-bouncy, ease);
+}
+@media (hover: hover) { .bar button:hover { background: rgb(255 255 255 / 0.1); } }
+.bar button:active { transform: scale(0.92); }
+.bar .tool { width: 34px; padding: 0; justify-content: center; }
+.bar .tool.on { background: rgb(255 255 255 / 0.2); color: #fff; }
+.bar kbd { font: inherit; opacity: 0.5; }
+.bar .divider { width: 1px; height: 20px; margin: 0 6px; background: rgb(255 255 255 / 0.15); }
+.bar .target img { width: 15px; height: 15px; }
+.bar .target svg { opacity: 0.55; }
+.bar input {
+  width: 190px;
+  height: 30px;
+  margin: 0 4px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.08);
+  color: #fff;
+  font: 500 13px var(--sans);
+  outline: none;
+}
+.bar input::placeholder { color: rgb(255 255 255 / 0.4); }
+.bar input:focus { box-shadow: 0 0 0 2px rgb(10 132 255 / 0.7); }
+.bar .send { background: #0a84ff; color: #fff; }
+@media (hover: hover) { .bar .send:hover { background: #2b95ff; } }
+.bar .send kbd { opacity: 0.7; }
+.bar .send.sending { background: #0a84ff; opacity: 0.8; }

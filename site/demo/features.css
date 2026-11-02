@@ -1,0 +1,159 @@
+/* The feature tiles of "Made to feel like part of your Mac". The tokens and .tile are in site.css;
+   the stage's parts they reuse (.wallpaper, .menubar, .window, .backdrop, .pic, .from) are in
+   stage.css, and the toolbar's .bar in annotator.css. */
+.feature h3 { margin: 0; font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; }
+.feature p { margin: 6px 0 0; color: var(--ink-2); text-wrap: pretty; }
+
+/* Feature tiles: the copy, then a picture of the feature in Vignette's own UI, running off the
+   tile's bottom edge. One lead tile, two beside it and three below; two columns, then one. */
+.features {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas: "front front flight" "front front arrows" "later queue agent";
+  gap: 14px;
+  margin: 36px 0 0;
+}
+@media (max-width: 1040px) {
+  .features { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "front front" "flight arrows" "later queue" "agent agent"; }
+}
+@media (max-width: 640px) {
+  .features { grid-template-columns: minmax(0, 1fr); grid-template-areas: "front" "flight" "arrows" "later" "queue" "agent"; }
+}
+.feature { display: flex; flex-direction: column; padding-bottom: 0; overflow: hidden; }
+.feature[data-scene="front"] { grid-area: front; }
+.feature[data-scene="flight"] { grid-area: flight; }
+.feature[data-scene="arrows"] { grid-area: arrows; }
+.feature[data-scene="later"] { grid-area: later; }
+.feature[data-scene="queue"] { grid-area: queue; }
+.feature[data-scene="agent"] { grid-area: agent; }
+.feature h3, .feature p { max-width: 30rem; }
+.feature-pic { position: relative; flex: 1 0 auto; min-height: 196px; margin: 22px -28px 0; overflow: hidden; }
+/* Reserved before the pictures load; features.js then sets each to what its picture must show. */
+.feature[data-scene="front"] .feature-pic { min-height: 540px; }
+@media (max-width: 640px) { .feature[data-scene="front"] .feature-pic { min-height: 340px; } }
+.feature-pic .scene { position: absolute; left: 0; top: 0; transform-origin: 0 0; color: var(--ink); }
+.scene svg.over { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.scene svg.over .fades { transition: opacity 0.25s; }
+.scene .pic svg.marks { transition: opacity 0.25s; }
+
+/* The lead: the top-right of a Mac screen. The stack is open and Chrome keeps the typing. */
+.scene .menubar b { font-weight: 700; }
+.scene .field { position: relative; background: #fff !important; color: rgb(0 0 0 / 0.8) !important; text-align: left !important; box-shadow: 0 0 0 3px rgb(0 122 255 / 0.4), 0 0 0 1px rgb(0 122 255 / 0.8); }
+.scene .field .typed { all: unset; }
+.scene .field .tcaret { display: inline-block; width: 1.5px; height: 14px; margin-left: 1px; vertical-align: -2px; background: #0a62d0; animation: blink 1s steps(1) infinite; }
+.scene .focusring { position: absolute; inset: 0; border-radius: 16px; box-shadow: inset 0 0 0 2.5px #fff; z-index: 3; }
+
+/* A card, as the stack draws it, and a screenshot cropped to part of itself. */
+.scene .shot { position: absolute; overflow: hidden; }
+.scene .cardx { position: absolute; border-radius: 16px; background: var(--matte); box-shadow: 0 4px 8px rgb(0 0 0 / 0.35); }
+.scene .cardx .shot { inset: 0; border-radius: inherit; }
+.scene .cardx::after { content: ""; position: absolute; inset: 0; z-index: 3; border-radius: inherit; box-shadow: inset 0 0 0 0.5px rgb(255 255 255 / 0.4); pointer-events: none; transition: box-shadow 0.25s; }
+.scene .cardx.picked::after { box-shadow: inset 0 0 0 2.5px #0a84ff; }
+.scene .scircle {
+  position: absolute; top: 8px; left: 8px; z-index: 4;
+  display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+  background: #0a84ff; box-shadow: 0 0 0 1.5px #fff, 0 1px 3px rgb(0 0 0 / 0.3);
+  color: #fff; font: 600 13.5px/1 var(--rounded);
+  transform: scale(0.4); opacity: 0;
+  transition: transform 0.35s var(--spring-bouncy, ease), opacity 0.15s;
+}
+.scene .scircle.on { transform: none; opacity: 1; }
+/* The annotator's frame, cut by the tile. */
+.scene .frame-x { position: absolute; overflow: hidden; border-radius: 16px; background: var(--matte); box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.2), 0 0 0 0.5px var(--hair), 0 18px 40px -14px rgb(0 0 0 / 0.5); }
+.scene .kcap {
+  position: absolute; display: inline-grid; place-items: center; min-width: 46px; height: 46px; padding: 0 12px 3px;
+  border-radius: 11px; background: var(--key); color: var(--ink); font: 500 21px/1 var(--sans);
+  box-shadow: inset 0 -3px 0 var(--key-edge), 0 0 0 0.5px var(--key-edge), 0 2px 8px rgb(0 0 0 / 0.15);
+  transition: transform 0.08s, box-shadow 0.08s;
+}
+.scene .kcap.down { transform: translateY(2.5px); box-shadow: inset 0 -0.5px 0 var(--key-edge), 0 0 0 0.5px var(--key-edge), 0 1px 2px rgb(0 0 0 / 0.12); }
+/* Several in a row: the stack's column, which narrows while the editor is open, the selection
+   strip beside it, and the editor's bar. A row or button lights while its key runs it. */
+.scene.fades { transition: opacity 0.25s; }
+.scene .qcol { position: absolute; transform-origin: 100% 100%; }
+.scene .qstrip {
+  position: absolute; display: flex; flex-direction: column; gap: 4px; padding: 4px; border-radius: 12px;
+  background: rgb(38 38 40 / 0.9); box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.18), 0 4px 10px rgb(0 0 0 / 0.25);
+  color: rgb(255 255 255 / 0.9); font: 500 13px/1 var(--sans);
+  opacity: 0; transform: translateX(8px) scale(0.97); transform-origin: 100% 50%;
+  transition: opacity 0.18s, transform 0.35s var(--spring, ease);
+}
+.scene .qstrip.up { opacity: 1; transform: none; }
+.scene .qstrip .row { display: flex; align-items: center; height: 27px; padding-right: 9px; border-radius: 8px; transition: background 0.12s, transform 0.2s var(--spring-bouncy, ease); }
+.scene .qstrip .row svg { width: 27px; flex: none; }
+.scene .qstrip .row span { margin-right: 10px; }
+.scene .qstrip .row kbd { margin-left: auto; font: inherit; opacity: 0.5; }
+.scene .qbar { position: absolute; opacity: 0; transform: translateX(-50%) translateY(-6px) scale(0.78); transform-origin: 50% 0; transition: opacity 0.18s, transform 0.35s var(--spring, ease); }
+.scene .qbar.up { opacity: 1; transform: translateX(-50%) scale(0.82); }
+.scene .qbar .bar > span:not(.divider) { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 8px; transition: background 0.12s, transform 0.2s var(--spring-bouncy, ease); }
+.scene .qbar .bar > span.tool { width: 34px; padding: 0; }
+.scene .qstrip .row.lit, .scene .qbar .copy.lit { background: rgb(255 255 255 / 0.2); }
+.scene .qstrip .row.down, .scene .qbar .copy.down { transform: scale(0.94); }
+/* A card in flight. */
+.scene .cardx.flying { left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.scene .crosshair { position: absolute; left: 0; top: 0; z-index: 5; transition: opacity 0.25s; pointer-events: none; }
+.scene .pointer { position: absolute; left: 0; top: 0; z-index: 5; width: 24px; height: 24px; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35)); transition: opacity 0.25s; }
+.scene .pointer svg { transform-origin: 10px 7px; transition: transform 0.1s; }
+.scene .pointer.down svg { transform: scale(0.88); }
+/* Claude Code in a terminal. */
+.scene .term-x { position: absolute; overflow: hidden; border-radius: 12px; background: #0c0e12; color: #c9ccd3; font: 13px/1.65 var(--mono); box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.12), 0 18px 40px -16px rgb(0 0 0 / 0.5); }
+.scene .term-x pre { margin: 0; padding: 14px 16px; font: inherit; white-space: pre; }
+.scene .term-x b { font-weight: 700; color: #e6e6e6; }
+.scene .term-x .ln { transition: opacity 0.25s; }
+.scene .term-x .ln.hid { opacity: 0; }
+.scene .t-claude { color: #d97757; }
+.scene .t-dim { color: #6b7080; }
+.scene .t-hi { color: #e6e6e6; }
+/* Claude Code's dots: white before its prose, grey and blinking before a tool call that runs. */
+.scene .t-said { color: #e6e6e6; }
+.scene .t-run { color: #8b8f99; animation: blink 1s steps(1) infinite; }
+@media (prefers-reduced-motion: reduce) { .scene .t-run { animation: none; } }
+.scene .t-out { color: #8b8f99; }
+/* In dark mode the terminal's edge is lifted off the tile. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .scene .term-x { box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16), inset 0 1px 0 rgb(255 255 255 / 0.08), 0 18px 40px -16px rgb(0 0 0 / 0.7); }
+}
+:root[data-theme="dark"] .scene .term-x { box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16), inset 0 1px 0 rgb(255 255 255 / 0.08), 0 18px 40px -16px rgb(0 0 0 / 0.7); }
+/* The tiles under the first stage: right Shift tapped twice, a stitched card with Stitch's own
+   badges, and a card's drag image over Claude Code's prompt. */
+.scene .shiftk { min-width: 96px; justify-items: end; padding-right: 14px; }
+.scene .twice { position: absolute; font: 600 17px var(--sans); color: var(--ink-2); opacity: 0; transform: scale(0.6); transition: opacity 0.15s, transform 0.35s var(--spring-bouncy, ease); }
+.scene .twice.on { opacity: 1; transform: none; }
+.scene .stitched { position: absolute; background: #1a1a1a; }
+.scene .sbadge { position: absolute; z-index: 2; display: grid; place-items: center; border-radius: 50%; background: #e03131; color: #fff; font-family: var(--sans); font-weight: 700; line-height: 1; }
+.scene .cardx.ghost { left: 0; top: 0; z-index: 4; pointer-events: none; }
+.scene .term-x .pbox { margin-top: 6px; padding: 6px 10px; border: 1px solid #3a3d44; border-radius: 8px; }
+.scene .term-x .tcur { display: inline-block; width: 8px; height: 15px; vertical-align: -3px; background: #c9ccd3; }
+
+/* Your app stays in front: the typing the play adds, which a replay fades out, and the caret: solid
+   while the play types, as macOS draws it, and gone while the stack holds the keys. */
+.scene .field.typing .tcaret { animation: none; }
+.scene .field .added { all: unset; transition: opacity 0.25s; }
+.scene .field.caret-off .tcaret { visibility: hidden; }
+/* Premium details and Several in a row (flight.js, queue.js): a card in flight is laid out at the
+   editor's size and scaled, so its border ring is set against the scale to stay 0.5 pt wide. */
+.scene .flights .cardx.flying::after { box-shadow: inset 0 0 0 var(--ring, 0.5px) rgb(255 255 255 / 0.4); transition: none; }
+/* Recent (recent.js): right Shift drawn as a Mac’s key. */
+.scene .kcap.shiftk { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; padding: 7px 10px 8px; font-size: 12px; }
+.scene .shiftk span:first-child { font-size: 15px; }
+.scene .cardx.lifted::after, .scene .cardx.lifted .scircle { transition: none; }
+.scene .term-x .typed { display: inline-block; overflow: hidden; vertical-align: top; transition: width 0.25s var(--spring, ease); }
+.scene .cam { position: absolute; inset: 0; transform-origin: 0 0; }
+
+/* Agent, Front and tiles (front.js). Front's keys: right Shift tapped twice opens the stack, and Esc closes it. */
+.scene .fkeys { position: absolute; z-index: 4; transform-origin: 0 0; opacity: 0; transform: scale(calc(var(--scale) * 0.92)); transition: opacity 0.15s, transform 0.3s var(--spring, ease); }
+.scene .fkeys.up { opacity: 1; transform: scale(var(--scale)); }
+.scene .fkeys .twice { color: rgb(255 255 255 / 0.8); }
+.scene .kcap.esck { min-width: 66px; display: flex; align-items: flex-end; justify-content: flex-start; padding: 7px 10px 8px; font-size: 12px; }
+/* Drag (stack.js): Claude Code keeps its prompt at the bottom of the terminal, under the
+   conversation, which runs off the top. */
+.scene .term-x.claude pre { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; box-sizing: border-box; }
+
+/* Agent, Front and tiles (tiles.js): a picture that a click replays shows the pointer. */
+.feature-pic.replays { cursor: pointer; }
+/* Front (front.js): the stays page ends above the window's bottom on its own background. */
+.feature-pic .window .page { background: #f5f1e8; }
+/* Agent (agent.js): lines Claude Code prints at once, which a rewind closes up. */
+.scene .term-x .grp { flex: none; overflow: hidden; transition: height 0.25s var(--spring, ease), opacity 0.2s; }
+/* Agent (agent.js): the dot of a tool call that has run, green as Claude Code draws it. */
+.scene .t-ok { color: #4eba65; }
