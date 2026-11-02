@@ -71,10 +71,10 @@ export class Flight {
   reset() {
     this.trace.style.opacity = 1;
     this.show(-1);
-    this.key.classList.remove("down", "lit");
+    this.key.classList.remove("down");
     this.m.jump("p", 0);
   }
-  final() { this.reset(); this.show(Infinity); this.key.classList.add("lit"); }
+  final() { this.reset(); this.show(Infinity); }
   async play() {
     this.reset();
     await wait(0.15);
@@ -87,7 +87,7 @@ export class Flight {
     requestAnimationFrame(tick);
     this.m.to("p", 1, UI.expand, UI.flightBounce);
     await wait(ESC_AT);
-    this.key.classList.add("down", "lit");
+    this.key.classList.add("down");
     const back = this.m.to("p", 0, UI.expand, UI.flightBounce);
     await wait(0.14);
     this.key.classList.remove("down");
@@ -97,7 +97,6 @@ export class Flight {
   }
   async rewind() {
     this.trace.style.opacity = 0;
-    this.key.classList.remove("lit");
     await wait(0.25);
   }
 }

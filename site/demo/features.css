@@ -68,7 +68,6 @@
 }
 .scene .kcap.down { transform: translateY(2.5px); box-shadow: inset 0 -0.5px 0 var(--key-edge), 0 0 0 0.5px var(--key-edge), 0 1px 2px rgb(0 0 0 / 0.12); }
 .scene .kcap.esc { min-width: 56px; font-size: 15px; }
-.scene .kcap.lit { color: #0a84ff; }
 /* Several in a row: the stack's column, which narrows while the editor is open, the selection
    strip beside it, and the editor's bar. A row or button lights while its key runs it. */
 .scene.fades { transition: opacity 0.25s; }
