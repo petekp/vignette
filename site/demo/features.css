@@ -142,9 +142,7 @@
 .scene .term-x .typed { display: inline-block; overflow: hidden; vertical-align: top; transition: width 0.25s var(--spring, ease); }
 .scene .cam { position: absolute; inset: 0; transform-origin: 0 0; }
 
-/* Agent, Front and tiles (agent.js, front.js): a shell command Claude Code has run, one dim line. */
-.scene .term-x .t-done, .scene .term-x .t-done b { color: #8b8f99; }
-/* Front's keys: right Shift tapped twice opens the stack, and Esc closes it. */
+/* Agent, Front and tiles (front.js). Front's keys: right Shift tapped twice opens the stack, and Esc closes it. */
 .scene .fkeys { position: absolute; z-index: 4; transform-origin: 0 0; opacity: 0; transform: scale(calc(var(--scale) * 0.92)); transition: opacity 0.15s, transform 0.3s var(--spring, ease); }
 .scene .fkeys.up { opacity: 1; transform: scale(var(--scale)); }
 .scene .fkeys .twice { color: rgb(255 255 255 / 0.8); }
@@ -159,3 +157,5 @@
 .feature-pic .window .page { background: #f5f1e8; }
 /* Agent (agent.js): lines Claude Code prints at once, which a rewind closes up. */
 .scene .term-x .grp { flex: none; overflow: hidden; transition: height 0.25s var(--spring, ease), opacity 0.2s; }
+/* Agent (agent.js): the dot of a tool call that has run, green as Claude Code draws it. */
+.scene .t-ok { color: #4eba65; }

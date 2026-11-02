@@ -17,10 +17,15 @@ const TALK = {
 // Level with the card once it has landed.
 const ASK = { narrow: "Which one?", wide: "Which one do you prefer?" };
 const out = (l) => `<span class="t-out">${l}</span>`;
-// A shell command as Claude Code draws it while it runs, and folded into one dim line once it has.
-const running = (command) => [line('<span class="t-run">●</span> Running <b>1</b> shell command…'),
-  ...command.map((l, i) => line(out(i ? `       ${l}` : `  ⎿  $ ${l}`)))].join("");
-const RAN = line('<span class="t-done">  Ran <b>1</b> shell command</span>');
+// A shell command as Claude Code draws it with its tool calls shown in full (verbose, or ctrl+o):
+// the call with its command under a dot that blinks while it runs and turns green once it has, and
+// its result. `open` prints nothing, which Claude Code shows as "(No output)".
+const call = (command, dot, result) => [
+  ...command.map((l, i) => line(i ? `  ${l}${i === command.length - 1 ? ")" : ""}` : `<span class="${dot}">●</span> <b>Bash</b>(${l}`)),
+  line(out(`  ⎿  ${result}`)),
+].join("");
+const running = (command) => call(command, "t-run", "Running…");
+const ran = (command) => call(command, "t-ok", "(No output)");
 
 export class Agent {
   // Claude Code offers three versions of a card, then runs `open` on a vignette:// URL, and the
@@ -60,16 +65,15 @@ export class Agent {
     this.hide(this.ran, false); this.hide(this.asked, false);
     this.m.jump("x", 1);
   }
-  final() { this.reset(); this.show(this.ran, RAN); this.show(this.asked); this.m.jump("x", 0); }
+  final() { this.reset(); this.show(this.ran, ran(this.command)); this.show(this.asked); this.m.jump("x", 0); }
   async play() {
     this.reset();
     await wait(0.35);
     this.show(this.ran, running(this.command));
-    await wait(0.5);
-    const landed = this.m.to("x", 0, UI.slideIn, UI.flightBounce);
-    await wait(UI.slideIn);
-    this.show(this.ran, RAN);
-    await landed;
+    await wait(0.45);
+    this.show(this.ran, ran(this.command));
+    await wait(0.1);
+    await this.m.to("x", 0, UI.slideIn, UI.flightBounce);
     await wait(0.25);
     this.show(this.asked);
   }
