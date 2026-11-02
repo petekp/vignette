@@ -164,10 +164,10 @@ export class Stage {
     }, { threshold: [0, 0.25, 0.5] }).observe(this.root);
 
     this.stackMotion = new Motion((m) => {
-      this.backdrop.style.opacity = m.get("backdrop");
-      this.backdrop.style.transform = `translateX(${(1 - m.get("backdrop")) * 60}px)`;
-      const s = m.get("scale");
-      this.column.style.transform = `scale(${s})`;
+      const b = m.get("backdrop");
+      this.backdrop.style.setProperty("--shown", b);
+      this.backdrop.style.transform = `translateX(${(1 - b) * 60}px)`;
+      this.column.style.transform = `scale(${m.get("scale")})`;
     }).add("backdrop", 0, 0.002).add("scale", 1, 0.0005);
     this.dimMotion = new Motion((m) => { this.dim.style.opacity = m.get("o"); this.dim.style.visibility = m.get("o") > 0.001 ? "visible" : "hidden"; }).add("o", 0, 0.002);
     this.column.style.transformOrigin = `${SCREEN.w - UI.screenMargin}px ${SCREEN.h - UI.screenMargin}px`;

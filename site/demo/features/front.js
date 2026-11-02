@@ -55,7 +55,7 @@ export class Front {
       y -= UI.cardSpacing;
     }
     this.m = new Motion((m) => {
-      this.backdrop.style.opacity = m.get("backdrop");
+      this.backdrop.style.setProperty("--shown", m.get("backdrop"));
       this.cards.forEach((c, i) => { c.style.transform = `translateX(${m.get(`x${i}`) * c.away}px)`; });
     }).add("backdrop", 0);
     this.cards.forEach((_, i) => this.m.add(`x${i}`, 1, 0.001));

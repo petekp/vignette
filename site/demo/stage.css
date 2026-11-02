@@ -143,9 +143,11 @@
   visibility: hidden;
 }
 
-/* The stack's backdrop: a strip of blur that grows toward the screen's edge, and a tint. */
-.backdrop { position: absolute; top: 0; bottom: 0; right: 0; width: 230px; opacity: 0; pointer-events: none; }
-.backdrop i, .backdrop b { position: absolute; inset: 0; }
+/* The stack's backdrop: a strip of blur that grows toward the screen's edge, and a tint. It fades in
+   and out by --shown, on each layer: an ancestor below full opacity cuts a backdrop-filter off from
+   what is behind it, so a fade on the strip itself showed no blur until it reached 1. */
+.backdrop { --shown: 0; position: absolute; top: 0; bottom: 0; right: 0; width: 230px; pointer-events: none; }
+.backdrop i, .backdrop b { position: absolute; inset: 0; opacity: var(--shown); }
 .backdrop i:nth-child(1) { backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); mask-image: linear-gradient(90deg, transparent 0%, #000 20%); -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 20%); }
 .backdrop i:nth-child(2) { backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px); mask-image: linear-gradient(90deg, transparent 15%, #000 40%); -webkit-mask-image: linear-gradient(90deg, transparent 15%, #000 40%); }
 .backdrop i:nth-child(3) { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); mask-image: linear-gradient(90deg, transparent 35%, #000 60%); -webkit-mask-image: linear-gradient(90deg, transparent 35%, #000 60%); }
