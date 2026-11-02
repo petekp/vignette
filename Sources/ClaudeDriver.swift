@@ -23,6 +23,8 @@ final class ClaudeDriver: ResponderDriver {
     private var process: JSONLinesProcess?
     private var report: ((ResponderEvent) -> Void)?
     private var warmingUp = false
+    /// The process's init line listed its tools, and they passed the check.
+    private var sawInit = false
     private var partial = ""
     /// The conversation's cost so far, from the last `result` line, which gives the total rather than
     /// the turn's own.
@@ -114,6 +116,7 @@ final class ClaudeDriver: ResponderDriver {
         self.report = report
         totalCost = 0
         warmingUp = true
+        sawInit = false
         Log.write("[live-ink] responder starting pid=\(process?.pid ?? 0) agent=claude")
         write(content: [["type": "text", "text": LiveResponder.warmUp]])
         return nil
@@ -149,15 +152,13 @@ final class ClaudeDriver: ResponderDriver {
     private func received(_ json: [String: Any]) {
         switch json["type"] as? String {
         case "system" where json["subtype"] as? String == "init":
-            let tools = json["tools"] as? [String] ?? []
+            // A missing or reshaped list proves nothing, so it fails the check as tools would.
+            guard let tools = json["tools"] as? [String] else { return refuseUnisolated("init lists no tools") }
             let servers = json["mcp_servers"] as? [Any] ?? []
             guard Set(tools).isSubset(of: Self.allowedTools), servers.isEmpty else {
-                Log.write("[live-ink] responder error not-isolated tools=\(tools.count) mcp=\(servers.count)")
-                report?(.refused(ResponderRefusal(failure: LiveResponder.Failure(reason: "Live ink stopped Claude, which started with tools.", detail: "not isolated"),
-                                                  problem: "This version of Claude Code starts with tools, so live ink can't use it.",
-                                                  retry: .onceBinaryChanges)))
-                return
+                return refuseUnisolated("tools=\(tools.count) mcp=\(servers.count)")
             }
+            sawInit = true
         case "stream_event":
             guard !warmingUp, let event = json["event"] as? [String: Any],
                   event["type"] as? String == "content_block_delta", let delta = event["delta"] as? [String: Any] else { return }
@@ -181,6 +182,8 @@ final class ClaudeDriver: ResponderDriver {
         if let total { totalCost = total }
         if warmingUp {
             warmingUp = false
+            // The warm-up is sent before any screen content, so a process that never showed its tools stops here.
+            guard failed || sawInit else { return refuseUnisolated("no init before the warm-up's result") }
             report?(failed ? .startFailed("warm-up: \(detail)") : .ready("ms=\(milliseconds) cost=\(cost)"))
             return
         }
@@ -206,6 +209,14 @@ final class ClaudeDriver: ResponderDriver {
         if ["log in", "login", "authenticat", "api key"].contains(where: lower.contains) { return Self.problem(.signedOut) }
         if lower.contains("limit") { return "Claude's usage limit is reached for now." }
         return nil
+    }
+
+    /// Stops this `claude` for good: it may have tools, so no screen content goes to it.
+    private func refuseUnisolated(_ detail: String) {
+        Log.write("[live-ink] responder error not-isolated \(detail)")
+        report?(.refused(ResponderRefusal(failure: LiveResponder.Failure(reason: "Live ink stopped Claude, which started with tools.", detail: "not isolated"),
+                                          problem: "This version of Claude Code starts with tools, so live ink can't use it.",
+                                          retry: .onceBinaryChanges)))
     }
 
     private func ended(_ status: Int32) {

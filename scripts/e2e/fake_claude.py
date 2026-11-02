@@ -9,8 +9,9 @@ an `init` line before its first answer, the answer's JSON in `input_json_delta` 
 `<folder>/calls.jsonl` gets one line for the arguments and one per message, with its text and the
 size of each image, never the image. `<folder>/answer.json` is the answer it gives, or else it
 circles the first text line the message names. `<folder>/tools` holds tool names its `init` line
-lists, one a line, to stand in for a CLI that ignores `--tools ""`. `<folder>/signed-out` makes
-`claude auth status` report that nobody is signed in.
+lists, one a line, to stand in for a CLI that ignores `--tools ""`, and `<folder>/no-init` leaves the
+`init` line out, to stand in for one that no longer writes it. `<folder>/signed-out` makes `claude auth
+status` report that nobody is signed in.
 """
 import json
 import os
@@ -38,7 +39,9 @@ def main():
         record(folder, {'text': text, 'images': images})
         if not started:
             started = True
-            emit({'type': 'system', 'subtype': 'init', 'tools': ['StructuredOutput'] + tools(folder), 'mcp_servers': []})
+            if not os.path.exists(os.path.join(folder, 'no-init')):
+                emit({'type': 'system', 'subtype': 'init', 'tools': ['StructuredOutput'] + tools(folder),
+                      'mcp_servers': []})
         answer = {'say': 'Ready.', 'marks': []} if 'starting you up' in text else reply(folder, text)
         encoded = json.dumps(answer)
         for start in range(0, len(encoded), 12):
