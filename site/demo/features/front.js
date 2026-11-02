@@ -1,27 +1,6 @@
 import { el, cardSize, place, coverRect, Motion, UI, wait } from "../vignette.js";
 import { IMAGES, PERSON_MARKS } from "../cards.js";
-import { card, whole, shiftKey, escKey, twice, tap } from "./parts.js";
-
-// BackdropPanel's strip at the app's defaults: bands of blur whose radius grows toward the screen's
-// edge, each fading in over the band before it and out over the next, under a tint that darkens to
-// the edge.
-const BANDS = 7, BLUR = 25, RAMP = 1.2;
-function backdrop() {
-  const b = el("div", "backdrop");
-  b.style.width = `${UI.backdropWidth}px`;
-  const step = 100 / BANDS;
-  for (let i = 0; i < BANDS; i++) {
-    const stops = i === 0 ? ["transparent 0%", `#000 ${step}%`] : [`transparent ${step * (i - 1)}%`, `#000 ${step * i}%`];
-    stops.push(...(i === BANDS - 1 ? ["#000 100%"] : [`#000 ${step * (i + 1)}%`, `transparent ${Math.min(100, step * (i + 2))}%`]));
-    const mask = `linear-gradient(90deg, ${stops.join(", ")})`;
-    const blur = `blur(${(BLUR * ((i + 1) / BANDS) ** RAMP).toFixed(2)}px)`;
-    const band = el("i");
-    Object.assign(band.style, { backdropFilter: blur, webkitBackdropFilter: blur, maskImage: mask, webkitMaskImage: mask });
-    b.append(band);
-  }
-  b.append(el("b"));
-  return b;
-}
+import { card, whole, shiftKey, escKey, twice, tap, menubar, backdrop } from "./parts.js";
 
 // Where the stays page's right edge shows, in its own pixels: wide, past the dates (which end at
 // 1320) and short of the badges, avatars and button (from 1517); compact, past the descriptions (to
@@ -50,7 +29,7 @@ export class Front {
     const s = el("div", "scene");
     s.style.width = `${W}px`; s.style.height = `${H}px`;
     s.append(el("div", "wallpaper"));
-    s.append(el("div", "menubar", `<span class="apple">\uF8FF</span><b>Chrome</b><span>File</span><span>Edit</span><span>View</span>${compact ? "" : "<span>History</span><span>Bookmarks</span>"}<i>${compact ? "" : "Sun 1 Nov&nbsp;&nbsp;"}9:41</i>`));
+    s.append(menubar("Chrome", compact ? ["File", "Edit", "View"] : ["File", "Edit", "View", "History", "Bookmarks"], `${compact ? "" : "Sun 1 Nov&nbsp;&nbsp;"}9:41`));
     const win = el("div", "window", `<div class="chrome"><i></i><i></i><i></i><span class="field"><span class="typed">postcard.app/</span><span class="added"></span><b class="tcaret"></b></span></div><div class="page"><img src="${IMAGES.stays.src}" alt=""></div>`);
     // The window runs off the screen's bottom edge however tall the screen is. Compact, the screen's
     // bottom falls between the second stay and the third's name.

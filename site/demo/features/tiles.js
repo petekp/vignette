@@ -9,7 +9,8 @@ import { Flight } from "./flight.js";
 import { Arrows, Later, Quick } from "./drawing.js";
 import { Queue } from "./queue.js";
 import { Agent } from "./agent.js";
-import { Recent, Stitch, Drag } from "./stack.js";
+import { Recent } from "./recent.js";
+import { Stitch, Drag } from "./stack.js";
 
 // Every scene is laid out for a width W in its own points and scaled by k to its tile. Each has
 // four states: reset() is the first frame, final() the last, play() runs the moment from one to
