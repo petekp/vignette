@@ -26,7 +26,7 @@ async function tap(key, hold = 0.09) { key.classList.add("down"); await wait(hol
 
 class Column {
   scene(W, H) {
-    const s = this.s = el("div", "scene fades");
+    const s = this.s = el("div", "scene");
     s.style.width = `${W}px`; s.style.height = `${H}px`;
     this.W = W; this.R = W - 24; this.bottom = H - 14;
     this.col = el("div", "scol");
@@ -42,8 +42,6 @@ class Column {
       return c;
     });
   }
-  shown() { this.s.style.opacity = 1; }
-  async rewind() { this.s.style.opacity = 0; await wait(0.25); }
 }
 
 export class Recent extends Column {
@@ -63,8 +61,13 @@ export class Recent extends Column {
     this.m = this.cards.map((c) => new Motion((m) => at(c, m.get("x"), 0)).add("x", this.off, 0.05));
     return s;
   }
-  reset() { this.shown(); this.twice.classList.remove("on"); this.m.forEach((m) => m.jump("x", this.off)); }
+  reset() { this.twice.classList.remove("on"); this.m.forEach((m) => m.jump("x", this.off)); }
   final() { this.reset(); this.twice.classList.add("on"); this.m.forEach((m) => m.jump("x", 0)); }
+  // The stack slides out, as a dismissal takes it.
+  async rewind() {
+    this.twice.classList.remove("on");
+    await Promise.all(this.m.map((m) => m.to("x", this.off, UI.slideOut)));
+  }
   async play() {
     this.reset();
     await tap(this.key); await wait(0.11); await tap(this.key);
@@ -187,10 +190,17 @@ export class Stitch extends Column {
     this.cards.forEach((c) => { c.classList.toggle("picked", on); c.classList.toggle("lifted", lifted); c.num.classList.toggle("on", on); });
   }
   reset() {
-    this.shown(); this.pick(true); this.notice.classList.remove("in");
+    this.pick(true); this.notice.classList.remove("in");
     for (const name of ["p", "fade", "close"]) this.m.jump(name, 0);
   }
   final() { this.reset(); this.pick(false); for (const name of ["p", "fade", "close"]) this.m.jump(name, 1); }
+  // The new card gives way to the picked cards in their places, and the column opens up for them.
+  async rewind() {
+    this.notice.classList.remove("in");
+    this.m.jump("p", 0);
+    this.pick(true);
+    await Promise.all([this.m.to("fade", 0, 0.25), this.m.to("close", 0, UI.relayout)]);
+  }
   async play() {
     this.reset();
     await wait(0.35);
@@ -239,7 +249,16 @@ export class Drag extends Column {
     return s;
   }
   dropped(on) { this.typed.textContent = on ? "[Image #1] " : ""; }
-  reset() { this.shown(); this.ghost.style.opacity = 0; this.pointer.classList.remove("down"); this.dropped(false); this.m.jump("p", 0); this.m.jump("t", 0); }
+  reset() {
+    this.ghost.style.opacity = 0; this.pointer.classList.remove("down"); this.dropped(false);
+    this.typed.style.opacity = this.pointer.style.opacity = "";
+    this.m.jump("p", 0); this.m.jump("t", 0);
+  }
+  // The dropped image and the pointer fade from the prompt.
+  async rewind() {
+    this.typed.style.opacity = this.pointer.style.opacity = 0;
+    await wait(0.25);
+  }
   final() { this.reset(); this.m.jump("p", 1); this.m.jump("t", 1); this.dropped(true); }
   // The drag in mid-flight over the prompt.
   poster() { this.reset(); this.m.jump("p", 1); this.m.jump("t", 0.65); this.ghost.style.opacity = 1; this.pointer.classList.add("down"); }
