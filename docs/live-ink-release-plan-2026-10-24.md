@@ -165,6 +165,9 @@ before phase 7.
 
 ### Phase 2: remove the shadow log (2026-11-02, after the rescore)
 
+Done on 2026-11-02, on branch `shadow-log`. `LiveReads` went too: the author search was its only
+reader.
+
 - Delete the three `SendContext` files, their tests and every call site. `LiveReads` either goes
   or becomes a counter of its own, if the author search was its only reader.
 - A launch deletes `send-context.jsonl` from Application Support, as it removes the web editor's
@@ -239,7 +242,8 @@ and 6. It is not measured.
 
 ## What would change the plan
 
-- **The rescore moves the start of Send.** Phase 3's note target follows it.
+- **The rescore moves the start of Send.** Phase 3's note target follows it. It did not: on
+  2026-11-02 Pete chose to keep Send as it is.
 - **Phase 1 takes more than a day.** Then the two branches have drifted further than the 9 files
   show, and the review in phase 6 starts earlier.
 - **The fresh-Mac run finds the setup page too long.** Then the live ink page becomes an offer

@@ -310,11 +310,11 @@ they read one builder.
 A throwaway script over the live inboxes on 2026-10-23 found no two equal titles in one group among
 28 sessions. 48 places resolved in 124 ms in one process, cold start included.
 
-To see whether it helps, `send-context.jsonl` (`SendContext.menu`) records a `menu` event each time
-a menu closes: the surface ("bar" or "note"), the number of picks, how long after the bar or note
+To see whether it helps, `send-context.jsonl` (`SendContext.menu`) recorded a `menu` event each time
+a menu closed: the surface ("bar" or "note"), the number of picks, how long after the bar or note
 opened the last pick came, and whether it came from the keyboard. Counts and times only, no ids.
-That log is removed before live ink reaches main, so these fields measure this branch only. A
-measure that should outlast the merge needs a place of its own.
+The log was removed on 2026-11-02, so these fields measured the live-ink branch only. A measure
+that should outlast the merge needs a place of its own.
 
 The baseline: in that log on 2026-10-18, the person changed the destination choice on 35 of 122
 sends and 7 of 78 notes. The replay's 37 of 125 counts the same thing over its own set of sends,

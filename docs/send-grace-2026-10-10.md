@@ -98,10 +98,11 @@ editor. The wait is 3 seconds.
   a newer launch's 3 second force-quit cut them off. Each request is recorded `uncertain` before
   its line leaves, and a client that has not answered in 2 seconds stays `uncertain`: the line may
   have arrived, so the next launch must not clear it.
-- **The shadow log knows about a cancel.** `SendContext.cancelled` writes a `send-cancelled` event
-  with the request id for an editor send. For a live ink note it names the session in `note`,
-  because the `note` event carries no request id. The cancel can be matched to its note only when
-  one note to that session is waiting; with two waiting, which one was cancelled is not recorded.
+- **The shadow log knew about a cancel,** until it was removed on 2026-11-02. `SendContext.cancelled`
+  wrote a `send-cancelled` event with the request id for an editor send. For a live ink note it
+  named the session in `note`, because the `note` event carried no request id. The cancel could be
+  matched to its note only when one note to that session was waiting. With two waiting, which one
+  was cancelled was not recorded.
 - **The live ink turn watch starts when the line is handed over.** A turn that ends during the wait
   is not this note's. `NoteCardGroups` decides it: a note sent with a grace period is `held`, and
   `released` starts its wait as `sent` does, while `cancelled` forgets it.
