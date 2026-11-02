@@ -152,3 +152,6 @@
 /* Drag (stack.js): Claude Code keeps its prompt at the bottom of the terminal, under the
    conversation, which runs off the top. */
 .scene .term-x.claude pre { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; box-sizing: border-box; }
+
+/* Agent, Front and tiles (tiles.js): a picture that a click replays shows the pointer. */
+.feature-pic.replays { cursor: pointer; }

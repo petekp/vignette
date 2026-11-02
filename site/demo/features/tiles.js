@@ -19,6 +19,9 @@ const SCENES = {
   recent: Recent, quick: Quick, stitch: Stitch, drag: Drag,
 };
 
+// A tile is in view while this much of it is on screen.
+const SEEN = 0.55;
+
 class Tile {
   constructor(root) {
     this.root = root;
@@ -26,7 +29,11 @@ class Tile {
     this.Scene = SCENES[root.dataset.scene];
     this.played = false;
     this.playing = false;
+    this.inView = false;
+    this.offScreen = true;
+    this.unseen = false;
     this.fit();
+    this.showReplay();
     new ResizeObserver(() => this.fit()).observe(this.slot);
   }
   // A new layout only when the tile's width asks for one; otherwise the scene is only rescaled.
@@ -56,42 +63,78 @@ class Tile {
     this.played = true;
     this.key = null;
     this.fit();
+    this.showReplay();
   }
+  // The pointer offers a replay where a click gives one: on a picture that has played, between plays.
+  showReplay() { this.slot.classList.toggle("replays", motion() > 0 && this.played && !this.playing); }
+  // `ratio` is how much of the tile is on screen. A play that ran while the tile was mostly off
+  // screen went unseen, and the tile plays again when it comes back.
+  view(ratio) {
+    this.inView = ratio >= SEEN;
+    this.offScreen = ratio === 0;
+    if (this.playing && !this.inView) this.unseen = true;
+    this.settle();
+  }
+  // An unseen play's result goes back to the first frame while no part of the tile is on screen,
+  // where nobody sees it jump, so the tile comes back to play as it did on its first scroll-in.
+  settle() {
+    if (this.playing || !this.unseen || !this.offScreen) return;
+    this.unseen = false;
+    this.played = false;
+    this.scene.reset();
+    this.showReplay();
+  }
+  get due() { return this.inView && !this.playing && motion() > 0 && (!this.played || this.unseen); }
+  start() { if (this.due) this.run(this.played); }
   async run(again) {
     if (this.playing || !motion()) return;
     this.playing = true;
+    this.unseen = false;
+    this.showReplay();
     const scene = this.scene;
     try {
       if (again) await scene.rewind();
       if (scene !== this.scene) return;
       await scene.play();
       this.played = true;
-    } finally { this.playing = false; }
+    } finally {
+      this.playing = false;
+      this.showReplay();
+      this.settle();
+      // Back in view before an unseen play ended: it plays again from its first frame.
+      if (this.due) setTimeout(() => this.start(), 250);
+    }
   }
 }
 
 export function buildFeatures(section) {
   const tiles = [...section.querySelectorAll(".feature")].map((root) => new Tile(root));
   // Reduce Motion turned on shows every result at once; turned off, the next scroll or point plays.
-  if (!motion()) tiles.forEach((tile) => { tile.played = true; });
+  if (!motion()) tiles.forEach((tile) => { tile.played = true; tile.showReplay(); });
   // A list of its own, read nowhere else: Chrome fired no "change" on the springs' list, which a
   // play reads on every step.
   matchMedia(reducedMotion.media).addEventListener("change", (e) => {
-    if (e.matches) tiles.forEach((tile) => tile.still());
+    tiles.forEach((tile) => {
+      if (e.matches) { tile.still(); return; }
+      tile.unseen = true;
+      tile.settle();
+      tile.showReplay();
+    });
   });
   // Tiles that come into view together start a third of a second apart, in reading order, so the
   // eye can follow one before the next moves.
-  const seen = new IntersectionObserver((entries) => {
-    entries.filter((e) => e.isIntersecting)
-      .map((e) => tiles.find((t) => t.root === e.target))
+  const watch = new IntersectionObserver((entries) => {
+    const changed = entries.map((e) => {
+      const tile = tiles.find((t) => t.root === e.target);
+      tile.view(e.isIntersecting ? e.intersectionRatio : 0);
+      return tile;
+    });
+    changed.filter((tile) => tile.due)
       .sort((a, b) => tiles.indexOf(a) - tiles.indexOf(b))
-      .forEach((tile, i) => {
-        seen.unobserve(tile.root);
-        setTimeout(() => tile.run(tile.played), 250 + i * 350);
-      });
-  }, { threshold: 0.55 });
+      .forEach((tile, i) => setTimeout(() => tile.start(), 250 + i * 350));
+  }, { threshold: [0, SEEN] });
   tiles.forEach((tile) => {
-    seen.observe(tile.root);
+    watch.observe(tile.root);
     // Pointing at a tile that has played plays it again once the pointer has stayed still there for
     // 0.4 s, so a pointer passing across the grid, or moving within a tile, sets nothing off. It
     // plays once per visit; looking around the result afterwards leaves it alone.
