@@ -28,15 +28,15 @@ const calendar = (w) => `<div class="ctool"><span class="lights"><i></i><i></i><
 // rewind's slides of the new card out and of each piece back in.
 const SPRINGS = ["p", "fade", "close", "zoom", "out", "in0", "in1", "in2"];
 // What Stitch joins, in the order they were picked: captures of the chat asking about a day, of
-// that day in the itinerary, and of the stay it ends at. Short, wide captures stack into one column
-// whose shape a card shows whole, and each takes the badge's 32 px floor, so the badges read once
-// the view pushes in. Each badge sits on plain page at its piece's top-left, and the first piece is
-// the narrowest, so the column centres it and its badge clears the card's rounded corner. The last
-// is cut inside its stay's own card, so the corner trims only that card's paper, never its border.
+// the stay the day ends at, and of that day in the itinerary. Short, wide captures stack into one
+// column whose shape a card shows whole, and each takes the badge's 32 px floor, so the badges read
+// once the view pushes in. Each badge sits at its piece's top-left. The widest piece is the middle
+// one, so the column centres the first and the last well inside the card's rounded corners, which
+// trim only matte.
 const PIECES = [
   [IMAGES.chat, { x: 0, y: 284, w: 580, h: 228 }, []],
-  [IMAGES.itin, { x: 1194, y: 650, w: 570, h: 262 }, []],
   [IMAGES.stays, { x: 60, y: 768, w: 788, h: 174 }, []],
+  [IMAGES.itin, { x: 1194, y: 650, w: 570, h: 262 }, []],
 ];
 
 // Stitch.compose's layout and badges: every column count is tried and the one a reader's resize
@@ -163,8 +163,10 @@ export class Stitch extends Column {
       this.kept.forEach((c) => { c.style.transform = `translateY(${m.get("close") * this.drop}px)`; });
       const tx = lerp(this.focus.x, this.look.x, z) - this.focus.x * k, ty = lerp(this.focus.y, this.look.y, z) - this.focus.y * k;
       cam.style.transform = `translate(${tx}px, ${ty}px) scale(${k})`;
-      // The column fades out under the menu bar wherever the view puts it.
-      this.col.style.setProperty("--top", `${(this.menu - ty) / k}px`);
+      // The column fades out at the menu bar wherever the view puts it, and pushed in, under it: the
+      // card above is wider than the new one, so a fade in the open would show Calendar through its
+      // left part and the backdrop through the rest.
+      this.col.style.setProperty("--top", `${(this.menu - ty - z * FADE) / k}px`);
       this.col.style.setProperty("--fade", `${FADE / k}px`);
     });
     for (const name of SPRINGS) this.m.add(name, 0, name === "zoom" ? 0.001 : 0.002);
@@ -238,6 +240,6 @@ export class Stitch extends Column {
     this.notice.classList.remove("in");
     // The notice's fade, .notice's opacity transition.
     await wait(0.25);
-    await this.push(1, 1);
+    await this.push(1, 1.2);
   }
 }
