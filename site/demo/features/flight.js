@@ -1,81 +1,102 @@
-import { el, Motion, UI, wait } from "../vignette.js";
+import { el, Motion, Spring, UI, wait } from "../vignette.js";
 import { IMAGES, PERSON_MARKS } from "../cards.js";
-import { lerp, clamp, GUTTER, card, overlay, smallFit } from "./parts.js";
+import { lerp, clamp, GUTTER, card, whole, smallFit } from "./parts.js";
+
+const CW = 128, CH = 80;
+// How long the card is in the air before Esc goes down, and how often the trace keeps an outline.
+const ESC_AT = 0.22, TRACE_EVERY = 0.085;
 
 export class Flight {
-  // A card leaves its slot in the stack for the editor, turns around part way, and lands back in
-  // its slot, which the stack keeps empty while it is away. The trail stays: out as far as it got,
-  // and back.
-  static fit = smallFit(200);
+  // A card leaves its slot in the stack for the editor. Esc goes down while it is in the air, and
+  // it turns around from where it is and lands back in its slot, which the stack held open. Faint
+  // outlines of the card along the way stay as the picture of the flight.
+  static fit = smallFit(222);
   build({ W, H }) {
     const s = el("div", "scene");
     s.style.width = `${W}px`; s.style.height = `${H}px`;
-    this.slot = { x: W - GUTTER - 128, y: 92, w: 128, h: 80 };
-    const ew = Math.min(210, W * 0.56);
+    const x = W - GUTTER - CW;
+    this.slot = { x, y: 4 + CH + UI.cardSpacing, w: CW, h: CH };
+    const ew = Math.min(200, W * 0.54);
     this.editor = { x: GUTTER, y: 4, w: ew, h: ew * 0.625 };
-    const e = this.editor, o = this.slot;
-    this.svg = overlay(W, H, `<defs><marker id="flight-head" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M1 1 L8 5 L1 9" fill="none" stroke="#0a84ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
-      <rect x="${e.x}" y="${e.y}" width="${e.w}" height="${e.h}" rx="16" fill="none" stroke="currentColor" stroke-opacity=".2" stroke-width="1.5" stroke-dasharray="4 5"/>
-      <rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" rx="16" fill="none" stroke="currentColor" stroke-opacity=".28" stroke-width="1.5" stroke-dasharray="4 5"/>
-      <g class="fades"><polyline class="out" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="2" stroke-dasharray="1 5" stroke-linecap="round"/>
-      <circle class="turn" r="4" fill="#0a84ff"/>
-      <polyline class="back" fill="none" stroke="#0a84ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></g>`);
-    s.append(this.svg);
-    this.trail = this.svg.querySelector(".fades");
-    this.out = this.svg.querySelector(".out");
-    this.back = this.svg.querySelector(".back");
-    this.turn = this.svg.querySelector(".turn");
-    this.card = card(IMAGES.itin, { x: 1050, y: 230, w: 760, h: 475 }, PERSON_MARKS.slice(0, 2), { x: 0, y: 0, w: 128, h: 80 });
-    this.card.style.transformOrigin = "0 0";
+    this.trace = el("div", "trace");
+    s.append(this.trace);
+    this.outlines = Flight.path().map(([t, p]) => {
+      const o = el("div", "outline");
+      o.t = t;
+      const r = this.rect(p);
+      Object.assign(o.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
+      this.trace.append(o);
+      return o;
+    });
+    // The cards above and below it in the stack.
+    const rest = [[IMAGES.stays, whole(IMAGES.stays), 0], [IMAGES.packing, whole(IMAGES.packing), 2]];
+    for (const [image, view, i] of rest) s.append(card(image, view, [], { x, y: 4 + i * (CH + UI.cardSpacing), w: CW, h: CH }));
+    this.card = card(IMAGES.itin, { x: 1050, y: 230, w: 760, h: 475 }, PERSON_MARKS.slice(0, 2), { x: 0, y: 0, w: CW, h: CH });
+    this.card.classList.add("flying");
     s.append(this.card);
+    this.key = el("div", "kcap esc", "esc");
+    this.key.style.left = `${GUTTER}px`; // Under the farthest outline, which the bow carries below the editor's own rect.
+    this.key.style.top = `${this.editor.y + this.editor.h + 36}px`;
+    s.append(this.key);
     this.m = new Motion((m) => this.draw(m.get("p"))).add("p", 0, 0.0005);
     return s;
+  }
+  // Where the flight is, every TRACE_EVERY seconds, worked out from the same spring a play runs, so
+  // the poster shows the outlines a play leaves.
+  static path() {
+    if (Flight.points) return Flight.points;
+    const s = new Spring(0, 0.0005).to(1, UI.expand, UI.flightBounce), dt = 1 / 240, points = [];
+    let t = 0, next = TRACE_EVERY, turned = false;
+    while (s.moving && t < 3) {
+      if (!turned && t >= ESC_AT) { s.to(0, UI.expand, UI.flightBounce); turned = true; }
+      s.step(dt); t += dt;
+      if (t >= next) { next += TRACE_EVERY; if (s.x > 0.04) points.push([t, s.x]); }
+    }
+    return (Flight.points = points);
   }
   // p is 0 in the slot and 1 in the editor. The path bows to one side, as FlightCurve's does.
   rect(p) {
     const a = this.slot, b = this.editor;
-    const bow = Math.sin(Math.PI * clamp(p, 0, 1)) * 26;
+    const bow = Math.sin(Math.PI * clamp(p, 0, 1)) * 24;
     return { x: lerp(a.x, b.x, p) + bow * 0.5, y: lerp(a.y, b.y, p) + bow, w: lerp(a.w, b.w, p), h: lerp(a.h, b.h, p) };
   }
-  path(from, to, off = 0) {
-    return Array.from({ length: 28 }, (_, i) => {
-      const r = this.rect(lerp(from, to, i / 27));
-      return `${(r.x + r.w / 2 + off * 0.55).toFixed(1)},${(r.y + r.h / 2 + off).toFixed(1)}`;
-    }).join(" ");
-  }
   draw(p) {
-    const r = this.rect(p);
-    this.card.style.transform = `translate(${r.x}px, ${r.y}px) scale(${r.w / this.slot.w})`;
-    this.card.style.boxShadow = `0 ${4 + 14 * p}px ${8 + 26 * p}px -${4 * p}px rgb(0 0 0 / ${0.35 + 0.2 * p})`;
-    if (!this.flying) return;
-    if (!this.turned) this.far = Math.max(this.far, p);
-    this.lines(this.turned ? this.far : p, this.turned ? p : null);
+    const r = this.rect(p), k = r.w / CW, lift = clamp(p, 0, 1);
+    this.card.style.transform = `translate(${r.x}px, ${r.y}px) scale(${k})`;
+    this.card.style.borderRadius = `${16 / k}px`;
+    this.card.style.boxShadow = `0 ${(4 + 14 * lift) / k}px ${(8 + 26 * lift) / k}px rgb(0 0 0 / ${0.35 + 0.2 * lift})`;
   }
-  lines(far, back) {
-    this.out.setAttribute("points", this.path(0, far));
-    this.back.setAttribute("points", back == null ? "" : this.path(far, back, 16));
-    this.back.setAttribute("marker-end", back == null ? "" : "url(#flight-head)");
-    const r = this.rect(far);
-    this.turn.setAttribute("cx", r.x + r.w / 2);
-    this.turn.setAttribute("cy", r.y + r.h / 2);
-    this.turn.style.opacity = back == null ? 0 : 1;
-  }
+  // The outlines a play has left by `t` seconds into the flight.
+  show(t) { this.outlines.forEach((o) => o.classList.toggle("on", o.t <= t)); }
   reset() {
-    this.flying = false; this.far = 0;
-    this.out.setAttribute("points", ""); this.back.setAttribute("points", ""); this.turn.style.opacity = 0;
-    this.trail.style.opacity = 1;
+    this.trace.style.opacity = 1;
+    this.show(-1);
+    this.key.classList.remove("down");
     this.m.jump("p", 0);
   }
-  final() { this.reset(); this.lines(0.85, 0.12); }
+  final() { this.reset(); this.show(Infinity); }
   async play() {
     this.reset();
-    this.flying = true; this.turned = false;
+    await wait(0.15);
+    const start = performance.now();
+    const tick = () => {
+      this.show((performance.now() - start) / 1000);
+      if (this.tracing) requestAnimationFrame(tick);
+    };
+    this.tracing = true;
+    requestAnimationFrame(tick);
     this.m.to("p", 1, UI.expand, UI.flightBounce);
-    await wait(0.26);
-    this.turned = true;
-    await this.m.to("p", 0, UI.expand, UI.flightBounce);
-    this.flying = false;
-    this.lines(this.far, 0.12);
+    await wait(ESC_AT);
+    this.key.classList.add("down");
+    const back = this.m.to("p", 0, UI.expand, UI.flightBounce);
+    await wait(0.14);
+    this.key.classList.remove("down");
+    await back;
+    this.tracing = false;
+    this.show(Infinity);
   }
-  async rewind() { this.trail.style.opacity = 0; await wait(0.25); }
+  async rewind() {
+    this.trace.style.opacity = 0;
+    await wait(0.25);
+  }
 }

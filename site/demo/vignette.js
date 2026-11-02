@@ -1,6 +1,8 @@
 // The page's demos: Vignette's stack, flights, annotator and marks, rebuilt with the app's own
 // numbers (UITweaks, MarkStyle, NoteTag, NoteBadge). Every stage is a Mac screen 1440 by 900
 // points, scaled to fit, so a size here is a size in the app.
+import { MARK, FONT, CLAUDE_SVG, POINT_SCALE, escapeXML, SVG_NS, markBounds, marksSVG } from "./marks.js";
+import { reducedMotion, motion, Spring, Motion } from "./springs.js";
 
 const SCREEN = { w: 1440, h: 900, menu: 25 };
 const UI = {
@@ -12,26 +14,8 @@ const UI = {
   annotationMinWidth: 770, annotationMinHeight: 320, annotationCorner: 16, toolbarGap: 9,
   screenInset: 60, toolbarHeight: 40, noticeSeconds: 1.7, thumbnailSeconds: 5,
 };
-const MARK = {
-  person: "#e03131", agent: "#364fc7", edge: "#ffffff",
-  stroke: 3.5, edgeWidth: 1.5, arrowLength: 4.5, arrowWidth: 4,
-  textSize: 17, agentTextSize: 0.0133, lineHeight: 1.32,
-  padTop: 0.42, padBottom: 0.47, padSide: 0.8, maxWidth: 18, noteGap: 8,
-  badgeHeight: 1.36, badgeLabel: 0.75, badgeLogo: 0.79, badgeGap: 0.32,
-  badgeLead: 0.5, badgeTrail: 0.57, badgeInset: 0.35, badgeOverlap: 0.2,
-};
-const FONT = {
-  person: 'ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif',
-  agent: 'ui-monospace, "SF Mono", Menlo, monospace',
-  ui: 'system-ui, -apple-system, "Helvetica Neue", sans-serif',
-};
-// Resolved from this file, so a page in another folder (the share image's) finds it.
-const CLAUDE_SVG = new URL("claude.svg", import.meta.url).href;
-const POINT_SCALE = 2; // the screenshots are 2x captures: image px per point
 
-const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const narrowScreen = matchMedia("(max-width: 600px)");
-const motion = () => (reducedMotion.matches ? 0 : 1);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const wait = (s) => new Promise((r) => setTimeout(r, s * 1000 * motion()));
@@ -58,227 +42,6 @@ addEventListener("pointerdown", (e) => { pointerType = e.pointerType; }, true);
 function onPress(target, f) {
   target.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse") f(e); });
   target.addEventListener("click", (e) => { if (pointerType !== "mouse") f(e); });
-}
-const escapeXML = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-
-// ---------------------------------------------------------------------------------------------
-// Springs. SwiftUI's spring(duration:bounce:): stiffness (2π/d)², damping 4π(1-bounce)/d, mass 1.
-// A spring sent to a new target keeps its velocity, so an interrupted motion blends instead of
-// jumping, as the app's Tween does.
-
-const active = new Set();
-let frame = 0, last = 0;
-function tick(now) {
-  const dt = Math.min(0.05, last ? (now - last) / 1000 : 1 / 60);
-  last = now;
-  for (const m of [...active]) m.step(dt);
-  frame = active.size ? requestAnimationFrame(tick) : ((last = 0), 0);
-}
-function wake(m) {
-  active.add(m);
-  if (!frame) frame = requestAnimationFrame(tick);
-}
-
-class Spring {
-  constructor(value, eps = 0.01) {
-    this.x = value; this.v = 0; this.target = value; this.eps = eps;
-    this.k = 0; this.c = 0; this.moving = false; this.waiters = [];
-  }
-  to(target, duration, bounce = 0) {
-    this.target = target;
-    const d = duration * motion();
-    if (d <= 0) return this.jump(target);
-    const w = (2 * Math.PI) / d;
-    this.k = w * w; this.c = (4 * Math.PI * (1 - bounce)) / d; this.moving = true;
-    return this;
-  }
-  jump(value) {
-    this.x = value; this.target = value; this.v = 0; this.moving = false; this.settle();
-    return this;
-  }
-  step(dt) {
-    if (!this.moving) return;
-    const n = Math.ceil(dt / 0.002), h = dt / n;
-    for (let i = 0; i < n; i++) {
-      const a = -this.k * (this.x - this.target) - this.c * this.v;
-      this.v += a * h; this.x += this.v * h;
-    }
-    if (Math.abs(this.x - this.target) < this.eps && Math.abs(this.v) < this.eps * 20) {
-      this.x = this.target; this.v = 0; this.moving = false; this.settle();
-    }
-  }
-  settle() { const w = this.waiters; this.waiters = []; w.forEach((f) => f()); }
-  arrived() { return this.moving ? new Promise((r) => this.waiters.push(r)) : Promise.resolve(); }
-}
-
-// A set of springs and the one function that draws them, called once a frame while any moves.
-class Motion {
-  constructor(render) { this.render = render; this.springs = {}; }
-  add(name, value, eps) { this.springs[name] = new Spring(value, eps); return this; }
-  get(name) { return this.springs[name].x; }
-  to(name, target, duration, bounce = 0) {
-    const s = this.springs[name];
-    if (!s.moving && s.x === target) return Promise.resolve();
-    s.to(target, duration, bounce);
-    this.springs[name].moving ? wake(this) : this.render(this);
-    return this.springs[name].arrived();
-  }
-  jump(name, value) { this.springs[name].jump(value); this.render(this); }
-  step(dt) {
-    let moving = false;
-    for (const s of Object.values(this.springs)) { s.step(dt); moving ||= s.moving; }
-    this.render(this);
-    if (!moving) active.delete(this);
-  }
-}
-
-// A CSS linear() easing sampled from the same spring, for small state changes such as a hover.
-function springEasing(duration, bounce = 0) {
-  const s = new Spring(0, 0.0005).to(1, duration, bounce);
-  const pts = [];
-  for (let i = 0; i <= 40; i++) { pts.push(+s.x.toFixed(4)); s.step(duration / 40); }
-  pts[40] = 1;
-  return `linear(${pts.join(", ")})`;
-}
-document.documentElement.style.setProperty("--spring-fast", springEasing(0.15, 0.15));
-document.documentElement.style.setProperty("--spring", springEasing(0.3, 0.15));
-document.documentElement.style.setProperty("--spring-bouncy", springEasing(0.4, 0.45));
-
-// ---------------------------------------------------------------------------------------------
-// Marks, drawn as the app's renderer draws them (MarkRendering.swift), in image px.
-
-// Text is measured the way it is drawn, as SVG text in this document, so a tag fits its words in
-// whatever font the browser resolves the family to.
-const SVG_NS = "http://www.w3.org/2000/svg";
-const ruler = document.createElementNS(SVG_NS, "svg");
-ruler.setAttribute("aria-hidden", "true");
-ruler.style.cssText = "position:absolute;width:0;height:0;overflow:hidden;visibility:hidden";
-const rulerText = document.createElementNS(SVG_NS, "text");
-rulerText.setAttribute("font-weight", "600");
-rulerText.setAttribute("text-rendering", "geometricPrecision");
-ruler.append(rulerText);
-document.body.append(ruler);
-const widths = new Map();
-function textWidth(text, size, family) {
-  const key = `${size}|${family}|${text}`;
-  if (!widths.has(key)) {
-    rulerText.setAttribute("font-size", size);
-    rulerText.setAttribute("font-family", family);
-    rulerText.textContent = text;
-    widths.set(key, rulerText.getComputedTextLength());
-  }
-  return widths.get(key);
-}
-
-function noteStyle(mark, image) {
-  const agent = mark.who === "agent";
-  const size = agent ? Math.round(image.w * MARK.agentTextSize) : MARK.textSize * POINT_SCALE;
-  return { agent, size, family: agent ? FONT.agent : FONT.person, color: agent ? MARK.agent : MARK.person };
-}
-
-function wrap(text, size, family, max) {
-  const lines = [];
-  for (const para of text.split("\n")) {
-    let line = "";
-    for (const word of para.split(" ")) {
-      const next = line ? `${line} ${word}` : word;
-      if (line && textWidth(next, size, family) > max) { lines.push(line); line = word; } else line = next;
-    }
-    lines.push(line);
-  }
-  return lines;
-}
-
-// The tag's box and its lines, from TextLayout: padding in multiples of the size, 18 em at most.
-function noteLayout(mark, image) {
-  const st = noteStyle(mark, image);
-  const { size, family } = st;
-  const max = Math.min(MARK.maxWidth * size, image.w - mark.x - MARK.padSide * size * 2);
-  const lines = wrap(mark.text || "", size, family, Math.max(size * 3, max));
-  const inner = Math.max(size * 0.5, ...lines.map((l) => textWidth(l, size, family)));
-  let badge = null;
-  if (st.agent) {
-    const label = mark.agentName || "Claude";
-    const labelWidth = textWidth(label, size * MARK.badgeLabel, FONT.ui);
-    const width = size * (MARK.badgeLead + MARK.badgeLogo + MARK.badgeGap + MARK.badgeTrail) + labelWidth;
-    badge = { label, width, height: size * MARK.badgeHeight, inset: size * MARK.badgeInset, overlap: size * MARK.badgeOverlap };
-  }
-  let w = inner + 2 * MARK.padSide * size;
-  if (badge) w = Math.max(w, badge.inset + MARK.padSide * size + badge.width);
-  const lh = MARK.lineHeight * size;
-  const h = lines.length * lh + (MARK.padTop + MARK.padBottom) * size;
-  return { ...st, lines, lh, w, h, badge, x: mark.x, y: mark.y };
-}
-
-function markBounds(mark, image) {
-  if (mark.type === "rect") return { x: mark.x, y: mark.y, w: mark.w, h: mark.h };
-  if (mark.type === "arrow") {
-    const x = Math.min(mark.x1, mark.x2), y = Math.min(mark.y1, mark.y2);
-    return { x, y, w: Math.abs(mark.x2 - mark.x1), h: Math.abs(mark.y2 - mark.y1) };
-  }
-  const l = noteLayout(mark, image);
-  return { x: l.x, y: l.y, w: l.w, h: l.h };
-}
-
-const SHADOW_SHAPE = (px) => `drop-shadow(0 ${0.5 * px}px ${1 * px}px rgba(0,0,0,.28))`;
-
-function markSVG(mark, image, { caret = false } = {}) {
-  const px = POINT_SCALE;
-  const color = mark.who === "agent" ? MARK.agent : MARK.person;
-  const stroke = MARK.stroke * px, edge = MARK.edgeWidth * px;
-  if (mark.type === "rect") {
-    const { x, y, w, h } = mark;
-    return `<g style="filter:${SHADOW_SHAPE(px)}">
-      <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="${MARK.edge}" stroke-width="${stroke + 2 * edge}" stroke-linejoin="round"/>
-      <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linejoin="round"/></g>`;
-  }
-  if (mark.type === "arrow") {
-    const { x1, y1, x2, y2 } = mark;
-    const len = Math.hypot(x2 - x1, y2 - y1) || 1;
-    const ux = (x2 - x1) / len, uy = (y2 - y1) / len;
-    const hl = Math.min(MARK.arrowLength * stroke, len * 0.6), hw = (MARK.arrowWidth * stroke * hl) / (MARK.arrowLength * stroke) / 2;
-    const bx = x2 - ux * hl, by = y2 - uy * hl;
-    const head = `${x2},${y2} ${bx - uy * hw},${by + ux * hw} ${bx + uy * hw},${by - ux * hw}`;
-    const sx = x2 - ux * hl * 0.8, sy = y2 - uy * hl * 0.8;
-    return `<g style="filter:${SHADOW_SHAPE(px)}" stroke-linecap="round" stroke-linejoin="round">
-      <line x1="${x1}" y1="${y1}" x2="${sx}" y2="${sy}" stroke="${MARK.edge}" stroke-width="${stroke + 2 * edge}"/>
-      <polygon points="${head}" fill="${MARK.edge}" stroke="${MARK.edge}" stroke-width="${2 * edge}"/>
-      <line x1="${x1}" y1="${y1}" x2="${sx}" y2="${sy}" stroke="${color}" stroke-width="${stroke}"/>
-      <polygon points="${head}" fill="${color}"/></g>`;
-  }
-  // A note: the tag, its white edge, NoteTag's two shadows, an agent's badge, and the words.
-  const l = noteLayout(mark, image);
-  const r = Math.min(l.h / 2, (l.lh + (MARK.padTop + MARK.padBottom) * l.size) / 2);
-  const s = l.size;
-  const shadows = `drop-shadow(0 ${0.18 * s}px ${0.59 * s}px rgba(0,0,0,.14)) drop-shadow(0 ${0.03 * s}px ${0.06 * s}px rgba(0,0,0,.22))`;
-  let out = `<g style="filter:${shadows}">
-    <rect x="${l.x - edge}" y="${l.y - edge}" width="${l.w + 2 * edge}" height="${l.h + 2 * edge}" rx="${r + edge}" fill="${MARK.edge}"/>
-    <rect x="${l.x}" y="${l.y}" width="${l.w}" height="${l.h}" rx="${r}" fill="${l.color}"/></g>`;
-  if (l.badge) {
-    const b = l.badge, bx = l.x + b.inset, by = l.y - (b.height - b.overlap);
-    const logo = s * MARK.badgeLogo;
-    out += `<g style="filter:drop-shadow(0 ${0.05 * s}px ${0.2 * s}px rgba(0,0,0,.16))">
-      <rect x="${bx}" y="${by}" width="${b.width}" height="${b.height}" rx="${b.height / 2}" fill="#fff" stroke="rgba(0,0,0,.22)" stroke-width="${0.054 * s}"/></g>
-      <image href="${CLAUDE_SVG}" x="${bx + s * MARK.badgeLead}" y="${by + (b.height - logo) / 2}" width="${logo}" height="${logo}"/>
-      <text x="${bx + s * (MARK.badgeLead + MARK.badgeLogo + MARK.badgeGap)}" y="${by + b.height / 2}" dominant-baseline="central"
-        font-family='${FONT.ui}' font-weight="600" text-rendering="geometricPrecision" font-size="${s * MARK.badgeLabel}" fill="rgba(0,0,0,.85)">${escapeXML(b.label)}</text>`;
-  }
-  const tx = l.x + MARK.padSide * s;
-  l.lines.forEach((line, i) => {
-    const ty = l.y + MARK.padTop * s + (i + 0.5) * l.lh;
-    out += `<text x="${tx}" y="${ty}" dominant-baseline="central" font-family='${l.family}' font-weight="600" text-rendering="geometricPrecision" font-size="${s}" fill="#fff" xml:space="preserve">${escapeXML(line)}</text>`;
-  });
-  if (caret) {
-    const last = l.lines[l.lines.length - 1] || "";
-    const cx = tx + textWidth(last, s, l.family) + s * 0.06;
-    const cy = l.y + MARK.padTop * s + (l.lines.length - 1) * l.lh + l.lh * 0.14;
-    out += `<rect class="caret" x="${cx}" y="${cy}" width="${Math.max(2, s * 0.08)}" height="${l.lh * 0.72}" rx="1" fill="#fff"/>`;
-  }
-  return out;
-}
-
-function marksSVG(marks, image, typing = null) {
-  return marks.map((m) => markSVG(m, image, { caret: m === typing })).join("");
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -401,10 +164,10 @@ export class Stage {
     }, { threshold: [0, 0.25, 0.5] }).observe(this.root);
 
     this.stackMotion = new Motion((m) => {
-      this.backdrop.style.opacity = m.get("backdrop");
-      this.backdrop.style.transform = `translateX(${(1 - m.get("backdrop")) * 60}px)`;
-      const s = m.get("scale");
-      this.column.style.transform = `scale(${s})`;
+      const b = m.get("backdrop");
+      this.backdrop.style.setProperty("--shown", b);
+      this.backdrop.style.transform = `translateX(${(1 - b) * 60}px)`;
+      this.column.style.transform = `scale(${m.get("scale")})`;
     }).add("backdrop", 0, 0.002).add("scale", 1, 0.0005);
     this.dimMotion = new Motion((m) => { this.dim.style.opacity = m.get("o"); this.dim.style.visibility = m.get("o") > 0.001 ? "visible" : "hidden"; }).add("o", 0, 0.002);
     this.column.style.transformOrigin = `${SCREEN.w - UI.screenMargin}px ${SCREEN.h - UI.screenMargin}px`;
