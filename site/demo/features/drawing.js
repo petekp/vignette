@@ -35,11 +35,10 @@ export class Arrows {
     const s = el("div", "scene");
     s.style.width = `${W}px`; s.style.height = `${H}px`;
     this.fw = W - GUTTER + 40;
-    this.k = 0.6;
-    // A region inside the map card, so the editor's frame is the only rounded edge, wide enough
-    // that Pienza's stop is whole with room to its right.
-    const fh = Math.round((426 - 158) * this.k);
-    this.view = { x: 1100, y: 158, w: this.fw / this.k, h: fh / this.k };
+    this.k = 0.69;
+    // The map from Florence to Pienza, which every tile's width and its shortest slot show whole. The frame runs past the tile's bottom edge, as every tile's picture does.
+    const fh = H + 40;
+    this.view = { x: 1140, y: 152, w: this.fw / this.k, h: fh / this.k };
     const f = el("div", "frame-x");
     place(f, { x: GUTTER, y: 0, w: this.fw, h: fh });
     const sh = shot(IMAGES.itin, this.view, [], this.fw, fh);
@@ -48,19 +47,19 @@ export class Arrows {
     f.append(sh, this.cursor);
     s.append(f);
     const [x, y] = Arrows.STROKE[0];
-    this.rest = [x - 50, y + 85];
+    this.rest = [x - 60, y + 60];
     return s;
   }
   aim([x, y]) { this.cursor.style.transform = `translate(${(x - this.view.x) * this.k - 10.5}px, ${(y - this.view.y) * this.k - 10.5}px)`; }
   move(from, to, seconds) {
-    return new Motion((m) => { const t = m.get("t"); this.aim([lerp(from[0], to[0], t), lerp(from[1], to[1], t)]); }).add("t", 0, 0.001).to("t", 1, seconds);
+    return tween(seconds, (p) => { const t = handEase(p); this.aim([lerp(from[0], to[0], t), lerp(from[1], to[1], t)]); });
   }
   reset() { this.pic.update([]); this.pic.querySelector("svg.marks").style.opacity = 1; this.cursor.style.opacity = 1; this.aim(this.rest); }
   final() { this.reset(); this.pic.update([arrowOf(Arrows.STROKE)]); this.aim(Arrows.after()); }
   async play() {
     this.reset();
     const pts = Arrows.STROKE, end = pts.at(-1);
-    await this.move(this.rest, pts[0], 0.4);
+    await this.move(this.rest, pts[0], 0.35);
     await wait(0.08);
     // Drawn at a hand's pace: slower into the loop and out of it, quicker along the straight.
     const seconds = 1.2 * motion(), t0 = performance.now();
@@ -91,8 +90,9 @@ export class Later {
     s.style.width = `${W}px`; s.style.height = `${H}px`;
     this.fw = W - GUTTER + 40;
     this.k = 0.4;
-    // Both ends of the arrow and both places of the note, inside the height every tile shows.
-    this.view = { x: 790, y: 218, w: this.fw / this.k, h: 240 / this.k };
+    // Stop 1 whole, and both ends of the arrow and both places of the note, inside the height every
+    // tile shows.
+    this.view = { x: 790, y: 190, w: this.fw / this.k, h: 240 / this.k };
     this.from = { x: 1010, y: 470 }; this.to = { x: 1222, y: 252 };
     this.note = { ...PERSON_MARKS[3] };
     this.arrow = PERSON_MARKS[2];
@@ -105,7 +105,7 @@ export class Later {
     this.pointer = el("div", "pointer", POINTER);
     f.append(sh, this.sel, this.pointer);
     s.append(f);
-    this.m = new Motion((m) => this.draw(m.get("t"), m.get("ptr"))).add("t", 0, 0.0005).add("ptr", 0, 0.0005);
+    this.m = new Motion((m) => this.draw(m.get("t"), m.get("ptr"))).add("t", 0, 0.003).add("ptr", 0, 0.003);
     return s;
   }
   draw(t, ptr) {
