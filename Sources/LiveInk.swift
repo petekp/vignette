@@ -345,20 +345,6 @@ final class LiveInk {
         if !up, Date() > pickerWatchUntil { stopWatchingForWindowPicker() }
     }
 
-    /// A `screencapture` process is running, or `screencaptureui` has a window on screen. The second
-    /// can outlive its capture, so its process alone does not count.
-    private static func isCapturing() -> Bool {
-        var pids = [pid_t](repeating: 0, count: 4096)
-        let count = Int(proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size)))
-        var name = [CChar](repeating: 0, count: 64)
-        let capturing = pids.prefix(max(0, count)).contains { pid in
-            proc_name(pid, &name, UInt32(name.count)) > 0 && String(cString: name) == "screencapture"
-        }
-        if capturing { return true }
-        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-        return windows.contains { ($0[kCGWindowOwnerName as String] as? String) == "screencaptureui" }
-    }
-
     private func stopWatchingForWindowPicker() {
         pickerWatch?.invalidate()
         pickerWatch = nil
@@ -600,20 +586,6 @@ final class LiveInk {
     private func forget(_ ids: Set<Mark.ID>) {
         run(asks.reduce(.windowGone(ids)))
         showMarks()
-    }
-
-    /// The rect a mark draws in, its stroke, edge and shadows included.
-    private static func drawnExtent(of mark: Mark, sizes: LiveAnswerLayout.Sizes) -> CGRect? {
-        if case .text = mark.geometry { return LiveAnswerLayout.noteBox(mark, sizes: sizes)?.insetBy(dx: -Mark.shadowSize, dy: -Mark.shadowSize) }
-        return shapeExtent(of: mark, markStyle: Settings.shared.data.ui.markStyle)
-    }
-
-    /// The rect a shape draws in, its stroke, arrowhead, edge and shadows included, or nil for a note.
-    private static func shapeExtent(of mark: Mark, markStyle: MarkStyle) -> CGRect? {
-        guard let shape = mark.shape(pointScale: 1, markStyle: markStyle) else { return nil }
-        let ink = [shape.stroked, shape.filled].compactMap { $0?.boundingBoxOfPath }.reduce(CGRect.null) { $0.union($1) }
-        let reach = shape.lineWidth / 2 + markStyle.edgeWidth + Mark.shadowSize
-        return ink.insetBy(dx: -reach, dy: -reach)
     }
 
     /// Adds `mark` to `surface`, and to each other one of `among` whose screen it draws on: its stroke,
@@ -1307,13 +1279,6 @@ final class LiveInk {
             .compactMap { $0.shapeExtent ?? LiveAnswerLayout.noteBox($0, sizes: answerSizes) }
     }
 
-    /// The visible part of the screen `frame` is on, without the menu bar and the Dock, in global
-    /// top-left points.
-    private static func visibleScreen(around frame: CGRect) -> CGRect? {
-        guard let screen = StateReport.screen(at: CGPoint(x: frame.midX, y: frame.midY)) ?? NSScreen.main else { return nil }
-        return StateReport.flipped(screen.visibleFrame)
-    }
-
     /// The reply so far, in the conversation where the person asked, or with no question, as a popover
     /// hung from the ink. It keeps where it hangs, so it grows rather than jumping as words arrive.
     private func showSay(_ say: String, near asked: CGRect, packet: LivePacket, for id: LiveAsks.Ask.ID) {
@@ -1391,15 +1356,6 @@ final class LiveInk {
     }
 
 
-    /// An answer's marks after its reply, as steps: each pointing mark with the labels after it.
-    private static func steps(in marks: [Mark]) -> [[Mark]] {
-        var groups: [[Mark]] = []
-        for mark in marks {
-            if mark.kind == .text, !groups.isEmpty { groups[groups.count - 1].append(mark) } else { groups.append([mark]) }
-        }
-        return groups
-    }
-
     /// Hears clicks anywhere while steps wait, since the click on a step goes to the app under it.
     private func watchStepClicks() {
         guard stepClicks == nil else { return }
@@ -1448,20 +1404,6 @@ final class LiveInk {
 
     /// How long the app gets to answer a step's click before the next step draws.
     private static let stepPause: TimeInterval = 0.35
-
-    /// Where a click counts as taking a step: inside its loop, or on what its arrow points at, just
-    /// past its head.
-    private static func stepTarget(of mark: Mark) -> CGRect {
-        switch mark.geometry {
-        case .arrow(let arrow):
-            let length = max(1, hypot(arrow.end.x - arrow.start.x, arrow.end.y - arrow.start.y))
-            let ahead = CGPoint(x: arrow.end.x + (arrow.end.x - arrow.start.x) / length * 24,
-                                y: arrow.end.y + (arrow.end.y - arrow.start.y) / length * 24)
-            return CGRect(origin: ahead, size: .zero).insetBy(dx: -32, dy: -32)
-        default:
-            return (mark.shapeExtent ?? .null).insetBy(dx: -6, dy: -6)
-        }
-    }
 
     // MARK: Pulling focus
 
@@ -2338,20 +2280,10 @@ final class LiveInk {
         Log.write("[live-ink] moved \(moves.count) onto the screen")
     }
 
-    /// The diagonal of the screen holding `point`, in points.
-    private static func screenDiagonal(at point: CGPoint) -> CGFloat {
-        guard let screen = (StateReport.screen(at: point) ?? NSScreen.screens.first)?.frame else { return 0 }
-        return hypot(screen.width, screen.height)
-    }
-
     /// How much line the pen keeps of a stroke: `ui.inkLengthDiagonals` diagonals of the screen it began on, so a
     /// loop can go round as much of a large screen as of a small one.
     private func longestLine(for points: [CGPoint], ui: UITweaks) -> CGFloat {
         let diagonal = strokeScreenDiagonal ?? points.first.map(Self.screenDiagonal(at:)) ?? 0
         return ui.inkLengthDiagonals * diagonal
-    }
-
-    private static func display(of screen: NSScreen) -> CGDirectDisplayID? {
-        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
     }
 }
