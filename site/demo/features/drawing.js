@@ -1,4 +1,4 @@
-import { el, place, Motion, wait, motion } from "../vignette.js";
+import { el, place, Motion, wait, motion, tween } from "../vignette.js";
 import { IMAGES, PERSON_MARKS } from "../cards.js";
 import { lerp, GUTTER, shot, overlay, POINTER, smallFit, wideFit } from "./parts.js";
 
@@ -14,6 +14,8 @@ function stroke(knots, step = 9) {
   return out.map((p, i) => i === 0 || i === out.length - 1 ? p
     : [(out[i - 1][0] + p[0] * 2 + out[i + 1][0]) / 4, (out[i - 1][1] + p[1] * 2 + out[i + 1][1]) / 4]);
 }
+// A hand's pace along a path: slow to start, quick in the middle, slow to stop.
+const handEase = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 // The arrow a stroke makes: its ends, and the points between them as its `via`.
 const arrowOf = (pts) => ({ type: "arrow", who: "person", x1: pts[0][0], y1: pts[0][1], x2: pts.at(-1)[0], y2: pts.at(-1)[1], via: pts.slice(1, -1) });
 const CROSSHAIR = '<svg width="21" height="21" viewBox="0 0 21 21"><path d="M10.5 1v19M1 10.5h19" stroke="#fff" stroke-width="3.5"/><path d="M10.5 1.5v18M1.5 10.5h18" stroke="#000" stroke-width="1.3"/></svg>';
@@ -33,10 +35,11 @@ export class Arrows {
     const s = el("div", "scene");
     s.style.width = `${W}px`; s.style.height = `${H}px`;
     this.fw = W - GUTTER + 40;
-    this.k = 0.55;
-    // The frame ends at the map's foot, so a taller tile never shows the day cards under it.
-    const fh = Math.round((440 - 112) * this.k);
-    this.view = { x: 1010, y: 112, w: this.fw / this.k, h: fh / this.k };
+    this.k = 0.6;
+    // A region inside the map card, so the editor's frame is the only rounded edge, wide enough
+    // that Pienza's stop is whole with room to its right.
+    const fh = Math.round((426 - 158) * this.k);
+    this.view = { x: 1100, y: 158, w: this.fw / this.k, h: fh / this.k };
     const f = el("div", "frame-x");
     place(f, { x: GUTTER, y: 0, w: this.fw, h: fh });
     const sh = shot(IMAGES.itin, this.view, [], this.fw, fh);
@@ -45,7 +48,7 @@ export class Arrows {
     f.append(sh, this.cursor);
     s.append(f);
     const [x, y] = Arrows.STROKE[0];
-    this.rest = [x + 70, y + 110];
+    this.rest = [x - 50, y + 85];
     return s;
   }
   aim([x, y]) { this.cursor.style.transform = `translate(${(x - this.view.x) * this.k - 10.5}px, ${(y - this.view.y) * this.k - 10.5}px)`; }
@@ -64,7 +67,7 @@ export class Arrows {
     await new Promise((done) => {
       const tick = () => {
         const t = Math.min(1, (performance.now() - t0) / 1000 / seconds);
-        const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+        const e = handEase(t);
         const live = pts.slice(0, Math.max(2, Math.round(e * (pts.length - 1)) + 1));
         this.pic.update([arrowOf(live)]);
         this.aim(live.at(-1));
@@ -82,13 +85,14 @@ export class Arrows {
 export class Later {
   // A drawing opened again: the pointer takes a note and drags it to where it belongs, beside the
   // arrow it goes with.
-  static fit = smallFit(196);
+  static fit = smallFit(206);
   build({ W, H }) {
     const s = el("div", "scene");
     s.style.width = `${W}px`; s.style.height = `${H}px`;
     this.fw = W - GUTTER + 40;
-    this.k = 0.42;
-    this.view = { x: 780, y: 120, w: this.fw / this.k, h: 240 / this.k };
+    this.k = 0.4;
+    // Both ends of the arrow and both places of the note, inside the height every tile shows.
+    this.view = { x: 790, y: 218, w: this.fw / this.k, h: 240 / this.k };
     this.from = { x: 1010, y: 470 }; this.to = { x: 1222, y: 252 };
     this.note = { ...PERSON_MARKS[3] };
     this.arrow = PERSON_MARKS[2];
@@ -117,7 +121,8 @@ export class Later {
     this.sel.innerHTML = this.selected ? `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="rgb(255 255 255 / .9)" stroke-width="3.5"/>
       <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="#3182ed" stroke-width="1.5"/>
       ${[[0, 0], [1, 0], [0, 1], [1, 1]].map(([i, j]) => `<rect x="${x + i * w - 4}" y="${y + j * h - 4}" width="8" height="8" fill="#101011" stroke="#3182ed" stroke-width="1.5"/>`).join("")}` : "";
-    const px = x + w * 0.6, py = y + h * 0.45;
+    // The note is gripped in its tag's right padding, so the pointer never covers its words.
+    const px = x + w - pad - 6, py = y + h * 0.5;
     this.pointer.style.transform = `translate(${lerp(this.fw - 30, px, ptr) - 10}px, ${lerp(232, py, ptr) - 7}px)`;
   }
   reset() {
@@ -144,13 +149,15 @@ export class Later {
 }
 
 export class Quick {
-  // A box is dragged around the stays page's title. Typing starts the moment the button comes up,
-  // and the note appears under the box.
+  // The crosshair comes in from the space beside the stays page's title and drags a box around it
+  // from its top right. Typing starts the moment the button comes up, and the note appears under
+  // the box, where the drag ended.
   static fit = wideFit(236);
   static BOX = { type: "rect", who: "person", x: 40, y: 192, w: 588, h: 86 };
   static NOTE = { type: "note", who: "person", x: 40, y: 292, text: "make this quieter" };
+  static REST = [420, 152];
   build({ W, H }) {
-    const s = this.s = el("div", "scene fades");
+    const s = el("div", "scene");
     s.style.width = `${W}px`; s.style.height = `${H}px`;
     const fw = W - GUTTER + 40, fh = H + 40, k = this.k = 0.5;
     this.view = { x: 0, y: 120, w: fw / k, h: fh / k };
@@ -158,25 +165,27 @@ export class Quick {
     place(f, { x: GUTTER, y: 0, w: fw, h: fh });
     const sh = shot(IMAGES.stays, this.view, [], fw, fh);
     this.pic = sh.pic;
+    this.marks = this.pic.querySelector("svg.marks");
     this.cursor = el("div", "crosshair", CROSSHAIR);
     f.append(sh, this.cursor);
     s.append(f);
-    this.m = new Motion((m) => {
-      const t = m.get("b"), b = Quick.BOX;
-      const box = { ...b, w: b.w * t, h: b.h * t };
-      if (!this.typing) this.pic.update(t > 0.01 ? [box] : []);
-      this.cursor.style.transform = `translate(${(box.x + box.w - this.view.x) * k - 10.5}px, ${(box.y + box.h - this.view.y) * k - 10.5}px)`;
-    }).add("b", 0, 0.001);
     return s;
   }
-  reset() { this.s.style.opacity = 1; this.typing = false; this.cursor.style.opacity = 1; this.m.jump("b", 0); }
-  final() { this.reset(); this.m.jump("b", 1); this.typing = true; this.cursor.style.opacity = 0; this.pic.update([Quick.BOX, Quick.NOTE]); }
+  // `p` is the crosshair's way to the box's first corner and `t` the drag, each 0 to 1.
+  draw(p, t) {
+    const b = Quick.BOX, corner = [b.x + b.w, b.y];
+    const box = { ...b, x: corner[0] - b.w * t, w: b.w * t, h: b.h * t };
+    this.pic.update(t > 0.01 ? [box] : []);
+    const [x, y] = t > 0 ? [box.x, box.y + box.h] : [lerp(Quick.REST[0], corner[0], p), lerp(Quick.REST[1], corner[1], p)];
+    this.cursor.style.transform = `translate(${(x - this.view.x) * this.k - 10.5}px, ${(y - this.view.y) * this.k - 10.5}px)`;
+  }
+  reset() { this.draw(0, 0); this.marks.style.opacity = 1; this.cursor.style.opacity = 1; }
+  final() { this.draw(1, 1); this.cursor.style.opacity = 0; this.marks.style.opacity = 1; this.pic.update([Quick.BOX, Quick.NOTE]); }
   async play() {
     this.reset();
-    await wait(0.3);
-    await this.m.to("b", 1, 0.6);
-    await wait(0.15);
-    this.typing = true;
+    await tween(0.3, (p) => this.draw(handEase(p), 0));
+    await tween(0.55, (t) => this.draw(1, handEase(t)));
+    await wait(0.1);
     this.cursor.style.opacity = 0;
     const text = Quick.NOTE.text;
     for (let n = 1; n <= text.length; n++) {
@@ -186,5 +195,5 @@ export class Quick {
     }
     this.pic.update([Quick.BOX, Quick.NOTE]);
   }
-  async rewind() { this.s.style.opacity = 0; await wait(0.25); }
+  async rewind() { this.marks.style.opacity = 0; this.cursor.style.opacity = 0; await wait(0.25); }
 }
