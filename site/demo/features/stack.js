@@ -3,7 +3,7 @@
 // bottom, as the stack does against the screen's.
 import { el, place, Motion, UI, wait, cardSize, coverRect } from "../vignette.js";
 import { IMAGES, PERSON_MARKS } from "../cards.js";
-import { lerp, clamp, GUTTER, card, whole, shot, wideFit, POINTER, selectionStrip } from "./parts.js";
+import { lerp, clamp, GUTTER, card, whole, shot, wideFit, POINTER, selectionStrip, shiftKey, twice, tap } from "./parts.js";
 
 const CW = 140, CH = 88, STEP = CH + UI.cardSpacing;
 // The cards' scale against the app's: a 16:10 screenshot's card is 188 pt wide there.
@@ -34,7 +34,6 @@ const PIECES = [
   [IMAGES.stays, { x: 0, y: 760, w: 325, h: 196 }, []],
 ];
 const at = (node, x, y, s = 1) => { node.style.transform = `translate(${x}px, ${y}px) scale(${s})`; };
-async function tap(key, hold = 0.09) { key.classList.add("down"); await wait(hold); key.classList.remove("down"); }
 
 class Column {
   scene(W, H) {
@@ -64,9 +63,9 @@ export class Recent extends Column {
     this.cards = this.column(SHOTS);
     // Beside the column, level with the newest card.
     const y = this.bottom - CH / 2 - 23, twiceX = this.R - CW - 40;
-    this.key = el("div", "kcap shiftk", "<span>⇧</span><span>shift</span>");
+    this.key = shiftKey();
     place(this.key, { x: twiceX - 104, y });
-    this.twice = el("div", "twice", "×2");
+    this.twice = twice();
     place(this.twice, { x: twiceX, y: y + 12 });
     s.append(this.key, this.twice);
     this.off = W - (this.R - CW) + 24;
@@ -246,7 +245,7 @@ export class Stitch extends Column {
     this.notice.classList.remove("in");
     await this.m.to("zoom", 0, 0.5);
     await this.m.to("out", 1, UI.slideOut);
-    this.cards.forEach((c, i) => this.m.jump(`in${i}`, 1));
+    this.cards.forEach((_, i) => this.m.jump(`in${i}`, 1));
     for (const name of ["p", "fade", "out"]) this.m.jump(name, 0);
     await Promise.all([this.m.to("close", 0, UI.relayout), ...[2, 1, 0].map(async (i, n) => {
       await wait(Math.min(UI.stagger * n, UI.staggerMax));
