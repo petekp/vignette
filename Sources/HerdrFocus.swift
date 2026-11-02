@@ -27,11 +27,16 @@ struct HerdrFocus: Equatable, Sendable {
         paths.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
+    /// The herdr Vignette runs: none in a test launch unless VIGNETTE_HERDR names one.
+    static func binaryToRun() -> String? {
+        AgentTools.forSessions("VIGNETTE_HERDR") { binary() }
+    }
+
     /// Runs `herdr pane list`, and with `withTabLabels` `herdr tab list` at the same time. Nil without
     /// herdr (a test launch has none unless VIGNETTE_HERDR names one), or when the pane list fails or
     /// exits non-zero. It blocks, so it never runs on the main thread.
     static func read(withTabLabels: Bool = true,
-                     binary: () -> String? = { AgentTools.forSessions("VIGNETTE_HERDR") { HerdrFocus.binary() } },
+                     binary: () -> String? = { HerdrFocus.binaryToRun() },
                      run: (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
                          Subprocess.run($0, $1, timeout: $2)
                      }) -> HerdrFocus? {

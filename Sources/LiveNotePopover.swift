@@ -76,10 +76,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private(set) var menuOpen = false
     private var watching: [NSObjectProtocol] = []
 
-    /// For `SendContext.menu`: when the note opened, and the menu's picks.
-    private var openedAt: CFTimeInterval
-    private let menuPicks = MenuPickLog(surface: "note")
-
     /// The body at the height it is placed for, three lines of words, so it can grow without covering
     /// what it was placed clear of.
     static var placementSize: CGSize { NoteLayout.size(lines: 3) }
@@ -87,7 +83,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// A note for `place`, in global top-left points, which shows once hung (`hang`): out of sight until
     /// `reveal`, but with the keys, so what the person types meanwhile is in it when it shows.
     init(at place: PopoverPlace, target: Target = .responder(.claude)) {
-        openedAt = CACurrentMediaTime()
         self.place = place
         self.target = target
         remembered = target.session
@@ -300,9 +295,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         let button = window.convertToScreen(content.session.convert(content.session.bounds, to: nil))
         let point = Self.menuPoint(menu.size, under: button, beside: window.frame, on: window.screen?.visibleFrame ?? .zero)
         menuOpen = true
-        menuPicks.run(openedAt: openedAt) {
-            withExtendedLifetime(search) { _ = menu.popUp(positioning: nil, at: point, in: nil) }
-        }
+        withExtendedLifetime(search) { _ = menu.popUp(positioning: nil, at: point, in: nil) }
         menuOpen = false
         guard !closing else { return }
         takesKeys(window)
@@ -328,7 +321,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     }
 
     @objc private func pickTarget(_ item: NSMenuItem) {
-        menuPicks.record()
         // The destination travels with the item, so a session that ended while the menu was open is
         // still the target and the send says it ended, rather than falling back to the responder.
         if let picked = item.representedObject as? AgentDestination {

@@ -87,7 +87,8 @@ enum InboxModStore {
     /// it, so a test launch (`VIGNETTE_SETTINGS`) never reads the person's own.
     static func folder(home: String = NSHomeDirectory(), environment: [String: String] = ProcessInfo.processInfo.environment,
                        personHome: String = AgentPlugin.personHome.path) -> URL? {
-        SendContext.claudeRoot(home: URL(fileURLWithPath: home), environment: environment, personHome: URL(fileURLWithPath: personHome))?
+        AgentPlugin.roots(home: URL(fileURLWithPath: home), environment: environment, personHome: URL(fileURLWithPath: personHome))
+            .first { AgentPlugin.client(of: $0, environment: environment) == .claude }?
             .appendingPathComponent("plugins/store")
     }
 

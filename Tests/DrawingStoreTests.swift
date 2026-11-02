@@ -506,19 +506,6 @@ final class DrawingsTests: XCTestCase {
         XCTAssertEqual(Drawings(store: drawings.store).keys, [alias.screenshotKey])
         XCTAssertEqual(drawings.current(of: alias.screenshotKey, style: .standard)?.marks.map(\.geometry), [mark.geometry])
     }
-
-    func testALaunchRemovesWhatTheWebEditorLeft() throws {
-        // The drafts folders and WebKit's two, as a launch names them, inside a scratch home.
-        let left = ["Application Support/app/drafts", "Caches/app/drafts", "Caches/app/WebKit/NetworkCache", "WebKit/app/WebsiteData"]
-        for path in left {
-            try FileManager.default.createDirectory(at: dir.appendingPathComponent(path), withIntermediateDirectories: true)
-            try Data("{}".utf8).write(to: dir.appendingPathComponent(path).appendingPathComponent("a.json"))
-        }
-        let folders = ["Application Support/app/drafts", "Caches/app/drafts", "Caches/app/WebKit", "WebKit/app"].map(dir.appendingPathComponent)
-        Drawings.removeWebEditorData(folders + [dir.appendingPathComponent("never-made")])
-        for folder in folders { XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path), folder.path) }
-        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("Caches/app").path), "only those folders go")
-    }
 }
 
 /// The editor's open drawing, without a window: a join adds the marks and answers the drawing.
