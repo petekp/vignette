@@ -1,6 +1,6 @@
 import { el, Motion, UI, wait, tween } from "../vignette.js";
 import { IMAGES } from "../cards.js";
-import { clamp, GUTTER, card, whole, smallFit, selectionStrip } from "./parts.js";
+import { clamp, GUTTER, card, whole, smallFit, selectionStrip, editorBar } from "./parts.js";
 import { Flyer, CW, CH, passesTarget } from "./flight.js";
 import { handEase } from "./drawing.js";
 
@@ -8,12 +8,6 @@ const LIST = [
   [IMAGES.stays, whole(IMAGES.stays), [{ type: "rect", who: "person", x: 40, y: 192, w: 588, h: 86 }]],
   [IMAGES.packing, whole(IMAGES.packing), []],
   [IMAGES.chat, { x: 0, y: 200, w: 1040, h: 650 }, []],
-];
-const TOOLS = [
-  '<path d="M5 3l12 8-5.5 1.2L9 18z" fill="currentColor"/>',
-  '<rect x="3.5" y="5.5" width="15" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/>',
-  '<path d="M5 17L17 5M9 5h8v8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
-  '<text x="11" y="16" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor" font-family="system-ui">Aa</text>',
 ];
 // The stack's top, and the editor's, which sits lower so a flight's bow stays inside the picture.
 const TOP = 4, FRAME_TOP = 48;
@@ -52,8 +46,7 @@ export class Queue {
       layer.append(c);
       return new Flyer(c, this.frame);
     });
-    this.bar = el("div", "qbar", `<div class="bar">${TOOLS.map((t, i) => `<span class="tool${i === 1 ? " on" : ""}"><svg viewBox="0 0 22 22" width="22" height="22">${t}</svg></span>`).join("")}<span class="divider"></span><span class="copy">Copy <kbd>↩</kbd></span></div>`);
-    Object.assign(this.bar.style, { left: `${this.frame.x + this.frame.w / 2}px`, top: `${this.frame.y + this.frame.h + UI.toolbarGap}px` });
+    this.bar = editorBar(this.frame);
     s.append(this.bar);
     this.copy = this.bar.querySelector(".copy");
     this.strip = selectionStrip();

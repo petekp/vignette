@@ -1,6 +1,6 @@
 import { el, Motion, Spring, UI, wait, motion } from "../vignette.js";
 import { IMAGES, PERSON_MARKS } from "../cards.js";
-import { lerp, clamp, GUTTER, card, whole, smallFit, POINTER } from "./parts.js";
+import { lerp, clamp, GUTTER, card, whole, smallFit, POINTER, editorBar } from "./parts.js";
 
 export const CW = 140, CH = 88;
 // Look.card and Look.annotator: the shadow a card casts in the stack and the editor's frame casts.
@@ -140,8 +140,11 @@ export class Flight {
       layer.append(c);
       return new Flyer(c, this.frame);
     });
+    // The editor's toolbar stays up while one image follows another, above the flight layer.
+    this.bar = editorBar(this.frame);
+    this.bar.classList.add("up");
     this.pointer = el("div", "pointer", POINTER);
-    s.append(this.pointer);
+    s.append(this.bar, this.pointer);
     this.pm = new Motion((m) => {
       this.pointer.style.transform = `translate(${m.get("x") - 10}px, ${m.get("y") - 7}px)`;
     }).add("x", W + 20, 0.05).add("y", 120, 0.05);

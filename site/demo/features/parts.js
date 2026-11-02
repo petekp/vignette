@@ -1,6 +1,6 @@
 // What the feature tiles' pictures are made of: parts of screenshots, cards as the stack draws them,
 // and the layout every small picture shares.
-import { picture, el, place, wait } from "../vignette.js";
+import { picture, el, place, wait, UI } from "../vignette.js";
 
 export const lerp = (a, b, t) => a + (b - a) * t;
 export const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -40,12 +40,12 @@ export function overlay(w, h, html = "") {
 export const POINTER = '<svg width="24" height="24" viewBox="0 0 32 32"><g transform="translate(10 7)"><path d="m6.148 18.473 1.863-1.003 1.615-.839-2.568-4.816h4.332l-11.379-11.408v16.015l3.316-3.221z" fill="#fff"/><path d="m6.431 17 1.765-.941-2.775-5.202h3.604l-8.025-8.043v11.188l2.53-2.442z" fill="#000"/></g></svg>';
 
 // Small tiles are laid out for their width, at about the app's own size. `rest` is how much of a
-// scene's height must show: its payoff, whole, with a gutter under it. Past 375 pt a scene is drawn
-// larger, not wider: its payoff is laid out for that width, and its height must grow with it.
+// scene's height must show: its payoff, whole, with a gutter under it. A scene wider than 375 pt
+// lays its payoff out larger, so its height grows with its width.
 export const smallFit = (rest) => (slotW) => {
-  const k = Math.max(slotW / 375, 0.86);
-  const W = Math.round(slotW / k);
-  return { W, H: 250, rest, k, key: String(W) };
+  const k = clamp(slotW / 375, 0.86, 1.15);
+  const W = Math.round(slotW / k), grow = Math.max(1, W / 375);
+  return { W, H: Math.round(250 * grow), rest: Math.round(rest * grow), k, key: String(W) };
 };
 // The tiles under the first stage are wider than the feature tiles. Their pictures keep the feature
 // tiles' scale from 375 pt up, so a wider tile shows more rather than drawing larger, and fill the
@@ -97,3 +97,16 @@ export const shiftKey = () => el("div", "kcap shiftk", "<span>⇧</span><span>sh
 export const escKey = () => el("div", "kcap esck", "<span>esc</span>");
 export const twice = () => el("div", "twice", "×2");
 export async function tap(key, hold = 0.09) { key.classList.add("down"); await wait(hold); key.classList.remove("down"); }
+
+// The editor's toolbar, under its frame: the tools, the box tool on, and Copy.
+const TOOLS = [
+  '<path d="M5 3l12 8-5.5 1.2L9 18z" fill="currentColor"/>',
+  '<rect x="3.5" y="5.5" width="15" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/>',
+  '<path d="M5 17L17 5M9 5h8v8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+  '<text x="11" y="16" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor" font-family="system-ui">Aa</text>',
+];
+export function editorBar(frame) {
+  const bar = el("div", "qbar", `<div class="bar">${TOOLS.map((t, i) => `<span class="tool${i === 1 ? " on" : ""}"><svg viewBox="0 0 22 22" width="22" height="22">${t}</svg></span>`).join("")}<span class="divider"></span><span class="copy">Copy <kbd>↩</kbd></span></div>`);
+  Object.assign(bar.style, { left: `${frame.x + frame.w / 2}px`, top: `${frame.y + frame.h + UI.toolbarGap}px` });
+  return bar;
+}
