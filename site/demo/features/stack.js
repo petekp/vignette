@@ -10,8 +10,6 @@ const CW = 140, CH = 88, STEP = CH + UI.cardSpacing;
 const SCALE = CW / UI.cardMaxWidth;
 // StackLayout.inset: the column fades out over the panel's padding at its ends.
 const FADE = 19 * SCALE;
-// How far Stitch pushes in on its new card.
-const ZOOM = 4;
 // Stitch's springs: the pieces' flight and fade, the column closing up, the push-in, and the
 // rewind's slides of the new card out and of each piece back in.
 const SPRINGS = ["p", "fade", "close", "zoom", "out", "in0", "in1", "in2"];
@@ -164,6 +162,7 @@ export class Stitch extends Column {
       sheet.append(p);
     });
     clip.append(sheet);
+    const second = plan.frames[1], below = pic.y + (second.y + badgeDiameter(second) * 1.25) * k;
     this.notice = el("div", "notice", '<div class="check"></div><b>Copied</b>');
     this.result.append(clip, this.notice);
     s.append(this.result);
@@ -192,18 +191,20 @@ export class Stitch extends Column {
       at(this.result, m.get("out") * this.off, 0);
       this.cards.forEach((c, i) => at(c, m.get(`in${i}`) * this.off, 0));
       this.kept.forEach((c) => { c.style.transform = `translateY(${m.get("close") * this.drop}px)`; });
-      const z = m.get("zoom"), k = lerp(1, ZOOM, z);
+      const z = m.get("zoom"), k = lerp(1, this.zoom, z);
       cam.style.transform = `translate(${lerp(this.focus.x, this.look.x, z) - this.focus.x * k}px, ${lerp(this.focus.y, this.look.y, z) - this.focus.y * k}px) scale(${k})`;
     });
     for (const name of SPRINGS) this.m.add(name, 0, name === "zoom" ? 0.001 : 0.002);
-    // After Copied the view pushes in on the new card until its numbered pieces read. The card's
-    // middle height, between badges 2 and 3, comes to the picture's, and the card is centred across
-    // it, or put at the gutter where it is wider than the picture.
+    // While Copied shows, the view pushes in on the new card's top, where piece 1 and its badge are:
+    // as far as keeps the card inside the picture's width and badge 2 above its bottom, with the
+    // card centred across the picture.
     const cam = el("div", "cam");
     cam.append(...s.childNodes);
     s.append(cam);
-    this.focus = { x: this.slot.x, y: this.slot.y + this.slot.h / 2 };
-    this.look = { x: Math.max(GUTTER, (W - this.slot.w * ZOOM) / 2), y: H / 2 };
+    const edge = 16;
+    this.zoom = Math.min((W - 2 * edge) / this.slot.w, (H - 2 * edge) / below);
+    this.focus = { x: this.slot.x + this.slot.w / 2, y: this.slot.y };
+    this.look = { x: W / 2, y: edge };
     return s;
   }
   // FlightCurve: the path bows to the left of one that runs mostly up or down, and the card swells,
@@ -257,10 +258,11 @@ export class Stitch extends Column {
     this.m.to("fade", 1, fade);
     await landed;
     this.notice.classList.add("in");
-    await wait(UI.noticeSeconds);
+    await wait(0.6);
+    const zoomed = this.m.to("zoom", 1, 0.8);
+    await wait(UI.noticeSeconds - 0.6);
     this.notice.classList.remove("in");
-    await wait(0.25);
-    await this.m.to("zoom", 1, 0.7);
+    await zoomed;
   }
 }
 
