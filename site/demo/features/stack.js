@@ -10,6 +10,8 @@ const CW = 140, CH = 88, STEP = CH + UI.cardSpacing;
 const SCALE = CW / UI.cardMaxWidth;
 // StackLayout.inset: the column fades out over the panel's padding at its ends.
 const FADE = 19 * SCALE;
+// How far Stitch pushes in on its new card.
+const ZOOM = 4;
 // Oldest first. The newest three are one size, so Stitch makes them one column of whole pages. The
 // stays card answers Drag's question: the stay still waiting for its host.
 const SHOTS = [
@@ -121,14 +123,15 @@ function fill(c, [image, view], r) {
 }
 
 export class Stitch extends Column {
-  // Three cards are picked, with the selection strip beside them, and ⌘S lights its Stitch row. As in ThumbnailController.stitched, the pieces leave
-  // the column, which closes up around the new card's slot at once, and each flies into that slot
-  // (TransitionLayer.converge). The stitched image waits there unseen and takes over in the last
-  // part of the flight, and the new card says Copied.
+  // Three cards are picked, with the selection strip beside them, and ⌘S lights its Stitch row. As
+  // in ThumbnailController.stitched, the pieces leave the column, which closes up around the new
+  // card's slot at once, and each flies into that slot (TransitionLayer.converge). The stitched
+  // image waits there unseen and takes over in the last part of the flight, the new card says
+  // Copied, and the view pushes in on it.
   static fit = wideFit(318);
   build({ W, H }) {
     const s = this.scene(W, H);
-    const picked = this.picked = SHOTS.slice(1);
+    const picked = SHOTS.slice(1);
     const plan = stitchLayout(picked.map(([, view]) => view));
     const size = cardSize(plan);
     this.slot = { w: size.w * SCALE, h: size.h * SCALE };
@@ -148,8 +151,10 @@ export class Stitch extends Column {
       const p = shot(image, view, marks, r.w, r.h);
       place(p, r);
       const d = badgeDiameter(f) * k;
-      const b = el("div", "sbadge", String(i + 1));
-      Object.assign(b.style, { left: `${d / 4}px`, top: `${d / 4}px`, width: `${d}px`, height: `${d}px`, fontSize: `${d * 0.6}px` });
+      // A vector number, so it stays centred in its circle when the view pushes in on a badge a few
+      // pixels wide.
+      const b = el("div", "sbadge", `<svg viewBox="0 0 10 10" width="100%" height="100%"><text x="5" y="5" dy="0.35em" text-anchor="middle" font-size="6" font-weight="700" fill="#fff">${i + 1}</text></svg>`);
+      Object.assign(b.style, { left: `${d / 4}px`, top: `${d / 4}px`, width: `${d}px`, height: `${d}px` });
       p.append(b);
       sheet.append(p);
     });
@@ -181,7 +186,17 @@ export class Stitch extends Column {
       });
       this.result.style.opacity = fade;
       this.kept.forEach((c) => { c.style.transform = `translateY(${m.get("close") * this.drop}px)`; });
-    }).add("p", 0, 0.002).add("fade", 0, 0.002).add("close", 0, 0.002);
+      const z = m.get("zoom"), k = lerp(1, ZOOM, z);
+      cam.style.transform = `translate(${lerp(this.focus.x, this.look.x, z) - this.focus.x * k}px, ${lerp(this.focus.y, this.look.y, z) - this.focus.y * k}px) scale(${k})`;
+    }).add("p", 0, 0.002).add("fade", 0, 0.002).add("close", 0, 0.002).add("zoom", 0, 0.001);
+    // After Copied the view pushes in on the new card until its numbered pieces read. The card's
+    // middle height, between badges 2 and 3, comes to the picture's, and the card is centred across
+    // it, or put at the gutter where it is wider than the picture.
+    const cam = el("div", "cam");
+    cam.append(...s.childNodes);
+    s.append(cam);
+    this.focus = { x: this.slot.x, y: this.slot.y + this.slot.h / 2 };
+    this.look = { x: Math.max(GUTTER, (W - this.slot.w * ZOOM) / 2), y: H / 2 };
     return s;
   }
   // FlightCurve: the path bows to the left of one that runs mostly up or down, and the card swells,
@@ -204,12 +219,13 @@ export class Stitch extends Column {
   }
   reset() {
     this.pick(true); this.notice.classList.remove("in");
-    for (const name of ["p", "fade", "close"]) this.m.jump(name, 0);
+    for (const name of ["p", "fade", "close", "zoom"]) this.m.jump(name, 0);
   }
-  final() { this.reset(); this.pick(false); for (const name of ["p", "fade", "close"]) this.m.jump(name, 1); }
+  final() { this.reset(); this.pick(false); for (const name of ["p", "fade", "close", "zoom"]) this.m.jump(name, 1); }
   // The new card gives way to the picked cards in their places, and the column opens up for them.
   async rewind() {
     this.notice.classList.remove("in");
+    await this.m.to("zoom", 0, 0.5);
     this.m.jump("p", 0);
     this.pick(true);
     await Promise.all([this.m.to("fade", 0, 0.25), this.m.to("close", 0, UI.relayout)]);
@@ -229,6 +245,8 @@ export class Stitch extends Column {
     this.notice.classList.add("in");
     await wait(UI.noticeSeconds);
     this.notice.classList.remove("in");
+    await wait(0.25);
+    await this.m.to("zoom", 1, 0.7);
   }
 }
 

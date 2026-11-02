@@ -141,3 +141,4 @@
 .scene .shiftk span:first-child { font-size: 15px; }
 .scene .cardx.lifted::after, .scene .cardx.lifted .scircle { transition: none; }
 .scene .term-x .typed { transition: opacity 0.25s; }
+.scene .cam { position: absolute; inset: 0; transform-origin: 0 0; }
