@@ -50,7 +50,7 @@ export class Front {
     const s = el("div", "scene");
     s.style.width = `${W}px`; s.style.height = `${H}px`;
     s.append(el("div", "wallpaper"));
-    s.append(el("div", "menubar", `<span class="apple"></span><b>Chrome</b><span>File</span><span>Edit</span><span>View</span>${compact ? "" : "<span>History</span><span>Bookmarks</span>"}<i>${compact ? "" : "Sun 1 Nov&nbsp;&nbsp;"}9:41</i>`));
+    s.append(el("div", "menubar", `<span class="apple">\uF8FF</span><b>Chrome</b><span>File</span><span>Edit</span><span>View</span>${compact ? "" : "<span>History</span><span>Bookmarks</span>"}<i>${compact ? "" : "Sun 1 Nov&nbsp;&nbsp;"}9:41</i>`));
     const win = el("div", "window", `<div class="chrome"><i></i><i></i><i></i><span class="field"><span class="typed">postcard.app/</span><span class="added"></span><b class="tcaret"></b></span></div><div class="page"><img src="${IMAGES.stays.src}" alt=""></div>`);
     // The window runs off the screen's bottom edge however tall the screen is. Compact, the screen's
     // bottom falls between the second stay and the third's name.
