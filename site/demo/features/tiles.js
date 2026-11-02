@@ -3,6 +3,7 @@
 // holds on the result; pointing at the tile, or tapping it, plays it again. With Reduce Motion on,
 // each shows its result and never moves.
 import { motion } from "../vignette.js";
+import { reducedMotion } from "../springs.js";
 import { Front } from "./front.js";
 import { Flight } from "./flight.js";
 import { Arrows, Later, Quick } from "./drawing.js";
@@ -39,12 +40,15 @@ class Tile {
       this.node?.remove();
       this.node = this.scene.build(f);
       this.slot.append(this.node);
-      this.played && !this.playing ? this.scene.final() : this.scene.reset();
-      if (!motion()) this.scene.final();
+      // A scene rebuilt after its play began shows the result, which the play would have reached.
+      if (!motion()) this.poster();
+      else this.played || this.playing ? this.scene.final() : this.scene.reset();
     }
     this.node.style.transform = `scale(${f.k})`;
     this.slot.style.minHeight = `${Math.round(f.rest * f.k)}px`;
   }
+  // With Reduce Motion, the one frame that tells the story, which is the end unless a scene says.
+  poster() { this.scene.poster ? this.scene.poster() : this.scene.final(); }
   async run(again) {
     if (this.playing || !motion()) return;
     this.playing = true;
@@ -60,27 +64,39 @@ class Tile {
 
 export function buildFeatures(section) {
   const tiles = [...section.querySelectorAll(".feature")].map((root) => new Tile(root));
-  if (!motion()) return;
-  // Tiles that come into view together play a tenth of a second apart, in reading order.
+  // Reduce Motion turned on shows every result at once; turned off, the next scroll or point plays.
+  if (!motion()) tiles.forEach((tile) => { tile.played = true; });
+  reducedMotion.addEventListener("change", () => {
+    if (motion()) return;
+    tiles.forEach((tile) => { tile.played = true; tile.poster(); });
+  });
+  // Tiles that come into view together start a third of a second apart, in reading order, so the
+  // eye can follow one before the next moves.
   const seen = new IntersectionObserver((entries) => {
     entries.filter((e) => e.isIntersecting)
       .map((e) => tiles.find((t) => t.root === e.target))
       .sort((a, b) => tiles.indexOf(a) - tiles.indexOf(b))
       .forEach((tile, i) => {
         seen.unobserve(tile.root);
-        setTimeout(() => tile.run(false), 250 + i * 110);
+        setTimeout(() => tile.run(tile.played), 250 + i * 350);
       });
   }, { threshold: 0.55 });
   tiles.forEach((tile) => {
     seen.observe(tile.root);
-    // Pointing at a tile that has played plays it again, once the pointer rests there a moment, so
-    // a pointer passing across the grid sets nothing off. A tap does the same on a touch screen.
-    let rest = 0;
-    tile.root.addEventListener("pointerenter", (e) => {
-      if (e.pointerType !== "mouse") return;
-      rest = setTimeout(() => { if (tile.played) tile.run(true); }, 150);
-    });
-    tile.root.addEventListener("pointerleave", () => clearTimeout(rest));
-    tile.root.addEventListener("pointerup", (e) => { if (e.pointerType !== "mouse" && tile.played) tile.run(true); });
+    // Pointing at a tile that has played plays it again once the pointer has stayed still there for
+    // 0.4 s, so a pointer passing across the grid, or moving within a tile, sets nothing off. It
+    // plays once per visit; looking around the result afterwards leaves it alone.
+    let rest = 0, armed = false;
+    const settle = (e) => {
+      if (e.pointerType !== "mouse" || !armed) return;
+      clearTimeout(rest);
+      rest = setTimeout(() => { if (tile.played && !tile.playing) { armed = false; tile.run(true); } }, 400);
+    };
+    tile.root.addEventListener("pointerenter", (e) => { armed = true; settle(e); });
+    tile.root.addEventListener("pointermove", settle);
+    tile.root.addEventListener("pointerleave", () => { armed = false; clearTimeout(rest); });
+    // A click or a tap on the picture plays it again. A scroll gesture cancels its pointer, and a
+    // drag across the copy to select it ends on the words, so neither replays.
+    tile.slot.addEventListener("pointerup", (e) => { if (e.button === 0 && tile.played) tile.run(true); });
   });
 }
