@@ -140,12 +140,13 @@ export function buildFeatures(section) {
     watch.observe(tile.root);
     // Pointing at a tile that has played plays it again once the pointer has stayed still there for
     // 0.4 s, so a pointer passing across the grid, or moving within a tile, sets nothing off. A
-    // rest counts once per visit, during a play too; looking around the result afterwards leaves
-    // it alone.
+    // pointer that arrives or moves during a play has watched it, so that visit replays nothing,
+    // and a visit replays once; looking around the result afterwards leaves it alone.
     let rest = 0, armed = false;
     const settle = (e) => {
       if (e.pointerType !== "mouse" || !armed) return;
       clearTimeout(rest);
+      if (tile.playing) { armed = false; return; }
       rest = setTimeout(() => { armed = false; if (tile.played && !tile.playing) tile.run(true); }, 400);
     };
     tile.root.addEventListener("pointerenter", (e) => { armed = true; settle(e); });
