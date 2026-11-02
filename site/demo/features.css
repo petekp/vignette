@@ -1,5 +1,6 @@
-/* The feature tiles of "Made to feel like part of your Mac". The tokens and the parts they reuse
-   (.tile, .wallpaper, .menubar, .window, .backdrop, .pic, .from) are in site.css. */
+/* The feature tiles of "Made to feel like part of your Mac". The tokens and .tile are in site.css;
+   the stage's parts they reuse (.wallpaper, .menubar, .window, .backdrop, .pic, .from) are in
+   stage.css, and the toolbar's .bar in annotator.css. */
 .feature h3 { margin: 0; font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; }
 .feature p { margin: 6px 0 0; color: var(--ink-2); text-wrap: pretty; }
 
