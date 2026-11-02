@@ -106,7 +106,7 @@ export class Flyer {
 // so this tile's end differs from Several in a row's, which ends on a page of lists.
 const LIST = [
   [IMAGES.stays, whole(IMAGES.stays), []],
-  [IMAGES.itin, { x: 1050, y: 230, w: 760, h: 475 }, PERSON_MARKS.slice(0, 2)],
+  [IMAGES.itin, whole(IMAGES.itin), PERSON_MARKS.slice(0, 2)],
   [IMAGES.packing, whole(IMAGES.packing), []],
 ];
 // The card in the editor at first, the card clicked first and the card clicked second, which ends
