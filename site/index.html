@@ -20,6 +20,7 @@
 <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="demo/site.css">
+<link rel="stylesheet" href="demo/features.css">
 </head>
 <body>
 <div class="sheet">
@@ -106,14 +107,14 @@
 
 <section class="details wrap" aria-labelledby="details">
   <h2 id="details">Made to feel like part of your Mac</h2>
-  <dl>
-    <div class="tile"><dt>Your app stays in front</dt><dd>The stack opens without taking focus from the app you’re in. Close it and you’re right where you were.</dd></div>
-    <div class="tile"><dt>Motion you can interrupt</dt><dd>Cards fly into the editor and back on a spring. Interrupt one and it turns around in mid-air.</dd></div>
-    <div class="tile"><dt>Marks that stand out</dt><dd>A thin white edge keeps every mark visible on any screenshot, dark or light.</dd></div>
-    <div class="tile"><dt>Change it later</dt><dd>Vignette keeps your drawing separate from the screenshot, so you can open it again and move, change or delete any mark.</dd></div>
-    <div class="tile"><dt>Several in a row</dt><dd>Select several cards and press Return. Copy or send one, and the next one opens.</dd></div>
-    <div class="tile"><dt>Your agent can use it too</dt><dd>Every action is a <code>vignette://</code> URL, so your agent can show you screenshots and ask you to draw on them.</dd></div>
-  </dl>
+  <div class="features" id="features">
+    <div class="tile feature" data-scene="front"><h3>Your app stays in front</h3><p>The stack opens without taking focus from the app you’re in. Close it and you’re right where you were.</p><div class="feature-pic" aria-hidden="true"></div></div>
+    <div class="tile feature" data-scene="flight"><h3>Motion you can interrupt</h3><p>Cards fly into the editor and back on a spring. Interrupt one and it turns around in mid-air.</p><div class="feature-pic" aria-hidden="true"></div></div>
+    <div class="tile feature" data-scene="marks"><h3>Marks that stand out</h3><p>A thin white edge keeps every mark visible on any screenshot, dark or light.</p><div class="feature-pic" aria-hidden="true"></div></div>
+    <div class="tile feature" data-scene="later"><h3>Change it later</h3><p>Vignette keeps your drawing separate from the screenshot, so you can open it again and move, change or delete any mark.</p><div class="feature-pic" aria-hidden="true"></div></div>
+    <div class="tile feature" data-scene="queue"><h3>Several in a row</h3><p>Select several cards and press Return. Copy or send one, and the next one opens.</p><div class="feature-pic" aria-hidden="true"></div></div>
+    <div class="tile feature" data-scene="agent"><h3>Your agent can use it too</h3><p>Every action is a <code>vignette://</code> URL, so your agent can show you screenshots and ask you to draw on them.</p><div class="feature-pic" aria-hidden="true"></div></div>
+  </div>
 </section>
 
 </main>
@@ -149,5 +150,6 @@
   }
 </script>
 <script type="module" src="demo/page.js"></script>
+<script type="module" src="demo/features.js"></script>
 </body>
 </html>
