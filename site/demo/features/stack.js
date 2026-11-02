@@ -241,20 +241,21 @@ export class Stitch extends Column {
     for (const name of SPRINGS) this.m.jump(name, 0);
   }
   final() { this.reset(); this.pick(false); for (const name of ["p", "fade", "close", "zoom"]) this.m.jump(name, 1); }
-  // The new card slides off the screen's edge on its own. The column opens up again, the picked
-  // cards slide back into their slots, newest first, and their selection comes back.
+  // The view pulls back as the new card slides off the screen's edge on its own. The column opens
+  // up again, and the picked cards slide back into their slots, newest first, already selected.
   async rewind() {
     this.notice.classList.remove("in");
-    await this.m.to("zoom", 0, 0.5);
-    await this.m.to("out", 1, UI.slideOut);
+    const back = this.m.to("zoom", 0, 0.35);
+    await wait(0.1);
+    this.m.to("out", 1, UI.slideOut);
+    await wait(UI.slideOut);
     this.cards.forEach((_, i) => this.m.jump(`in${i}`, 1));
     for (const name of ["p", "fade", "out"]) this.m.jump(name, 0);
-    await Promise.all([this.m.to("close", 0, UI.relayout), ...[2, 1, 0].map(async (i, n) => {
+    this.pick(true);
+    await Promise.all([back, this.m.to("close", 0, UI.relayout), ...[2, 1, 0].map(async (i, n) => {
       await wait(Math.min(UI.stagger * n, UI.staggerMax));
       await this.m.to(`in${i}`, 0, UI.slideIn, UI.flightBounce);
     })]);
-    this.pick(true);
-    await wait(0.35);
   }
   async play() {
     this.reset();
