@@ -3,7 +3,7 @@
 import { el, place, wait, tween, UI } from "../vignette.js";
 import { IMAGES } from "../cards.js";
 import { MARK, POINT_SCALE } from "../marks.js";
-import { lerp, GUTTER, shot, whole } from "./parts.js";
+import { lerp, GUTTER, shot } from "./parts.js";
 import { Column, SHOTS, CW, SCALE, MENU_BAR, BELOW_MENU_BAR, STEP, deskFit } from "./stack.js";
 import { handEase, CROSSHAIR } from "./drawing.js";
 
@@ -36,7 +36,8 @@ export class Quick extends Column {
   build({ W, H }) {
     const s = this.scene(W, H);
     const wide = W >= 440;
-    // Under the column, the stack at its narrowest: the cards above the one in the editor.
+    // Under the column, the stack at its narrowest, as Recent and Drag hold it: the cards above the
+    // one in the editor.
     const narrow = UI.stackMinScale, inner = this.R - CW * narrow - UI.stackGap * SCALE;
     this.screen("Notes", ["File", "Edit", "Format", "View", "Window"], el("div", "window notes", NOTES),
       { top: MENU_BAR * SCALE + 8, left: GUTTER + 36, right: wide ? inner + 30 : W + 16, clock: wide });
@@ -46,7 +47,7 @@ export class Quick extends Column {
       const cards = el("div", "narrow");
       cards.style.transformOrigin = `${this.R}px ${this.bottom}px`;
       cards.style.transform = `scale(${narrow})`;
-      cards.append(...this.column([[IMAGES.frame, whole(IMAGES.frame), []], ...SHOTS.slice(1, 3)], this.bottom - STEP));
+      cards.append(...this.column(SHOTS.slice(1, 3), this.bottom - STEP));
       this.col.append(cards);
     } else {
       this.backdrop.remove();

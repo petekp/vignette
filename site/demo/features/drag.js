@@ -15,10 +15,8 @@ export class Drag extends Column {
   static fit = deskFit;
   build({ W, H }) {
     const s = this.scene(W, H);
-    // Every line ends left of the column, at every width.
-    const talk = W >= 520
-      ? [you("&gt; Put our three stays on the trip map."), gap, said("Added the three stays to the map."), gap, you("&gt; Number the days."), gap, said("Done. Each day has its number now."), gap, you("&gt; Remind the host to confirm our stay.")]
-      : [said("Mapped the stays."), gap, you("&gt; Number the days."), gap, said("Done."), gap, you("&gt; Remind the host"), you("  to confirm.")];
+    // Every line ends left of the column, at every width deskFit gives.
+    const talk = [said("Mapped the stays."), gap, you("&gt; Number the days."), gap, said("Done."), gap, you("&gt; Remind the host"), you("  to confirm.")];
     const win = el("div", "window term ghostty", '<div class="chrome"><i></i><i></i><i></i><span>postcard</span></div>');
     this.screen("Ghostty", ["File", "Edit", "View", "Window", "Help"], win, { top: BELOW_MENU_BAR });
     this.showBackdrop(1);
@@ -74,7 +72,7 @@ export class Drag extends Column {
   // The drag in mid-flight over the prompt. A narrow picture has no room for it beside the
   // question, so it shows the dropped image instead.
   poster() {
-    if (this.W < 520) return this.final();
+    if (this.W < 440) return this.final();
     this.reset(); this.m.jump("p", 1); this.m.jump("t", 0.65); this.ghost.style.opacity = 1; this.pointer.classList.add("down");
   }
   async play() {
