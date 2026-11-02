@@ -1,6 +1,7 @@
-import { el, Motion, Spring, UI, wait, motion } from "../vignette.js";
+import { el, Motion, Spring, UI, wait, motion, tween } from "../vignette.js";
 import { IMAGES, PERSON_MARKS } from "../cards.js";
 import { lerp, clamp, GUTTER, card, whole, smallFit, POINTER } from "./parts.js";
+import { handEase } from "./drawing.js";
 
 export const CW = 140, CH = 88;
 // Look.card and Look.annotator: the shadow a card casts in the stack and the editor's frame casts.
@@ -109,17 +110,22 @@ const LIST = [
   [IMAGES.packing, whole(IMAGES.packing), []],
 ];
 // The card in the editor at first, the card clicked first, which turns home in mid-air, and the
-// card clicked while it is in the air, which ends in the editor. The two clicked last are the top
-// and the bottom, so the turning flight and the new one take paths apart.
-const START = 1, TURNS = 0, LAST = 2;
+// card clicked while it is in the air, which ends in the editor. The first swap is the bottom card
+// for the top one, so its two flights take paths apart. The card clicked second is next to the
+// first, as close as a hand can get to it before the editor's window comes up.
+const START = 2, TURNS = 0, LAST = 1;
+// The hand's way from the first card to the next, and its press there, as parts of the time the
+// first card's flight takes to reach the editor. The release comes while that card is still clearly
+// short of the editor.
+const HOP = 0.24, PRESS = 0.12;
 // How far down the picture the stack and the editor start: room for a flight's bow above them.
 const TOP = 26;
 
 export class Flight {
-  // The middle card is in the editor. The pointer clicks the top card in the stack: the card in the
+  // The bottom card is in the editor. The pointer clicks the top card in the stack: the card in the
   // editor flies home while the clicked one flies out, two bowed flights at once, and the stack
   // holds the slot of the card that is out. Before that card reaches the editor the pointer clicks
-  // the bottom one, and it turns home in mid-air. The stack is drawn narrowed for the editor
+  // the middle one, and it turns home in mid-air. The stack is drawn narrowed for the editor
   // throughout.
   static fit = smallFit(214);
   build({ W, H }) {
@@ -157,7 +163,9 @@ export class Flight {
     this.pm.jump("x", at ? at.x : this.W + 20); this.pm.jump("y", at ? at.y : 120);
     this.pointer.classList.remove("down");
   }
-  aim(i) { const r = this.slots[i]; return { x: r.x + r.w * 0.55, y: r.y + r.h * 0.45 }; }
+  // Where the pointer clicks card `i`: the first click low on its card and the second high on its
+  // own, so the hand's way from one to the other is short.
+  aim(i) { const r = this.slots[i]; return { x: r.x + r.w * 0.55, y: r.y + r.h * (i === TURNS ? 0.78 : 0.22) }; }
   reset() { this.hold(START); }
   final() { this.hold(LAST, this.aim(LAST)); }
   // With Reduce Motion: the first swap mid-air, the card from the editor crossing the clicked card
@@ -189,15 +197,19 @@ export class Flight {
     this.reset();
     await wait(0.2);
     await this.swap(START, TURNS);
-    // The last card is clicked while the first is still on its way out, before the editor's window
-    // comes up. As in AnnotatorTransition's flyingOut, the first turns home from where it is and the
-    // last flies out.
-    const turn = passesTarget() * 0.45, at = this.aim(LAST);
-    this.pm.to("x", at.x, turn); this.pm.to("y", at.y, turn);
-    this.cards[LAST].grow(this.hovered(LAST), 0.25);
-    await wait(turn * 0.6);
+    // The next card is clicked while the first is still on its way out, before the editor's window
+    // comes up at passesTarget. As in AnnotatorTransition's flyingOut, the first turns home from
+    // where it is and the next flies out. A card opens on the button's release.
+    const from = this.aim(TURNS), to = this.aim(LAST);
+    const hop = HOP * passesTarget(), press = PRESS * passesTarget();
+    let hovered = false;
+    await tween(hop, (p) => {
+      const e = handEase(p);
+      this.pm.jump("x", lerp(from.x, to.x, e)); this.pm.jump("y", lerp(from.y, to.y, e));
+      if (!hovered && e >= 0.5) { hovered = true; this.cards[LAST].grow(this.hovered(LAST), 0.25); }
+    });
     this.pointer.classList.add("down");
-    await wait(turn * 0.4);
+    await wait(press);
     this.pointer.classList.remove("down");
     this.cards[TURNS].fly(this.slots[TURNS], 0);
     await this.cards[LAST].fly(this.frame, 1);
