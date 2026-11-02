@@ -40,9 +40,10 @@ export function overlay(w, h, html = "") {
 export const POINTER = '<svg width="24" height="24" viewBox="0 0 32 32"><g transform="translate(10 7)"><path d="m6.148 18.473 1.863-1.003 1.615-.839-2.568-4.816h4.332l-11.379-11.408v16.015l3.316-3.221z" fill="#fff"/><path d="m6.431 17 1.765-.941-2.775-5.202h3.604l-8.025-8.043v11.188l2.53-2.442z" fill="#000"/></g></svg>';
 
 // Small tiles are laid out for their width, at about the app's own size. `rest` is how much of a
-// scene's height must show: its payoff, whole, with a gutter under it.
+// scene's height must show: its payoff, whole, with a gutter under it. Past 375 pt a scene is drawn
+// larger, not wider: its payoff is laid out for that width, and its height must grow with it.
 export const smallFit = (rest) => (slotW) => {
-  const k = clamp(slotW / 375, 0.86, 1.15);
+  const k = Math.max(slotW / 375, 0.86);
   const W = Math.round(slotW / k);
   return { W, H: 250, rest, k, key: String(W) };
 };
