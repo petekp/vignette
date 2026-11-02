@@ -155,3 +155,5 @@
 
 /* Agent, Front and tiles (tiles.js): a picture that a click replays shows the pointer. */
 .feature-pic.replays { cursor: pointer; }
+/* Front (front.js): the stays page ends above the window's bottom on its own background. */
+.feature-pic .window .page { background: #f5f1e8; }

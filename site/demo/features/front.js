@@ -23,6 +23,11 @@ function backdrop() {
   return b;
 }
 
+// Where the stays page's right edge shows, in its own pixels: wide, past the dates (which end at
+// 1320) and short of the badges, avatars and button (from 1517); compact, past the descriptions (to
+// 967) and short of the dates (from 1168).
+const PAGE_EDGE = { wide: 1420, compact: 1060 };
+
 export class Front {
   // The top-right of a screen: Chrome in front, its address bar taking the typing. The typing
   // pauses, right Shift goes down twice, and the stack slides in at the screen's edge and takes the
@@ -47,11 +52,16 @@ export class Front {
     s.append(el("div", "wallpaper"));
     s.append(el("div", "menubar", `<span class="apple"></span><b>Chrome</b><span>File</span><span>Edit</span><span>View</span>${compact ? "" : "<span>History</span><span>Bookmarks</span>"}<i>${compact ? "" : "Sun 1 Nov&nbsp;&nbsp;"}9:41</i>`));
     const win = el("div", "window", `<div class="chrome"><i></i><i></i><i></i><span class="field"><span class="typed">postcard.app/</span><span class="added"></span><b class="tcaret"></b></span></div><div class="page"><img src="${IMAGES.stays.src}" alt=""></div>`);
-    // The window runs off the screen's bottom edge however tall the screen is.
-    const r = compact ? { x: 12, y: 64, w: 600, h: H + 80 } : { x: 48, y: 76, w: 760, h: H - 20 };
+    // The window runs off the screen's bottom edge however tall the screen is. Compact, the screen's
+    // bottom falls between the second stay and the third's name.
+    const r = compact ? { x: 12, y: 76, w: 600, h: H + 80 } : { x: 48, y: 76, w: 760, h: H - 20 };
     place(win, r);
-    win.querySelector(".page").style.height = `${r.h - 40}px`;
-    Object.assign(win.querySelector(".page img").style, { objectFit: "cover", objectPosition: "0 0" });
+    // The page is drawn to the window's width, or to the picture's edge where the window runs past
+    // it, so that edge falls between two of the page's columns of text and cuts no word.
+    const page = win.querySelector(".page");
+    page.style.height = `${r.h - 40}px`;
+    const shown = Math.min(r.w, W - r.x), k = shown / (compact ? PAGE_EDGE.compact : PAGE_EDGE.wide);
+    Object.assign(page.querySelector("img").style, { width: `${IMAGES.stays.w * k}px`, height: `${IMAGES.stays.h * k}px` });
     if (compact) Object.assign(win.querySelector(".field").style, { margin: "0 0 0 18px", maxWidth: "300px" });
     s.append(win);
     this.field = win.querySelector(".field");
