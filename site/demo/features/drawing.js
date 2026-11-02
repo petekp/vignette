@@ -22,24 +22,27 @@ const arrowOf = (pts) => ({ type: "arrow", who: "person", x1: pts[0][0], y1: pts
 const CROSSHAIR = '<svg width="21" height="21" viewBox="0 0 21 21"><path d="M10.5 1v19M1 10.5h19" stroke="#fff" stroke-width="3.5"/><path d="M10.5 1.5v18M1.5 10.5h18" stroke="#000" stroke-width="1.3"/></svg>';
 
 export class Arrows {
-  // The trip's map in the editor. One stroke with the Arrow tool circles the stop at Greve and
-  // carries on to Pienza; the head rides the pointer and stays where the button comes up.
+  // The trip's map in the editor. The crosshair comes in from below, and one stroke with the Arrow
+  // tool circles the stop at Greve and carries on to Pienza; the head rides the pointer and stays
+  // where the button comes up. Then the crosshair leaves the picture.
   static fit = smallFit(196);
   static STROKE = (() => {
     const c = [1327, 292], r = 42, loop = [];
     for (let a = 150; a <= 450; a += 15) loop.push([c[0] + r * Math.cos((a * Math.PI) / 180), c[1] + r * Math.sin((a * Math.PI) / 180)]);
     return stroke([...loop, [1372, 340], [1450, 360], [1530, 378], [1588, 380]]);
   })();
-  // Where the pointer rests once the arrow is drawn: clear of the head, on open map.
-  static after() { const [x, y] = Arrows.STROKE.at(-1); return [x + 20, y - 58]; }
+  // The part of the map the tile shows across, in image px: from left of its scale bar to right of
+  // stop 3, the arrow's target, both whole.
+  static ACROSS = [1048, 1652];
   build({ W, H }) {
     const s = el("div", "scene");
     s.style.width = `${W}px`; s.style.height = `${H}px`;
     this.fw = W - GUTTER + 40;
-    this.k = 0.69;
-    // The map from Florence to Pienza, which every tile's width and its shortest slot show whole. The frame runs past the tile's bottom edge, as every tile's picture does.
+    const [left, right] = Arrows.ACROSS;
+    this.k = (W - GUTTER) / (right - left);
+    // The frame runs past the tile's bottom edge, as every tile's picture does.
     const fh = H + 40;
-    this.view = { x: 1140, y: 152, w: this.fw / this.k, h: fh / this.k };
+    this.view = { x: left, y: 152, w: this.fw / this.k, h: fh / this.k };
     const f = el("div", "frame-x");
     place(f, { x: GUTTER, y: 0, w: this.fw, h: fh });
     const sh = shot(IMAGES.itin, this.view, [], this.fw, fh);
@@ -47,20 +50,23 @@ export class Arrows {
     this.cursor = el("div", "crosshair", CROSSHAIR);
     f.append(sh, this.cursor);
     s.append(f);
-    const [x, y] = Arrows.STROKE[0];
-    this.rest = [x - 60, y + 60];
+    // Where the crosshair is before the stroke, under the frame's bottom edge, and after it, past
+    // the frame's right edge: off the picture both times.
+    const [x0] = Arrows.STROKE[0], end = Arrows.STROKE.at(-1);
+    this.rest = [x0 - 40, this.view.y + (fh + 16) / this.k];
+    this.gone = [this.view.x + (this.fw + 16) / this.k, end[1] - 50];
     return s;
   }
   aim([x, y]) { this.cursor.style.transform = `translate(${(x - this.view.x) * this.k - 10.5}px, ${(y - this.view.y) * this.k - 10.5}px)`; }
   move(from, to, seconds) {
     return tween(seconds, (p) => { const t = handEase(p); this.aim([lerp(from[0], to[0], t), lerp(from[1], to[1], t)]); });
   }
-  reset() { this.pic.update([]); this.pic.querySelector("svg.marks").style.opacity = 1; this.cursor.style.opacity = 1; this.aim(this.rest); }
-  final() { this.reset(); this.pic.update([arrowOf(Arrows.STROKE)]); this.aim(Arrows.after()); }
+  reset() { this.pic.update([]); this.pic.querySelector("svg.marks").style.opacity = 1; this.aim(this.rest); }
+  final() { this.reset(); this.pic.update([arrowOf(Arrows.STROKE)]); this.aim(this.gone); }
   async play() {
     this.reset();
     const pts = Arrows.STROKE, end = pts.at(-1);
-    await this.move(this.rest, pts[0], 0.35);
+    await this.move(this.rest, pts[0], 0.45);
     await wait(0.08);
     // Drawn at a hand's pace: slower into the loop and out of it, quicker along the straight.
     const seconds = 1.2 * motion(), t0 = performance.now();
@@ -77,9 +83,9 @@ export class Arrows {
     });
     this.pic.update([arrowOf(pts)]);
     await wait(0.25);
-    await this.move(end, Arrows.after(), 0.4);
+    await this.move(end, this.gone, 0.4);
   }
-  async rewind() { this.pic.querySelector("svg.marks").style.opacity = 0; this.cursor.style.opacity = 0; await wait(0.25); }
+  async rewind() { this.pic.querySelector("svg.marks").style.opacity = 0; await wait(0.25); }
 }
 
 export class Later {
