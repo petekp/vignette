@@ -98,14 +98,23 @@
 .scene .pointer.down svg { transform: scale(0.88); }
 /* Claude Code in a terminal. */
 .scene .term-x { position: absolute; overflow: hidden; border-radius: 12px; background: #0c0e12; color: #c9ccd3; font: 13px/1.65 var(--mono); box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.12), 0 18px 40px -16px rgb(0 0 0 / 0.5); }
-.scene .term-x .bar-t { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; background: #15171c; }
-.scene .term-x .bar-t i { width: 11px; height: 11px; border-radius: 50%; background: #3a3d44; }
-.scene .term-x pre { margin: 0; padding: 12px 16px; font: inherit; white-space: pre; }
+.scene .term-x pre { margin: 0; padding: 14px 16px; font: inherit; white-space: pre; }
+.scene .term-x b { font-weight: 700; color: #e6e6e6; }
 .scene .term-x .ln { transition: opacity 0.25s; }
 .scene .term-x .ln.hid { opacity: 0; }
 .scene .t-claude { color: #d97757; }
 .scene .t-dim { color: #6b7080; }
 .scene .t-hi { color: #e6e6e6; }
+/* Claude Code's dots: white before its prose, grey and blinking before a tool call that runs. */
+.scene .t-said { color: #e6e6e6; }
+.scene .t-run { color: #8b8f99; animation: blink 1s steps(1) infinite; }
+@media (prefers-reduced-motion: reduce) { .scene .t-run { animation: none; } }
+.scene .t-out { color: #8b8f99; }
+/* In dark mode the terminal's edge is lifted off the tile. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .scene .term-x { box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16), inset 0 1px 0 rgb(255 255 255 / 0.08), 0 18px 40px -16px rgb(0 0 0 / 0.7); }
+}
+:root[data-theme="dark"] .scene .term-x { box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16), inset 0 1px 0 rgb(255 255 255 / 0.08), 0 18px 40px -16px rgb(0 0 0 / 0.7); }
 /* The tiles under the first stage: right Shift tapped twice, a stitched card with Stitch's own
    badges, and a card's drag image over Claude Code's prompt. */
 .scene .shiftk { min-width: 96px; justify-items: end; padding-right: 14px; }
@@ -116,3 +125,4 @@
 .scene .cardx.ghost { left: 0; top: 0; z-index: 4; transition: opacity 0.15s; pointer-events: none; }
 .scene .term-x .pbox { margin-top: 6px; padding: 6px 10px; border: 1px solid #3a3d44; border-radius: 8px; }
 .scene .term-x .tcur { display: inline-block; width: 8px; height: 15px; vertical-align: -3px; background: #c9ccd3; }
+
