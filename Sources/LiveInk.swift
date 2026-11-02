@@ -102,8 +102,6 @@ final class LiveInk {
     private var escapeKey: HotKey?
     /// The note's target picked last, which the next note starts on.
     private var lastTarget: LiveNotePopover.Target?
-    /// The target the open note started on, before its listing answered, for `SendContext`.
-    private var noteOffered: LiveNotePopover.Target?
     /// The asks since the screen was last cleared, and each mark's part in them.
     private var asks = LiveAsks()
     /// An answer's steps still to show, each a mark and its label, and the window they go on. One is
@@ -676,7 +674,6 @@ final class LiveInk {
         if let listed = held?.candidates { panel.setSessions(listed) }
         panel.speechProblem = speechProblem
         if !responders.unable.isEmpty { checkResponder(responders.unable) }
-        noteOffered = offered
         panel.onAsk = { [weak self, weak panel] words, target, title in
             guard let self else { return }
             self.stopListening()
@@ -887,14 +884,6 @@ final class LiveInk {
                 } else {
                     packet = try await LivePacket.build(plan, at: point, ink: person, inkWindows: inkWindows, style: ui.textStyle,
                                                         markStyle: ui.markStyle)
-                }
-                if reply == nil {
-                    let offered: String? = switch self?.noteOffered {
-                    case .responder?: "responder"
-                    case .session(let destination): destination.id
-                    case nil: nil
-                    }
-                    SendContext.note(packet, to: session?.destination.id ?? "responder", offered: offered)
                 }
                 if let session {
                     self?.share(packet, words: words, spoken: said, with: session.destination, titled: session.title, from: spot, for: id)

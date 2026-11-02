@@ -146,29 +146,3 @@ private final class FieldHolder: NSView {
         }
     }
 }
-
-/// The picks made in one opening of a session menu, which `SendContext.menu` logs when it closes.
-@MainActor
-final class MenuPickLog {
-    private let surface: String
-    private var picks = 0
-    private var lastByKeyboard: Bool?
-
-    init(surface: String) { self.surface = surface }
-
-    /// A row was picked, by hand or by the keyboard.
-    func record() {
-        picks += 1
-        lastByKeyboard = NSApp.currentEvent?.type == .keyDown
-    }
-
-    /// Runs `popUp`, which returns when the menu closes, and logs what was picked in it, with how
-    /// long after `openedAt` the last pick came.
-    func run(openedAt: CFTimeInterval, popUp: () -> Void) {
-        picks = 0
-        lastByKeyboard = nil
-        popUp()
-        SendContext.menu(surface: surface, picks: picks, msSinceOpen: picks > 0 ? Int((CACurrentMediaTime() - openedAt) * 1000) : nil,
-                         byKeyboard: lastByKeyboard)
-    }
-}

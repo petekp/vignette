@@ -154,7 +154,6 @@ final class LiveNoteCards {
     func cancelled(_ request: String) -> Screenshot? {
         guard let note = notes.removeValue(forKey: request) else { return nil }
         Log.write("[live-ink] note card cancelled request=\(request) before it was sent")
-        SendContext.cancelled(request: request, note: note.destination.id)
         hold.send(.event(.cancelled(request), at: Date())) { handle($0) }
         cards.cancelled(note.shot, request: request)
         folder.discard(note.shot)

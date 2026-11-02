@@ -143,13 +143,9 @@ final class AnnotatorToolbar {
             onOfferChanged?(offer)
         }
 
-        /// When the bar last began on an image, for `SendContext.menu`.
-        private(set) var openedAt = CACurrentMediaTime()
-
         /// A new image: nothing listed yet, and nothing picked. `carryingTarget`, when the bar is
         /// on screen for the image before, keeps that image's list and target until this one's settle.
         func begin(replyTo: AgentDestination?, carryingTarget: Bool) {
-            openedAt = CACurrentMediaTime()
             self.replyTo = replyTo
             message = ""
             focus = nil
@@ -430,9 +426,7 @@ final class AnnotatorToolbar {
             return item
         }
         let below = hosting.isFlipped ? frame.maxY + 4 : hosting.bounds.height - frame.maxY - 4
-        targetMenuActions.picks.run(openedAt: model.openedAt) {
-            withExtendedLifetime(search) { _ = menu.popUp(positioning: nil, at: NSPoint(x: frame.minX, y: below), in: hosting) }
-        }
+        withExtendedLifetime(search) { _ = menu.popUp(positioning: nil, at: NSPoint(x: frame.minX, y: below), in: hosting) }
     }
 
     /// Centers the toolbar under `frame`, `gap` points below it. A bar that is already up — one
@@ -1330,9 +1324,7 @@ private struct GrowingField: Layout {
 @MainActor
 private final class TargetMenuActions: NSObject {
     var onPick: ((AgentDestination) -> Void)?
-    let picks = MenuPickLog(surface: "bar")
     @objc func pick(_ item: NSMenuItem) {
-        picks.record()
         if let destination = item.representedObject as? AgentDestination { onPick?(destination) }
     }
 }

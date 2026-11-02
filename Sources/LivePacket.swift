@@ -167,8 +167,6 @@ struct LivePacket: @unchecked Sendable {
     @MainActor
     static func build(_ plan: Plan, at point: CGPoint, ink: [Mark], inkWindows: [Mark.ID: CGWindowID] = [:], style: TextStyle,
                       markStyle: MarkStyle, glanced: (@Sendable (Glance) -> Void)? = nil) async throws -> LivePacket {
-        SendContext.LiveReads.began()
-        defer { SendContext.LiveReads.ended() }
         let started = Date()
         let content = try await shareableContent()
         var id: CGWindowID?
@@ -492,8 +490,6 @@ struct LivePacket: @unchecked Sendable {
 
     /// Vision's lines, in reading order: top to bottom, and left to right within a row.
     static func read(_ image: CGImage) -> [Line] {
-        SendContext.LiveReads.began()
-        defer { SendContext.LiveReads.ended() }
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         let handler = VNImageRequestHandler(cgImage: image)

@@ -57,7 +57,7 @@ struct StartableSessions: Sendable {
     var history = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/history.jsonl")
     var transcripts = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
     /// Whether Vignette can start a session at all. Without a launcher no row is offered.
-    var canStart: @Sendable () -> Bool = { SendContext.herdrBinary() != nil }
+    var canStart: @Sendable () -> Bool = { HerdrFocus.binaryToRun() != nil }
     var folderExists: @Sendable (String) -> Bool = { path in
         var folder: ObjCBool = false
         return FileManager.default.fileExists(atPath: path, isDirectory: &folder) && folder.boolValue
@@ -185,7 +185,7 @@ final class FileMemo<Value>: @unchecked Sendable {
 /// Vignette already reads the focus of (`HerdrFocus`); the person's own shell in the tab runs
 /// `claude`, so it is found as it is in any of their terminals.
 struct HerdrLauncher: Sendable {
-    var binary: @Sendable () -> String? = { SendContext.herdrBinary() }
+    var binary: @Sendable () -> String? = { HerdrFocus.binaryToRun() }
     var run: @Sendable (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
         Subprocess.run($0, $1, timeout: $2)
     }

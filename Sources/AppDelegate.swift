@@ -160,6 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             answerLiveInkOffer: { [weak self] on in self?.answerLiveInkOffer(on) })
         // Before the watcher, so a capture taken during launch already lands the way Vignette needs.
         settings.reconcileApple()
+        Leftovers.removeAtLaunch()
         startDrawings()
         startRequests(clearingUnsent: !replacing)
         // A first launch leaves a folder macOS protects alone until setup has said why Vignette
@@ -515,12 +516,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// Connects stored drawings before request recovery or the watcher can update cards.
     private func startDrawings() {
-        Drawings.removeWebEditorData([
-            Identity.applicationSupportURL.appendingPathComponent("drafts"),
-            Identity.cachesURL.appendingPathComponent("drafts"),
-            Identity.cachesURL.appendingPathComponent("WebKit"),
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/WebKit/\(Identity.bundleID)"),
-        ])
         thumbnail.drawings = drawings
         drawings.open = annotator.editor
         drawings.onChange = { [weak self] key, drawing in self?.thumbnail.setDrawing(drawing, for: key) }
@@ -1325,10 +1320,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             },
             cancelled: { [weak self] record in
                 guard let self else { return }
-                if let shot = sentShots.removeValue(forKey: record.id) {
-                    SendContext.cancelled(request: record.id)
-                    thumbnail.cancelled(shot, request: record.id)
-                }
+                if let shot = sentShots.removeValue(forKey: record.id) { thumbnail.cancelled(shot, request: record.id) }
                 else { _ = noteCards.cancelled(record.id) }
             })
         requests.load(clearingUnsent: clearingUnsent)
@@ -1436,7 +1428,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         // carries on. `sending` stays on, so the button keeps its plane while the bar leaves;
         // the next `prepare` resets it.
         sentShots[record.id] = shot
-        SendContext.sent(file: shot.url.lastPathComponent, request: record.id, to: destination, offered: annotator.offered)
         thumbnail.showSending(shot, request: record.id, to: destination, titled: title, grace: requests.grace(of: record.id))
         thumbnail.annotationSent()
     }
@@ -1495,7 +1486,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             // stored. A watcher report for one — the copy that made it, or a later rescan — is
             // never a capture, so it neither goes to the clipboard nor opens the editor.
             guard self.requests.isCapture(url) else { return }
-            SendContext.capture(url)
             self.sessions.refreshKeptLists()   // so Send's list is current if this opens in the editor
             if self.settings.data.copyOnCapture {
                 Clipboard.copyFiles([url])

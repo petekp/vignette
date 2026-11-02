@@ -237,20 +237,4 @@ final class Drawings {
         }
         return made.marks
     }
-
-    // MARK: What the web editor left
-
-    /// Removes the folders the web editor kept, where they are still there: its drafts, which are
-    /// not carried over, and WebKit's data. Nothing reads them now. Every launch asks; once they are
-    /// gone that is one lookup each.
-    static func removeWebEditorData(_ folders: [URL]) {
-        for folder in folders where FileManager.default.fileExists(atPath: folder.path) {
-            do {
-                try FileManager.default.removeItem(at: folder)
-                Log.write("[app] removed web editor data \(folder.path)")
-            } catch {
-                Log.write("[app] error write-failed could not remove web editor data \(folder.path): \(error.localizedDescription)")
-            }
-        }
-    }
 }

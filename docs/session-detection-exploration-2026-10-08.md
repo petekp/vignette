@@ -508,8 +508,8 @@ log was scored. "The plan" at the end of this note scores each step against Pete
 
 Pete approved it on 2026-10-08, to run for a few days in his own build. It records what Vignette
 could see at each capture and each send, and where the drawing went. A script then scores each
-rule in "Where this stands" against those sends. It lives on live-ink only (`Sources/SendContext.swift`)
-and is removed before live ink reaches main.
+rule in "Where this stands" against those sends. It lived on live-ink only
+(`Sources/SendContext.swift`), and was removed on 2026-11-02.
 
 - **The file.** `send-context.jsonl` in Application Support, one JSON object per line, appended off
   the main thread. A test launch writes it beside its scratch settings file instead. It stops at
@@ -656,9 +656,8 @@ One change beat the target Send offers now, and it is narrow:
   2 hours went to a Claude Code session that is still listed, Send starts on that session.
 - **Everything else stays.** No other step in "Where this stands" beat the current offer. Live
   ink's notes keep theirs.
-- **It waits for a second scoring.** Pete chose on 2026-10-18 to score the log again on 2026-11-01
-  before any code changes. When the rule is wrong, the drawing goes to the wrong project unless the
-  person reads the target before pressing Send.
+- **A second scoring kept the offer.** On 2026-11-02 the rule was right 41 times in 64 and the offer
+  40, and Pete kept Send as it is (`docs/send-target-rescore-2026-11-02.md`).
 
 ### How it was scored
 
@@ -725,11 +724,11 @@ What each step showed:
 
 - **Live ink's notes do not change.** Their offer is right 45 times in 48, and every rule tried
   lowers that.
-- **The folder and the dev server leave the plan.** The log keeps recording them until the next
+- **The folder and the dev server leave the plan.** The log recorded them until the next
   scoring.
 - **Authors may later order the target's menu,** once the search is fast enough to finish before
   the bar is up. How often the menu holds the target today was not measured.
-- **A model can now be tested on real windows** (question 8), because the log keeps titles and
+- **A model can now be tested on real windows** (question 8), because the log kept titles and
   URLs from 2026-10-18. Nothing leaves the Mac for a model until Pete decides.
 - **The limits of the data.** It is one person on one Mac over ten days, and most of the misses
   fall in three of them. 25 sends from 2026-10-08 to 2026-10-10 have no target in `Vignette.log`

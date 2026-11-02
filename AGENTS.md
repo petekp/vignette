@@ -1092,9 +1092,9 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   than the observation wait for another scan. Trash removes drawings only for files it successfully
   trashed. `FolderWrites` holds these removals back and tells the cards, drawings and requests.
   `docs/system-design-work-2026-10-02.md` records the verification. The launch also
-  removes what the web editor left, its drafts and WebKit's data, where they are still there
-  (`Drawings.removeWebEditorData`, one `[app] removed web editor data <path>` line each); drafts are
-  not carried over.
+  removes what earlier builds left (`Leftovers`): the web editor's drafts, which
+  are not carried over, WebKit's data and the shadow log, `send-context.jsonl`. Each logs one
+  `[app] removed <what> <path>` line.
 - Done, Send, Copy Drawing and a drag of a card with a drawing render on `RenderingQueue.shared`, one
   at a time, off the main thread: one rendering of the largest capture holds two bitmaps of about
   85 MB. Done's rendering, and Cmd+C with nothing selected, go `.first`, ahead of any rendering that
