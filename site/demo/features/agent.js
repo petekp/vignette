@@ -14,6 +14,8 @@ const TALK = {
   wide: [said("The day numbers match the map's stops on the itinerary."), gap, you("&gt; Make the highlight card pop."), gap,
     said("Three versions, each a different idea: a warm tint, a"), line("  Highlight tag, and a photo that fills the card."), gap],
 };
+// Level with the card once it has landed.
+const ASK = { narrow: "Which one?", wide: "Which one do you prefer?" };
 const out = (l) => `<span class="t-out">${l}</span>`;
 // A shell command as Claude Code draws it while it runs, and folded into one dim line once it has.
 const running = (command) => [line('<span class="t-run">●</span> Running <b>1</b> shell command…'),
@@ -32,7 +34,7 @@ export class Agent {
     // Every line ends left of the card, which lands over the terminal's right side.
     const size = W >= 520 ? "wide" : "narrow";
     this.command = COMMAND[size];
-    const t = claudeCode(W, H, `${TALK[size].join("")}<div class="grp"></div><div class="grp">${gap}${said("Which do you like?")}</div>`, rest - 10);
+    const t = claudeCode(W, H, `${TALK[size].join("")}<div class="grp"></div><div class="grp">${gap}${said(ASK[size])}</div>`, rest - 10);
     [this.ran, this.asked] = t.querySelectorAll(".grp");
     s.append(t);
     this.card = card(IMAGES.variants, whole(IMAGES.variants), CLAUDE_MARKS, { x: W - RIGHT - CW, y: 150, w: CW, h: CH }, "Claude");
