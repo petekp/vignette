@@ -1,7 +1,7 @@
-import { el, Motion, Spring, UI, wait } from "../vignette.js";
+import { el, Motion, UI, wait } from "../vignette.js";
 import { IMAGES } from "../cards.js";
 import { clamp, GUTTER, card, whole, smallFit } from "./parts.js";
-import { Flyer, CW, CH } from "./flight.js";
+import { Flyer, CW, CH, passesTarget } from "./flight.js";
 
 const LIST = [
   [IMAGES.stays, whole(IMAGES.stays), [{ type: "rect", who: "person", x: 40, y: 192, w: 588, h: 86 }]],
@@ -24,15 +24,6 @@ const TOOLS = [
 ];
 // The stack's top, and the editor's, which sits lower so a flight's bow stays inside the picture.
 const TOP = 4, FRAME_TOP = 48;
-
-// Anim.passesTarget: when the flight's spring first reaches its target, which is when the editor's
-// window, and the bar with it, comes up behind the flight.
-function passesTarget() {
-  const s = new Spring(0, 1e-6).to(1, UI.expand, UI.flightBounce);
-  let t = 0;
-  while (s.moving && s.x < 1) { s.step(1 / 240); t += 1 / 240; }
-  return t;
-}
 
 export class Queue {
   // Three cards picked in turn take their numbers, and the selection strip comes up beside them.

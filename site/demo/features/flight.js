@@ -1,4 +1,4 @@
-import { el, Motion, UI, wait, motion } from "../vignette.js";
+import { el, Motion, Spring, UI, wait, motion } from "../vignette.js";
 import { IMAGES, PERSON_MARKS } from "../cards.js";
 import { lerp, clamp, GUTTER, card, whole, smallFit, POINTER } from "./parts.js";
 
@@ -9,6 +9,15 @@ const LOOK = {
   annotator: { y: 18, blur: 40, spread: -14, alpha: 0.5 },
 };
 const center = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+
+// Anim.passesTarget: when the flight's spring first reaches its target, which is when the editor's
+// window, and its bar, come up behind the flight.
+export function passesTarget() {
+  const s = new Spring(0, 1e-6).to(1, UI.expand, UI.flightBounce);
+  let t = 0;
+  while (s.moving && s.x < 1) { s.step(1 / 240); t += 1 / 240; }
+  return t;
+}
 
 // FlightCurve.placement: how far a card the straight path has carried to `p` is drawn to one side
 // of it, and how much larger. Both peak in the middle and are nothing at the ends. The side belongs
@@ -99,14 +108,19 @@ const LIST = [
   [IMAGES.stays, whole(IMAGES.stays), []],
   [IMAGES.packing, whole(IMAGES.packing), []],
 ];
+// The card in the editor at first, the card clicked first, which turns home in mid-air, and the
+// card clicked while it is in the air, which ends in the editor. The two clicked last are the top
+// and the bottom, so the turning flight and the new one take paths apart.
+const START = 1, TURNS = 0, LAST = 2;
 // How far down the picture the stack and the editor start: room for a flight's bow above them.
 const TOP = 26;
 
 export class Flight {
-  // A card is in the editor. The pointer clicks the bottom card in the stack, then the middle one:
-  // each time the card in the editor flies home while the clicked one flies out, two bowed flights
-  // at once, and the stack holds the slot of the card that is out. The stack is drawn narrowed for
-  // the editor throughout.
+  // The middle card is in the editor. The pointer clicks the top card in the stack: the card in the
+  // editor flies home while the clicked one flies out, two bowed flights at once, and the stack
+  // holds the slot of the card that is out. Before that card reaches the editor the pointer clicks
+  // the bottom one, and it turns home in mid-air. The stack is drawn narrowed for the editor
+  // throughout.
   static fit = smallFit(214);
   build({ W, H }) {
     const s = this.s = el("div", "scene");
@@ -144,19 +158,19 @@ export class Flight {
     this.pointer.classList.remove("down");
   }
   aim(i) { const r = this.slots[i]; return { x: r.x + r.w * 0.55, y: r.y + r.h * 0.45 }; }
-  reset() { this.hold(0); }
-  final() { this.hold(1, this.aim(1)); }
-  // With Reduce Motion: the first swap mid-air, the card from the editor crossing the bottom card
+  reset() { this.hold(START); }
+  final() { this.hold(LAST, this.aim(LAST)); }
+  // With Reduce Motion: the first swap mid-air, the card from the editor crossing the clicked card
   // on its way out, both slots held.
   poster() {
-    this.hold(0, this.aim(2));
+    this.hold(START, this.aim(TURNS));
     const at = (i, from, to, p, look) => {
       const r = { x: lerp(from.x, to.x, p), y: lerp(from.y, to.y, p), w: lerp(from.w, to.w, p), h: lerp(from.h, to.h, p) };
       this.cards[i].at(r, look, { from: center(from), to: center(to) }, 1);
     };
-    at(0, this.frame, this.slots[0], 0.34, 0.66);
-    at(2, this.hovered(2), this.frame, 0.34, 0.34);
-    this.cards[2].c.parentNode.append(this.cards[2].c);
+    at(START, this.frame, this.slots[START], 0.34, 0.66);
+    at(TURNS, this.hovered(TURNS), this.frame, 0.34, 0.34);
+    this.cards[TURNS].c.parentNode.append(this.cards[TURNS].c);
   }
   // The pointer reaches card `next`, which grows under it, and clicks: the card in the editor
   // flies home as `next` flies out, over it.
@@ -169,20 +183,30 @@ export class Flight {
     await wait(0.09);
     this.pointer.classList.remove("down");
     this.cards[open].fly(this.slots[open], 0);
-    await c.fly(this.frame, 1);
+    c.fly(this.frame, 1);
   }
   async play() {
     this.reset();
     await wait(0.2);
-    await this.swap(0, 2);
-    await wait(0.25);
-    await this.swap(2, 1);
+    await this.swap(START, TURNS);
+    // The last card is clicked while the first is still on its way out, before the editor's window
+    // comes up. As in AnnotatorTransition's flyingOut, the first turns home from where it is and the
+    // last flies out.
+    const turn = passesTarget() * 0.45, at = this.aim(LAST);
+    this.pm.to("x", at.x, turn); this.pm.to("y", at.y, turn);
+    this.cards[LAST].grow(this.hovered(LAST), 0.25);
+    await wait(turn * 0.6);
+    this.pointer.classList.add("down");
+    await wait(turn * 0.4);
+    this.pointer.classList.remove("down");
+    this.cards[TURNS].fly(this.slots[TURNS], 0);
+    await this.cards[LAST].fly(this.frame, 1);
   }
   // The card in the editor goes home as the first one comes back out, and the pointer leaves.
   async rewind() {
     this.pm.to("x", this.W + 20, 0.4);
-    this.cards[1].fly(this.slots[1], 0);
-    await this.cards[0].fly(this.frame, 1);
+    this.cards[LAST].fly(this.slots[LAST], 0);
+    await this.cards[START].fly(this.frame, 1);
     await wait(0.1);
   }
 }
