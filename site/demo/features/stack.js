@@ -12,6 +12,9 @@ const SCALE = CW / UI.cardMaxWidth;
 const FADE = 19 * SCALE;
 // How far Stitch pushes in on its new card.
 const ZOOM = 4;
+// Stitch's springs: the pieces' flight and fade, the column closing up, the push-in, and the
+// rewind's slides of the new card out and of each piece back in.
+const SPRINGS = ["p", "fade", "close", "zoom", "out", "in0", "in1", "in2"];
 // Oldest first. The stays card answers Drag's question: the stay still waiting for its host.
 const SHOTS = [
   [IMAGES.chat, { x: 0, y: 200, w: 1040, h: 650 }, []],
@@ -140,6 +143,7 @@ export class Stitch extends Column {
     // The cards above the three, which move down to the new card.
     this.kept = this.column([[IMAGES.frame, whole(IMAGES.frame), []], SHOTS[1]], this.bottom - 3 * STEP);
     this.drop = this.slot.y - UI.cardSpacing - (this.bottom - 3 * STEP);
+    this.off = W - (this.R - CW) + 24;
     this.result = el("div", "cardx");
     place(this.result, this.slot);
     const clip = el("div", "shot");
@@ -185,10 +189,13 @@ export class Stitch extends Column {
         c.style.opacity = 1 - fade;
       });
       this.result.style.opacity = fade;
+      at(this.result, m.get("out") * this.off, 0);
+      this.cards.forEach((c, i) => at(c, m.get(`in${i}`) * this.off, 0));
       this.kept.forEach((c) => { c.style.transform = `translateY(${m.get("close") * this.drop}px)`; });
       const z = m.get("zoom"), k = lerp(1, ZOOM, z);
       cam.style.transform = `translate(${lerp(this.focus.x, this.look.x, z) - this.focus.x * k}px, ${lerp(this.focus.y, this.look.y, z) - this.focus.y * k}px) scale(${k})`;
-    }).add("p", 0, 0.002).add("fade", 0, 0.002).add("close", 0, 0.002).add("zoom", 0, 0.001);
+    });
+    for (const name of SPRINGS) this.m.add(name, 0, name === "zoom" ? 0.001 : 0.002);
     // After Copied the view pushes in on the new card until its numbered pieces read. The card's
     // middle height, between badges 2 and 3, comes to the picture's, and the card is centred across
     // it, or put at the gutter where it is wider than the picture.
@@ -219,16 +226,23 @@ export class Stitch extends Column {
   }
   reset() {
     this.pick(true); this.notice.classList.remove("in");
-    for (const name of ["p", "fade", "close", "zoom"]) this.m.jump(name, 0);
+    for (const name of SPRINGS) this.m.jump(name, 0);
   }
   final() { this.reset(); this.pick(false); for (const name of ["p", "fade", "close", "zoom"]) this.m.jump(name, 1); }
-  // The new card gives way to the picked cards in their places, and the column opens up for them.
+  // The new card slides off the screen's edge on its own. The column opens up again, the picked
+  // cards slide back into their slots, newest first, and their selection comes back.
   async rewind() {
     this.notice.classList.remove("in");
     await this.m.to("zoom", 0, 0.5);
-    this.m.jump("p", 0);
+    await this.m.to("out", 1, UI.slideOut);
+    this.cards.forEach((c, i) => this.m.jump(`in${i}`, 1));
+    for (const name of ["p", "fade", "out"]) this.m.jump(name, 0);
+    await Promise.all([this.m.to("close", 0, UI.relayout), ...[2, 1, 0].map(async (i, n) => {
+      await wait(Math.min(UI.stagger * n, UI.staggerMax));
+      await this.m.to(`in${i}`, 0, UI.slideIn, UI.flightBounce);
+    })]);
     this.pick(true);
-    await Promise.all([this.m.to("fade", 0, 0.25), this.m.to("close", 0, UI.relayout)]);
+    await wait(0.35);
   }
   async play() {
     this.reset();
