@@ -1,0 +1,72 @@
+/* The four tiles under the first stage (recent.js, quick.js, stitch.js, drag.js, on stack.js's
+   screen): the windows behind the stack, in the screen's points, and the column. */
+.also .feature p { margin-bottom: 22px; }
+/* One picture height across the four (stack.js, DESK_H), set at the tile's foot whatever its copy.
+   Reserved before the pictures load at what they take at the tile's width. */
+.also .feature-pic { flex: none; min-height: 382px; margin-top: auto; }
+@media (max-width: 480px) { .also .feature-pic { min-height: 296px; } }
+.scene .desk { position: absolute; left: 0; top: 0; overflow: hidden; transform-origin: 0 0; }
+.scene .desk .lights { display: flex; gap: 8px; }
+.scene .desk .lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+.scene .desk .lights i:nth-child(2) { background: #febc2e; }
+.scene .desk .lights i:nth-child(3) { background: #28c840; }
+/* The column, faded at its top end over the panel's inset as StackView.column fades it. */
+.scene .scol { --top: 0px; position: absolute; inset: 0; -webkit-mask-image: linear-gradient(to bottom, transparent var(--top), #000 calc(var(--top) + var(--fade))); mask-image: linear-gradient(to bottom, transparent var(--top), #000 calc(var(--top) + var(--fade))); }
+
+/* Recent (recent.js): Messages. */
+.scene .msgs { color: #000; font-family: var(--sans); }
+.scene .msgs .mhead { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; height: 60px; padding-top: 9px; box-sizing: border-box; background: #f6f6f6; border-bottom: 1px solid rgb(0 0 0 / 0.08); }
+.scene .msgs .lights { position: absolute; left: 14px; top: 14px; }
+.scene .msgs .av { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(#d47a52, #a84f2e); color: #fff; font: 600 14px/1 var(--sans); }
+.scene .msgs .who { font-size: 11px; line-height: 1; color: rgb(0 0 0 / 0.6); }
+.scene .msgs .mbody { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; }
+.scene .msgs .ts { align-self: center; margin: 2px 0 6px; font-size: 11px; color: rgb(0 0 0 / 0.45); }
+.scene .msgs .b { align-self: flex-start; max-width: 80%; padding: 6px 12px; border-radius: 17px; background: #e9e9eb; font-size: 13px; line-height: 1.3; }
+.scene .msgs .b.me { align-self: flex-end; background: #0b84ff; color: #fff; }
+.scene .msgs .b:not(.me) + .b.me, .scene .msgs .b.me + .b:not(.me) { margin-top: 8px; }
+
+/* Stitch (stitch.js): Calendar's day view behind the stack, in the screen's points. An event is a
+   tint of its calendar's colour with a bar of it down its left edge. */
+.scene .cal { color: #1d1d1f; font-family: var(--sans); }
+.scene .cal .ctool { display: flex; align-items: center; height: 52px; padding: 0 14px; background: #f6f6f6; border-bottom: 1px solid rgb(0 0 0 / 0.08); }
+.scene .cal .seg { display: flex; margin-left: 24px; padding: 2px; border-radius: 7px; background: rgb(0 0 0 / 0.06); font-size: 12px; }
+.scene .cal .seg > * { padding: 3px 8px; border-radius: 5px; font-weight: 500; color: rgb(0 0 0 / 0.7); }
+.scene .cal .seg b { background: #fff; color: #000; box-shadow: 0 0.5px 1.5px rgb(0 0 0 / 0.2); }
+.scene .cal .chead { display: flex; flex-direction: column; gap: 2px; padding: 12px 16px 10px; border-bottom: 1px solid rgb(0 0 0 / 0.08); }
+.scene .cal .chead b { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+.scene .cal .chead span { font-size: 12px; color: rgb(0 0 0 / 0.5); }
+.scene .cal .cday { position: relative; margin-top: 10px; }
+.scene .cal .hr { position: absolute; left: 52px; right: 0; border-top: 1px solid rgb(0 0 0 / 0.08); }
+.scene .cal .hr span { position: absolute; left: -44px; top: -7px; font-size: 10.5px; color: rgb(0 0 0 / 0.45); font-variant-numeric: tabular-nums; }
+.scene .cal .ev { position: absolute; left: 56px; right: 8px; padding: 3px 8px; border-left: 3px solid var(--c); border-radius: 5px; background: color-mix(in srgb, var(--c) 16%, #fff); color: color-mix(in srgb, var(--c) 55%, #000); font-size: 11.5px; line-height: 1.25; overflow: hidden; }
+.scene .cal .ev b { display: block; font-weight: 600; }
+.scene .cal .ev span { display: block; opacity: 0.8; }
+.scene .cal .blue { --c: #1f8cff; }
+.scene .cal .orange { --c: #ff9500; }
+.scene .cal .green { --c: #34c759; }
+.scene .cal .purple { --c: #af52de; }
+/* Drag (drag.js): Claude Code fills Ghostty's window under its title bar, so the window, not the
+   terminal, draws the edge and the shadow. */
+:root .scene .window.ghostty .term-x { border-radius: 0; box-shadow: none; }
+/* Stitch (stitch.js): the selection strip over Calendar, on the app's .regularMaterial, which blurs
+   the window under it. */
+.scene .qstrip.material { background: rgb(40 40 42 / 0.72); -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); }
+/* Quick (quick.js): Notes, behind the editor's dim, and the stack at its narrowest beside the editor. */
+.scene .dim.on { opacity: 1; visibility: visible; }
+.scene .narrow { position: absolute; inset: 0; }
+.scene .notes { display: grid; grid-template-columns: 200px 260px 1fr; grid-template-rows: 52px 1fr; color: #1d1d1f; font: 13px/1.25 var(--sans); }
+.scene .notes .nside { grid-row: 1 / 3; display: flex; flex-direction: column; gap: 2px; padding: 56px 10px 0; background: #e8e6e3; }
+.scene .notes .nside .lights { position: absolute; left: 14px; top: 20px; }
+.scene .notes .nside b { margin: 0 8px 4px; font-size: 11px; font-weight: 600; color: rgb(0 0 0 / 0.45); }
+.scene .notes .nside span:not(.lights) { padding: 5px 8px; border-radius: 6px; }
+.scene .notes .nside .on { background: rgb(0 0 0 / 0.08); }
+.scene .notes .ntool { grid-column: 2 / 4; grid-row: 1; background: #fbfbfa; border-bottom: 1px solid rgb(0 0 0 / 0.08); }
+.scene .notes .nlist { display: flex; flex-direction: column; gap: 2px; padding: 8px; background: #fff; border-right: 1px solid rgb(0 0 0 / 0.08); }
+.scene .notes .nrow { display: flex; flex-direction: column; gap: 3px; padding: 9px 12px; border-radius: 8px; }
+.scene .notes .nrow b { font-weight: 600; }
+.scene .notes .nrow span { font-size: 12px; color: rgb(0 0 0 / 0.5); }
+.scene .notes .nrow.on { background: #f7d460; }
+.scene .notes .nnote { display: flex; flex-direction: column; gap: 12px; padding: 26px 34px; background: #fff; }
+.scene .notes .nnote b { margin-bottom: 6px; font-size: 22px; font-weight: 700; }
+.scene .notes .nnote span { height: 9px; border-radius: 5px; background: rgb(0 0 0 / 0.08); }
+.scene .notes .nnote .short { width: 55%; }

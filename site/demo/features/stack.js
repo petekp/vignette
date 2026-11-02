@@ -4,7 +4,7 @@
 // against the screen's.
 import { el, place, UI } from "../vignette.js";
 import { IMAGES, PERSON_MARKS } from "../cards.js";
-import { GUTTER, card, whole, menubar, backdrop } from "./parts.js";
+import { GUTTER, clamp, card, whole, menubar, backdrop } from "./parts.js";
 
 export const CW = 140, CH = 88, STEP = CH + UI.cardSpacing;
 // The cards' scale against the app's: a 16:10 screenshot's card is 188 pt wide there.
@@ -23,6 +23,16 @@ export const SHOTS = [
     { type: "note", who: "person", x: 40, y: 972, text: "this one" },
   ]],
 ];
+// The four tiles show one picture height whatever their copy, so a row's pictures line up and a
+// column of them reads as one set. Each draws the same part of the screen, DESK_H points tall, at
+// the same scale, so the menu bar and the cards are one size across the set: from 375 pt wide, up to
+// 1.15 times the feature tiles' scale, the most the small tiles draw at, so the cards read at the
+// tile's size. DESK_H holds Stitch's three picked cards under the menu bar.
+export const DESK_H = 332;
+export const deskFit = (slotW) => {
+  const k = clamp(slotW / 375, 0.86, 1.15);
+  return { W: Math.round(slotW / k), H: DESK_H, rest: DESK_H, k, key: String(Math.round(slotW / k)) };
+};
 export const at = (node, x, y, s = 1) => { node.style.transform = `translate(${x}px, ${y}px) scale(${s})`; };
 
 export class Column {
@@ -36,18 +46,20 @@ export class Column {
     return s;
   }
   // The screen behind the column, in its own points scaled to the cards: the wallpaper, `win` from
-  // `top` down the picture to off its bottom, its right edge at `right`, by default just under the
+  // `top` down the picture to off its bottom, from `left` to `right`, by default just under the
   // column, the stack's backdrop, and the menu bar over it all, naming `app`, which is frontmost.
-  // The column fades out under the menu bar, which the stack's panel stays below.
-  screen(app, menus, win, top, right = this.R - CW + 20) {
-    const { W, H } = this, k = 1 / SCALE, wide = W >= 480;
+  // The column fades out under the menu bar, which the stack's panel stays below. A picture of
+  // the screen short of its right edge (`clock: false`) has no clock, which sits at that edge.
+  screen(app, menus, win, { top, left = GUTTER, right = this.R - CW + 20, clock = true }) {
+    const { W, H } = this, k = 1 / SCALE, wide = W >= 440;
     const d = el("div", "desk");
     Object.assign(d.style, { width: `${W * k}px`, height: `${H * k}px`, transform: `scale(${SCALE})` });
-    const x = GUTTER * k, y = top * k;
+    const x = left * k, y = top * k;
     place(win, { x, y, w: right * k - x, h: H * k - y + 40 });
     this.backdrop = backdrop();
+    this.desk = d;
     d.append(el("div", "wallpaper"), win, this.backdrop,
-      menubar(app, wide ? menus : menus.slice(0, 3), `${wide ? "Sun 1 Nov&nbsp;&nbsp;" : ""}9:41`));
+      menubar(app, wide ? menus : menus.slice(0, 3), clock ? `${wide ? "Sun 1 Nov&nbsp;&nbsp;" : ""}9:41` : ""));
     this.s.insertBefore(d, this.col);
     this.col.style.setProperty("--top", `${MENU_BAR * SCALE}px`);
   }
