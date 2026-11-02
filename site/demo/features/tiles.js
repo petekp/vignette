@@ -49,6 +49,14 @@ class Tile {
   }
   // With Reduce Motion, the one frame that tells the story, which is the end unless a scene says.
   poster() { this.scene.poster ? this.scene.poster() : this.scene.final(); }
+  // Reduce Motion turned on. A running play would run on to its end at zero duration, and springs
+  // it started keep their speed, so the scene is replaced by a new one that shows the poster, and
+  // the old one finishes off the page.
+  still() {
+    this.played = true;
+    this.key = null;
+    this.fit();
+  }
   async run(again) {
     if (this.playing || !motion()) return;
     this.playing = true;
@@ -66,9 +74,10 @@ export function buildFeatures(section) {
   const tiles = [...section.querySelectorAll(".feature")].map((root) => new Tile(root));
   // Reduce Motion turned on shows every result at once; turned off, the next scroll or point plays.
   if (!motion()) tiles.forEach((tile) => { tile.played = true; });
-  reducedMotion.addEventListener("change", () => {
-    if (motion()) return;
-    tiles.forEach((tile) => { tile.played = true; tile.poster(); });
+  // A list of its own, read nowhere else: Chrome fired no "change" on the springs' list, which a
+  // play reads on every step.
+  matchMedia(reducedMotion.media).addEventListener("change", (e) => {
+    if (e.matches) tiles.forEach((tile) => tile.still());
   });
   // Tiles that come into view together start a third of a second apart, in reading order, so the
   // eye can follow one before the next moves.
