@@ -541,9 +541,9 @@ final class LiveInk {
         return hit.agent && hit.kind != .text && hit.focus == nil && asks.isAnswer(hit.id) ? .pick(hit) : .erase(hit)
     }
 
-    /// Shows what a tap at `point` would do, or nothing with no point.
+    /// Shows what a tap at `point` would do, or nothing with no point or no mark.
     private func hover(at point: CGPoint?) {
-        let surface = point.flatMap { point in inking.first { $0.overlay.globalFrame.contains(point) } }
+        let surface = marks.isEmpty ? nil : point.flatMap { point in inking.first { $0.overlay.globalFrame.contains(point) } }
         var next = point.flatMap { point in surface.flatMap { tapTarget(at: point, on: $0)?.preview } }
         if let picked = justPicked, point != nil {
             if next?.id == picked { next = nil } else { justPicked = nil }
@@ -1810,7 +1810,6 @@ final class LiveInk {
         isInking = true
         inkings += 1
         FocusReturn.shared.sessionStarting()
-        letGoOfFocus(because: "ink")
         drewWhileInking = false
         // Pressed again before the button came up: the stroke now ends without ending the inking.
         releaseWatch?.invalidate()
@@ -1818,8 +1817,6 @@ final class LiveInk {
         inking = activeSurfaces()
         inking.forEach { $0.overlay.setInking(true) }
         startTap(since: began)
-        // The ink takes its colour from what is behind it.
-        InkBackdrop.shared.refresh()
         let mouse = NSEvent.mouseLocation
         hover(at: CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y))
         // The field waits, so holding the chord on the way to a key, as in a window manager's
@@ -2035,8 +2032,10 @@ final class LiveInk {
         guard !chordShowsField else { return }
         chordShowsField = true
         holdField()
-        // Screen Recording is what a note reads the window with, so say so before any ink is drawn.
-        // It waits for the field, so a chord on its way to a shortcut says nothing.
+        // Not before the field, so a chord on its way to a shortcut ends no tour, captures nothing and
+        // says nothing. Screen Recording is what a note reads the window with, so say so before any ink.
+        letGoOfFocus(because: "ink")
+        InkBackdrop.shared.refresh()
         if !ScreenRecording.granted {
             let mouse = NSEvent.mouseLocation
             let pointer = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
