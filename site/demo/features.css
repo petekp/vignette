@@ -131,3 +131,6 @@
 .scene .field.typing .tcaret { animation: none; }
 .scene .field .added { all: unset; transition: opacity 0.25s; }
 .scene .field.caret-off .tcaret { visibility: hidden; }
+/* Premium details and Several in a row (flight.js, queue.js): a card in flight is laid out at the
+   editor's size and scaled, so its border ring is set against the scale to stay 0.5 pt wide. */
+.scene .flights .cardx.flying::after { box-shadow: inset 0 0 0 var(--ring, 0.5px) rgb(255 255 255 / 0.4); transition: none; }
