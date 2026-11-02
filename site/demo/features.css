@@ -144,3 +144,8 @@
 
 /* Agent, Front and tiles (agent.js, front.js): a shell command Claude Code has run, one dim line. */
 .scene .term-x .t-done, .scene .term-x .t-done b { color: #8b8f99; }
+/* Front's keys: right Shift tapped twice opens the stack, and Esc closes it. */
+.scene .fkeys { position: absolute; z-index: 4; transform-origin: 0 0; opacity: 0; transform: scale(calc(var(--scale) * 0.92)); transition: opacity 0.15s, transform 0.3s var(--spring, ease); }
+.scene .fkeys.up { opacity: 1; transform: scale(var(--scale)); }
+.scene .fkeys .twice { color: rgb(255 255 255 / 0.8); }
+.scene .kcap.esck { min-width: 66px; display: flex; align-items: flex-end; justify-content: flex-start; padding: 7px 10px 8px; font-size: 12px; }

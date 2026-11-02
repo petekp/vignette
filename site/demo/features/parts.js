@@ -1,6 +1,6 @@
 // What the feature tiles' pictures are made of: parts of screenshots, cards as the stack draws them,
 // and the layout every small picture shares.
-import { picture, el, place } from "../vignette.js";
+import { picture, el, place, wait } from "../vignette.js";
 
 export const lerp = (a, b, t) => a + (b - a) * t;
 export const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -65,3 +65,10 @@ const ICONS = {
 const ROWS = [["copy", "Copy", "⌘C"], ["draw", "Draw", "↩"], ["stitch", "Stitch", "⌘S"], ["trash", "Delete", "⌘⌫"]];
 export const selectionStrip = () => el("div", "qstrip", ROWS.map(([icon, label, key]) =>
   `<div class="row" data-row="${icon}"><svg viewBox="0 0 20 20" width="15" height="15">${ICONS[icon]}</svg><span>${label}</span><kbd>${key}</kbd></div>`).join(""));
+
+// Keys as a Mac's keyboard draws them, for the tiles whose beat a key causes: right Shift with its
+// glyph over its name, and Esc.
+export const shiftKey = () => el("div", "kcap shiftk", "<span>⇧</span><span>shift</span>");
+export const escKey = () => el("div", "kcap esck", "<span>esc</span>");
+export const twice = () => el("div", "twice", "×2");
+export async function tap(key, hold = 0.09) { key.classList.add("down"); await wait(hold); key.classList.remove("down"); }
