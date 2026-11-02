@@ -287,12 +287,14 @@ export class Drag extends Column {
     const s = this.scene(W, H);
     // Every line ends left of the column, at every width.
     const talk = W >= 520
-      ? [said("Added the three stays to the map."), gap, you("&gt; Number the days."), gap, said("Done. Each day has its number now."), gap, you("&gt; Remind the host to confirm our stay.")]
+      ? [you("&gt; Put our three stays on the trip map."), gap, said("Added the three stays to the map."), gap, you("&gt; Number the days."), gap, said("Done. Each day has its number now."), gap, you("&gt; Remind the host to confirm our stay.")]
       : [said("Mapped the stays."), gap, you("&gt; Number the days."), gap, said("Done."), gap, you("&gt; Remind the host"), you("  to confirm.")];
     const t = claudeCode(W, H, [...talk, gap, said("Which stay is it?")].join(""));
     this.typed = t.querySelector(".typed");
     s.insertBefore(t, this.col);
-    this.column(SHOTS.slice(1));
+    // The newest card grows under the pointer, as a hovered card does in the stack.
+    this.newest = this.column(SHOTS.slice(1)).at(-1);
+    this.newest.style.transition = "scale 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.15)";
     // The drag image is the card at its own size, held where the pointer took it.
     const [image, view, marks] = SHOTS[3];
     this.ghost = card(image, view, marks, { x: 0, y: 0, w: CW, h: CH });
@@ -313,9 +315,10 @@ export class Drag extends Column {
     }).add("t", 0, 0.001).add("p", 0, 0.001);
     return s;
   }
+  hover(on) { this.newest.style.scale = on ? String(UI.hoverScale) : ""; }
   dropped(on) { this.typed.textContent = on ? "[Image #1] " : ""; this.typed.style.width = ""; }
   reset() {
-    this.ghost.style.opacity = 0; this.pointer.classList.remove("down"); this.dropped(false);
+    this.ghost.style.opacity = 0; this.pointer.classList.remove("down"); this.dropped(false); this.hover(false);
     this.pointer.style.opacity = "";
     this.m.jump("p", 0); this.m.jump("t", 0);
   }
@@ -335,9 +338,13 @@ export class Drag extends Column {
     this.reset();
     await wait(0.25);
     await this.m.to("p", 1, 0.45);
+    this.hover(true);
+    await wait(0.15);
     this.pointer.classList.add("down");
     await wait(0.12);
     this.ghost.style.opacity = 1;
+    // The pointer leaves the card a moment into the drag.
+    setTimeout(() => this.hover(false), 120);
     await this.m.to("t", 1, 0.7);
     this.pointer.classList.remove("down");
     this.ghost.style.opacity = 0;
