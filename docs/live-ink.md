@@ -28,7 +28,7 @@ The names in brackets are `// MARK:` sections.
 | What an ask sends | `LivePacket.swift` |
 | Speaking while drawing | `LiveInk.swift` (Listening), `LiveListening.swift`, `Microphone.swift`, `Transcriber.swift`, `AppleTranscriber.swift` |
 | Claude and Codex on the screen (`docs/live-ink-responders.md`) | `LiveResponders.swift`, `LiveResponder.swift`, `ClaudeDriver.swift`, `CodexDriver.swift`, `CodexIsolation.swift`, `CodexSignIn.swift` |
-| Esc: which step is next, the hotkey that holds it | `LiveEscape.swift`, `LiveInk.swift` (Esc), `HotKey.swift` |
+| Esc: which step is next, the hotkey that holds it | `LiveEscape.swift`, `LiveInk+Escape.swift`, `HotKey.swift` |
 | The answer: reading it, drawing it, steps | `LiveAnswer.swift`, `LiveInk.swift` (Answering) |
 | The reply's popover, the conversation: its question, its row, its words, what it is laid over | `LiveReplyPopover.swift`, `LiveInkOverlay.swift` (`LiveMarksLayer.showPopover`) |
 | The thinking light round a popover's rim | `LiveRimLight.swift` |
@@ -156,13 +156,13 @@ The names in brackets are `// MARK:` sections.
      unlike the ×, which takes the ink it answered too.
   5. Clear what is left, as `clear()` does, which also ends the conversation.
 
-  While the note is up without the keys, shown or hidden with its ink, none of these steps applies.
-  The person is in another app, and Esc there is that app's. So a press meant for a terminal never
-  takes the note's words, and never stops, closes or clears anything else.
+  Steps 2 to 5 apply only while the pointer is on a mark or a reply on the active Space
+  (`LiveInk.pointerIsOnInk`), and none applies while the note is up without the keys. Otherwise the
+  person is typing in another app, and Esc is that app's: in a terminal it stops the agent. So such a
+  press never takes the note's words, stops an ask, closes an answer or clears ink.
 
   `LiveInk` holds Esc as a Carbon hotkey on plain Esc (`HotKey`, no permission needed) only while
-  `LiveEscape.next` has a step, and lets it go at once when it has none, so Esc is the frontmost
-  app's again. Esc that reached a terminal would interrupt the agent running there. Live ink never holds it
+  `LiveEscape.next` has a step, and lets it go at once when it has none. Live ink never holds it
   while the stack or the annotator holds the screen, since they use Esc, while the note's target menu
   is up, which closes on Esc and gives the note's field the keys back, or while live ink is off.
   Whether to hold the key is decided before each wait of the main run loop (`LiveInk.holdEscape`, a

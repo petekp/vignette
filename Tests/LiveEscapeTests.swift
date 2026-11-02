@@ -3,7 +3,7 @@ import XCTest
 final class LiveEscapeTests: XCTestCase {
     private func everything() -> LiveEscape.Snapshot {
         LiveEscape.Snapshot(isOn: true, note: .hasKeys, replyFieldOpen: true, askCanBeCancelled: true, tourRunning: true,
-                            answerShown: true, marksShown: true)
+                            answerShown: true, marksShown: true, pointerOnInk: true)
     }
 
     func testEscBacksOutOneStepAtATimeInOrder() {
@@ -28,8 +28,24 @@ final class LiveEscapeTests: XCTestCase {
     }
 
     func testEscClearsInkAloneAndNothingElse() {
-        XCTAssertEqual(LiveEscape.next(LiveEscape.Snapshot(isOn: true, marksShown: true)), .clearInk)
-        XCTAssertNil(LiveEscape.next(LiveEscape.Snapshot(isOn: true)))
+        XCTAssertEqual(LiveEscape.next(LiveEscape.Snapshot(isOn: true, marksShown: true, pointerOnInk: true)), .clearInk)
+        XCTAssertNil(LiveEscape.next(LiveEscape.Snapshot(isOn: true, pointerOnInk: true)))
+    }
+
+    func testEscPastTheNoteAndReplysFieldIsTheAppsUnlessThePointerIsOnInk() {
+        var state = everything()
+        state.note = .none
+        state.replyFieldOpen = false
+        state.pointerOnInk = false
+        XCTAssertNil(LiveEscape.next(state), "typing in a terminal with ink up, Esc reaches the terminal")
+        XCTAssertTrue(LiveEscape.needsPointer(state))
+        state.replyFieldOpen = true
+        XCTAssertEqual(LiveEscape.next(state), .closeReplyField)
+        XCTAssertFalse(LiveEscape.needsPointer(state))
+        state.replyFieldOpen = false
+        state.note = .hasKeys
+        XCTAssertEqual(LiveEscape.next(state), .discardNote)
+        XCTAssertFalse(LiveEscape.needsPointer(state))
     }
 
     func testEscIsNeverTakenWhileTheStackHoldsTheScreenAMenuIsUpOrLiveInkIsOff() {

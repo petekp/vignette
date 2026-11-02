@@ -54,7 +54,7 @@ final class LiveInk {
     private var dismissButton: LiveDismissButton?
     private var dismissing: LiveAsks.Ask.ID?
     /// Each answer's actions, under its reply while it is on the screen, by its ask.
-    private var actionsPanels: [LiveAsks.Ask.ID: LiveAnswerActions] = [:]
+    var actionsPanels: [LiveAsks.Ask.ID: LiveAnswerActions] = [:]
     private var pointerWatch: [Any] = []
     private var replyWatch: NSObjectProtocol?
     private var focusRun: FocusRun?
@@ -99,11 +99,11 @@ final class LiveInk {
     /// (`LiveAsks.Effect.send`).
     private var held: [LiveAsks.Ask.ID: LiveResponder.Ask] = [:]
     /// Esc, held while `LiveEscape` has a step for it.
-    private var escapeKey: HotKey?
+    var escapeKey: HotKey?
     /// The note's target picked last, which the next note starts on.
     private var lastTarget: LiveNotePopover.Target?
     /// The asks since the screen was last cleared, and each mark's part in them.
-    private var asks = LiveAsks()
+    var asks = LiveAsks()
     /// An answer's steps still to show, each a mark and its label, and the window they go on. One is
     /// on the screen, and a click on it shows the next, while `stepClicks` listens.
     private var steps: [[Mark]] = []
@@ -162,9 +162,13 @@ final class LiveInk {
 
     /// The marks on screen now, the person's in the order they were drawn: a mark on a window is left
     /// out while its window is away, minimised or set aside.
-    private var shownMarks: [Mark] {
-        inDrawnOrder(windows.marks.filter(\.shown).map(\.mark) + screenMarks)
+    var shownMarks: [Mark] {
+        var seen = Set<Mark.ID>()
+        return inDrawnOrder(windows.marks.filter(\.shown).map(\.mark) + surfacesInSight.flatMap(\.marks).filter { seen.insert($0.id).inserted })
     }
+
+    /// The surfaces on the Space the person sees. A surface on another Space keeps its marks out of sight.
+    private var surfacesInSight: [Surface] { surfaces.filter(\.overlay.isOnActiveSpace) }
 
     /// `marks` with the person's in the order they were drawn, and the rest after them in the order
     /// given. The windows' marks come window by window, in no order, so ink across windows is put back
@@ -606,7 +610,7 @@ final class LiveInk {
     /// The person's marks no ask has been about yet, oldest first.
     private var newInk: [Mark] { asks.newInk(among: shownMarks) }
 
-    private var answerSizes: LiveAnswerLayout.Sizes { LiveAnswerLayout.Sizes(ui: Settings.shared.data.ui) }
+    var answerSizes: LiveAnswerLayout.Sizes { LiveAnswerLayout.Sizes(ui: Settings.shared.data.ui) }
 
     /// The note's ink, oldest first, on the screen or away with its window: the person's ink no ask has
     /// been about.
@@ -747,7 +751,7 @@ final class LiveInk {
 
     /// Esc in the note: the note goes, with what was said for it and its ink, all the ink no ask has
     /// been about. Ink an ask was about stays.
-    private func discardNote() {
+    func discardNote() {
         closeNote()
         stopListening()
         let before = marks.count
@@ -782,7 +786,7 @@ final class LiveInk {
     }
 
     /// The marks on the screen, and the conversations about to take their notes' places.
-    private var shownIDs: Set<Mark.ID> { Set(marks.map(\.id)).union(handingTo.values) }
+    var shownIDs: Set<Mark.ID> { Set(marks.map(\.id)).union(handingTo.values) }
 
     /// The open note's responder, else the one a new note starts on before its sessions are listed
     /// (`LiveNotePopover.start`). A script's `live-ink-ask` with no session asks it.
@@ -1021,7 +1025,7 @@ final class LiveInk {
 
     /// Closes an answer, as `event` says: by its × (`dismissed`), with the ink only it was about, or by
     /// Esc (`answerClosed`), the newest, with the person's ink staying. Its marks leave.
-    private func closeAnswer(by event: LiveAsks.Event) {
+    func closeAnswer(by event: LiveAsks.Event) {
         hideDismissButton()
         run(asks.reduce(event))
     }
@@ -1093,7 +1097,7 @@ final class LiveInk {
     // MARK: Dismissing and actions
 
     /// A reply's popover while it is up, and its body in global top-left points.
-    private typealias ShownReply = (popover: ReplyPopover, note: CGRect)
+    typealias ShownReply = (popover: ReplyPopover, note: CGRect)
 
     /// `ask`'s reply, while it is up.
     private func shownReply(of ask: LiveAsks.Ask) -> ShownReply? {
@@ -1105,7 +1109,7 @@ final class LiveInk {
     }
 
     /// The replies that are up, by their asks.
-    private func shownReplies() -> [LiveAsks.Ask.ID: ShownReply] {
+    func shownReplies() -> [LiveAsks.Ask.ID: ShownReply] {
         Dictionary(uniqueKeysWithValues: asks.asks.compactMap { ask in shownReply(of: ask).map { (ask.id, $0) } })
     }
 
@@ -1594,7 +1598,7 @@ final class LiveInk {
     /// the answer, a session's note, a withdrawal. An ask that ended is let go, the answer a button was
     /// picked under is put back, an answer is taken off or set aside, a note says why, and the next ask
     /// goes to the responder.
-    private func run(_ effects: [LiveAsks.Effect]) {
+    func run(_ effects: [LiveAsks.Effect]) {
         for effect in effects {
             switch effect {
             case .ended(let id): release(id)
@@ -1721,7 +1725,7 @@ final class LiveInk {
     }
 
     /// Lets go of the steps and the focus, whichever answer's they are.
-    private func letGoOfTour(because reason: String) {
+    func letGoOfTour(because reason: String) {
         stopSteps()
         letGoOfFocus(because: reason)
     }
@@ -1772,13 +1776,13 @@ final class LiveInk {
 
     // MARK: Esc
 
-    private var escapeSnapshot: LiveEscape.Snapshot {
-        /// Whether a mark that shows and is not leaving passes `test`.
+    var escapeSnapshot: LiveEscape.Snapshot {
+        /// Whether a mark that shows on the active Space and is not leaving passes `test`.
         func shows(_ test: (Mark.ID) -> Bool) -> Bool {
             func staying(_ id: Mark.ID) -> Bool { !asks.isFinishing(id) && test(id) }
-            return windows.containsShown(where: staying) || surfaces.contains { $0.marks.contains { staying($0.id) } }
+            return windows.containsShown(where: staying) || surfacesInSight.contains { $0.marks.contains { staying($0.id) } }
         }
-        return LiveEscape.Snapshot(
+        var snapshot = LiveEscape.Snapshot(
             isOn: isOn,
             screenIsFree: mayInk(),
             menuOpen: note?.menuOpen == true,
@@ -1788,50 +1792,8 @@ final class LiveInk {
             tourRunning: focusRun != nil || stepClicks != nil,
             answerShown: shows(asks.isSettledAnswer),
             marksShown: shows { _ in true })
-    }
-
-    /// Holds Esc exactly while `LiveEscape` has a step for it, so with nothing to back out of it is the
-    /// frontmost app's. The main run loop asks before each wait, so the key follows every change to
-    /// what the snapshot reads, whatever made it.
-    private func holdEscape() {
-        let wanted = LiveEscape.next(escapeSnapshot) != nil
-        guard wanted != (escapeKey != nil) else { return }
-        escapeKey = wanted ? HotKey(keyCode: LiveEscape.keyCode, modifiers: 0, action: { [weak self] in self?.escape() }) : nil
-    }
-
-    /// Esc: the first step that applies, one per press. The hotkey takes the press while it is held;
-    /// the note and the Reply field come here for a press before it is.
-    func escape() {
-        guard let step = LiveEscape.next(escapeSnapshot) else { return }
-        Log.write("[live-ink] esc \(step.rawValue)")
-        switch step {
-        case .discardNote:
-            discardNote()
-        case .closeReplyField:
-            actionsPanels.values.first(where: \.isTyping)?.closeField()
-        case .cancelAsk:
-            cancelAsk()
-        case .endTour:
-            letGoOfTour(because: "escape")
-        case .closeAnswer:
-            closeAnswer(by: .answerClosed)
-        case .clearInk:
-            clear()
-        }
-    }
-
-    /// Whether a note to a session waits out a grace before it goes, which is what lets Esc stop it.
-    private var sendsWait: Bool { Settings.shared.data.ui.sendGraceSeconds > 0 }
-
-    /// Stops the newest ask under way: its sent note and any reply leave, the follow-up from a button
-    /// puts its answer back, and its ink can be asked about again. The responder's turn is stopped when
-    /// it was this ask's, and the next ask waiting goes. A session's note is withdrawn if its send is
-    /// stored before the answer to this comes.
-    private func cancelAsk() {
-        guard let id = asks.cancellable(sendsWait: sendsWait) else { return }
-        Log.write("[live-ink] stopping id=\(id)")
-        run(asks.reduce(.cancelled(id, shown: shownIDs)))
-        showMarks()
+        snapshot.pointerOnInk = LiveEscape.needsPointer(snapshot) && pointerIsOnInk()
+        return snapshot
     }
 
     // MARK: Inking
@@ -2206,7 +2168,7 @@ final class LiveInk {
         surfaces.removeAll { surface in empty.contains { $0 === surface } }
     }
 
-    private func showMarks() {
+    func showMarks() {
         let ui = Settings.shared.data.ui
         let pulsing = asks.pulsing
         let finishing = asks.finishing
