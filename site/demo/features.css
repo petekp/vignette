@@ -134,3 +134,9 @@
 /* Premium details and Several in a row (flight.js, queue.js): a card in flight is laid out at the
    editor's size and scaled, so its border ring is set against the scale to stay 0.5 pt wide. */
 .scene .flights .cardx.flying::after { box-shadow: inset 0 0 0 var(--ring, 0.5px) rgb(255 255 255 / 0.4); transition: none; }
+/* Recent, Stitch and Drag (stack.js): the column, faded at its top end over the panel's inset as
+   StackView.column fades it, and right Shift drawn as a Mac's key. */
+.scene .scol { position: absolute; inset: 0; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade)); mask-image: linear-gradient(to bottom, transparent, #000 var(--fade)); }
+.scene .kcap.shiftk { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; padding: 7px 10px 8px; font-size: 12px; }
+.scene .shiftk span:first-child { font-size: 15px; }
+.scene .cardx.lifted::after, .scene .cardx.lifted .scircle { transition: none; }

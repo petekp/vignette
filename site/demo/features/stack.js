@@ -8,14 +8,18 @@ import { lerp, clamp, GUTTER, card, whole, shot, wideFit, POINTER } from "./part
 const CW = 140, CH = 88, STEP = CH + UI.cardSpacing;
 // The cards' scale against the app's: a 16:10 screenshot's card is 188 pt wide there.
 const SCALE = CW / UI.cardMaxWidth;
-const NOTE = { type: "note", who: "person", x: 40, y: 292, text: "make this quieter" };
-const BOX = { type: "rect", who: "person", x: 40, y: 192, w: 588, h: 86 };
-// Oldest first.
+// StackLayout.inset: the column fades out over the panel's padding at its ends.
+const FADE = 19 * SCALE;
+// Oldest first. The newest three are one size, so Stitch makes them one column of whole pages. The
+// stays card answers Drag's question: the stay still waiting for its host.
 const SHOTS = [
+  [IMAGES.chat, { x: 0, y: 200, w: 1040, h: 650 }, []],
   [IMAGES.itin, whole(IMAGES.itin), PERSON_MARKS.slice(0, 2)],
   [IMAGES.packing, whole(IMAGES.packing), []],
-  [IMAGES.chat, { x: 0, y: 200, w: 1040, h: 650 }, []],
-  [IMAGES.stays, whole(IMAGES.stays), [BOX, NOTE]],
+  [IMAGES.stays, whole(IMAGES.stays), [
+    { type: "rect", who: "person", x: 40, y: 752, w: 1728, h: 206 },
+    { type: "note", who: "person", x: 40, y: 972, text: "this one" },
+  ]],
 ];
 const at = (node, x, y, s = 1) => { node.style.transform = `translate(${x}px, ${y}px) scale(${s})`; };
 async function tap(key, hold = 0.09) { key.classList.add("down"); await wait(hold); key.classList.remove("down"); }
@@ -25,13 +29,16 @@ class Column {
     const s = this.s = el("div", "scene fades");
     s.style.width = `${W}px`; s.style.height = `${H}px`;
     this.W = W; this.R = W - 24; this.bottom = H - 14;
+    this.col = el("div", "scol");
+    this.col.style.setProperty("--fade", `${FADE}px`);
+    s.append(this.col);
     return s;
   }
-  // The cards for `list`, the last at the bottom.
-  column(list) {
+  // The cards for `list` in the column, the last at the bottom.
+  column(list, bottom = this.bottom) {
     return list.map(([image, view, marks], i) => {
-      const c = card(image, view, marks, { x: this.R - CW, y: this.bottom - CH - (list.length - 1 - i) * STEP, w: CW, h: CH });
-      this.s.append(c);
+      const c = card(image, view, marks, { x: this.R - CW, y: bottom - CH - (list.length - 1 - i) * STEP, w: CW, h: CH });
+      this.col.append(c);
       return c;
     });
   }
@@ -45,11 +52,12 @@ export class Recent extends Column {
   build({ W, H }) {
     const s = this.scene(W, H);
     this.cards = this.column(SHOTS);
-    const y = this.bottom - CH - 38;
-    this.key = el("div", "kcap shiftk", "<span>⇧</span>");
-    place(this.key, { x: GUTTER, y });
+    // Beside the column, level with the newest card.
+    const y = this.bottom - CH / 2 - 23, twiceX = this.R - CW - 40;
+    this.key = el("div", "kcap shiftk", "<span>⇧</span><span>shift</span>");
+    place(this.key, { x: twiceX - 104, y });
     this.twice = el("div", "twice", "×2");
-    place(this.twice, { x: GUTTER + 104, y: y + 12 });
+    place(this.twice, { x: twiceX, y: y + 12 });
     s.append(this.key, this.twice);
     this.off = W - (this.R - CW) + 24;
     this.m = this.cards.map((c) => new Motion((m) => at(c, m.get("x"), 0)).add("x", this.off, 0.05));
@@ -59,7 +67,6 @@ export class Recent extends Column {
   final() { this.reset(); this.twice.classList.add("on"); this.m.forEach((m) => m.jump("x", 0)); }
   async play() {
     this.reset();
-    await wait(0.25);
     await tap(this.key); await wait(0.11); await tap(this.key);
     this.twice.classList.add("on");
     await wait(0.08);
@@ -97,26 +104,35 @@ function stitchLayout(sizes) {
   return best;
 }
 const badgeDiameter = (s) => { const short = Math.min(s.w, s.h); return Math.min(clamp(Math.round(0.06 * short), 32, 128), Math.round(0.8 * short)); };
+// A card's picture filling `r`, cropped to it, as a flight draws a card whose shape is changing.
+function fill(c, [image, view], r) {
+  place(c, r);
+  const k = Math.max(r.w / view.w, r.h / view.h);
+  c.pic.place({ x: (r.w - view.w * k) / 2 - view.x * k, y: (r.h - view.h * k) / 2 - view.y * k, w: image.w * k, h: image.h * k });
+}
 
 export class Stitch extends Column {
-  // Three cards are picked and ⌘S goes down: they fly into one slot while the stitched image fades
-  // in under them, each into its place in it, and the new card says Copied. The card above them
-  // moves down to it.
-  static fit = wideFit(236);
+  // Three cards are picked and ⌘S goes down. As in ThumbnailController.stitched, the pieces leave
+  // the column, which closes up around the new card's slot at once, and each flies into that slot
+  // (TransitionLayer.converge). The stitched image waits there unseen and takes over in the last
+  // part of the flight, and the new card says Copied.
+  static fit = wideFit(318);
   build({ W, H }) {
     const s = this.scene(W, H);
-    const picked = SHOTS.slice(1);
+    const picked = this.picked = SHOTS.slice(1);
     const plan = stitchLayout(picked.map(([, view]) => view));
     const size = cardSize(plan);
     this.slot = { w: size.w * SCALE, h: size.h * SCALE };
     Object.assign(this.slot, { x: this.R - this.slot.w, y: this.bottom - this.slot.h });
+    // The cards above the three, which move down to the new card.
+    this.kept = this.column([[IMAGES.frame, whole(IMAGES.frame), []], SHOTS[0]], this.bottom - 3 * STEP);    this.drop = this.slot.y - UI.cardSpacing - (this.bottom - 3 * STEP);
     this.result = el("div", "cardx");
     place(this.result, this.slot);
     const clip = el("div", "shot");
     const pic = coverRect(this.slot, plan), k = pic.w / plan.w;
     const sheet = el("div", "stitched");
     place(sheet, pic);
-    this.pieces = plan.frames.map((f, i) => {
+    plan.frames.forEach((f, i) => {
       const r = { x: f.x * k, y: f.y * k, w: f.w * k, h: f.h * k };
       const [image, view, marks] = picked[i];
       const p = shot(image, view, marks, r.w, r.h);
@@ -126,23 +142,17 @@ export class Stitch extends Column {
       Object.assign(b.style, { left: `${d / 4}px`, top: `${d / 4}px`, width: `${d}px`, height: `${d}px`, fontSize: `${d * 0.6}px` });
       p.append(b);
       sheet.append(p);
-      return { x: this.slot.x + pic.x + r.x, y: this.slot.y + pic.y + r.y, w: r.w };
     });
     clip.append(sheet);
     this.notice = el("div", "notice", '<div class="check"></div><b>Copied</b>');
     this.result.append(clip, this.notice);
-    // The oldest card stays out of the stitch; the three under it are picked top to bottom.
-    this.keep = this.column(SHOTS.slice(0, 1))[0];
-    this.keepFrom = this.bottom - CH - 3 * STEP;
-    this.keepTo = this.slot.y - UI.cardSpacing - CH;
-    this.keep.style.top = `${this.keepFrom}px`;
     s.append(this.result);
     this.cards = picked.map(([image, view, marks], i) => {
       const c = card(image, view, marks, { x: 0, y: 0, w: CW, h: CH });
-      c.classList.add("flying");
+      c.pic.parentNode.style.width = c.pic.parentNode.style.height = "";
       c.num = el("div", "scircle", String(i + 1));
       c.append(c.num);
-      c.from = { x: this.R - CW, y: this.bottom - CH - (2 - i) * STEP };
+      c.from = { x: this.R - CW, y: this.bottom - CH - (2 - i) * STEP, w: CW, h: CH };
       s.append(c);
       return c;
     });
@@ -150,27 +160,48 @@ export class Stitch extends Column {
     place(this.key, { x: GUTTER, y: this.bottom - CH - 30 });
     s.append(this.key);
     this.m = new Motion((m) => {
-      const t = m.get("t");
+      const p = m.get("p"), fade = m.get("fade");
       this.cards.forEach((c, i) => {
-        const to = this.pieces[i];
-        at(c, lerp(c.from.x, to.x, t), lerp(c.from.y, to.y, t), lerp(1, to.w / CW, t));
-        c.style.opacity = clamp((1 - t) / 0.25, 0, 1);
+        fill(c, picked[i], this.flight(c.from, this.slot, p));
+        c.style.opacity = 1 - fade;
       });
-      this.result.style.opacity = clamp(t * 1.4, 0, 1);
-      this.keep.style.transform = `translateY(${m.get("close") * (this.keepTo - this.keepFrom)}px)`;
-    }).add("t", 0, 0.001).add("close", 0, 0.001);
+      this.result.style.opacity = fade;
+      this.kept.forEach((c) => { c.style.transform = `translateY(${m.get("close") * this.drop}px)`; });
+    }).add("p", 0, 0.002).add("fade", 0, 0.002).add("close", 0, 0.002);
     return s;
   }
-  pick(on) { this.cards.forEach((c) => { c.classList.toggle("picked", on); c.num.classList.toggle("on", on); }); }
-  reset() { this.shown(); this.pick(true); this.notice.classList.remove("in"); this.m.jump("t", 0); this.m.jump("close", 0); }
-  final() { this.reset(); this.pick(false); this.m.jump("t", 1); this.m.jump("close", 1); }
+  // FlightCurve: the path bows to the left of one that runs mostly up or down, and the card swells,
+  // both most in the middle and nothing at the ends.
+  flight(a, b, p) {
+    const t = clamp(p, 0, 1), peak = 4 * t * (1 - t);
+    const dx = b.x + b.w / 2 - a.x - a.w / 2, dy = b.y + b.h / 2 - a.y - a.h / 2, len = Math.hypot(dx, dy);
+    let nx = len ? -dy / len : 0, ny = len ? dx / len : 0;
+    if (Math.abs(dx) >= Math.abs(dy) ? ny > 0 : nx > 0) { nx = -nx; ny = -ny; }
+    const bow = Math.min(len * UI.flightArc, UI.flightArcMax * SCALE) * peak, swell = 1 + UI.flightDepth * peak;
+    const w = lerp(a.w, b.w, p) * swell, h = lerp(a.h, b.h, p) * swell;
+    const cx = lerp(a.x + a.w / 2, b.x + b.w / 2, p) + nx * bow, cy = lerp(a.y + a.h / 2, b.y + b.h / 2, p) + ny * bow;
+    return { x: cx - w / 2, y: cy - h / 2, w, h };
+  }
+  // A flight's image is the card's picture alone, so the selection leaves the pieces as they lift.
+  pick(on, lifted = false) {
+    this.cards.forEach((c) => { c.classList.toggle("picked", on); c.classList.toggle("lifted", lifted); c.num.classList.toggle("on", on); });
+  }
+  reset() {
+    this.shown(); this.pick(true); this.notice.classList.remove("in");
+    for (const name of ["p", "fade", "close"]) this.m.jump(name, 0);
+  }
+  final() { this.reset(); this.pick(false); for (const name of ["p", "fade", "close"]) this.m.jump(name, 1); }
   async play() {
     this.reset();
-    await wait(0.5);
+    await wait(0.35);
     await tap(this.key, 0.12);
-    this.pick(false);
+    this.pick(false, true);
     this.m.to("close", 1, UI.relayout);
-    await this.m.to("t", 1, UI.expand, UI.flightBounce);
+    const landed = this.m.to("p", 1, UI.expand, UI.flightBounce);
+    const fade = UI.expand * 0.45;
+    await wait(UI.expand - fade);
+    this.m.to("fade", 1, fade);
+    await landed;
     this.notice.classList.add("in");
     await wait(UI.noticeSeconds);
     this.notice.classList.remove("in");
@@ -183,10 +214,10 @@ export class Drag extends Column {
   static fit = wideFit(236);
   build({ W, H }) {
     const s = this.scene(W, H);
-    const t = el("div", "term-x", '<div class="bar-t"><i></i><i></i><i></i></div><pre><div class="ln"><span class="t-claude">●</span> Which stay should we change?</div><div class="ln"> </div><div class="pbox">&gt; <span class="typed"></span><span class="tcur"></span></div></pre>');
+    const t = el("div", "term-x", '<pre><div class="ln"><span class="t-claude">●</span> Which stay is it?</div><div class="ln"> </div><div class="pbox">&gt; <span class="typed"></span><span class="tcur"></span></div></pre>');
     place(t, { x: GUTTER, y: 0, w: W - GUTTER + 40, h: H + 40 });
     this.typed = t.querySelector(".typed");
-    s.append(t);
+    s.insertBefore(t, this.col);
     this.column(SHOTS.slice(1));
     // The drag image is the card at its own size, held where the pointer took it.
     const [image, view, marks] = SHOTS[3];
@@ -197,7 +228,7 @@ export class Drag extends Column {
     s.append(this.pointer);
     this.grab = { x: CW * 0.55, y: CH * 0.55 };
     this.from = { x: this.R - CW + this.grab.x, y: this.bottom - CH + this.grab.y };
-    this.drop = { x: Math.min(GUTTER + 250, this.R - CW - 30), y: 108 };
+    this.drop = { x: Math.min(GUTTER + 250, this.R - CW - 50), y: 78 };
     this.m = new Motion((m) => {
       const t = m.get("t"), p = m.get("p");
       const x = t > 0 ? lerp(this.from.x, this.drop.x, t) : lerp(W + 10, this.from.x, p);
@@ -210,6 +241,8 @@ export class Drag extends Column {
   dropped(on) { this.typed.textContent = on ? "[Image #1] " : ""; }
   reset() { this.shown(); this.ghost.style.opacity = 0; this.pointer.classList.remove("down"); this.dropped(false); this.m.jump("p", 0); this.m.jump("t", 0); }
   final() { this.reset(); this.m.jump("p", 1); this.m.jump("t", 1); this.dropped(true); }
+  // The drag in mid-flight over the prompt.
+  poster() { this.reset(); this.m.jump("p", 1); this.m.jump("t", 0.65); this.ghost.style.opacity = 1; this.pointer.classList.add("down"); }
   async play() {
     this.reset();
     await wait(0.25);
