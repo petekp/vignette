@@ -1,20 +1,20 @@
-// The pictures of the tiles under the first stage: the recent stack sliding in, a stitch, and a
-// card dragged out. Each column of cards rests against the picture's right edge, the newest at the
+// The pictures of the tiles under the first stage: a stitch and a card dragged out, and the column
+// they share with the recent stack (recent.js). Each column of cards rests against the picture's right edge, the newest at the
 // bottom, as the stack does against the screen's.
 import { el, place, Motion, UI, wait, cardSize, coverRect } from "../vignette.js";
 import { IMAGES, PERSON_MARKS } from "../cards.js";
 import { lerp, clamp, GUTTER, card, whole, shot, wideFit, POINTER, selectionStrip, shiftKey, twice, tap, claudeCode, said, you, gap, LINE } from "./parts.js";
 
-const CW = 140, CH = 88, STEP = CH + UI.cardSpacing;
+export const CW = 140, CH = 88, STEP = CH + UI.cardSpacing;
 // The cards' scale against the app's: a 16:10 screenshot's card is 188 pt wide there.
-const SCALE = CW / UI.cardMaxWidth;
+export const SCALE = CW / UI.cardMaxWidth;
 // StackLayout.inset: the column fades out over the panel's padding at its ends.
 const FADE = 19 * SCALE;
 // Stitch's springs: the pieces' flight and fade, the column closing up, the push-in, and the
 // rewind's slides of the new card out and of each piece back in.
 const SPRINGS = ["p", "fade", "close", "zoom", "out", "in0", "in1", "in2"];
 // Oldest first. The stays card answers Drag's question: the stay still waiting for its host.
-const SHOTS = [
+export const SHOTS = [
   [IMAGES.chat, { x: 0, y: 200, w: 1040, h: 650 }, []],
   [IMAGES.itin, whole(IMAGES.itin), PERSON_MARKS.slice(0, 2)],
   [IMAGES.packing, whole(IMAGES.packing), []],
@@ -35,9 +35,9 @@ const PIECES = [
 ];
 // How far a card's shadow reaches above and below it: .cardx's box-shadow, 0 4px 8px.
 const SHADOW = { above: 4, below: 12 };
-const at = (node, x, y, s = 1) => { node.style.transform = `translate(${x}px, ${y}px) scale(${s})`; };
+export const at = (node, x, y, s = 1) => { node.style.transform = `translate(${x}px, ${y}px) scale(${s})`; };
 
-class Column {
+export class Column {
   scene(W, H) {
     const s = this.s = el("div", "scene");
     s.style.width = `${W}px`; s.style.height = `${H}px`;
@@ -54,45 +54,6 @@ class Column {
       this.col.append(c);
       return c;
     });
-  }
-}
-
-export class Recent extends Column {
-  // Right Shift goes down twice, and the cards slide in from the screen's edge, the newest first.
-  static fit = wideFit(236);
-  build({ W, H }) {
-    const s = this.scene(W, H);
-    this.cards = this.column(SHOTS);
-    // Beside the column, level with the newest card.
-    const y = this.bottom - CH / 2 - 23, twiceX = this.R - CW - 40;
-    this.key = shiftKey();
-    place(this.key, { x: twiceX - 104, y });
-    this.twice = twice();
-    place(this.twice, { x: twiceX, y: y + 12 });
-    s.append(this.key, this.twice);
-    this.off = W - (this.R - CW) + 24;
-    this.m = this.cards.map((c) => new Motion((m) => at(c, m.get("x"), 0)).add("x", this.off, 0.05));
-    return s;
-  }
-  reset() { this.twice.classList.remove("on"); this.m.forEach((m) => m.jump("x", this.off)); }
-  final() { this.reset(); this.twice.classList.add("on"); this.m.forEach((m) => m.jump("x", 0)); }
-  // The stack slides out, as a dismissal takes it.
-  // Done once the cards are past the edge, not when the spring's tail settles.
-  async rewind() {
-    this.twice.classList.remove("on");
-    this.m.forEach((m) => m.to("x", this.off, UI.slideOut));
-    await wait(UI.slideOut * 1.2);
-  }
-  async play() {
-    this.reset();
-    await tap(this.key); await wait(0.11); await tap(this.key);
-    this.twice.classList.add("on");
-    await wait(0.08);
-    const newestFirst = [...this.m].reverse();
-    await Promise.all(newestFirst.map(async (m, i) => {
-      await wait(Math.min(UI.stagger * i, UI.staggerMax));
-      await m.to("x", 0, UI.slideIn, UI.flightBounce);
-    }));
   }
 }
 

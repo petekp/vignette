@@ -80,6 +80,31 @@ export function claudeCode(W, H, talk, bottom = H - 10) {
   return t;
 }
 
+// The screen behind a stack, as Front and Recent draw it. The menu bar names the active app, its
+// menus, and the clock at the right.
+export const menubar = (app, menus, clock) =>
+  el("div", "menubar", `<span class="apple"></span><b>${app}</b>${menus.map((m) => `<span>${m}</span>`).join("")}<i>${clock}</i>`);
+// BackdropPanel's strip at the app's defaults: bands of blur whose radius grows toward the screen's
+// edge, each fading in over the band before it and out over the next, under a tint that darkens to
+// the edge.
+const BANDS = 7, BLUR = 25, RAMP = 1.2;
+export function backdrop() {
+  const b = el("div", "backdrop");
+  b.style.width = `${UI.backdropWidth}px`;
+  const step = 100 / BANDS;
+  for (let i = 0; i < BANDS; i++) {
+    const stops = i === 0 ? ["transparent 0%", `#000 ${step}%`] : [`transparent ${step * (i - 1)}%`, `#000 ${step * i}%`];
+    stops.push(...(i === BANDS - 1 ? ["#000 100%"] : [`#000 ${step * (i + 1)}%`, `transparent ${Math.min(100, step * (i + 2))}%`]));
+    const mask = `linear-gradient(90deg, ${stops.join(", ")})`;
+    const blur = `blur(${(BLUR * ((i + 1) / BANDS) ** RAMP).toFixed(2)}px)`;
+    const band = el("i");
+    Object.assign(band.style, { backdropFilter: blur, webkitBackdropFilter: blur, maskImage: mask, webkitMaskImage: mask });
+    b.append(band);
+  }
+  b.append(el("b"));
+  return b;
+}
+
 // The selection strip's rows, as Config.stripRows shows them for three screenshots.
 const ICONS = {
   copy: '<rect x="6" y="6" width="9" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4 13V5a2 2 0 0 1 2-2h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',

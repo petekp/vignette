@@ -133,9 +133,9 @@
 /* Premium details and Several in a row (flight.js, queue.js): a card in flight is laid out at the
    editor's size and scaled, so its border ring is set against the scale to stay 0.5 pt wide. */
 .scene .flights .cardx.flying::after { box-shadow: inset 0 0 0 var(--ring, 0.5px) rgb(255 255 255 / 0.4); transition: none; }
-/* Recent, Stitch and Drag (stack.js): the column, faded at its top end over the panel's inset as
+/* Recent, Stitch and Drag (recent.js, stack.js): the column, faded at its top end over the panel's inset as
    StackView.column fades it, and right Shift drawn as a Mac's key. */
-.scene .scol { position: absolute; inset: 0; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade)); mask-image: linear-gradient(to bottom, transparent, #000 var(--fade)); }
+.scene .scol { --top: 0px; position: absolute; inset: 0; -webkit-mask-image: linear-gradient(to bottom, transparent var(--top), #000 calc(var(--top) + var(--fade))); mask-image: linear-gradient(to bottom, transparent var(--top), #000 calc(var(--top) + var(--fade))); }
 .scene .kcap.shiftk { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; padding: 7px 10px 8px; font-size: 12px; }
 .scene .shiftk span:first-child { font-size: 15px; }
 .scene .cardx.lifted::after, .scene .cardx.lifted .scircle { transition: none; }
@@ -159,3 +159,19 @@
 .scene .term-x .grp { flex: none; overflow: hidden; transition: height 0.25s var(--spring, ease), opacity 0.2s; }
 /* Agent (agent.js): the dot of a tool call that has run, green as Claude Code draws it. */
 .scene .t-ok { color: #4eba65; }
+
+/* Recent (recent.js): the screen behind the stack, in its own points, and Messages open on it. */
+.scene .desk { position: absolute; left: 0; top: 0; overflow: hidden; transform-origin: 0 0; }
+.scene .msgs { color: #000; font-family: var(--sans); }
+.scene .msgs .mhead { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; height: 60px; padding-top: 9px; box-sizing: border-box; background: #f6f6f6; border-bottom: 1px solid rgb(0 0 0 / 0.08); }
+.scene .msgs .lights { position: absolute; left: 14px; top: 14px; display: flex; gap: 8px; }
+.scene .msgs .lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+.scene .msgs .lights i:nth-child(2) { background: #febc2e; }
+.scene .msgs .lights i:nth-child(3) { background: #28c840; }
+.scene .msgs .av { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(#d47a52, #a84f2e); color: #fff; font: 600 14px/1 var(--sans); }
+.scene .msgs .who { font-size: 11px; line-height: 1; color: rgb(0 0 0 / 0.6); }
+.scene .msgs .mbody { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; }
+.scene .msgs .ts { align-self: center; margin: 2px 0 6px; font-size: 11px; color: rgb(0 0 0 / 0.45); }
+.scene .msgs .b { align-self: flex-start; max-width: 80%; padding: 6px 12px; border-radius: 17px; background: #e9e9eb; font-size: 13px; line-height: 1.3; }
+.scene .msgs .b.me { align-self: flex-end; background: #0b84ff; color: #fff; }
+.scene .msgs .b:not(.me) + .b.me, .scene .msgs .b.me + .b:not(.me) { margin-top: 8px; }
