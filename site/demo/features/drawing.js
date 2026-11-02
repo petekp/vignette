@@ -1,43 +1,82 @@
-import { el, place, Motion, wait } from "../vignette.js";
+import { el, place, Motion, wait, motion } from "../vignette.js";
 import { IMAGES, PERSON_MARKS } from "../cards.js";
 import { lerp, GUTTER, shot, overlay, POINTER, smallFit } from "./parts.js";
 
-export class Marks {
-  // Claude's three versions of a day: a box drawn on the dark one, an arrow from the light page, and
-  // a note typed beside it.
+// A hand's stroke with the Arrow tool: points every few px along a smooth path, as the editor keeps
+// them while the button is down.
+function stroke(knots, step = 9) {
+  const out = [];
+  for (let i = 0; i < knots.length - 1; i++) {
+    const a = knots[i], b = knots[i + 1], n = Math.max(1, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
+    for (let j = 0; j < n; j++) out.push([lerp(a[0], b[0], j / n), lerp(a[1], b[1], j / n)]);
+  }
+  out.push(knots[knots.length - 1]);
+  return out.map((p, i) => i === 0 || i === out.length - 1 ? p
+    : [(out[i - 1][0] + p[0] * 2 + out[i + 1][0]) / 4, (out[i - 1][1] + p[1] * 2 + out[i + 1][1]) / 4]);
+}
+// The arrow a stroke makes: its ends, and the points between them as its `via`.
+const arrowOf = (pts) => ({ type: "arrow", who: "person", x1: pts[0][0], y1: pts[0][1], x2: pts.at(-1)[0], y2: pts.at(-1)[1], via: pts.slice(1, -1) });
+const CROSSHAIR = '<svg width="21" height="21" viewBox="0 0 21 21"><path d="M10.5 1v19M1 10.5h19" stroke="#fff" stroke-width="3.5"/><path d="M10.5 1.5v18M1.5 10.5h18" stroke="#000" stroke-width="1.3"/></svg>';
+
+export class Arrows {
+  // The trip's map in the editor. One stroke with the Arrow tool circles the stop at Greve and
+  // carries on to Pienza; the head rides the pointer and stays where the button comes up.
   static fit = smallFit(196);
-  static MARKS = [
-    { type: "rect", who: "person", x: 1222, y: 572, w: 520, h: 210 },
-    { type: "arrow", who: "person", x1: 1130, y1: 850, x2: 1225, y2: 760 },
-    { type: "note", who: "person", x: 900, y: 860, text: "this one, but lighter" },
-  ];
+  static STROKE = (() => {
+    const c = [1327, 292], r = 42, loop = [];
+    for (let a = 150; a <= 450; a += 15) loop.push([c[0] + r * Math.cos((a * Math.PI) / 180), c[1] + r * Math.sin((a * Math.PI) / 180)]);
+    return stroke([...loop, [1372, 340], [1450, 360], [1530, 378], [1588, 380]]);
+  })();
+  // Where the pointer rests once the arrow is drawn: clear of the head, on open map.
+  static after() { const [x, y] = Arrows.STROKE.at(-1); return [x + 20, y - 58]; }
   build({ W, H }) {
     const s = el("div", "scene");
     s.style.width = `${W}px`; s.style.height = `${H}px`;
-    const fw = W - GUTTER + 40, k = 400 / 940;
+    this.fw = W - GUTTER + 40;
+    this.k = 0.55;
+    // The frame ends at the map's foot, so a taller tile never shows the day cards under it.
+    const fh = Math.round((440 - 112) * this.k);
+    this.view = { x: 1010, y: 112, w: this.fw / this.k, h: fh / this.k };
     const f = el("div", "frame-x");
-    place(f, { x: GUTTER, y: 0, w: fw, h: 230 });
-    const sh = shot(IMAGES.variants, { x: 860, y: 520, w: fw / k, h: 230 / k }, [], fw, 230);
+    place(f, { x: GUTTER, y: 0, w: this.fw, h: fh });
+    const sh = shot(IMAGES.itin, this.view, [], this.fw, fh);
     this.pic = sh.pic;
-    f.append(sh);
+    this.cursor = el("div", "crosshair", CROSSHAIR);
+    f.append(sh, this.cursor);
     s.append(f);
+    const [x, y] = Arrows.STROKE[0];
+    this.rest = [x + 70, y + 110];
     return s;
   }
-  show(marks, typing) { this.pic.update(marks, typing); }
-  reset() { this.show([]); this.pic.querySelector("svg.marks").style.opacity = 1; }
-  final() { this.show(Marks.MARKS); }
+  aim([x, y]) { this.cursor.style.transform = `translate(${(x - this.view.x) * this.k - 10.5}px, ${(y - this.view.y) * this.k - 10.5}px)`; }
+  move(from, to, seconds) {
+    return new Motion((m) => { const t = m.get("t"); this.aim([lerp(from[0], to[0], t), lerp(from[1], to[1], t)]); }).add("t", 0, 0.001).to("t", 1, seconds);
+  }
+  reset() { this.pic.update([]); this.pic.querySelector("svg.marks").style.opacity = 1; this.cursor.style.opacity = 1; this.aim(this.rest); }
+  final() { this.reset(); this.pic.update([arrowOf(Arrows.STROKE)]); this.aim(Arrows.after()); }
   async play() {
     this.reset();
-    const [box, arrow, note] = Marks.MARKS;
-    const r = { ...box, w: 0, h: 0 };
-    await new Motion((m) => { const t = m.get("t"); r.w = box.w * t; r.h = box.h * t; this.show([r]); }).add("t", 0, 0.001).to("t", 1, 0.35);
-    const a = { ...arrow, x2: arrow.x1, y2: arrow.y1 };
-    await new Motion((m) => { const t = m.get("t"); a.x2 = lerp(arrow.x1, arrow.x2, t); a.y2 = lerp(arrow.y1, arrow.y2, t); this.show([box, a]); }).add("t", 0, 0.001).to("t", 1, 0.3);
-    const n = { ...note, text: "" };
-    for (const ch of note.text) { n.text += ch; this.show([box, arrow, n], n); await wait(0.045); }
-    this.show(Marks.MARKS);
+    const pts = Arrows.STROKE, end = pts.at(-1);
+    await this.move(this.rest, pts[0], 0.4);
+    await wait(0.08);
+    // Drawn at a hand's pace: slower into the loop and out of it, quicker along the straight.
+    const seconds = 1.2 * motion(), t0 = performance.now();
+    await new Promise((done) => {
+      const tick = () => {
+        const t = Math.min(1, (performance.now() - t0) / 1000 / seconds);
+        const e = t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+        const live = pts.slice(0, Math.max(2, Math.round(e * (pts.length - 1)) + 1));
+        this.pic.update([arrowOf(live)]);
+        this.aim(live.at(-1));
+        t < 1 ? requestAnimationFrame(tick) : done();
+      };
+      requestAnimationFrame(tick);
+    });
+    this.pic.update([arrowOf(pts)]);
+    await wait(0.25);
+    await this.move(end, Arrows.after(), 0.4);
   }
-  async rewind() { this.pic.querySelector("svg.marks").style.opacity = 0; await wait(0.25); }
+  async rewind() { this.pic.querySelector("svg.marks").style.opacity = 0; this.cursor.style.opacity = 0; await wait(0.25); }
 }
 
 export class Later {

@@ -5,14 +5,14 @@
 import { motion } from "../vignette.js";
 import { Front } from "./front.js";
 import { Flight } from "./flight.js";
-import { Marks, Later } from "./drawing.js";
+import { Arrows, Later } from "./drawing.js";
 import { Queue } from "./queue.js";
 import { Agent } from "./agent.js";
 
 // Every scene is laid out for a width W in its own points and scaled by k to its tile. Each has
 // four states: reset() is the first frame, final() the last, play() runs the moment from one to
 // the other, and rewind() goes back to the first frame with motion, so a replay never jumps.
-const SCENES = { front: Front, flight: Flight, marks: Marks, later: Later, queue: Queue, agent: Agent };
+const SCENES = { front: Front, flight: Flight, arrows: Arrows, later: Later, queue: Queue, agent: Agent };
 
 class Tile {
   constructor(root) {
