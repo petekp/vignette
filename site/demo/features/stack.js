@@ -33,6 +33,8 @@ const PIECES = [
   [IMAGES.variants, { x: 24, y: 200, w: 1760, h: 720 }, []],
   [IMAGES.stays, { x: 0, y: 760, w: 325, h: 196 }, []],
 ];
+// How far a card's shadow reaches above and below it: .cardx's box-shadow, 0 4px 8px.
+const SHADOW = { above: 4, below: 12 };
 const at = (node, x, y, s = 1) => { node.style.transform = `translate(${x}px, ${y}px) scale(${s})`; };
 
 class Column {
@@ -129,8 +131,9 @@ export class Stitch extends Column {
   // Three cards are picked, with the selection strip beside them, and ⌘S lights its Stitch row. As
   // in ThumbnailController.stitched, the pieces leave the column, which closes up around the new
   // card's slot at once, and each flies into that slot (TransitionLayer.converge). The stitched
-  // image waits there unseen and takes over in the last part of the flight, the new card says
-  // Copied, and the view pushes in on it.
+  // image waits there unseen and takes over in the last part of the flight, and the new card says
+  // Copied. The view pushes in on it only once Copied has gone, since the app draws the notice at
+  // card size.
   static fit = wideFit(318);
   build({ W, H }) {
     const s = this.scene(W, H);
@@ -171,7 +174,6 @@ export class Stitch extends Column {
       sheet.append(p);
     });
     clip.append(sheet);
-    const second = plan.frames[1], below = pic.y + (second.y + badgeDiameter(second) * 1.25) * k;
     this.notice = el("div", "notice", '<div class="check"></div><b>Copied</b>');
     this.result.append(clip, this.notice);
     s.append(this.result);
@@ -199,21 +201,21 @@ export class Stitch extends Column {
       this.result.style.opacity = fade;
       at(this.result, m.get("out") * this.off, 0);
       this.cards.forEach((c, i) => at(c, m.get(`in${i}`) * this.off, 0));
-      this.kept.forEach((c) => { c.style.transform = `translateY(${m.get("close") * this.drop}px)`; });
       const z = m.get("zoom"), k = lerp(1, this.zoom, z);
+      // The cards above leave the view as it pushes in, and take their shadows with them.
+      this.kept.forEach((c) => { c.style.transform = `translateY(${m.get("close") * this.drop}px)`; c.style.opacity = 1 - z; });
       cam.style.transform = `translate(${lerp(this.focus.x, this.look.x, z) - this.focus.x * k}px, ${lerp(this.focus.y, this.look.y, z) - this.focus.y * k}px) scale(${k})`;
     });
     for (const name of SPRINGS) this.m.add(name, 0, name === "zoom" ? 0.001 : 0.002);
-    // While Copied shows, the view pushes in on the new card's top, where piece 1 and its badge are:
-    // as far as keeps the card inside the picture's width and badge 2 above its bottom, with the
-    // card centred across the picture.
+    // The view pushes in until the new card, every piece and badge whole, fills the picture's height
+    // with its shadow inside it, centred across the picture.
     const cam = el("div", "cam");
     cam.append(...s.childNodes);
     s.append(cam);
-    const edge = 16;
-    this.zoom = Math.min((W - 2 * edge) / this.slot.w, (H - 2 * edge) / below);
+    const edge = 8;
+    this.zoom = Math.min((W - 2 * edge) / this.slot.w, (H - 2 * edge) / (this.slot.h + SHADOW.above + SHADOW.below));
     this.focus = { x: this.slot.x + this.slot.w / 2, y: this.slot.y };
-    this.look = { x: W / 2, y: edge };
+    this.look = { x: W / 2, y: edge + SHADOW.above * this.zoom };
     return s;
   }
   // FlightCurve: the path bows to the left of one that runs mostly up or down, and the card swells,
@@ -267,11 +269,11 @@ export class Stitch extends Column {
     this.m.to("fade", 1, fade);
     await landed;
     this.notice.classList.add("in");
-    await wait(0.6);
-    const zoomed = this.m.to("zoom", 1, 0.8);
-    await wait(UI.noticeSeconds - 0.6);
+    await wait(UI.noticeSeconds);
     this.notice.classList.remove("in");
-    await zoomed;
+    // The notice's fade, .notice's opacity transition.
+    await wait(0.25);
+    await this.m.to("zoom", 1, 0.8);
   }
 }
 
