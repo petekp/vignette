@@ -85,14 +85,75 @@ function noteLayout(mark, image) {
 export function markBounds(mark, image) {
   if (mark.type === "rect") return { x: mark.x, y: mark.y, w: mark.w, h: mark.h };
   if (mark.type === "arrow") {
-    const x = Math.min(mark.x1, mark.x2), y = Math.min(mark.y1, mark.y2);
-    return { x, y, w: Math.abs(mark.x2 - mark.x1), h: Math.abs(mark.y2 - mark.y1) };
+    const pts = [[mark.x1, mark.y1], ...(mark.via || []), [mark.x2, mark.y2]];
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    const x = Math.min(...xs), y = Math.min(...ys);
+    return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
   }
   const l = noteLayout(mark, image);
   return { x: l.x, y: l.y, w: l.w, h: l.h };
 }
 
+// A freehand arrow's body, as ArrowBody.Curve makes it (MarkGeometry.swift): a centripetal
+// Catmull-Rom curve through its ends and its `via` points, sampled about every 2 px.
+function curveSamples(knots) {
+  const n = knots.length;
+  const knot = (i) => i < 0 ? [2 * knots[0][0] - knots[1][0], 2 * knots[0][1] - knots[1][1]]
+    : i >= n ? [2 * knots[n - 1][0] - knots[n - 2][0], 2 * knots[n - 1][1] - knots[n - 2][1]] : knots[i];
+  const root = (a, b) => Math.sqrt(Math.hypot(b[0] - a[0], b[1] - a[1]));
+  // Yuksel, Schaefer and Keyser's conversion, with `near` and `far` the square roots of the chords.
+  const control = (p0, p1, p2, near, far) => {
+    if (near <= 1e-9) return p1;
+    const a = near * near, b = far * far, d = 3 * near * (near + far), c = 2 * a + 3 * near * far + b;
+    return [(a * p2[0] - b * p0[0] + c * p1[0]) / d, (a * p2[1] - b * p0[1] + c * p1[1]) / d];
+  };
+  const samples = [knots[0]], lengths = [0];
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = knot(i - 1), p1 = knot(i), p2 = knot(i + 1), p3 = knot(i + 2);
+    const d1 = root(p0, p1), d2 = root(p1, p2), d3 = root(p2, p3);
+    const seg = [p1, control(p0, p1, p2, d1, d2), control(p3, p2, p1, d3, d2), p2];
+    const poly = seg.slice(1).reduce((t, q, j) => t + Math.hypot(q[0] - seg[j][0], q[1] - seg[j][1]), 0);
+    const steps = Math.max(8, Math.ceil(poly / 2));
+    for (let k = 1; k <= steps; k++) {
+      const t = k / steps, u = 1 - t;
+      const q = [0, 1].map((c) => u * u * u * seg[0][c] + 3 * u * u * t * seg[1][c] + 3 * u * t * t * seg[2][c] + t * t * t * seg[3][c]);
+      const last = samples[samples.length - 1];
+      lengths.push(lengths[lengths.length - 1] + Math.hypot(q[0] - last[0], q[1] - last[1]));
+      samples.push(q);
+    }
+  }
+  return { samples, lengths };
+}
+
 const SHADOW_SHAPE = (px) => `drop-shadow(0 ${0.5 * px}px ${1 * px}px rgba(0,0,0,.28))`;
+
+// A freehand arrow, as Arrowhead places its head on a curve (MarkRendering.swift): the head is aimed
+// from the point on the body one head-length back from the tip, and the stroke stops there.
+function freehandArrowSVG(mark, color, stroke, edge, px) {
+  const tip = [mark.x2, mark.y2];
+  const { samples, lengths } = curveSamples([[mark.x1, mark.y1], ...mark.via, tip]);
+  const total = lengths[lengths.length - 1];
+  const reachable = samples.reduce((m, p) => Math.max(m, Math.hypot(p[0] - tip[0], p[1] - tip[1])), 0);
+  const hl = Math.min(MARK.arrowLength * stroke, total * 0.5, reachable);
+  const hw = (MARK.arrowWidth * stroke * hl) / (MARK.arrowLength * stroke) / 2;
+  let i = samples.length - 1;
+  while (i > 0 && Math.hypot(samples[i - 1][0] - tip[0], samples[i - 1][1] - tip[1]) < hl) i--;
+  const a = samples[Math.max(0, i - 1)], b = samples[i];
+  const d = [b[0] - a[0], b[1] - a[1]], w = [a[0] - tip[0], a[1] - tip[1]];
+  const qa = d[0] * d[0] + d[1] * d[1], qb = 2 * (w[0] * d[0] + w[1] * d[1]), qc = w[0] * w[0] + w[1] * w[1] - hl * hl;
+  const u = qa > 0 ? Math.min(Math.max((-qb - Math.sqrt(Math.max(0, qb * qb - 4 * qa * qc))) / (2 * qa), 0), 1) : 0;
+  const from = [a[0] + d[0] * u, a[1] + d[1] * u];
+  const reach = Math.hypot(tip[0] - from[0], tip[1] - from[1]) || 1;
+  const ux = (tip[0] - from[0]) / reach, uy = (tip[1] - from[1]) / reach;
+  const bx = tip[0] - ux * hl, by = tip[1] - uy * hl;
+  const head = `${tip[0]},${tip[1]} ${bx - uy * hw},${by + ux * hw} ${bx + uy * hw},${by - ux * hw}`;
+  const body = [...samples.slice(0, Math.max(1, i)), from].map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+  return `<g style="filter:${SHADOW_SHAPE(px)}" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <polyline points="${body}" stroke="${MARK.edge}" stroke-width="${stroke + 2 * edge}"/>
+      <polygon points="${head}" fill="${MARK.edge}" stroke="${MARK.edge}" stroke-width="${2 * edge}"/>
+      <polyline points="${body}" stroke="${color}" stroke-width="${stroke}"/>
+      <polygon points="${head}" fill="${color}"/></g>`;
+}
 
 function markSVG(mark, image, { caret = false } = {}) {
   const px = POINT_SCALE;
@@ -104,6 +165,7 @@ function markSVG(mark, image, { caret = false } = {}) {
       <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="${MARK.edge}" stroke-width="${stroke + 2 * edge}" stroke-linejoin="round"/>
       <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linejoin="round"/></g>`;
   }
+  if (mark.type === "arrow" && mark.via?.length) return freehandArrowSVG(mark, color, stroke, edge, px);
   if (mark.type === "arrow") {
     const { x1, y1, x2, y2 } = mark;
     const len = Math.hypot(x2 - x1, y2 - y1) || 1;
