@@ -605,7 +605,11 @@ final class LiveInk {
     /// The rect a mark draws in, its stroke, edge and shadows included.
     private static func drawnExtent(of mark: Mark, sizes: LiveAnswerLayout.Sizes) -> CGRect? {
         if case .text = mark.geometry { return LiveAnswerLayout.noteBox(mark, sizes: sizes)?.insetBy(dx: -Mark.shadowSize, dy: -Mark.shadowSize) }
-        let markStyle = Settings.shared.data.ui.markStyle
+        return shapeExtent(of: mark, markStyle: Settings.shared.data.ui.markStyle)
+    }
+
+    /// The rect a shape draws in, its stroke, arrowhead, edge and shadows included, or nil for a note.
+    private static func shapeExtent(of mark: Mark, markStyle: MarkStyle) -> CGRect? {
         guard let shape = mark.shape(pointScale: 1, markStyle: markStyle) else { return nil }
         let ink = [shape.stroked, shape.filled].compactMap { $0?.boundingBoxOfPath }.reduce(CGRect.null) { $0.union($1) }
         let reach = shape.lineWidth / 2 + markStyle.edgeWidth + Mark.shadowSize
@@ -615,10 +619,7 @@ final class LiveInk {
     /// Adds `mark` to `surface`, and to each other one of `among` whose screen it draws on: its stroke,
     /// its arrowhead, its edge and its shadows, which reach less than `Mark.shadowSize` past the edge.
     private func add(_ mark: Mark, on surface: Surface, among: [Surface], markStyle: MarkStyle) {
-        let shape = mark.shape(pointScale: 1, markStyle: markStyle)
-        let ink = [shape?.stroked, shape?.filled].compactMap { $0?.boundingBoxOfPath }.reduce(CGRect.null) { $0.union($1) }
-        let reach = (shape?.lineWidth ?? 0) / 2 + markStyle.edgeWidth + Mark.shadowSize
-        let drawn = ink.insetBy(dx: -reach, dy: -reach)
+        let drawn = Self.shapeExtent(of: mark, markStyle: markStyle) ?? .null
         for other in among where other === surface || other.overlay.globalFrame.intersects(drawn) {
             other.marks.append(mark)
         }
