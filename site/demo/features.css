@@ -66,6 +66,13 @@
   transition: transform 0.08s, box-shadow 0.08s;
 }
 .scene .kcap.down { transform: translateY(2.5px); box-shadow: inset 0 -0.5px 0 var(--key-edge), 0 0 0 0.5px var(--key-edge), 0 1px 2px rgb(0 0 0 / 0.12); }
+.scene .kcap.esc { min-width: 56px; font-size: 15px; }
+.scene .kcap.lit { color: #0a84ff; }
+/* A card in flight, and the faint outlines it leaves along the way. */
+.scene .cardx.flying { left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.scene .trace { position: absolute; inset: 0; transition: opacity 0.25s; }
+.scene .trace .outline { position: absolute; border-radius: 16px; border: 1.5px solid currentColor; opacity: 0; transition: opacity 0.12s; }
+.scene .trace .outline.on { opacity: 0.16; }
 .scene .pointer { position: absolute; left: 0; top: 0; z-index: 5; width: 24px; height: 24px; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35)); transition: opacity 0.25s; }
 .scene .pointer svg { transform-origin: 10px 7px; transition: transform 0.1s; }
 .scene .pointer.down svg { transform: scale(0.88); }
