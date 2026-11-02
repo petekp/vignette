@@ -1,6 +1,6 @@
 import { el, Motion, UI, wait } from "../vignette.js";
 import { IMAGES, CLAUDE_MARKS } from "../cards.js";
-import { card, whole, wideFit, claudeCode, line, said, you, gap } from "./parts.js";
+import { GUTTER, card, whole, wideFit, claudeCode, line, said, you, gap } from "./parts.js";
 
 const CW = 140, CH = 88, RIGHT = 24;
 // The command the vignette skill has an agent run, wrapped to end left of the card at each width.
@@ -39,7 +39,8 @@ export class Agent {
     // Every line ends left of the card, which lands over the terminal's right side.
     const size = W >= 520 ? "wide" : "narrow";
     this.command = COMMAND[size];
-    const t = claudeCode(W, H, `${TALK[size].join("")}<div class="grp"></div><div class="grp">${gap}${said(ASK[size])}</div>`, H - 10);
+    // The terminal spans the picture from the gutter and runs off its right and bottom edges.
+    const t = claudeCode(`${TALK[size].join("")}<div class="grp"></div><div class="grp">${gap}${said(ASK[size])}</div>`, { x: GUTTER, y: 0, w: W - GUTTER + 40, h: H + 40 }, H - 10);
     [this.ran, this.asked] = t.querySelectorAll(".grp");
     s.append(t);
     this.card = card(IMAGES.variants, whole(IMAGES.variants), CLAUDE_MARKS, { x: W - RIGHT - CW, y: 150, w: CW, h: CH }, "Claude");
