@@ -186,9 +186,14 @@ h2 {
 }
 .copy p { margin: 18px 0 0; color: var(--ink-2); font-size: 1.125rem; text-wrap: pretty; }
 
+/* A stage and the hint row under it fit the viewport together, so the hint never scrolls out of
+   view below the stage: on a short or wide window the stage narrows, keeping its shape, and centres. */
 .stage {
+  --stage-room: 136px;
   position: relative;
-  margin-top: 44px;
+  width: min(100%, calc((100vh - var(--stage-room)) * 1440 / 900));
+  width: min(100%, calc((100dvh - var(--stage-room)) * 1440 / 900));
+  margin: 44px auto 0;
   aspect-ratio: 1440 / 900;
   border-radius: 14px;
   overflow: hidden;
@@ -198,7 +203,9 @@ h2 {
   user-select: none;
   -webkit-user-select: none;
 }
-@media (max-width: 600px) { .stage { aspect-ratio: 1; } }
+@media (max-width: 600px) {
+  .stage { aspect-ratio: 1; width: min(100%, calc(100vh - var(--stage-room))); width: min(100%, calc(100dvh - var(--stage-room))); }
+}
 /* A hint under a stage. A step the visitor can take is a button: the keys that take it, drawn as
    keycaps that go down as the real keys do, or a glyph for the press, then what it does. While the
    demo is busy the hint is a line of text, with nothing to press. */
