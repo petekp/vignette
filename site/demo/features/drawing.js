@@ -1,6 +1,6 @@
 import { el, place, Motion, wait, motion } from "../vignette.js";
 import { IMAGES, PERSON_MARKS } from "../cards.js";
-import { lerp, GUTTER, shot, overlay, POINTER, smallFit } from "./parts.js";
+import { lerp, GUTTER, shot, overlay, POINTER, smallFit, wideFit } from "./parts.js";
 
 // A hand's stroke with the Arrow tool: points every few px along a smooth path, as the editor keeps
 // them while the button is down.
@@ -141,4 +141,50 @@ export class Later {
     for (const e of [this.sel, this.pointer, this.pic.querySelector("svg.marks")]) e.style.opacity = 0;
     await wait(0.25);
   }
+}
+
+export class Quick {
+  // A box is dragged around the stays page's title. Typing starts the moment the button comes up,
+  // and the note appears under the box.
+  static fit = wideFit(236);
+  static BOX = { type: "rect", who: "person", x: 40, y: 192, w: 588, h: 86 };
+  static NOTE = { type: "note", who: "person", x: 40, y: 292, text: "make this quieter" };
+  build({ W, H }) {
+    const s = this.s = el("div", "scene fades");
+    s.style.width = `${W}px`; s.style.height = `${H}px`;
+    const fw = W - GUTTER + 40, fh = H + 40, k = this.k = 0.5;
+    this.view = { x: 0, y: 120, w: fw / k, h: fh / k };
+    const f = el("div", "frame-x");
+    place(f, { x: GUTTER, y: 0, w: fw, h: fh });
+    const sh = shot(IMAGES.stays, this.view, [], fw, fh);
+    this.pic = sh.pic;
+    this.cursor = el("div", "crosshair", CROSSHAIR);
+    f.append(sh, this.cursor);
+    s.append(f);
+    this.m = new Motion((m) => {
+      const t = m.get("b"), b = Quick.BOX;
+      const box = { ...b, w: b.w * t, h: b.h * t };
+      if (!this.typing) this.pic.update(t > 0.01 ? [box] : []);
+      this.cursor.style.transform = `translate(${(box.x + box.w - this.view.x) * k - 10.5}px, ${(box.y + box.h - this.view.y) * k - 10.5}px)`;
+    }).add("b", 0, 0.001);
+    return s;
+  }
+  reset() { this.s.style.opacity = 1; this.typing = false; this.cursor.style.opacity = 1; this.m.jump("b", 0); }
+  final() { this.reset(); this.m.jump("b", 1); this.typing = true; this.cursor.style.opacity = 0; this.pic.update([Quick.BOX, Quick.NOTE]); }
+  async play() {
+    this.reset();
+    await wait(0.3);
+    await this.m.to("b", 1, 0.6);
+    await wait(0.15);
+    this.typing = true;
+    this.cursor.style.opacity = 0;
+    const text = Quick.NOTE.text;
+    for (let n = 1; n <= text.length; n++) {
+      const note = { ...Quick.NOTE, text: text.slice(0, n) };
+      this.pic.update([Quick.BOX, note], note);
+      await wait(n === 1 ? 0.12 : 0.055);
+    }
+    this.pic.update([Quick.BOX, Quick.NOTE]);
+  }
+  async rewind() { this.s.style.opacity = 0; await wait(0.25); }
 }

@@ -46,3 +46,11 @@ export const smallFit = (rest) => (slotW) => {
   const W = Math.round(slotW / k);
   return { W, H: 250, rest, k, key: String(W) };
 };
+// The tiles under the first stage are wider than the feature tiles. Their pictures keep the feature
+// tiles' scale from 375 pt up, so a wider tile shows more rather than drawing larger, and fill the
+// slot's height, which the tile beside them can stretch.
+export const wideFit = (rest) => (slotW, slotH = 0) => {
+  const k = clamp(slotW / 375, 0.86, 1);
+  const W = Math.round(slotW / k), H = Math.max(rest, Math.ceil(slotH / k));
+  return { W, H, rest, k, key: `${W} ${H}` };
+};
