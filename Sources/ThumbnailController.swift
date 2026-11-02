@@ -2,10 +2,9 @@ import AppKit
 import SwiftUI
 
 /// Owns the bottom-right panel: fresh-screenshot thumbnails, the recent stack, the marks on cards,
-/// and the transitions into and out of the annotator. An NSObject because the drag-select's
-/// auto-scroll takes its ticks from a display link, which calls a target and a selector.
+/// and the transitions into and out of the annotator.
 @MainActor
-final class ThumbnailController: NSObject {
+final class ThumbnailController {
     weak var actions: Actions?
     /// Which screenshots have a drawing, and each one read for its card.
     var drawings: Drawings?
@@ -58,22 +57,20 @@ final class ThumbnailController: NSObject {
     private var visible = false {
         didSet {
             // Flight decodes are screen-sized; they are only worth keeping while the stack is up.
-            if !visible { flightImages.removeAll(); flightOrder.removeAll() }
-            // A presentation asks the Dock afresh: one that did not answer last time may answer now.
-            else { dockReadsLeft = Self.dockReadAttempts }
+            if !visible { flightImages.removeAll() }
+            else { areaReader.presented() }
         }
     }
     private var dismissGeneration = 0
     private var shrinkGeneration = 0
     private var stitchGeneration = 0
-    private var sweepAnchor: Int?
-    private var sweepSelecting = true
-    private var sweepBefore: [UUID] = []
-    /// How far the drag point sits below the top of the visible column, kept while a sweep runs so
-    /// the auto-scroll can re-select from it without a mouse event. Nil when no sweep is running.
-    private var sweepFromTop: CGFloat?
-    private var autoScrollLink: CADisplayLink?
-    private var autoScrollTick: CFTimeInterval = 0
+    private lazy var sweep = StackSweep(
+        model: model, screen: { [unowned self] in self.screen },
+        column: { [unowned self] in
+            StackSweep.Column(layout: self.layout, cards: self.cardSizes, contentHeight: self.drawnContentHeight, maxScroll: self.maxScroll)
+        },
+        isVisible: { [unowned self] in self.visible }, selected: { [unowned self] in self.keys.send(.selected) },
+        relayout: { [unowned self] in self.relayout() })
     /// The one owner of the annotation run, its queue included. Only `handle` writes it; see AnnotationRun.
     private var run = AnnotationRun()
     /// The card the run has open, kept here because a lone thumbnail leaves the model once the annotator shows.
@@ -88,12 +85,10 @@ final class ThumbnailController: NSObject {
     /// Cards made in this turn whose stored drawings are still to be read. A stack opening makes
     /// every card in one turn, and reading theirs together gives the column one change of `cards`.
     private var drawingReads: [ScreenshotKey] = []
-    /// Larger decodes for the flight to the annotator, by file path. Filled on hover.
-    private var flightImages: [ScreenshotKey: NSImage] = [:]
-    private var flightOrder: [ScreenshotKey] = []
+    private lazy var flightImages = FlightImages(model: model, flights: flights, screen: { [unowned self] in self.screen },
+                                                 isVisible: { [unowned self] in self.visible })
 
-    override init() {
-        super.init()
+    init() {
         hosting = NSHostingView(rootView: StackView(model: model))
         panel.contentView = hosting
         panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
@@ -124,15 +119,15 @@ final class ThumbnailController: NSObject {
                 if action.id == "annotate" { self.swallowSecondClick(on: slot) }
             }
         }
-        model.onSweep = { [weak self] y in self?.sweep(toYFromTop: y) }
+        model.onSweep = { [weak self] y in self?.sweep.move(toYFromTop: y) }
         model.onSweepEnd = { [weak self] in
             guard let self else { return }
-            self.endSweep()
+            self.sweep.end()
             self.revealFocused()
         }
         model.onHover = { [weak self] id in
             guard let self else { return }
-            self.prefetchFlightImage(id)
+            self.flightImages.prefetch(id)
             // Focus follows the pointer: one variable says where a key acts, and moving onto a card
             // moves it there. Leaving a card leaves the focus behind, so keys still act on the card
             // the pointer last named. Only while the stack holds the keys and nothing is in the
@@ -163,53 +158,9 @@ final class ThumbnailController: NSObject {
         keys.refreshBackdrop(on: screen)
     }
 
-    /// Where the stack is laid out on its screen, and the room a Dock under the column keeps. Read
-    /// when the panel is laid out, so the panel, the cards and the strip are placed from one
-    /// reading of the screen and the Dock.
-    private var area = StackArea(bounds: .zero)
-    /// The tiles from the last read that answered. A read fails while the Dock is restarting — a
-    /// crash, some display changes, login before it is up — and for that moment the process is
-    /// there but its Accessibility tree is not. Taking a failed read as "the Dock spans the whole
-    /// edge" lifts the whole column by the Dock's reserved height, and the area is only read on a
-    /// layout pass, so it would stay lifted until something unrelated laid the panel out again. The
-    /// last rect is the better guess: a restart puts the same Dock back.
-    private var dockTiles: NSRect?
-    private var dockRetry: DispatchWorkItem?
-    private var dockReadsLeft = ThumbnailController.dockReadAttempts
-    /// How often, and how many times, a failed Dock read is tried again. In code: a cadence for a
-    /// system read that has failed, not a number a user would tune. Eight at half a second covers a
-    /// `killall Dock`, which is back inside two.
-    private static let dockReadDelay: TimeInterval = 0.5
-    private static let dockReadAttempts = 8
-
-    private func readArea() {
-        let s = screen
-        if let tiles = Dock.tiles() {
-            dockTiles = tiles
-            dockRetry?.cancel()
-            dockRetry = nil
-        } else {
-            scheduleDockRead()
-        }
-        area = layout.area(visibleFrame: s.visibleFrame, screenFrame: s.frame, dock: dockTiles)
-    }
-
-    /// Asks again after a failed read, and lays out once the Dock answers, so a stack opened while
-    /// the Dock was restarting is not left in the place that reading gave it. Bounded: an app
-    /// untrusted for Accessibility never gets an answer, and its layout — the Dock taken to span the
-    /// whole edge — is the right one to settle on.
-    private func scheduleDockRead() {
-        guard dockRetry == nil, dockReadsLeft > 0 else { return }
-        dockReadsLeft -= 1
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.dockRetry = nil
-            guard self.visible else { return }
-            if Dock.tiles() != nil { self.relayout() } else { self.scheduleDockRead() }
-        }
-        dockRetry = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.dockReadDelay, execute: work)
-    }
+    private lazy var areaReader = StackAreaReader(isVisible: { [unowned self] in self.visible },
+                                                  relayout: { [unowned self] in self.relayout() })
+    private var area: StackArea { areaReader.area }
 
     /// The cards as they are drawn now: at the stack's full width, or narrowed for the annotator.
     private var cardSizes: [NSSize] { model.cards.map { layout.drawn($0.size) } }
@@ -526,7 +477,7 @@ final class ThumbnailController: NSObject {
         let urls = Set(shots.map(\.url))
         send(.remove(shots.map(\.key).sorted()))
         for card in model.cards where urls.contains(card.shot.url) { flights.end(id: card.id) }
-        endSweep()
+        sweep.end()
         // When no card would be left, they slide out with the panel rather than vanish, and the
         // slide-out's end takes them out. A panel already sliding out is left to that end too.
         if !visible || model.cards.allSatisfy({ urls.contains($0.shot.url) }) { dismiss(by: .removed); return }
@@ -550,8 +501,7 @@ final class ThumbnailController: NSObject {
             if sessionCard?.shot.key == old { sessionCard = sessionCard?.with(shot: shot) }
             model.notices.rename(from: old, to: new)
             if captureOrigin?.key == old { captureOrigin?.key = new }
-            if let image = flightImages.removeValue(forKey: old) { flightImages[new] = image }
-            flightOrder = flightOrder.map { $0 == old ? new : $0 }
+            flightImages.rename(from: old, to: new)
             drawingReads = drawingReads.map { $0 == old ? new : $0 }
             flightPress.rename(from: old, to: new)
             send(.renamed(from: old, to: new))
@@ -599,7 +549,7 @@ final class ThumbnailController: NSObject {
         let flying = cards.map { card in
             let drawing = card.marks?.drawing
             let scale = drawing.map { max(cardTextScale(card.size, $0.pixels), cardTextScale(result.size, $0.pixels)) } ?? 0
-            return (id: card.id, image: flightImage(for: card), marks: flightMarks(drawing, scale: scale, adopting: [card.marks]),
+            return (id: card.id, image: flightImages.image(for: card), marks: flightMarks(drawing, scale: scale, adopting: [card.marks]),
                     from: cardFrame(of: card))
         }
         let ids = Set(cards.map(\.id))
@@ -607,7 +557,7 @@ final class ThumbnailController: NSObject {
         model.forming.insert(result.id)
         model.removeCards { ids.contains($0.id) }
         model.clearSelection()
-        endSweep()   // the pieces leave the column and the new card takes index 0: the anchor moved
+        sweep.end()   // the pieces leave the column and the new card takes index 0: the anchor moved
         if let focused = model.focused, ids.contains(focused) { model.focused = nil }
         model.cards.insert(result, at: 0)
         withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = 0 }
@@ -742,7 +692,7 @@ final class ThumbnailController: NSObject {
             // The image in the annotator leaves with the column while the annotator parks its drawing.
             var slot = cardFrame(of: card)
             slot.origin.x += layout.offscreenDistance(cardWidth: slot.width)
-            flights.fly(id: card.id, image: flightImage(for: currentCard(card)), marks: homeFlightMarks(for: currentCard(card)),
+            flights.fly(id: card.id, image: flightImages.image(for: currentCard(card)), marks: homeFlightMarks(for: currentCard(card)),
                         caption: annotatorTitle(card.shot.key), from: annotationFrame, to: slot,
                         leavingAnnotator: true, lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
                 self?.flights.end(id: card.id)
@@ -845,7 +795,7 @@ final class ThumbnailController: NSObject {
             onTakesScreen?()
             sessionCard = card
             leaveTimer?.invalidate()
-            for page in [EditorCore.Page.older, .newer] { prefetchFlightImage(model.neighbor(of: key, page)?.id) }
+            for page in [EditorCore.Page.older, .newer] { flightImages.prefetch(model.neighbor(of: key, page)?.id) }
             // The selection stays: the card comes back to its slot, and a queued run needs the rest
             // of it to still be there when the last card is done.
             _ = model.outCards.insert(card.id)
@@ -875,7 +825,7 @@ final class ThumbnailController: NSObject {
             // frame: the window draws the same ring and shadow there, so handing either over while
             // the spring still had a few points to go would step against the picture the flight is
             // showing.
-            flights.fly(id: card.id, image: flightImage(for: card), marks: outFlightMarks(for: card, to: target), from: from, to: target,
+            flights.fly(id: card.id, image: flightImages.image(for: card), marks: outFlightMarks(for: card, to: target), from: from, to: target,
                         lookFrom: lookFrom, lookTo: .annotator(ui), on: screen, covered: { [weak self] in
                 self?.send(.shown(opening))
             }, arrived: { [weak self] in
@@ -954,7 +904,7 @@ final class ThumbnailController: NSObject {
         // The card takes its slot back only once the flight has settled on it: the card draws at the
         // exact slot, so a card and a shadow put there while the flight still had a few points to
         // go would both step. Nothing is visible before then; the flight covers the slot.
-        flights.fly(id: card.id, image: flightImage(for: card), marks: homeFlightMarks(for: card), caption: annotatorTitle(card.shot.key),
+        flights.fly(id: card.id, image: flightImages.image(for: card), marks: homeFlightMarks(for: card), caption: annotatorTitle(card.shot.key),
                     from: annotationFrame, to: cardFrame(of: card), leavingAnnotator: true, lookFrom: .annotator(ui), lookTo: .card(ui), on: screen,
                     covered: { [weak self] in self?.orderPanelIn() }, arrived: { [weak self] in
             guard let self else { return }
@@ -985,10 +935,10 @@ final class ThumbnailController: NSObject {
     private func flyAway(_ card: Card) {
         // Esc during the flight out: the card has not left the panel yet (see `.show`).
         if model.cards.contains(where: { $0.id == card.id }) { takeOutOfPanel(card) }
-        readArea()
+        areaReader.read(on: screen, layout: layout)
         var slot = layout.loneCardFrame(size: card.size, area: area)
         slot.origin.x += layout.offscreenDistance(cardWidth: slot.width)
-        flights.fly(id: card.id, image: flightImage(for: card), marks: homeFlightMarks(for: card), caption: annotatorTitle(card.shot.key),
+        flights.fly(id: card.id, image: flightImages.image(for: card), marks: homeFlightMarks(for: card), caption: annotatorTitle(card.shot.key),
                     from: annotationFrame, to: slot, leavingAnnotator: true, lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
             self?.flights.end(id: card.id)
             card.marks?.clear()   // the card is gone for good, as `removeCards` would have it
@@ -1094,37 +1044,6 @@ final class ThumbnailController: NSObject {
         }
     }
 
-    /// The best image for the flight: a larger decode if hovering fetched one, else the thumbnail,
-    /// upgraded as soon as a larger decode arrives.
-    private func flightImage(for card: Card) -> NSImage {
-        let key = card.shot.key
-        if let image = flightImages[key] { return image }
-        // The editor's decode is this one. A lone thumbnail's flight home needs it: the stack hid
-        // when the annotator opened, which emptied `flightImages`, and the card's own picture is
-        // too small to stand in for the editor's first frame.
-        if let image = Thumbnailer.cached(at: card.shot.url, maxPixel: Thumbnailer.screenPixels(on: screen), space: screenSpace) {
-            return image
-        }
-        prefetchFlightImage(card.id)
-        return card.image ?? NSImage(size: card.size)
-    }
-
-    private func prefetchFlightImage(_ id: UUID?) {
-        // Only an image flies into the editor; a recording's decode at this size is wasted, and one
-        // that is not downloaded would be downloaded whole.
-        guard let id, let card = model.cards.first(where: { $0.id == id }), card.shot.kind == .image else { return }
-        let key = card.shot.key
-        guard flightImages[key] == nil else { return }
-        Thumbnailer.load(at: card.shot.url, maxPixel: Thumbnailer.screenPixels(on: screen), space: screenSpace) { [weak self] image in
-            // `visible`: a decode that lands after the stack hid must not refill the cache it cleared.
-            guard let self, let image, self.visible else { return }
-            self.flightImages[key] = image
-            self.flightOrder.append(key)
-            if self.flightOrder.count > 4 { self.flightImages[self.flightOrder.removeFirst()] = nil }
-            self.flights.setImage(id: id, image)
-        }
-    }
-
     private func cardFrame(of card: Card) -> NSRect {
         guard let index = model.cards.firstIndex(where: { $0.id == card.id }) else { return annotationFrame }
         return cardFrame(index)
@@ -1148,77 +1067,6 @@ final class ThumbnailController: NSObject {
     private func revealFocused() {
         guard let index = model.cards.firstIndex(where: { $0.id == model.focused }) else { return }
         scrollToReveal(index)
-    }
-
-    /// The drag is over: it ended, or the cards it was sweeping changed under it, which makes the
-    /// anchor point at another card. The selection stays as it is.
-    private func endSweep() {
-        sweepAnchor = nil
-        sweepFromTop = nil
-        stopAutoScroll()
-    }
-
-    /// The drag moved. Its place in the column is kept as a distance from the top of what is on
-    /// screen, so the auto-scroll can keep selecting from the same point while the cards move under it.
-    private func sweep(toYFromTop y: CGFloat) {
-        // A selection begun in the corner turns the corner into the stack, with the cards it holds.
-        keys.send(.selected)
-        sweepFromTop = y - drawnContentHeight + model.viewport + model.scroll
-        select(toYFromTop: y)
-        updateAutoScroll()
-    }
-
-    /// Dragging from a circle selects (or deselects) every card between the start and the cursor,
-    /// in the order the drag reached them. Backing up restores cards the drag passed over.
-    private func select(toYFromTop y: CGFloat) {
-        guard let index = layout.cardIndex(atYFromTop: y, cards: cardSizes) else { return }
-        if sweepAnchor == nil {
-            sweepAnchor = index
-            sweepSelecting = !model.isSelected(model.cards[index].id)
-            sweepBefore = model.selection
-        }
-        let anchor = sweepAnchor!
-        let passed = stride(from: anchor, through: index, by: index < anchor ? -1 : 1).map { model.cards[$0].id }
-        let next = sweepSelecting ? sweepBefore + passed : sweepBefore.filter { !passed.contains($0) }
-        // The auto-scroll runs this every frame; a relayout that changes nothing would still move
-        // the panel and animate the strip.
-        guard next != model.selection || model.focused != model.cards[index].id else { return }
-        model.setSelection(next)
-        model.focused = model.cards[index].id
-        relayout()
-    }
-
-    /// While the drag sits in a band at either end of the column, the column scrolls on its own and
-    /// the cards passing under the drag keep joining the selection. This is the user's own drag, so
-    /// the motion scale leaves it alone; it stops at the ends of the column and when the drag leaves
-    /// the band or ends.
-    private func updateAutoScroll() {
-        let speed = sweepFromTop.map { layout.autoScrollSpeed(fromTop: $0, viewport: model.viewport) } ?? 0
-        guard speed != 0, visible, model.isStack else { stopAutoScroll(); return }
-        guard autoScrollLink == nil else { return }
-        autoScrollTick = CACurrentMediaTime()
-        let link = screen.displayLink(target: self, selector: #selector(autoScrollStep))
-        link.add(to: .main, forMode: .common)
-        autoScrollLink = link
-    }
-
-    private func stopAutoScroll() {
-        autoScrollLink?.invalidate()
-        autoScrollLink = nil
-    }
-
-    @objc private func autoScrollStep(_ link: CADisplayLink) {
-        guard let fromTop = sweepFromTop, visible, model.isStack else { stopAutoScroll(); return }
-        let speed = layout.autoScrollSpeed(fromTop: fromTop, viewport: model.viewport)
-        guard speed != 0 else { stopAutoScroll(); return }
-        let now = CACurrentMediaTime()
-        // A stalled run loop would otherwise scroll the whole column in one step.
-        let dt = min(0.1, now - autoScrollTick)
-        autoScrollTick = now
-        let next = min(maxScroll, max(0, model.scroll + speed * dt))
-        guard next != model.scroll else { return }
-        model.scroll = next
-        select(toYFromTop: fromTop + drawnContentHeight - model.viewport - model.scroll)
     }
 
     private func run(_ action: ShotAction, on cards: [Card]) {
@@ -1477,7 +1325,7 @@ final class ThumbnailController: NSObject {
             model.focused = nil
             model.entranceRanks = [:]
             model.lift = [:]
-            endSweep()
+            sweep.end()
             model.slidingOut = false
             model.scroll = 0
             model.widthScale = 1
@@ -1518,7 +1366,7 @@ final class ThumbnailController: NSObject {
     private func insert(_ card: Card, entrance: Entrance = .slide) {
         guard !model.cards.contains(where: { $0.shot.url == card.shot.url }) else { return }
         dismissGeneration += 1
-        endSweep()   // the new card takes index 0 and shifts every other, the sweep's anchor included
+        sweep.end()   // the new card takes index 0 and shifts every other, the sweep's anchor included
         if entrance != .inPlace { _ = model.offscreen.insert(card.id) }
         model.slidingOut = false
         if visible && !model.cards.isEmpty && entrance == .slide { return shiftUp(for: card) }
@@ -1640,7 +1488,7 @@ final class ThumbnailController: NSObject {
             // At the stack's full width, so a stack narrowed for the annotator keeps the panel it
             // will need when it comes back. The panel is transparent outside the column either way.
             let content = layout.contentHeight(cards: model.cards.map(\.size))
-            readArea()
+            areaReader.read(on: screen, layout: layout)
             viewport = layout.viewportHeight(content: content, area: area)
             model.viewport = viewport
             model.safeBottom = area.safeBottom

@@ -55,7 +55,7 @@ if the Dock does not answer inside the 0.25 s messaging timeout, `tiles()` is ni
 taken to span the whole edge — which is the room AppKit reserves, and so exactly the old layout.
 
 The read costs 0.34 ms (median of 40, warm), so it is taken once per layout pass and kept in
-`ThumbnailController.area`: the panel, the cards and the strip are then placed from one reading.
+`StackAreaReader.area`: the panel, the cards and the strip are then placed from one reading.
 
 Only the horizontal extent comes from there. The safe area's height is AppKit's, so it cannot
 change while a tile grows under the cursor: the `AXList` widens with magnification but keeps its top

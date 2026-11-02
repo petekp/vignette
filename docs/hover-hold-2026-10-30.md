@@ -46,7 +46,7 @@ The hold ends once the column has not moved for 0.15 s. The rule is the same for
 What the hold costs:
 
 - The hover and the focus reach the card under the pointer 0.15 s after the column stops.
-- `prefetchFlightImage` runs when the hover arrives. A click within 0.15 s of the scroll's end
+- `FlightImages.prefetch` runs when the hover arrives. A click within 0.15 s of the scroll's end
   flies with the thumbnail's decode.
 - Return within 0.15 s of the scroll's end acts on the card that had the focus before the scroll.
 

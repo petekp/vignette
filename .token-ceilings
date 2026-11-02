@@ -1,6 +1,7 @@
 # Files the token-limit pre-commit hook allows over 5,000 tokens: "path ceiling", the ceiling in
 # tokens (bytes / 4). A listed file is blocked only when it grows past its ceiling.
 #
-# ThumbnailController.swift is one class whose sections share private members, so no part of it
-# moves out without widening their access. Splitting it is a task of its own.
-Sources/ThumbnailController.swift 23668
+# ThumbnailController.swift stays one file because its sections share private state by design:
+# the annotation run, the column's presentation and the notices on cards all read the same model,
+# flights, run and open card. Moving a section out would make that state visible to the whole module.
+Sources/ThumbnailController.swift 21666

@@ -591,7 +591,7 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   every duration, and the system's Reduce Motion forces 0. Dwell times (`thumbnailSeconds`,
   `markSeconds`, `sendGraceSeconds`) are not motion, and neither is a movement the user's own hand is driving: the
   drag-select's auto-scroll (`ui.autoScrollZone`, `ui.autoScrollSpeed`, `StackLayout.autoScrollSpeed`,
-  ticked by a display link in `ThumbnailController`) follows the drag at its own speed whatever
+  ticked by a display link in `StackSweep`) follows the drag at its own speed whatever
   the scale says. `"ui": {"motion": 0}` makes the stack appear and leave at once, which is what a
   script wants. Every SwiftUI animation is a spring made by `Anim.spring` (`slideInCurve` "spring"
   included), and the AppKit tweens use `Tween`'s spring curve: an interrupted motion keeps its
