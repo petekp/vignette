@@ -141,3 +141,6 @@
 .scene .cardx.lifted::after, .scene .cardx.lifted .scircle { transition: none; }
 .scene .term-x .typed { transition: opacity 0.25s; }
 .scene .cam { position: absolute; inset: 0; transform-origin: 0 0; }
+
+/* Agent, Front and tiles (agent.js, front.js): a shell command Claude Code has run, one dim line. */
+.scene .term-x .t-done, .scene .term-x .t-done b { color: #8b8f99; }
