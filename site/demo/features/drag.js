@@ -1,8 +1,8 @@
 // The picture of "Drag 'n drop": a card dragged out of the stack into Claude Code, in Ghostty on the
 // same screen.
 import { el, Motion, UI, wait } from "../vignette.js";
-import { lerp, GUTTER, card, wideFit, POINTER, claudeCode, said, you, gap, LINE } from "./parts.js";
-import { Column, SHOTS, CW, CH, SCALE, BELOW_MENU_BAR, at } from "./stack.js";
+import { lerp, GUTTER, card, POINTER, claudeCode, said, you, gap, LINE } from "./parts.js";
+import { Column, SHOTS, CW, CH, SCALE, BELOW_MENU_BAR, at, deskFit } from "./stack.js";
 
 // Ghostty's title bar, in the screen's points (.chrome).
 const TITLE_BAR = 40;
@@ -12,7 +12,7 @@ export class Drag extends Column {
   // has a drawing, is dragged out of the stack into Claude Code, and the prompt takes it as an image.
   // The card stays in the stack. Claude Code keeps its prompt at the bottom of the terminal, with a
   // hint line under it, and the conversation scrolls up under the title bar.
-  static fit = wideFit(236);
+  static fit = deskFit;
   build({ W, H }) {
     const s = this.scene(W, H);
     // Every line ends left of the column, at every width.
@@ -20,7 +20,7 @@ export class Drag extends Column {
       ? [you("&gt; Put our three stays on the trip map."), gap, said("Added the three stays to the map."), gap, you("&gt; Number the days."), gap, said("Done. Each day has its number now."), gap, you("&gt; Remind the host to confirm our stay.")]
       : [said("Mapped the stays."), gap, you("&gt; Number the days."), gap, said("Done."), gap, you("&gt; Remind the host"), you("  to confirm.")];
     const win = el("div", "window term ghostty", '<div class="chrome"><i></i><i></i><i></i><span>postcard</span></div>');
-    this.screen("Ghostty", ["File", "Edit", "View", "Window", "Help"], win, BELOW_MENU_BAR);
+    this.screen("Ghostty", ["File", "Edit", "View", "Window", "Help"], win, { top: BELOW_MENU_BAR });
     this.showBackdrop(1);
     // The terminal is drawn at the picture's own size inside the window, which is in the screen's
     // points, so its text stays as large as Agent's.

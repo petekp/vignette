@@ -2,8 +2,8 @@
 // over Calendar on the same screen.
 import { el, place, Motion, UI, wait, cardSize, coverRect } from "../vignette.js";
 import { IMAGES } from "../cards.js";
-import { lerp, clamp, GUTTER, card, shot, whole, wideFit, selectionStrip, tap } from "./parts.js";
-import { Column, SHOTS, CW, CH, SCALE, BELOW_MENU_BAR, at } from "./stack.js";
+import { lerp, clamp, GUTTER, card, shot, whole, selectionStrip, tap } from "./parts.js";
+import { Column, SHOTS, CW, CH, SCALE, BELOW_MENU_BAR, at, deskFit } from "./stack.js";
 
 // Calendar's day view of the day Stitch's pieces are about, in the screen's points: an hour is
 // HOUR tall from 05:00, and each event is its start, its length in hours, its colour and its title.
@@ -76,7 +76,7 @@ export class Stitch extends Column {
   // image waits there unseen and takes over in the last part of the flight, and the new card says
   // Copied. The view pushes in on it only once Copied has gone, since the app draws the notice at
   // card size.
-  static fit = wideFit(318);
+  static fit = deskFit;
   build({ W, H }) {
     const s = this.scene(W, H);
     const picked = PIECES;
@@ -94,7 +94,7 @@ export class Stitch extends Column {
     // Calendar's window ends where the push-in takes it past the picture's left edge, so the new
     // card ends on the wallpaper under the backdrop's blur. Short of the column, it ends under it.
     const right = Math.min(this.R - CW + 20, W - W / this.zoom - 4);
-    this.screen("Calendar", ["File", "Edit", "View", "Window", "Help"], el("div", "window cal", calendar((right - GUTTER) / SCALE)), BELOW_MENU_BAR, right);
+    this.screen("Calendar", ["File", "Edit", "View", "Window", "Help"], el("div", "window cal", calendar((right - GUTTER) / SCALE)), { top: BELOW_MENU_BAR, right });
     this.showBackdrop(1);
     // Each picked card takes its capture's shape by the stack's card-size rule, newest at the bottom.
     let top = this.bottom + UI.cardSpacing;
