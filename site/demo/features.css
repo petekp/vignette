@@ -91,7 +91,6 @@
 .scene .qstrip .row.down, .scene .qbar .copy.down { transform: scale(0.94); }
 /* A card in flight. */
 .scene .cardx.flying { left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
-.scene .qcol ~ .cardx.flying { visibility: hidden; }
 .scene .crosshair { position: absolute; left: 0; top: 0; z-index: 5; transition: opacity 0.25s; pointer-events: none; }
 .scene .pointer { position: absolute; left: 0; top: 0; z-index: 5; width: 24px; height: 24px; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35)); transition: opacity 0.25s; }
 .scene .pointer svg { transform-origin: 10px 7px; transition: transform 0.1s; }
