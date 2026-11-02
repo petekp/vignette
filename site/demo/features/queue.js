@@ -1,7 +1,8 @@
-import { el, Motion, UI, wait } from "../vignette.js";
+import { el, Motion, UI, wait, tween } from "../vignette.js";
 import { IMAGES } from "../cards.js";
 import { clamp, GUTTER, card, whole, smallFit, selectionStrip } from "./parts.js";
 import { Flyer, CW, CH, passesTarget } from "./flight.js";
+import { handEase } from "./drawing.js";
 
 const LIST = [
   [IMAGES.stays, whole(IMAGES.stays), [{ type: "rect", who: "person", x: 40, y: 192, w: 588, h: 86 }]],
@@ -116,14 +117,14 @@ export class Queue {
   async play() {
     this.reset();
     for (let i = 0; i < this.cards.length; i++) {
-      await wait(0.3);
+      await wait(i ? 0.2 : 0.15);
       this.pick(i, true);
       if (i === 0) this.strip.classList.add("up");
     }
-    await wait(0.45);
+    await wait(0.25);
     await this.press(this.drawRow);
     this.strip.classList.remove("up");
-    await wait(0.14);
+    await wait(0.1);
     const [one, two] = this.flyers;
     this.lift(0, this.slot(0, 1), 0);
     this.m.to("s", this.narrow, UI.relayout, UI.flightBounce);
@@ -131,11 +132,11 @@ export class Queue {
     await wait(passesTarget());
     this.bar.classList.add("up");
     await out;
-    await wait(0.2);
-    const box = LIST[0][2][0], r = { ...box, w: 0, h: 0 };
-    await new Motion((m) => { const t = m.get("t"); r.w = box.w * t; r.h = box.h * t; one.c.pic.update([r]); }).add("t", 0, 0.001).to("t", 1, 0.35);
+    await wait(0.1);
+    const box = LIST[0][2][0];
+    await tween(0.35, (p) => { const t = handEase(p); one.c.pic.update([{ ...box, w: box.w * t, h: box.h * t }]); });
     one.c.pic.update(LIST[0][2]);
-    await wait(0.4);
+    await wait(0.25);
     await this.press(this.copy);
     // Copy sends card 1 home marked copied and opens card 2 in the same moment: two flights.
     this.cards[0].pic.update(LIST[0][2]);
