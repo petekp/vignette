@@ -126,3 +126,8 @@
 .scene .term-x .pbox { margin-top: 6px; padding: 6px 10px; border: 1px solid #3a3d44; border-radius: 8px; }
 .scene .term-x .tcur { display: inline-block; width: 8px; height: 15px; vertical-align: -3px; background: #c9ccd3; }
 
+/* Your app stays in front: the typing the play adds, which a replay fades out, and the caret: solid
+   while the play types, as macOS draws it, and gone while the stack holds the keys. */
+.scene .field.typing .tcaret { animation: none; }
+.scene .field .added { all: unset; transition: opacity 0.25s; }
+.scene .field.caret-off .tcaret { visibility: hidden; }
