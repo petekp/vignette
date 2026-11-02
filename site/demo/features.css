@@ -90,12 +90,16 @@
 .scene .qbar .bar > span.tool { width: 34px; padding: 0; }
 .scene .qstrip .row.lit, .scene .qbar .copy.lit { background: rgb(255 255 255 / 0.2); }
 .scene .qstrip .row.down, .scene .qbar .copy.down { transform: scale(0.94); }
-/* A card in flight, and the faint outlines it leaves along the way. */
+/* A card in flight, and its trace: soft onion skins of the card and a line along its arc. */
 .scene .cardx.flying { left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
 .scene .qcol ~ .cardx.flying { visibility: hidden; }
 .scene .trace { position: absolute; inset: 0; transition: opacity 0.25s; }
-.scene .trace .outline { position: absolute; border-radius: 16px; border: 1.5px solid currentColor; opacity: 0; transition: opacity 0.12s; }
-.scene .trace .outline.on { opacity: 0.16; }
+.scene .trace .skin { position: absolute; border-radius: 16px; background: currentColor; filter: blur(3px); opacity: 0; transition: opacity 0.18s; }
+.scene .trace .skin.on { opacity: var(--o); }
+.scene .trace .over { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.scene .trace .arc { opacity: 0.55; }
+.scene .trace .turn { opacity: 0; transition: opacity 0.2s; }
+.scene .trace .turn.on { opacity: 1; }
 .scene .crosshair { position: absolute; left: 0; top: 0; z-index: 5; transition: opacity 0.25s; pointer-events: none; }
 .scene .pointer { position: absolute; left: 0; top: 0; z-index: 5; width: 24px; height: 24px; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35)); transition: opacity 0.25s; }
 .scene .pointer svg { transform-origin: 10px 7px; transition: transform 0.1s; }
