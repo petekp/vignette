@@ -501,8 +501,8 @@ export class Stage {
     this.framePic = null;
   }
 
-  // A flight: the picture travels between the card's slot and the frame on a bowed path, swelling
-  // in the middle (FlightCurve). The picture inside goes from the card's crop to the frame's fit.
+  // A flight carries the picture between the card's slot and the frame on a bowed path, swelling in
+  // the middle. The picture inside goes from the card's crop to the frame's fit.
   // The flight, its shadow and its picture are laid out once at the frame's size and moved only by
   // transforms, so the picture and its marks are drawn once and the GPU scales them. The corners
   // are set against the scale so they stay round. The shadow is cast at the frame's size: scaled
@@ -521,16 +521,17 @@ export class Stage {
     const dx = to.x + to.w / 2 - (from.x + from.w / 2), dy = to.y + to.h / 2 - (from.y + from.h / 2);
     const len = Math.hypot(dx, dy) || 1;
     const bow = Math.min(UI.flightArc * len, UI.flightArcMax) * motion();
-    const nx = -dy / len, ny = dx / len, side = nx < 0 ? -1 : 1; // the side belongs to the line
+    const s = (Math.abs(dx) >= Math.abs(dy) ? dx > 0 : dy < 0) ? -1 : 1; // the side belongs to the line
+    const bx = (-dy * s * bow) / len, by = (dx * s * bow) / len;
     const startAtCard = way === "out";
     const m = new Motion((mm) => {
       const p = mm.get("p");
       const t = startAtCard ? p : 1 - p;
-      const swell = 1 + UI.flightDepth * motion() * Math.sin(Math.PI * clamp(p, 0, 1));
+      const q = clamp(t, 0, 1), peak = 4 * q * (1 - q);
+      const swell = 1 + UI.flightDepth * motion() * peak;
       const r = lerpRect(from, to, t);
-      const off = bow * Math.sin(Math.PI * clamp(t, 0, 1)) * side;
       const w = r.w * swell, h = r.h * swell;
-      const x = r.x + r.w / 2 + nx * off - w / 2, y = r.y + r.h / 2 + ny * off - h / 2;
+      const x = r.x + r.w / 2 + bx * peak - w / 2, y = r.y + r.h / 2 + by * peak - h / 2;
       const sx = w / W, sy = h / H;
       const move = `translate3d(${x}px, ${y}px, 0) scale(${sx}, ${sy})`;
       f.style.transform = move;
@@ -540,11 +541,10 @@ export class Stage {
       pic.style.transform = `translate3d(${(pr.x * swell) / sx}px, ${(pr.y * swell) / sy}px, 0) scale(${(pr.w * swell) / sx / toPic.w}, ${(pr.h * swell) / sy / toPic.h})`;
       shadow.style.opacity = lerp(1, 0.6, t);
     }).add("p", 0, 0.0008);
-    // The flight in progress, which close() turns around (`turned`) while it is on its way out.
-    const flight = { m, way, turned: false };
-    this.flight = flight;
+    // The flight in progress, which close() turns around (`turned`) while it flies out.
+    const flight = (this.flight = { m, way, turned: false });
     // A layer keeps the scale it was first rasterized at, so a flight that starts at the card is
-    // drawn once at full size first, almost transparent, while the card still shows.
+    // drawn once at full size first, almost transparent, while the card shows.
     if (startAtCard && motion()) {
       f.style.transform = `translate3d(${to.x}px, ${to.y}px, 0)`;
       f.style.opacity = "0.01";
