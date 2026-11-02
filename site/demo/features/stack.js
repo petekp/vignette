@@ -23,15 +23,15 @@ const SHOTS = [
     { type: "note", who: "person", x: 40, y: 972, text: "this one" },
   ]],
 ];
-// What Stitch joins, in the order they were picked: captures of the chat about a day, of three
-// versions of that day's card, and of its stay's picture. Stitch lays them out in one column whose
-// shape a card shows whole, and each badge sits on plain page at its piece's top-left. The first
-// piece is narrower than the second, so the column centres it and its badge clears the card's
-// rounded corner.
+// What Stitch joins, in the order they were picked: captures of the chat asking about a day, of
+// that day in the itinerary, and of the stay it ends at. Short, wide captures stack into one column
+// whose shape a card shows whole, and each takes the badge's 32 px floor, so the badges read once
+// the view pushes in. Each badge sits on plain page at its piece's top-left, and the first piece is
+// the narrowest, so the column centres it and its badge clears the card's rounded corner.
 const PIECES = [
-  [IMAGES.chat, { x: 0, y: 150, w: 1040, h: 960 }, []],
-  [IMAGES.variants, { x: 24, y: 200, w: 1760, h: 720 }, []],
-  [IMAGES.stays, { x: 0, y: 760, w: 325, h: 196 }, []],
+  [IMAGES.chat, { x: 0, y: 284, w: 580, h: 228 }, []],
+  [IMAGES.itin, { x: 1194, y: 650, w: 570, h: 262 }, []],
+  [IMAGES.stays, { x: 24, y: 740, w: 820, h: 220 }, []],
 ];
 // How far a card's shadow reaches above and below it: .cardx's box-shadow, 0 4px 8px.
 const SHADOW = { above: 4, below: 12 };
