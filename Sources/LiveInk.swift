@@ -12,7 +12,7 @@ final class LiveInk {
     /// The chord is held and the active Space's surfaces take presses.
     private(set) var isInking = false
     /// One per screen per Space that has marks, and the active Space's while inking.
-    private var surfaces: [Surface] = []
+    var surfaces: [Surface] = []
     /// The surfaces taking presses: the active Space's when the chord went down.
     private var inking: [Surface] = []
     private var chord: ModifierChord?
@@ -29,10 +29,10 @@ final class LiveInk {
     /// server sends them to the window that took the press.
     private var pressedSurface: Surface?
     /// Runs after ⌘⇧ while there are marks, looking for macOS's window picker.
-    private var pickerWatch: Timer?
-    private var pickerWatchUntil = Date.distantPast
+    var pickerWatch: Timer?
+    var pickerWatchUntil = Date.distantPast
     /// macOS's window picker is up, and the overlays are clear for it.
-    private var pickerUp = false
+    var pickerUp = false
     /// Asked when the chord goes down: false while the stack or the annotator holds the screen, which
     /// the raised overlays would cover and take presses from.
     private let mayInk: () -> Bool
@@ -40,7 +40,7 @@ final class LiveInk {
     private let responders = LiveResponders()
     /// The marks drawn on an app's window, which stay on it (docs/live-ink-step3-2026-10-05.md). The
     /// surfaces keep the rest: marks drawn where no window is.
-    private let windows = LiveWindows()
+    let windows = LiveWindows()
     /// The working sessions Send can reach, newest first, as the candidates found so far: once from
     /// the kept lists, then again as each client's fresh answer arrives.
     var listSessions: ((@escaping (DestinationChoice.Candidates) -> Void) -> Void)?
@@ -149,7 +149,7 @@ final class LiveInk {
     /// 1 px per pt, the newest last. A mark that crosses onto another screen of the same Space is on
     /// that screen's surface too, under the same id.
     @MainActor
-    private final class Surface {
+    final class Surface {
         let overlay: LiveInkOverlay
         var marks: [Mark] = []
 
@@ -216,7 +216,12 @@ final class LiveInk {
                 (workspace, workspace.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated { self?.spaceChanged() }
                 }),
-            ]
+            ] + [NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification].map { name in
+                // No release comes once the Mac sleeps or the person switches user, so inking ends here.
+                (workspace, workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { if self?.isInking == true { self?.cutInkingShort(because: name.rawValue) } }
+                })
+            }
         } else {
             if isInking { stopInking(because: "live ink turned off") }
             stopWatchingForWindowPicker()
@@ -239,7 +244,7 @@ final class LiveInk {
     /// Takes the pair chosen in the General tab. The marks stay; a stroke under way ends.
     func takeChord() {
         guard isOn else { return }
-        if isInking { stopInking(because: "the chord changed") }
+        if isInking { cutInkingShort(because: "the chord changed") }
         chord = makeChord()
         Log.write("[live-ink] chord \(Settings.shared.data.liveInkChordChoice.glyphs)")
     }
@@ -312,24 +317,6 @@ final class LiveInk {
         stopInking(because: "the stack or the annotator is up")
     }
 
-    /// ⌘⇧ went down, so a capture may be starting. macOS's window picker, Space during ⌘⇧4 or ⌘⇧5's
-    /// window capture, takes the window whose pixels are under the pointer, so over a mark it took the
-    /// overlay, which captures leave out ("Unable to capture window image"). It passes over a window
-    /// whose alpha is 0, and it reads the windows when Space is pressed (measured on macOS 15), before
-    /// its own window is up. So while there are marks this looks 10 times a second, for
-    /// `CaptureOrigin.pollSeconds` and as long as a capture lasts, for a `screencapture` process,
-    /// which ⌘⇧4 runs, or a window of `screencaptureui`, which ⌘⇧5 puts up, and clears the
-    /// overlays while there is one. The marks are out of the capture either way.
-    func watchForWindowPicker() {
-        guard !surfaces.isEmpty || !windows.isEmpty else { return }
-        pickerWatchUntil = Date().addingTimeInterval(CaptureOrigin.pollSeconds)
-        guard pickerWatch == nil else { return }
-        checkWindowPicker()
-        pickerWatch = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.checkWindowPicker() }
-        }
-    }
-
     /// The note hidden by `standAside` shows again, without the keys, once the stack and the annotator
     /// are gone. The main run loop asks before each wait, as it does `holdEscape`, so the note follows
     /// whatever closed them.
@@ -337,27 +324,6 @@ final class LiveInk {
         guard let note, note.standsAside, mayInk() else { return }
         note.standAside(false)
         Log.write("[live-ink] note back: the screen is free")
-    }
-
-    private func checkWindowPicker() {
-        let up = Self.isCapturing()
-        if up != pickerUp {
-            pickerUp = up
-            surfaces.forEach { $0.overlay.alphaValue = up ? 0 : 1 }
-            windows.pickerClear = up
-            Log.write("[live-ink] \(up ? "clear for" : "back after") a capture")
-        }
-        if !up, Date() > pickerWatchUntil { stopWatchingForWindowPicker() }
-    }
-
-    private func stopWatchingForWindowPicker() {
-        pickerWatch?.invalidate()
-        pickerWatch = nil
-        if pickerUp {
-            surfaces.forEach { $0.overlay.alphaValue = 1 }
-            windows.pickerClear = false
-        }
-        pickerUp = false
     }
 
     /// The marks and the pointer field drawn again in the current settings.
@@ -2182,7 +2148,13 @@ final class LiveInk {
     /// Inking stops, since its surfaces are on the Space just left.
     private func spaceChanged() {
         guard isInking else { return }
-        stopInking(because: "the Space changed")
+        cutInkingShort(because: "the Space changed")
+    }
+
+    /// Inking ends with no release to come, so listening, which a release would end, ends too.
+    private func cutInkingShort(because reason: String) {
+        stopListening()
+        stopInking(because: reason)
     }
 
     /// Each surface covers its screen again; one whose screen is gone closes with its marks.
@@ -2191,7 +2163,7 @@ final class LiveInk {
                                  uniquingKeysWith: { first, _ in first })
         // The Dock changing size posts this too, and leaves every screen where it was: inking goes on.
         if isInking, inking.contains(where: { screens[$0.overlay.display]?.frame != $0.overlay.frame }) {
-            stopInking(because: "the screens changed")
+            cutInkingShort(because: "the screens changed")
         }
         var dropped = Set<Mark.ID>()
         for surface in surfaces {

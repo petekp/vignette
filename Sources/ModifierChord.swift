@@ -57,7 +57,8 @@ struct HeldChord {
 /// A key another app takes as a shortcut, as a window manager takes Control-Option-arrow, reaches no
 /// event monitor (measured on macOS 15 with a Carbon hotkey). The HID state still counts it, and
 /// counts no modifier, so while the chord is held it is asked every 50 ms whether a key has gone down
-/// since the chord began.
+/// since the chord began, and whether the chord's modifiers are still down: a release no monitor
+/// heard, with Accessibility taken away or Secure Event Input on, would leave inking taking every click.
 @MainActor
 final class ModifierChord {
     private var chord: HeldChord
@@ -103,7 +104,8 @@ final class ModifierChord {
 
     private func checkKeys() {
         let sinceKey = CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown)
-        guard sinceKey < ProcessInfo.processInfo.systemUptime - beganAt, let change = chord.keyDown() else { return }
-        apply(change)
+        if sinceKey < ProcessInfo.processInfo.systemUptime - beganAt, let change = chord.keyDown() { return apply(change) }
+        let held = NSEvent.ModifierFlags(rawValue: UInt(CGEventSource.flagsState(.hidSystemState).rawValue))
+        if let change = chord.flagsChanged(held) { apply(change) }
     }
 }
