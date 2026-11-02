@@ -724,11 +724,11 @@ What each step showed:
 
 - **Live ink's notes do not change.** Their offer is right 45 times in 48, and every rule tried
   lowers that.
-- **The folder and the dev server leave the plan.** The log keeps recording them until the next
+- **The folder and the dev server leave the plan.** The log recorded them until the next
   scoring.
 - **Authors may later order the target's menu,** once the search is fast enough to finish before
   the bar is up. How often the menu holds the target today was not measured.
-- **A model can now be tested on real windows** (question 8), because the log keeps titles and
+- **A model can now be tested on real windows** (question 8), because the log kept titles and
   URLs from 2026-10-18. Nothing leaves the Mac for a model until Pete decides.
 - **The limits of the data.** It is one person on one Mac over ten days, and most of the misses
   fall in three of them. 25 sends from 2026-10-08 to 2026-10-10 have no target in `Vignette.log`

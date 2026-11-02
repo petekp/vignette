@@ -45,8 +45,8 @@ proposal said was missing: "No one but you." Decision 1 below asks whether the f
    record every capture, send and note into `send-context.jsonl`. Nothing gates them: they run for
    anyone on the branch, and live ink being off does not stop them. The author search reads
    `~/.claude/file-history` and runs Vision on each capture. Removing them takes more than deleting
-   the files, because `LivePacket`'s `LiveReads` and `InboxModStore` call into them. The log waits
-   for the session selection rescore on 2026-11-01.
+   the files, because `LivePacket`'s `LiveReads` and `InboxModStore` call into them. Removed on
+   2026-11-02, in phase 2.
 2. **The debug gate.** It comes out, along with the error lines and docs that name `debug` as a
    requirement.
 3. **Silent failures.**
