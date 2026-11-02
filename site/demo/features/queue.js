@@ -1,6 +1,6 @@
 import { el, Motion, UI, wait } from "../vignette.js";
 import { IMAGES } from "../cards.js";
-import { clamp, GUTTER, card, whole, smallFit } from "./parts.js";
+import { clamp, GUTTER, card, whole, smallFit, selectionStrip } from "./parts.js";
 import { Flyer, CW, CH, passesTarget } from "./flight.js";
 
 const LIST = [
@@ -8,14 +8,6 @@ const LIST = [
   [IMAGES.packing, whole(IMAGES.packing), []],
   [IMAGES.chat, { x: 0, y: 200, w: 1040, h: 650 }, []],
 ];
-// The selection strip's rows, as Config.stripRows shows them for three screenshots.
-const ICONS = {
-  copy: '<rect x="6" y="6" width="9" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4 13V5a2 2 0 0 1 2-2h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
-  draw: '<path d="M4 16l1-4 8-8 3 3-8 8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M11 17h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
-  stitch: '<rect x="4" y="8" width="12" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 5.5h8M8 3h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
-  trash: '<path d="M4.5 6h11M8 6V4h4v2M6 6l.8 10.5h6.4L14 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>',
-};
-const ROWS = [["copy", "Copy", "⌘C"], ["draw", "Draw", "↩"], ["stitch", "Stitch", "⌘S"], ["trash", "Delete", "⌘⌫"]];
 const TOOLS = [
   '<path d="M5 3l12 8-5.5 1.2L9 18z" fill="currentColor"/>',
   '<rect x="3.5" y="5.5" width="15" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/>',
@@ -63,8 +55,7 @@ export class Queue {
     Object.assign(this.bar.style, { left: `${this.frame.x + this.frame.w / 2}px`, top: `${this.frame.y + this.frame.h + UI.toolbarGap}px` });
     s.append(this.bar);
     this.copy = this.bar.querySelector(".copy");
-    this.strip = el("div", "qstrip", ROWS.map(([icon, label, key]) =>
-      `<div class="row" data-row="${icon}"><svg viewBox="0 0 20 20" width="15" height="15">${ICONS[icon]}</svg><span>${label}</span><kbd>${key}</kbd></div>`).join(""));
+    this.strip = selectionStrip();
     // Its right edge a strip gap left of the cards, as StackLayout.stripPlacement puts it.
     Object.assign(this.strip.style, { top: `${TOP + 32}px`, right: `${W - (this.R - CW) + 12}px` });
     s.append(this.strip);

@@ -3,7 +3,7 @@
 // bottom, as the stack does against the screen's.
 import { el, place, Motion, UI, wait, cardSize, coverRect } from "../vignette.js";
 import { IMAGES, PERSON_MARKS } from "../cards.js";
-import { lerp, clamp, GUTTER, card, whole, shot, wideFit, POINTER } from "./parts.js";
+import { lerp, clamp, GUTTER, card, whole, shot, wideFit, POINTER, selectionStrip } from "./parts.js";
 
 const CW = 140, CH = 88, STEP = CH + UI.cardSpacing;
 // The cards' scale against the app's: a 16:10 screenshot's card is 188 pt wide there.
@@ -22,12 +22,6 @@ const SHOTS = [
     { type: "rect", who: "person", x: 40, y: 752, w: 1728, h: 206 },
     { type: "note", who: "person", x: 40, y: 972, text: "this one" },
   ]],
-];
-const STRIP = [
-  ["Copy", "⌘C", '<rect x="6" y="6" width="9" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4 13V5a2 2 0 0 1 2-2h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'],
-  ["Draw", "↩", '<path d="M4 16l1-4 8-8 3 3-8 8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M11 17h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'],
-  ["Stitch", "⌘S", '<rect x="4" y="8" width="12" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 5.5h8M8 3h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'],
-  ["Delete", "⌘⌫", '<path d="M4.5 6h11M8 6V4h4v2M6 6l.8 10.5h6.4L14 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>'],
 ];
 const at = (node, x, y, s = 1) => { node.style.transform = `translate(${x}px, ${y}px) scale(${s})`; };
 async function tap(key, hold = 0.09) { key.classList.add("down"); await wait(hold); key.classList.remove("down"); }
@@ -173,8 +167,7 @@ export class Stitch extends Column {
     });
     // The selection strip, a strip gap left of the cards and centred on the picked ones
     // (StackLayout.stripPlacement), with the rows Config.stripRows shows for three screenshots.
-    this.strip = el("div", "qstrip", STRIP.map(([label, key, icon]) =>
-      `<div class="row"><svg viewBox="0 0 20 20" width="15" height="15">${icon}</svg><span>${label}</span><kbd>${key}</kbd></div>`).join(""));
+    this.strip = selectionStrip();
     Object.assign(this.strip.style, { right: `${W - (this.R - CW) + 16 * SCALE}px`, top: `${this.bottom - STEP - CH / 2 - 64}px` });
     this.stitchRow = this.strip.children[2];
     s.append(this.strip);
