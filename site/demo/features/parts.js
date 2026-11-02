@@ -55,6 +55,30 @@ export const wideFit = (rest) => (slotW, slotH = 0) => {
   return { W, H, rest, k, key: `${W} ${H}` };
 };
 
+// Claude Code in a terminal, as Drag and Agent draw it: the conversation runs off the terminal's
+// top, over the prompt box with its hint line under it. The terminal spans the picture from the
+// gutter and runs off its right and bottom edges. `talk` is the conversation's markup, built from
+// the lines below.
+export const line = (html, cls = "") => `<div class="ln${cls}">${html}</div>`;
+export const said = (html) => line(`<span class="t-said">●</span> ${html}`);
+export const you = (text) => line(text, " t-dim");
+export const gap = line(" ");
+// .term-x's line height, and the prompt box's height with its margin, border and padding.
+export const LINE = 13 * 1.65;
+const BOX = LINE + 20;
+// The hint line ends at most `bottom` down the picture, and at the line that leaves the conversation
+// cut at the picture's top edge between two lines.
+export function claudeCode(W, H, talk, bottom = H - 10) {
+  const box = '<div class="pbox">&gt; <span class="typed"></span><span class="tcur"></span></div>';
+  const t = el("div", "term-x claude", `<pre>${talk}${box}${you("  ? for shortcuts")}</pre>`);
+  const below = 40, rows = LINE + BOX;
+  place(t, { x: GUTTER, y: 0, w: W - GUTTER + 40, h: H + below });
+  const end = rows + Math.floor((bottom - rows) / LINE) * LINE;
+  t.firstChild.style.paddingBottom = `${H + below - end}px`;
+  t.end = end;
+  return t;
+}
+
 // The selection strip's rows, as Config.stripRows shows them for three screenshots.
 const ICONS = {
   copy: '<rect x="6" y="6" width="9" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4 13V5a2 2 0 0 1 2-2h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',

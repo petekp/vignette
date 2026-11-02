@@ -157,3 +157,5 @@
 .feature-pic.replays { cursor: pointer; }
 /* Front (front.js): the stays page ends above the window's bottom on its own background. */
 .feature-pic .window .page { background: #f5f1e8; }
+/* Agent (agent.js): lines Claude Code prints at once, which a rewind closes up. */
+.scene .term-x .grp { flex: none; overflow: hidden; transition: height 0.25s var(--spring, ease), opacity 0.2s; }
