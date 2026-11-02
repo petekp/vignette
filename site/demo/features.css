@@ -121,7 +121,7 @@
 .scene .twice.on { opacity: 1; transform: none; }
 .scene .stitched { position: absolute; background: #1a1a1a; }
 .scene .sbadge { position: absolute; z-index: 2; display: grid; place-items: center; border-radius: 50%; background: #e03131; color: #fff; font-family: var(--sans); font-weight: 700; line-height: 1; }
-.scene .cardx.ghost { left: 0; top: 0; z-index: 4; transition: opacity 0.15s; pointer-events: none; }
+.scene .cardx.ghost { left: 0; top: 0; z-index: 4; pointer-events: none; }
 .scene .term-x .pbox { margin-top: 6px; padding: 6px 10px; border: 1px solid #3a3d44; border-radius: 8px; }
 .scene .term-x .tcur { display: inline-block; width: 8px; height: 15px; vertical-align: -3px; background: #c9ccd3; }
 
@@ -139,7 +139,7 @@
 .scene .kcap.shiftk { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; padding: 7px 10px 8px; font-size: 12px; }
 .scene .shiftk span:first-child { font-size: 15px; }
 .scene .cardx.lifted::after, .scene .cardx.lifted .scircle { transition: none; }
-.scene .term-x .typed { transition: opacity 0.25s; }
+.scene .term-x .typed { display: inline-block; overflow: hidden; vertical-align: top; transition: width 0.25s var(--spring, ease); }
 .scene .cam { position: absolute; inset: 0; transform-origin: 0 0; }
 
 /* Agent, Front and tiles (agent.js, front.js): a shell command Claude Code has run, one dim line. */
@@ -149,3 +149,6 @@
 .scene .fkeys.up { opacity: 1; transform: scale(var(--scale)); }
 .scene .fkeys .twice { color: rgb(255 255 255 / 0.8); }
 .scene .kcap.esck { min-width: 66px; display: flex; align-items: flex-end; justify-content: flex-start; padding: 7px 10px 8px; font-size: 12px; }
+/* Drag (stack.js): Claude Code keeps its prompt at the bottom of the terminal, under the
+   conversation, which runs off the top. */
+.scene .term-x.claude pre { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; box-sizing: border-box; }

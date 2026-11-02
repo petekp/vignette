@@ -278,12 +278,22 @@ export class Stitch extends Column {
 
 export class Drag extends Column {
   // The newest card, which has a drawing, is dragged out of the stack into Claude Code, and the
-  // prompt takes it as an image. The card stays in the stack.
+  // prompt takes it as an image. The card stays in the stack. Claude Code keeps its prompt at the
+  // bottom of the terminal, with a hint line under it, and the conversation scrolls above.
   static fit = wideFit(236);
   build({ W, H }) {
     const s = this.scene(W, H);
-    const t = el("div", "term-x", '<pre><div class="ln"><span class="t-claude">●</span> Which stay is it?</div><div class="ln"> </div><div class="pbox">&gt; <span class="typed"></span><span class="tcur"></span></div></pre>');
-    place(t, { x: GUTTER, y: 0, w: W - GUTTER + 40, h: H + 40 });
+    const ln = (html, cls = "") => `<div class="ln${cls}">${html}</div>`;
+    const said = (text) => ln(`<span class="t-said">●</span> ${text}`), you = (text) => ln(text, " t-dim"), gap = ln(" ");
+    // Every line ends left of the column, at every width.
+    const talk = W >= 520
+      ? [said("Added the three stays to the map."), gap, you("&gt; Number the days."), gap, said("Done. Each day has its number now."), gap, you("&gt; Remind the host to confirm our stay.")]
+      : [said("Mapped the stays."), gap, you("&gt; Number the days."), gap, said("Done."), gap, you("&gt; Remind the host"), you("  to confirm.")];
+    const box = '<div class="pbox">&gt; <span class="typed"></span><span class="tcur"></span></div>';
+    const t = el("div", "term-x claude", `<pre>${[...talk, gap, said("Which stay is it?"), box, you("  ? for shortcuts")].join("")}</pre>`);
+    const below = 40, inset = 10;
+    place(t, { x: GUTTER, y: 0, w: W - GUTTER + 40, h: H + below });
+    t.firstChild.style.paddingBottom = `${below + inset}px`;
     this.typed = t.querySelector(".typed");
     s.insertBefore(t, this.col);
     this.column(SHOTS.slice(1));
@@ -296,7 +306,9 @@ export class Drag extends Column {
     s.append(this.pointer);
     this.grab = { x: CW * 0.55, y: CH * 0.55 };
     this.from = { x: this.R - CW + this.grab.x, y: this.bottom - CH + this.grab.y };
-    this.drop = { x: Math.min(GUTTER + 250, this.R - CW - 50), y: 78 };
+    // The drop lands on the prompt's line: above the hint line, the box's lower border and padding.
+    const line = 13 * 1.65;
+    this.drop = { x: Math.min(GUTTER + 250, this.R - CW - 50), y: H - inset - line - 7 - line / 2 };
     this.m = new Motion((m) => {
       const t = m.get("t"), p = m.get("p");
       const x = t > 0 ? lerp(this.from.x, this.drop.x, t) : lerp(W + 10, this.from.x, p);
@@ -306,16 +318,20 @@ export class Drag extends Column {
     }).add("t", 0, 0.001).add("p", 0, 0.001);
     return s;
   }
-  dropped(on) { this.typed.textContent = on ? "[Image #1] " : ""; }
+  dropped(on) { this.typed.textContent = on ? "[Image #1] " : ""; this.typed.style.width = ""; }
   reset() {
     this.ghost.style.opacity = 0; this.pointer.classList.remove("down"); this.dropped(false);
-    this.typed.style.opacity = this.pointer.style.opacity = "";
+    this.pointer.style.opacity = "";
     this.m.jump("p", 0); this.m.jump("t", 0);
   }
-  // The dropped image and the pointer fade from the prompt.
+  // The pointer fades, and the dropped image's text closes up from its end with the caret after it,
+  // as deleting it would take it.
   async rewind() {
-    this.typed.style.opacity = this.pointer.style.opacity = 0;
-    await wait(0.25);
+    this.pointer.style.opacity = 0;
+    this.typed.style.width = `${this.typed.scrollWidth}px`;
+    void this.typed.offsetWidth;
+    this.typed.style.width = "0px";
+    await wait(0.3);
   }
   final() { this.reset(); this.m.jump("p", 1); this.m.jump("t", 1); this.dropped(true); }
   // The drag in mid-flight over the prompt.
