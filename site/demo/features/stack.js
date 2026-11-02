@@ -21,6 +21,12 @@ const SHOTS = [
     { type: "note", who: "person", x: 40, y: 972, text: "this one" },
   ]],
 ];
+const STRIP = [
+  ["Copy", "⌘C", '<rect x="6" y="6" width="9" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4 13V5a2 2 0 0 1 2-2h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'],
+  ["Draw", "↩", '<path d="M4 16l1-4 8-8 3 3-8 8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M11 17h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'],
+  ["Stitch", "⌘S", '<rect x="4" y="8" width="12" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 5.5h8M8 3h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'],
+  ["Delete", "⌘⌫", '<path d="M4.5 6h11M8 6V4h4v2M6 6l.8 10.5h6.4L14 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>'],
+];
 const at = (node, x, y, s = 1) => { node.style.transform = `translate(${x}px, ${y}px) scale(${s})`; };
 async function tap(key, hold = 0.09) { key.classList.add("down"); await wait(hold); key.classList.remove("down"); }
 
@@ -115,7 +121,7 @@ function fill(c, [image, view], r) {
 }
 
 export class Stitch extends Column {
-  // Three cards are picked and ⌘S goes down. As in ThumbnailController.stitched, the pieces leave
+  // Three cards are picked, with the selection strip beside them, and ⌘S lights its Stitch row. As in ThumbnailController.stitched, the pieces leave
   // the column, which closes up around the new card's slot at once, and each flies into that slot
   // (TransitionLayer.converge). The stitched image waits there unseen and takes over in the last
   // part of the flight, and the new card says Copied.
@@ -128,7 +134,8 @@ export class Stitch extends Column {
     this.slot = { w: size.w * SCALE, h: size.h * SCALE };
     Object.assign(this.slot, { x: this.R - this.slot.w, y: this.bottom - this.slot.h });
     // The cards above the three, which move down to the new card.
-    this.kept = this.column([[IMAGES.frame, whole(IMAGES.frame), []], SHOTS[0]], this.bottom - 3 * STEP);    this.drop = this.slot.y - UI.cardSpacing - (this.bottom - 3 * STEP);
+    this.kept = this.column([[IMAGES.frame, whole(IMAGES.frame), []], SHOTS[0]], this.bottom - 3 * STEP);
+    this.drop = this.slot.y - UI.cardSpacing - (this.bottom - 3 * STEP);
     this.result = el("div", "cardx");
     place(this.result, this.slot);
     const clip = el("div", "shot");
@@ -159,9 +166,13 @@ export class Stitch extends Column {
       s.append(c);
       return c;
     });
-    this.key = el("div", "kcap", "⌘S");
-    place(this.key, { x: GUTTER, y: this.bottom - CH - 30 });
-    s.append(this.key);
+    // The selection strip, a strip gap left of the cards and centred on the picked ones
+    // (StackLayout.stripPlacement), with the rows Config.stripRows shows for three screenshots.
+    this.strip = el("div", "qstrip", STRIP.map(([label, key, icon]) =>
+      `<div class="row"><svg viewBox="0 0 20 20" width="15" height="15">${icon}</svg><span>${label}</span><kbd>${key}</kbd></div>`).join(""));
+    Object.assign(this.strip.style, { right: `${W - (this.R - CW) + 16 * SCALE}px`, top: `${this.bottom - STEP - CH / 2 - 64}px` });
+    this.stitchRow = this.strip.children[2];
+    s.append(this.strip);
     this.m = new Motion((m) => {
       const p = m.get("p"), fade = m.get("fade");
       this.cards.forEach((c, i) => {
@@ -188,6 +199,8 @@ export class Stitch extends Column {
   // A flight's image is the card's picture alone, so the selection leaves the pieces as they lift.
   pick(on, lifted = false) {
     this.cards.forEach((c) => { c.classList.toggle("picked", on); c.classList.toggle("lifted", lifted); c.num.classList.toggle("on", on); });
+    this.strip.classList.toggle("up", on);
+    if (on) this.stitchRow.classList.remove("lit");
   }
   reset() {
     this.pick(true); this.notice.classList.remove("in");
@@ -204,7 +217,8 @@ export class Stitch extends Column {
   async play() {
     this.reset();
     await wait(0.35);
-    await tap(this.key, 0.12);
+    this.stitchRow.classList.add("lit");
+    await tap(this.stitchRow, 0.12);
     this.pick(false, true);
     this.m.to("close", 1, UI.relayout);
     const landed = this.m.to("p", 1, UI.expand, UI.flightBounce);
