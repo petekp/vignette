@@ -1,129 +1,104 @@
-import { el, Motion, Spring, UI, wait } from "../vignette.js";
+import { el, Motion, UI, wait, motion } from "../vignette.js";
 import { IMAGES, PERSON_MARKS } from "../cards.js";
-import { lerp, clamp, GUTTER, card, whole, smallFit } from "./parts.js";
+import { lerp, clamp, GUTTER, card, whole, smallFit, POINTER } from "./parts.js";
 
 const CW = 128, CH = 80;
-// How long the card is in the air before Esc goes down.
-const ESC_AT = 0.22;
-// The onion skins: where they sit along the way out, as fractions of how far the card got, and how
-// strongly each shows, faintest by the slot.
-const SKINS = [[0.3, 0.018], [0.55, 0.026], [0.78, 0.034], [1, 0.042]];
-const SVG_NS = "http://www.w3.org/2000/svg";
+// The three cards in the stack, top to bottom. The first starts in the editor.
+const LIST = [
+  [IMAGES.itin, { x: 1050, y: 230, w: 760, h: 475 }, PERSON_MARKS.slice(0, 2)],
+  [IMAGES.stays, whole(IMAGES.stays), []],
+  [IMAGES.packing, whole(IMAGES.packing), []],
+];
+// Look.card and Look.annotator: the shadow a card casts in the stack and the editor's frame casts.
+const LOOK = {
+  card: { y: 4, blur: 8, spread: 0, alpha: 0.35 },
+  annotator: { y: 18, blur: 40, spread: -14, alpha: 0.5 },
+};
 
 export class Flight {
-  // A card leaves its slot in the stack for the editor. Esc goes down while it is in the air, and
-  // it turns around from where it is and lands back in its slot, which the stack held open. The
-  // trace stays as the picture of the flight: a line along the arc its leading corner travelled,
-  // fuller toward the dot where it turned, over soft onion skins of the card along the way.
+  // A card is in the editor. The pointer clicks the bottom card in the stack, then the middle one:
+  // each time the card in the editor flies home while the clicked one flies out, two bowed flights
+  // at once, and the stack holds the slot of the card that is out.
   static fit = smallFit(222);
   build({ W, H }) {
-    const s = el("div", "scene");
+    const s = this.s = el("div", "scene fades");
     s.style.width = `${W}px`; s.style.height = `${H}px`;
+    this.W = W;
     const x = W - GUTTER - CW;
-    this.slot = { x, y: 4 + CH + UI.cardSpacing, w: CW, h: CH };
-    const ew = Math.min(200, W * 0.54);
-    this.editor = { x: GUTTER, y: 4, w: ew, h: ew * 0.625 };
-    this.trace = el("div", "trace");
-    this.skins = SKINS.map(([at, o]) => {
-      const g = el("div", "skin");
-      const r = this.rect(at * Flight.farthest());
-      Object.assign(g.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
-      g.style.setProperty("--o", o);
-      g.at = at * Flight.farthest();
-      this.trace.append(g);
-      return g;
+    this.slots = LIST.map((_, i) => ({ x, y: 4 + i * (CH + UI.cardSpacing), w: CW, h: CH }));
+    const fw = x - GUTTER - 16;
+    this.frame = { x: GUTTER, y: 4, w: fw, h: fw * (CH / CW) };
+    // Each card is laid out at the frame's size and scaled down to its slot, so it stays sharp in
+    // the editor.
+    this.cards = LIST.map(([image, view, marks], i) => {
+      const c = card(image, view, marks, { x: 0, y: 0, w: this.frame.w, h: this.frame.h });
+      c.classList.add("flying");
+      s.append(c);
+      c.m = new Motion((m) => this.draw(c, i, m.get("p"), m.get("h"))).add("p", 0, 0.0008).add("h", 0, 0.001);
+      return c;
     });
-    const svg = document.createElementNS(SVG_NS, "svg");
-    svg.setAttribute("class", "over");
-    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-    svg.innerHTML = '<path class="arc" fill="currentColor"/><g class="turn"><circle r="7" fill="currentColor" opacity="0.12"/><circle r="3.2" fill="currentColor" opacity="0.75"/></g>';
-    this.trace.append(svg);
-    this.arc = svg.querySelector(".arc");
-    this.turn = svg.querySelector(".turn");
-    s.append(this.trace);
-    // The cards above and below it in the stack.
-    const rest = [[IMAGES.stays, whole(IMAGES.stays), 0], [IMAGES.packing, whole(IMAGES.packing), 2]];
-    for (const [image, view, i] of rest) s.append(card(image, view, [], { x, y: 4 + i * (CH + UI.cardSpacing), w: CW, h: CH }));
-    this.card = card(IMAGES.itin, { x: 1050, y: 230, w: 760, h: 475 }, PERSON_MARKS.slice(0, 2), { x: 0, y: 0, w: CW, h: CH });
-    this.card.classList.add("flying");
-    s.append(this.card);
-    this.key = el("div", "kcap esc", "esc");
-    // Under the farthest skin, which the bow carries below the editor's own rect.
-    this.key.style.left = `${GUTTER}px`;
-    this.key.style.top = `${this.editor.y + this.editor.h + 36}px`;
-    s.append(this.key);
-    this.m = new Motion((m) => this.draw(m.get("p"))).add("p", 0, 0.0005);
+    this.pointer = el("div", "pointer", POINTER);
+    s.append(this.pointer);
+    this.pm = new Motion((m) => {
+      this.pointer.style.transform = `translate(${m.get("x") - 10}px, ${m.get("y") - 7}px)`;
+    }).add("x", W + 20, 0.05).add("y", 120, 0.05);
     return s;
   }
-  // How far out the card gets before Esc turns it, from the same spring a play runs, so the poster
-  // shows the trace a play leaves.
-  static farthest() {
-    if (Flight.far) return Flight.far;
-    const s = new Spring(0, 0.0005).to(1, UI.expand, UI.flightBounce), dt = 1 / 240;
-    let t = 0, far = 0;
-    while (t < ESC_AT) { s.step(dt); t += dt; far = Math.max(far, s.x); }
-    s.to(0, UI.expand, UI.flightBounce);
-    while (s.moving && t < 3) { s.step(dt); t += dt; far = Math.max(far, s.x); }
-    return (Flight.far = far);
+  // p is 0 in the slot and 1 in the editor; h is the hover. The path bows to one side of the line
+  // between slot and frame and swells in the middle, as FlightCurve does, and the shadow goes from
+  // the card's to the editor's.
+  draw(c, i, p, h) {
+    const slot = this.slots[i], to = this.frame, grow = 1 + (UI.hoverScale - 1) * h;
+    const from = { x: slot.x - (slot.w * (grow - 1)) / 2, y: slot.y - (slot.h * (grow - 1)) / 2, w: slot.w * grow, h: slot.h * grow };
+    const dx = to.x + to.w / 2 - (from.x + from.w / 2), dy = to.y + to.h / 2 - (from.y + from.h / 2);
+    const len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len, side = nx < 0 ? -1 : 1;
+    const t = clamp(p, 0, 1), m = motion();
+    const off = Math.min(UI.flightArc * len, UI.flightArcMax) * m * Math.sin(Math.PI * t) * side;
+    const swell = 1 + UI.flightDepth * m * Math.sin(Math.PI * t);
+    const w = lerp(from.w, to.w, p) * swell, hh = lerp(from.h, to.h, p) * swell;
+    const cx = lerp(from.x + from.w / 2, to.x + to.w / 2, p) + nx * off, cy = lerp(from.y + from.h / 2, to.y + to.h / 2, p) + ny * off;
+    const k = w / this.frame.w;
+    c.style.transform = `translate(${cx - w / 2}px, ${cy - hh / 2}px) scale(${k})`;
+    c.style.borderRadius = `${UI.cardCorner / k}px`;
+    const a = LOOK.card, b = LOOK.annotator;
+    c.style.boxShadow = `0 ${lerp(a.y, b.y, t) / k}px ${lerp(a.blur, b.blur, t) / k}px ${lerp(a.spread, b.spread, t) / k}px rgb(0 0 0 / ${lerp(a.alpha, b.alpha, t)})`;
+    if (!c.leading) c.style.zIndex = p > 0.001 ? 2 : 1;
   }
-  // The card's leading corner, which stays outside the card as it flies, so its path shows.
-  corner(p) { const r = this.rect(p); return [r.x, r.y]; }
-  // p is 0 in the slot and 1 in the editor. The path bows to one side, as FlightCurve's does.
-  rect(p) {
-    const a = this.slot, b = this.editor;
-    const bow = Math.sin(Math.PI * clamp(p, 0, 1)) * 24;
-    return { x: lerp(a.x, b.x, p) + bow * 0.5, y: lerp(a.y, b.y, p) + bow, w: lerp(a.w, b.w, p), h: lerp(a.h, b.h, p) };
+  // `open` in the editor, and the pointer resting at `at`, or off the right edge.
+  hold(open, at) {
+    this.cards.forEach((c, i) => { c.leading = false; c.m.jump("h", 0); c.m.jump("p", i === open ? 1 : 0); });
+    this.pm.jump("x", at ? at.x : this.W + 20); this.pm.jump("y", at ? at.y : 120);
+    this.pointer.classList.remove("down");
   }
-  draw(p) {
-    const r = this.rect(p), k = r.w / CW, lift = clamp(p, 0, 1);
-    this.card.style.transform = `translate(${r.x}px, ${r.y}px) scale(${k})`;
-    this.card.style.borderRadius = `${16 / k}px`;
-    this.card.style.boxShadow = `0 ${(4 + 14 * lift) / k}px ${(8 + 26 * lift) / k}px rgb(0 0 0 / ${0.35 + 0.2 * lift})`;
-    if (this.tracing && p > this.reached) this.show(p, this.turned);
+  aim(i) { const r = this.slots[i]; return { x: r.x + r.w * 0.55, y: r.y + r.h * 0.4 }; }
+  reset() { this.s.style.opacity = 1; this.hold(0); }
+  final() { this.reset(); this.hold(1, this.aim(1)); }
+  // The pointer reaches card `next`, which grows under it, and clicks: the card in the editor
+  // flies home as `next` flies out, over it.
+  async swap(open, next) {
+    const at = this.aim(next), c = this.cards[next];
+    await Promise.all([this.pm.to("x", at.x, 0.4), this.pm.to("y", at.y, 0.4)]);
+    c.m.to("h", 1, 0.25);
+    await wait(0.18);
+    this.pointer.classList.add("down");
+    await wait(0.09);
+    this.pointer.classList.remove("down");
+    this.cards[open].leading = false;
+    c.leading = true;
+    c.style.zIndex = 3;
+    this.cards[open].m.to("p", 0, UI.expand, UI.flightBounce);
+    c.m.to("h", 0, UI.expand, UI.flightBounce);
+    await c.m.to("p", 1, UI.expand, UI.flightBounce);
   }
-  // The trace out to `far`: the skins the card has passed, and the arc as a filled shape 0.4 pt
-  // wide at the slot and 3 pt at the far end, so it tapers without joins.
-  show(far, turned) {
-    this.reached = far; this.turned = turned;
-    this.skins.forEach((g) => g.classList.toggle("on", g.at <= far + 0.03));
-    this.turn.classList.toggle("on", turned);
-    const [tx, ty] = this.corner(far);
-    this.turn.setAttribute("transform", `translate(${tx} ${ty})`);
-    if (far < 0.02) { this.arc.setAttribute("d", ""); return; }
-    const n = 40, pts = Array.from({ length: n + 1 }, (_, i) => this.corner((i / n) * far));
-    const left = [], right = [];
-    pts.forEach(([x, y], i) => {
-      const [ax, ay] = pts[Math.max(0, i - 1)], [bx, by] = pts[Math.min(n, i + 1)];
-      const len = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / len, ny = (bx - ax) / len;
-      const w = (0.4 + 2.6 * (i / n)) / 2;
-      left.push([x + nx * w, y + ny * w]); right.push([x - nx * w, y - ny * w]);
-    });
-    this.arc.setAttribute("d", `M${[...left, ...right.reverse()].map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" L")} Z`);
-  }
-  reset() {
-    this.trace.style.opacity = 1;
-    this.tracing = false;
-    this.show(0, false);
-    this.key.classList.remove("down");
-    this.m.jump("p", 0);
-  }
-  final() { this.reset(); this.show(Flight.farthest(), true); }
   async play() {
     this.reset();
-    await wait(0.15);
-    this.tracing = true;
-    this.m.to("p", 1, UI.expand, UI.flightBounce);
-    await wait(ESC_AT);
-    this.key.classList.add("down");
-    this.show(this.reached, true);
-    const back = this.m.to("p", 0, UI.expand, UI.flightBounce);
-    await wait(0.14);
-    this.key.classList.remove("down");
-    await back;
-    this.tracing = false;
+    await wait(0.2);
+    await this.swap(0, 2);
+    await wait(0.25);
+    await this.swap(2, 1);
   }
   async rewind() {
-    this.trace.style.opacity = 0;
+    this.s.style.opacity = 0;
     await wait(0.25);
   }
 }
