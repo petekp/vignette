@@ -293,7 +293,11 @@ export class Drag extends Column {
       : [said("Mapped the stays."), gap, you("&gt; Number the days."), gap, said("Done."), gap, you("&gt; Remind the host"), you("  to confirm.")];
     const box = '<div class="pbox">&gt; <span class="typed"></span><span class="tcur"></span></div>';
     const t = el("div", "term-x claude", `<pre>${[...talk, gap, said("Which stay is it?"), box, you("  ? for shortcuts")].join("")}</pre>`);
-    const below = 40, inset = 10;
+    // .term-x's line, and the prompt box's margin, padding and border.
+    const line = 13 * 1.65, boxH = line + 6 + 12 + 2;
+    // A conversation taller than the picture runs off its top on a line boundary, so no line is cut.
+    const margin = 10, talkBottom = H - margin - line - boxH - 2 * line;
+    const inset = margin + (talkBottom < talk.length * line ? talkBottom % line : 0), below = 40;
     place(t, { x: GUTTER, y: 0, w: W - GUTTER + 40, h: H + below });
     t.firstChild.style.paddingBottom = `${below + inset}px`;
     this.typed = t.querySelector(".typed");
@@ -309,7 +313,6 @@ export class Drag extends Column {
     this.grab = { x: CW * 0.55, y: CH * 0.55 };
     this.from = { x: this.R - CW + this.grab.x, y: this.bottom - CH + this.grab.y };
     // The drop lands on the prompt's line: above the hint line, the box's lower border and padding.
-    const line = 13 * 1.65;
     this.drop = { x: Math.min(GUTTER + 250, this.R - CW - 50), y: H - inset - line - 7 - line / 2 };
     this.m = new Motion((m) => {
       const t = m.get("t"), p = m.get("p");
