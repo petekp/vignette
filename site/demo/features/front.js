@@ -2,6 +2,27 @@ import { el, cardSize, place, coverRect, Motion, UI, wait } from "../vignette.js
 import { IMAGES, PERSON_MARKS } from "../cards.js";
 import { card, whole } from "./parts.js";
 
+// BackdropPanel's strip at the app's defaults: bands of blur whose radius grows toward the screen's
+// edge, each fading in over the band before it and out over the next, under a tint that darkens to
+// the edge.
+const BANDS = 7, BLUR = 25, RAMP = 1.2;
+function backdrop() {
+  const b = el("div", "backdrop");
+  b.style.width = `${UI.backdropWidth}px`;
+  const step = 100 / BANDS;
+  for (let i = 0; i < BANDS; i++) {
+    const stops = i === 0 ? ["transparent 0%", `#000 ${step}%`] : [`transparent ${step * (i - 1)}%`, `#000 ${step * i}%`];
+    stops.push(...(i === BANDS - 1 ? ["#000 100%"] : [`#000 ${step * (i + 1)}%`, `transparent ${Math.min(100, step * (i + 2))}%`]));
+    const mask = `linear-gradient(90deg, ${stops.join(", ")})`;
+    const blur = `blur(${(BLUR * ((i + 1) / BANDS) ** RAMP).toFixed(2)}px)`;
+    const band = el("i");
+    Object.assign(band.style, { backdropFilter: blur, webkitBackdropFilter: blur, maskImage: mask, webkitMaskImage: mask });
+    b.append(band);
+  }
+  b.append(el("b"));
+  return b;
+}
+
 export class Front {
   // The top-right of a screen: Chrome in front, its address bar taking the typing. The typing
   // pauses, the stack slides in at the screen's edge and takes the keys, so the caret goes, and Esc
@@ -38,8 +59,7 @@ export class Front {
     // Compact, the address is shorter, so its typing stays clear of the stack's blur.
     this.first = "stays";
     this.more = compact ? "/villa" : "/belvedere";
-    this.backdrop = el("div", "backdrop", "<i></i><i></i><i></i><i></i><i></i><b></b>");
-    this.backdrop.style.width = compact ? "200px" : "240px";
+    this.backdrop = backdrop();
     s.append(this.backdrop);
     const list = compact ? [[IMAGES.chat, []], [IMAGES.itin, PERSON_MARKS]] : [[IMAGES.packing, []], [IMAGES.chat, []], [IMAGES.itin, PERSON_MARKS]];
     this.cards = [];
@@ -58,7 +78,9 @@ export class Front {
       y -= UI.cardSpacing;
     }
     this.m = new Motion((m) => {
-      this.backdrop.style.setProperty("--shown", m.get("backdrop"));
+      const b = m.get("backdrop");
+      this.backdrop.style.setProperty("--shown", b);
+      this.backdrop.style.transform = `translateX(${(1 - b) * UI.backdropWidth}px)`;
       this.cards.forEach((c, i) => { c.style.transform = `translateX(${m.get(`x${i}`) * c.away}px)`; });
     }).add("backdrop", 0);
     this.cards.forEach((_, i) => this.m.add(`x${i}`, 1, 0.001));
