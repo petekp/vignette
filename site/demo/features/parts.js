@@ -1,6 +1,6 @@
 // What the feature tiles' pictures are made of: parts of screenshots, cards as the stack draws them,
 // and the layout every small picture shares.
-import { picture, el, place } from "../vignette.js";
+import { picture, el, place, wait, UI } from "../vignette.js";
 
 export const lerp = (a, b, t) => a + (b - a) * t;
 export const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -40,9 +40,73 @@ export function overlay(w, h, html = "") {
 export const POINTER = '<svg width="24" height="24" viewBox="0 0 32 32"><g transform="translate(10 7)"><path d="m6.148 18.473 1.863-1.003 1.615-.839-2.568-4.816h4.332l-11.379-11.408v16.015l3.316-3.221z" fill="#fff"/><path d="m6.431 17 1.765-.941-2.775-5.202h3.604l-8.025-8.043v11.188l2.53-2.442z" fill="#000"/></g></svg>';
 
 // Small tiles are laid out for their width, at about the app's own size. `rest` is how much of a
-// scene's height must show: its payoff, whole, with a gutter under it.
+// scene's height must show: its payoff, whole, with a gutter under it. A scene wider than 375 pt
+// lays its payoff out larger, so its height grows with its width.
 export const smallFit = (rest) => (slotW) => {
   const k = clamp(slotW / 375, 0.86, 1.15);
-  const W = Math.round(slotW / k);
-  return { W, H: 250, rest, k, key: String(W) };
+  const W = Math.round(slotW / k), grow = Math.max(1, W / 375);
+  return { W, H: Math.round(250 * grow), rest: Math.round(rest * grow), k, key: String(W) };
 };
+// The tiles under the first stage are wider than the feature tiles. Their pictures keep the feature
+// tiles' scale from 375 pt up, so a wider tile shows more rather than drawing larger, and fill the
+// slot's height, which the tile beside them can stretch.
+export const wideFit = (rest) => (slotW, slotH = 0) => {
+  const k = clamp(slotW / 375, 0.86, 1);
+  const W = Math.round(slotW / k), H = Math.max(rest, Math.ceil(slotH / k));
+  return { W, H, rest, k, key: `${W} ${H}` };
+};
+
+// Claude Code in a terminal, as Drag and Agent draw it: the conversation runs off the terminal's
+// top, over the prompt box with its hint line under it. The terminal spans the picture from the
+// gutter and runs off its right and bottom edges. `talk` is the conversation's markup, built from
+// the lines below.
+export const line = (html, cls = "") => `<div class="ln${cls}">${html}</div>`;
+export const said = (html) => line(`<span class="t-said">●</span> ${html}`);
+export const you = (text) => line(text, " t-dim");
+export const gap = line(" ");
+// .term-x's line height, and the prompt box's height with its margin, border and padding.
+export const LINE = 13 * 1.65;
+const BOX = LINE + 20;
+// The hint line ends at most `bottom` down the picture, and at the line that leaves the conversation
+// cut at the picture's top edge between two lines.
+export function claudeCode(W, H, talk, bottom = H - 10) {
+  const box = '<div class="pbox">&gt; <span class="typed"></span><span class="tcur"></span></div>';
+  const t = el("div", "term-x claude", `<pre>${talk}${box}${you("  ? for shortcuts")}</pre>`);
+  const below = 40, rows = LINE + BOX;
+  place(t, { x: GUTTER, y: 0, w: W - GUTTER + 40, h: H + below });
+  const end = rows + Math.floor((bottom - rows) / LINE) * LINE;
+  t.firstChild.style.paddingBottom = `${H + below - end}px`;
+  t.end = end;
+  return t;
+}
+
+// The selection strip's rows, as Config.stripRows shows them for three screenshots.
+const ICONS = {
+  copy: '<rect x="6" y="6" width="9" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4 13V5a2 2 0 0 1 2-2h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  draw: '<path d="M4 16l1-4 8-8 3 3-8 8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M11 17h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  stitch: '<rect x="4" y="8" width="12" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 5.5h8M8 3h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  trash: '<path d="M4.5 6h11M8 6V4h4v2M6 6l.8 10.5h6.4L14 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>',
+};
+const ROWS = [["copy", "Copy", "⌘C"], ["draw", "Draw", "↩"], ["stitch", "Stitch", "⌘S"], ["trash", "Delete", "⌘⌫"]];
+export const selectionStrip = () => el("div", "qstrip", ROWS.map(([icon, label, key]) =>
+  `<div class="row" data-row="${icon}"><svg viewBox="0 0 20 20" width="15" height="15">${ICONS[icon]}</svg><span>${label}</span><kbd>${key}</kbd></div>`).join(""));
+
+// Keys as a Mac's keyboard draws them, for the tiles whose beat a key causes: right Shift with its
+// glyph over its name, and Esc.
+export const shiftKey = () => el("div", "kcap shiftk", "<span>⇧</span><span>shift</span>");
+export const escKey = () => el("div", "kcap esck", "<span>esc</span>");
+export const twice = () => el("div", "twice", "×2");
+export async function tap(key, hold = 0.09) { key.classList.add("down"); await wait(hold); key.classList.remove("down"); }
+
+// The editor's toolbar, under its frame: the tools, the box tool on, and Copy.
+const TOOLS = [
+  '<path d="M5 3l12 8-5.5 1.2L9 18z" fill="currentColor"/>',
+  '<rect x="3.5" y="5.5" width="15" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/>',
+  '<path d="M5 17L17 5M9 5h8v8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+  '<text x="11" y="16" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor" font-family="system-ui">Aa</text>',
+];
+export function editorBar(frame) {
+  const bar = el("div", "qbar", `<div class="bar">${TOOLS.map((t, i) => `<span class="tool${i === 1 ? " on" : ""}"><svg viewBox="0 0 22 22" width="22" height="22">${t}</svg></span>`).join("")}<span class="divider"></span><span class="copy">Copy <kbd>↩</kbd></span></div>`);
+  Object.assign(bar.style, { left: `${frame.x + frame.w / 2}px`, top: `${frame.y + frame.h + UI.toolbarGap}px` });
+  return bar;
+}

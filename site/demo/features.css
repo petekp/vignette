@@ -67,11 +67,10 @@
   transition: transform 0.08s, box-shadow 0.08s;
 }
 .scene .kcap.down { transform: translateY(2.5px); box-shadow: inset 0 -0.5px 0 var(--key-edge), 0 0 0 0.5px var(--key-edge), 0 1px 2px rgb(0 0 0 / 0.12); }
-.scene .kcap.esc { min-width: 56px; font-size: 15px; }
 /* Several in a row: the stack's column, which narrows while the editor is open, the selection
    strip beside it, and the editor's bar. A row or button lights while its key runs it. */
 .scene.fades { transition: opacity 0.25s; }
-.scene .qcol { position: absolute; transform-origin: 100% 0; }
+.scene .qcol { position: absolute; transform-origin: 100% 100%; }
 .scene .qstrip {
   position: absolute; display: flex; flex-direction: column; gap: 4px; padding: 4px; border-radius: 12px;
   background: rgb(38 38 40 / 0.9); box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.18), 0 4px 10px rgb(0 0 0 / 0.25);
@@ -90,23 +89,73 @@
 .scene .qbar .bar > span.tool { width: 34px; padding: 0; }
 .scene .qstrip .row.lit, .scene .qbar .copy.lit { background: rgb(255 255 255 / 0.2); }
 .scene .qstrip .row.down, .scene .qbar .copy.down { transform: scale(0.94); }
-/* A card in flight, and the faint outlines it leaves along the way. */
+/* A card in flight. */
 .scene .cardx.flying { left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
-.scene .qcol ~ .cardx.flying { visibility: hidden; }
-.scene .trace { position: absolute; inset: 0; transition: opacity 0.25s; }
-.scene .trace .outline { position: absolute; border-radius: 16px; border: 1.5px solid currentColor; opacity: 0; transition: opacity 0.12s; }
-.scene .trace .outline.on { opacity: 0.16; }
 .scene .crosshair { position: absolute; left: 0; top: 0; z-index: 5; transition: opacity 0.25s; pointer-events: none; }
 .scene .pointer { position: absolute; left: 0; top: 0; z-index: 5; width: 24px; height: 24px; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35)); transition: opacity 0.25s; }
 .scene .pointer svg { transform-origin: 10px 7px; transition: transform 0.1s; }
 .scene .pointer.down svg { transform: scale(0.88); }
 /* Claude Code in a terminal. */
 .scene .term-x { position: absolute; overflow: hidden; border-radius: 12px; background: #0c0e12; color: #c9ccd3; font: 13px/1.65 var(--mono); box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.12), 0 18px 40px -16px rgb(0 0 0 / 0.5); }
-.scene .term-x .bar-t { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; background: #15171c; }
-.scene .term-x .bar-t i { width: 11px; height: 11px; border-radius: 50%; background: #3a3d44; }
-.scene .term-x pre { margin: 0; padding: 12px 16px; font: inherit; white-space: pre; }
+.scene .term-x pre { margin: 0; padding: 14px 16px; font: inherit; white-space: pre; }
+.scene .term-x b { font-weight: 700; color: #e6e6e6; }
 .scene .term-x .ln { transition: opacity 0.25s; }
 .scene .term-x .ln.hid { opacity: 0; }
 .scene .t-claude { color: #d97757; }
 .scene .t-dim { color: #6b7080; }
 .scene .t-hi { color: #e6e6e6; }
+/* Claude Code's dots: white before its prose, grey and blinking before a tool call that runs. */
+.scene .t-said { color: #e6e6e6; }
+.scene .t-run { color: #8b8f99; animation: blink 1s steps(1) infinite; }
+@media (prefers-reduced-motion: reduce) { .scene .t-run { animation: none; } }
+.scene .t-out { color: #8b8f99; }
+/* In dark mode the terminal's edge is lifted off the tile. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .scene .term-x { box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16), inset 0 1px 0 rgb(255 255 255 / 0.08), 0 18px 40px -16px rgb(0 0 0 / 0.7); }
+}
+:root[data-theme="dark"] .scene .term-x { box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16), inset 0 1px 0 rgb(255 255 255 / 0.08), 0 18px 40px -16px rgb(0 0 0 / 0.7); }
+/* The tiles under the first stage: right Shift tapped twice, a stitched card with Stitch's own
+   badges, and a card's drag image over Claude Code's prompt. */
+.scene .shiftk { min-width: 96px; justify-items: end; padding-right: 14px; }
+.scene .twice { position: absolute; font: 600 17px var(--sans); color: var(--ink-2); opacity: 0; transform: scale(0.6); transition: opacity 0.15s, transform 0.35s var(--spring-bouncy, ease); }
+.scene .twice.on { opacity: 1; transform: none; }
+.scene .stitched { position: absolute; background: #1a1a1a; }
+.scene .sbadge { position: absolute; z-index: 2; display: grid; place-items: center; border-radius: 50%; background: #e03131; color: #fff; font-family: var(--sans); font-weight: 700; line-height: 1; }
+.scene .cardx.ghost { left: 0; top: 0; z-index: 4; pointer-events: none; }
+.scene .term-x .pbox { margin-top: 6px; padding: 6px 10px; border: 1px solid #3a3d44; border-radius: 8px; }
+.scene .term-x .tcur { display: inline-block; width: 8px; height: 15px; vertical-align: -3px; background: #c9ccd3; }
+
+/* Your app stays in front: the typing the play adds, which a replay fades out, and the caret: solid
+   while the play types, as macOS draws it, and gone while the stack holds the keys. */
+.scene .field.typing .tcaret { animation: none; }
+.scene .field .added { all: unset; transition: opacity 0.25s; }
+.scene .field.caret-off .tcaret { visibility: hidden; }
+/* Premium details and Several in a row (flight.js, queue.js): a card in flight is laid out at the
+   editor's size and scaled, so its border ring is set against the scale to stay 0.5 pt wide. */
+.scene .flights .cardx.flying::after { box-shadow: inset 0 0 0 var(--ring, 0.5px) rgb(255 255 255 / 0.4); transition: none; }
+/* Recent, Stitch and Drag (stack.js): the column, faded at its top end over the panel's inset as
+   StackView.column fades it, and right Shift drawn as a Mac's key. */
+.scene .scol { position: absolute; inset: 0; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade)); mask-image: linear-gradient(to bottom, transparent, #000 var(--fade)); }
+.scene .kcap.shiftk { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; padding: 7px 10px 8px; font-size: 12px; }
+.scene .shiftk span:first-child { font-size: 15px; }
+.scene .cardx.lifted::after, .scene .cardx.lifted .scircle { transition: none; }
+.scene .term-x .typed { display: inline-block; overflow: hidden; vertical-align: top; transition: width 0.25s var(--spring, ease); }
+.scene .cam { position: absolute; inset: 0; transform-origin: 0 0; }
+
+/* Agent, Front and tiles (front.js). Front's keys: right Shift tapped twice opens the stack, and Esc closes it. */
+.scene .fkeys { position: absolute; z-index: 4; transform-origin: 0 0; opacity: 0; transform: scale(calc(var(--scale) * 0.92)); transition: opacity 0.15s, transform 0.3s var(--spring, ease); }
+.scene .fkeys.up { opacity: 1; transform: scale(var(--scale)); }
+.scene .fkeys .twice { color: rgb(255 255 255 / 0.8); }
+.scene .kcap.esck { min-width: 66px; display: flex; align-items: flex-end; justify-content: flex-start; padding: 7px 10px 8px; font-size: 12px; }
+/* Drag (stack.js): Claude Code keeps its prompt at the bottom of the terminal, under the
+   conversation, which runs off the top. */
+.scene .term-x.claude pre { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; box-sizing: border-box; }
+
+/* Agent, Front and tiles (tiles.js): a picture that a click replays shows the pointer. */
+.feature-pic.replays { cursor: pointer; }
+/* Front (front.js): the stays page ends above the window's bottom on its own background. */
+.feature-pic .window .page { background: #f5f1e8; }
+/* Agent (agent.js): lines Claude Code prints at once, which a rewind closes up. */
+.scene .term-x .grp { flex: none; overflow: hidden; transition: height 0.25s var(--spring, ease), opacity 0.2s; }
+/* Agent (agent.js): the dot of a tool call that has run, green as Claude Code draws it. */
+.scene .t-ok { color: #4eba65; }

@@ -79,7 +79,9 @@ function noteLayout(mark, image) {
   if (badge) w = Math.max(w, badge.inset + MARK.padSide * size + badge.width);
   const lh = MARK.lineHeight * size;
   const h = lines.length * lh + (MARK.padTop + MARK.padBottom) * size;
-  return { ...st, lines, lh, w, h, badge, x: mark.x, y: mark.y };
+  // The tag is kept inside the image, as TextLayout keeps it.
+  const x = Math.max(0, Math.min(mark.x, image.w - w)), y = Math.max(0, Math.min(mark.y, image.h - h));
+  return { ...st, lines, lh, w, h, badge, x, y };
 }
 
 export function markBounds(mark, image) {

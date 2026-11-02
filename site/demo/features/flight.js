@@ -1,102 +1,205 @@
-import { el, Motion, Spring, UI, wait } from "../vignette.js";
+import { el, Motion, Spring, UI, wait, motion } from "../vignette.js";
 import { IMAGES, PERSON_MARKS } from "../cards.js";
-import { lerp, clamp, GUTTER, card, whole, smallFit } from "./parts.js";
+import { lerp, clamp, GUTTER, card, whole, smallFit, POINTER, editorBar } from "./parts.js";
 
-const CW = 128, CH = 80;
-// How long the card is in the air before Esc goes down, and how often the trace keeps an outline.
-const ESC_AT = 0.22, TRACE_EVERY = 0.085;
+export const CW = 140, CH = 88;
+// Look.card and Look.annotator: the shadow a card casts in the stack and the editor's frame casts.
+const LOOK = {
+  card: { y: 4, blur: 8, spread: 0, alpha: 0.35 },
+  annotator: { y: 18, blur: 40, spread: -14, alpha: 0.5 },
+};
+const center = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+
+// Anim.passesTarget: when the flight's spring first reaches its target, which is when the editor's
+// window, and its bar, come up behind the flight.
+export function passesTarget() {
+  const s = new Spring(0, 1e-6).to(1, UI.expand, UI.flightBounce);
+  let t = 0;
+  while (s.moving && s.x < 1) { s.step(1 / 240); t += 1 / 240; }
+  return t;
+}
+
+// FlightCurve.placement: how far a card the straight path has carried to `p` is drawn to one side
+// of it, and how much larger. Both peak in the middle and are nothing at the ends. The side belongs
+// to the line, not the direction of travel: up from a path that runs mostly sideways, left from
+// one that runs mostly up or down.
+function placement(path, p, amount) {
+  const dx = path.to.x - path.from.x, dy = path.to.y - path.from.y, len = Math.hypot(dx, dy);
+  if (len <= 0.5) return { x: 0, y: 0, s: 1 };
+  const t = clamp(((p.x - path.from.x) * dx + (p.y - path.from.y) * dy) / (len * len), 0, 1);
+  const peak = 4 * t * (1 - t);
+  let nx = -dy / len, ny = dx / len;
+  if (Math.abs(dx) >= Math.abs(dy) ? ny > 0 : nx > 0) { nx = -nx; ny = -ny; }
+  const bow = Math.min(len * UI.flightArc, UI.flightArcMax) * amount * peak;
+  return { x: nx * bow, y: ny * bow, s: 1 + UI.flightDepth * amount * peak };
+}
+
+// A card as the flight layer draws it. It is laid out at the editor frame's size and moved only by
+// transforms, so it stays sharp there. Its straight-path rect, its look (0 the card's, 1 the
+// editor's) and the blend between its paths are springs, as TransitionLayer animates them: a flight
+// aimed somewhere else in mid-air keeps its speed and bends from the old path's bow to the new one's.
+export class Flyer {
+  constructor(c, size) {
+    this.c = c; this.size = size;
+    this.path = this.was = null;
+    this.flying = false;
+    this.gen = 0;
+    // Arrival is the rect within half a point of its target, as Anim.settle times it.
+    this.m = new Motion(() => this.draw())
+      .add("x", 0, 0.5).add("y", 0, 0.5).add("w", size.w, 0.5).add("h", size.h, 0.5)
+      .add("look", 0, 0.001).add("blend", 1, 0.001);
+  }
+  rect() { const m = this.m; return { x: m.get("x"), y: m.get("y"), w: m.get("w"), h: m.get("h") }; }
+  draw(amount = motion()) {
+    const r = this.rect(), o = center(r), b = this.m.get("blend");
+    const flat = { x: 0, y: 0, s: 1 };
+    const was = this.was ? placement(this.was, o, amount) : flat, now = this.path ? placement(this.path, o, amount) : flat;
+    const s = lerp(was.s, now.s, b), w = r.w * s, h = r.h * s;
+    const x = o.x + lerp(was.x, now.x, b) - w / 2, y = o.y + lerp(was.y, now.y, b) - h / 2;
+    const sx = w / this.size.w, sy = h / this.size.h, c = this.c;
+    c.style.transform = `translate(${x}px, ${y}px) scale(${sx}, ${sy})`;
+    c.style.borderRadius = `${UI.cardCorner / sx}px / ${UI.cardCorner / sy}px`;
+    c.style.setProperty("--ring", `${0.5 / sx}px`);
+    const t = clamp(this.m.get("look"), 0, 1), a = LOOK.card, e = LOOK.annotator;
+    c.style.boxShadow = `0 ${lerp(a.y, e.y, t) / sy}px ${lerp(a.blur, e.blur, t) / sx}px ${lerp(a.spread, e.spread, t) / sx}px rgb(0 0 0 / ${lerp(a.alpha, e.alpha, t)})`;
+  }
+  // Put it at `r` with `look`, on no path. `amount` draws the bow as a moment of a flight would show
+  // it, for a still.
+  at(r, look, path, amount) {
+    this.gen++;
+    this.flying = false;
+    for (const k of ["x", "y", "w", "h"]) this.m.springs[k].jump(r[k]);
+    this.m.springs.look.jump(look);
+    this.m.springs.blend.jump(1);
+    this.path = path || null; this.was = null;
+    this.draw(amount);
+  }
+  // A change of size where it is, such as the hover: no flight, so no bow.
+  grow(r, duration, bounce) {
+    if (!this.flying) this.path = this.was = null;
+    for (const k of ["x", "y", "w", "h"]) this.m.to(k, r[k], duration, bounce);
+  }
+  // Flies to `to` on the app's flight spring. A new flight is drawn over every flight before it; one
+  // aimed again keeps its place. Answers true on arrival, or false when aimed elsewhere first.
+  async fly(to, look) {
+    const path = { from: center(this.rect()), to: center(to) };
+    if (this.flying) {
+      this.was = this.path;
+      this.m.jump("blend", 0);
+    } else {
+      this.was = null;
+      this.c.parentNode.append(this.c);
+    }
+    this.path = path;
+    this.flying = true;
+    const gen = ++this.gen;
+    const spring = (k, v) => this.m.to(k, v, UI.expand, UI.flightBounce);
+    spring("look", look); spring("blend", 1);
+    await Promise.all(["x", "y", "w", "h"].map((k) => spring(k, to[k])));
+    if (gen !== this.gen) return false;
+    this.at(to, look, null);
+    return true;
+  }
+}
+
+// The three cards in the stack, top to bottom. The first starts in the editor. The map ends there,
+// so this tile's end differs from Several in a row's, which ends on a page of lists.
+const LIST = [
+  [IMAGES.stays, whole(IMAGES.stays), []],
+  [IMAGES.itin, whole(IMAGES.itin), PERSON_MARKS.slice(0, 2)],
+  [IMAGES.packing, whole(IMAGES.packing), []],
+];
+// The card in the editor at first, the card clicked first and the card clicked second, which ends
+// in the editor. The first swap is the top card for the bottom one, so its two flights take paths
+// apart.
+const START = 0, FIRST = 2, LAST = 1;
+// How far down the picture the stack and the editor start: room for a flight's bow above them.
+const TOP = 26;
 
 export class Flight {
-  // A card leaves its slot in the stack for the editor. Esc goes down while it is in the air, and
-  // it turns around from where it is and lands back in its slot, which the stack held open. Faint
-  // outlines of the card along the way stay as the picture of the flight.
-  static fit = smallFit(222);
+  // The top card is in the editor. The pointer clicks the bottom card in the stack, then the middle
+  // one: each time the card in the editor flies home while the clicked one flies out, two bowed
+  // flights at once, and the stack holds the slot of the card that is out. The stack is drawn
+  // narrowed for the editor throughout.
+  static fit = smallFit(214);
   build({ W, H }) {
-    const s = el("div", "scene");
+    const s = this.s = el("div", "scene");
     s.style.width = `${W}px`; s.style.height = `${H}px`;
-    const x = W - GUTTER - CW;
-    this.slot = { x, y: 4 + CH + UI.cardSpacing, w: CW, h: CH };
-    const ew = Math.min(200, W * 0.54);
-    this.editor = { x: GUTTER, y: 4, w: ew, h: ew * 0.625 };
-    this.trace = el("div", "trace");
-    s.append(this.trace);
-    this.outlines = Flight.path().map(([t, p]) => {
-      const o = el("div", "outline");
-      o.t = t;
-      const r = this.rect(p);
-      Object.assign(o.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
-      this.trace.append(o);
-      return o;
+    this.W = W;
+    const right = W - 24, room = right - GUTTER - UI.stackGap;
+    const fw = Math.round(room * 0.72);
+    this.frame = { x: GUTTER, y: TOP, w: fw, h: fw * (CH / CW) };
+    // StackLayout.widthScale: the widest the stack can be drawn and still clear the editor by the gap.
+    const k = clamp((right - (this.frame.x + this.frame.w + UI.stackGap)) / CW, UI.stackMinScale, 1);
+    this.slots = LIST.map((_, i) => ({ x: right - CW * k, y: TOP + i * (CH + UI.cardSpacing) * k, w: CW * k, h: CH * k }));
+    const layer = el("div", "flights");
+    s.append(layer);
+    this.cards = LIST.map(([image, view, marks]) => {
+      const c = card(image, view, marks, { x: 0, y: 0, w: this.frame.w, h: this.frame.h });
+      c.classList.add("flying");
+      layer.append(c);
+      return new Flyer(c, this.frame);
     });
-    // The cards above and below it in the stack.
-    const rest = [[IMAGES.stays, whole(IMAGES.stays), 0], [IMAGES.packing, whole(IMAGES.packing), 2]];
-    for (const [image, view, i] of rest) s.append(card(image, view, [], { x, y: 4 + i * (CH + UI.cardSpacing), w: CW, h: CH }));
-    this.card = card(IMAGES.itin, { x: 1050, y: 230, w: 760, h: 475 }, PERSON_MARKS.slice(0, 2), { x: 0, y: 0, w: CW, h: CH });
-    this.card.classList.add("flying");
-    s.append(this.card);
-    this.key = el("div", "kcap esc", "esc");
-    this.key.style.left = `${GUTTER}px`; // Under the farthest outline, which the bow carries below the editor's own rect.
-    this.key.style.top = `${this.editor.y + this.editor.h + 36}px`;
-    s.append(this.key);
-    this.m = new Motion((m) => this.draw(m.get("p"))).add("p", 0, 0.0005);
+    // The editor's toolbar stays up while one image follows another, above the flight layer.
+    this.bar = editorBar(this.frame);
+    this.bar.classList.add("up");
+    this.pointer = el("div", "pointer", POINTER);
+    s.append(this.bar, this.pointer);
+    this.pm = new Motion((m) => {
+      this.pointer.style.transform = `translate(${m.get("x") - 10}px, ${m.get("y") - 7}px)`;
+    }).add("x", W + 20, 0.05).add("y", 120, 0.05);
     return s;
   }
-  // Where the flight is, every TRACE_EVERY seconds, worked out from the same spring a play runs, so
-  // the poster shows the outlines a play leaves.
-  static path() {
-    if (Flight.points) return Flight.points;
-    const s = new Spring(0, 0.0005).to(1, UI.expand, UI.flightBounce), dt = 1 / 240, points = [];
-    let t = 0, next = TRACE_EVERY, turned = false;
-    while (s.moving && t < 3) {
-      if (!turned && t >= ESC_AT) { s.to(0, UI.expand, UI.flightBounce); turned = true; }
-      s.step(dt); t += dt;
-      if (t >= next) { next += TRACE_EVERY; if (s.x > 0.04) points.push([t, s.x]); }
-    }
-    return (Flight.points = points);
+  hovered(i) {
+    const r = this.slots[i], g = UI.hoverScale;
+    return { x: r.x - (r.w * (g - 1)) / 2, y: r.y - (r.h * (g - 1)) / 2, w: r.w * g, h: r.h * g };
   }
-  // p is 0 in the slot and 1 in the editor. The path bows to one side, as FlightCurve's does.
-  rect(p) {
-    const a = this.slot, b = this.editor;
-    const bow = Math.sin(Math.PI * clamp(p, 0, 1)) * 24;
-    return { x: lerp(a.x, b.x, p) + bow * 0.5, y: lerp(a.y, b.y, p) + bow, w: lerp(a.w, b.w, p), h: lerp(a.h, b.h, p) };
+  // `open` in the editor, and the pointer resting at `at`, or off the right edge.
+  hold(open, at) {
+    this.cards.forEach((f, i) => f.at(i === open ? this.frame : this.slots[i], i === open ? 1 : 0));
+    this.pm.jump("x", at ? at.x : this.W + 20); this.pm.jump("y", at ? at.y : 120);
+    this.pointer.classList.remove("down");
   }
-  draw(p) {
-    const r = this.rect(p), k = r.w / CW, lift = clamp(p, 0, 1);
-    this.card.style.transform = `translate(${r.x}px, ${r.y}px) scale(${k})`;
-    this.card.style.borderRadius = `${16 / k}px`;
-    this.card.style.boxShadow = `0 ${(4 + 14 * lift) / k}px ${(8 + 26 * lift) / k}px rgb(0 0 0 / ${0.35 + 0.2 * lift})`;
+  aim(i) { const r = this.slots[i]; return { x: r.x + r.w * 0.55, y: r.y + r.h * 0.45 }; }
+  reset() { this.hold(START); }
+  final() { this.hold(LAST, this.aim(LAST)); }
+  // With Reduce Motion: the first swap mid-air, the card from the editor crossing the clicked card
+  // on its way out, both slots held.
+  poster() {
+    this.hold(START, this.aim(FIRST));
+    const at = (i, from, to, p, look) => {
+      const r = { x: lerp(from.x, to.x, p), y: lerp(from.y, to.y, p), w: lerp(from.w, to.w, p), h: lerp(from.h, to.h, p) };
+      this.cards[i].at(r, look, { from: center(from), to: center(to) }, 1);
+    };
+    at(START, this.frame, this.slots[START], 0.34, 0.66);
+    at(FIRST, this.hovered(FIRST), this.frame, 0.34, 0.34);
+    this.cards[FIRST].c.parentNode.append(this.cards[FIRST].c);
   }
-  // The outlines a play has left by `t` seconds into the flight.
-  show(t) { this.outlines.forEach((o) => o.classList.toggle("on", o.t <= t)); }
-  reset() {
-    this.trace.style.opacity = 1;
-    this.show(-1);
-    this.key.classList.remove("down");
-    this.m.jump("p", 0);
+  // The pointer reaches card `next`, which grows under it, and clicks: the card in the editor
+  // flies home as `next` flies out, over it.
+  async swap(open, next) {
+    const at = this.aim(next), c = this.cards[next];
+    await Promise.all([this.pm.to("x", at.x, 0.4), this.pm.to("y", at.y, 0.4)]);
+    c.grow(this.hovered(next), 0.25);
+    await wait(0.18);
+    this.pointer.classList.add("down");
+    await wait(0.09);
+    this.pointer.classList.remove("down");
+    this.cards[open].fly(this.slots[open], 0);
+    await c.fly(this.frame, 1);
   }
-  final() { this.reset(); this.show(Infinity); }
   async play() {
     this.reset();
-    await wait(0.15);
-    const start = performance.now();
-    const tick = () => {
-      this.show((performance.now() - start) / 1000);
-      if (this.tracing) requestAnimationFrame(tick);
-    };
-    this.tracing = true;
-    requestAnimationFrame(tick);
-    this.m.to("p", 1, UI.expand, UI.flightBounce);
-    await wait(ESC_AT);
-    this.key.classList.add("down");
-    const back = this.m.to("p", 0, UI.expand, UI.flightBounce);
-    await wait(0.14);
-    this.key.classList.remove("down");
-    await back;
-    this.tracing = false;
-    this.show(Infinity);
-  }
-  async rewind() {
-    this.trace.style.opacity = 0;
+    await wait(0.2);
+    await this.swap(START, FIRST);
     await wait(0.25);
+    await this.swap(FIRST, LAST);
+  }
+  // The card in the editor goes home as the first one comes back out, and the pointer leaves.
+  async rewind() {
+    this.pm.to("x", this.W + 20, 0.4);
+    this.cards[LAST].fly(this.slots[LAST], 0);
+    await this.cards[START].fly(this.frame, 1);
+    await wait(0.1);
   }
 }
