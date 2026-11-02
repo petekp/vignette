@@ -30,13 +30,14 @@ const SPRINGS = ["p", "fade", "close", "zoom", "out", "in0", "in1", "in2"];
 // What Stitch joins, in the order they were picked: captures of the chat asking about a day, of
 // the stay the day ends at, and of that day in the itinerary. Short, wide captures stack into one
 // column whose shape a card shows whole, and each takes the badge's 32 px floor, so the badges read
-// once the view pushes in. Each badge sits at its piece's top-left. The widest piece is the middle
-// one, so the column centres the first and the last well inside the card's rounded corners, which
-// trim only matte.
+// once the view pushes in. Each badge sits at its piece's top-left, clear of its words: the
+// itinerary's card is taken whole across, with the page's gutter beside it. The widest piece is the
+// middle one, so the column centres the first and the last well inside the card's rounded corners,
+// which trim only matte.
 const PIECES = [
   [IMAGES.chat, { x: 0, y: 284, w: 580, h: 228 }, []],
   [IMAGES.stays, { x: 60, y: 768, w: 788, h: 174 }, []],
-  [IMAGES.itin, { x: 1194, y: 650, w: 570, h: 262 }, []],
+  [IMAGES.itin, { x: 1180, y: 650, w: 605, h: 262 }, []],
 ];
 
 // Stitch.compose's layout and badges: every column count is tried and the one a reader's resize
@@ -208,7 +209,7 @@ export class Stitch extends Column {
   // already selected.
   async rewind() {
     this.notice.classList.remove("in");
-    await this.push(0, 0.5);
+    await this.push(0, 0.8);
     await this.m.to("out", 1, UI.slideOut);
     this.cards.forEach((_, i) => this.m.jump(`in${i}`, 1));
     for (const name of ["p", "fade", "out"]) this.m.jump(name, 0);
