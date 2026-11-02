@@ -28,7 +28,7 @@ class Tile {
   fit() {
     const width = this.slot.clientWidth;
     if (!width) return;
-    const f = this.Scene.fit(width);
+    const f = this.Scene.fit(width, this.slot.clientHeight);
     if (f.key !== this.key) {
       this.key = f.key;
       this.scene = new this.Scene();
