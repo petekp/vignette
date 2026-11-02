@@ -64,30 +64,15 @@ final class ClaudeDriver: ResponderDriver {
     /// The answer of `claude auth status --json`. A check that does not answer within
     /// `authStatusLimit` stops the process and counts as ready.
     nonisolated private static func authStatus(binary: String) -> LiveResponder.Availability {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: binary)
-        process.arguments = ["auth", "status", "--json"]
-        process.standardInput = FileHandle.nullDevice
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            Log.write("[live-ink] responder check could not run \(binary): \(error)")
+        guard let run = Subprocess.run(binary, ["auth", "status", "--json"], timeout: authStatusLimit, includingErrors: false) else {
+            Log.write("[live-ink] responder check could not run \(binary)")
             return .ready
         }
-        let exited = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .utility).async {
-            process.waitUntilExit()
-            exited.signal()
-        }
-        guard exited.wait(timeout: .now() + authStatusLimit) == .success else {
-            process.terminate()
+        guard !run.timedOut else {
             Log.write("[live-ink] responder check timed out")
             return .ready
         }
-        let answer = (try? JSONSerialization.jsonObject(with: output.fileHandleForReading.readDataToEndOfFile())) as? [String: Any]
+        let answer = (try? JSONSerialization.jsonObject(with: Data(run.output.utf8))) as? [String: Any]
         guard let loggedIn = answer?["loggedIn"] as? Bool else { return .ready }
         return loggedIn ? .ready : .signedOut
     }
