@@ -3,7 +3,7 @@
 // bottom, as the stack does against the screen's.
 import { el, place, Motion, UI, wait, cardSize, coverRect } from "../vignette.js";
 import { IMAGES, PERSON_MARKS } from "../cards.js";
-import { lerp, clamp, GUTTER, card, whole, shot, wideFit, POINTER, selectionStrip, shiftKey, twice, tap } from "./parts.js";
+import { lerp, clamp, GUTTER, card, whole, shot, wideFit, POINTER, selectionStrip, shiftKey, twice, tap, claudeCode, said, you, gap, LINE } from "./parts.js";
 
 const CW = 140, CH = 88, STEP = CH + UI.cardSpacing;
 // The cards' scale against the app's: a 16:10 screenshot's card is 188 pt wide there.
@@ -285,21 +285,11 @@ export class Drag extends Column {
   static fit = wideFit(236);
   build({ W, H }) {
     const s = this.scene(W, H);
-    const ln = (html, cls = "") => `<div class="ln${cls}">${html}</div>`;
-    const said = (text) => ln(`<span class="t-said">●</span> ${text}`), you = (text) => ln(text, " t-dim"), gap = ln(" ");
     // Every line ends left of the column, at every width.
     const talk = W >= 520
       ? [said("Added the three stays to the map."), gap, you("&gt; Number the days."), gap, said("Done. Each day has its number now."), gap, you("&gt; Remind the host to confirm our stay.")]
       : [said("Mapped the stays."), gap, you("&gt; Number the days."), gap, said("Done."), gap, you("&gt; Remind the host"), you("  to confirm.")];
-    const box = '<div class="pbox">&gt; <span class="typed"></span><span class="tcur"></span></div>';
-    const t = el("div", "term-x claude", `<pre>${[...talk, gap, said("Which stay is it?"), box, you("  ? for shortcuts")].join("")}</pre>`);
-    // .term-x's line, and the prompt box's margin, padding and border.
-    const line = 13 * 1.65, boxH = line + 6 + 12 + 2;
-    // A conversation taller than the picture runs off its top on a line boundary, so no line is cut.
-    const margin = 10, talkBottom = H - margin - line - boxH - 2 * line;
-    const inset = margin + (talkBottom < talk.length * line ? talkBottom % line : 0), below = 40;
-    place(t, { x: GUTTER, y: 0, w: W - GUTTER + 40, h: H + below });
-    t.firstChild.style.paddingBottom = `${below + inset}px`;
+    const t = claudeCode(W, H, [...talk, gap, said("Which stay is it?")].join(""));
     this.typed = t.querySelector(".typed");
     s.insertBefore(t, this.col);
     this.column(SHOTS.slice(1));
@@ -313,7 +303,7 @@ export class Drag extends Column {
     this.grab = { x: CW * 0.55, y: CH * 0.55 };
     this.from = { x: this.R - CW + this.grab.x, y: this.bottom - CH + this.grab.y };
     // The drop lands on the prompt's line: above the hint line, the box's lower border and padding.
-    this.drop = { x: Math.min(GUTTER + 250, this.R - CW - 50), y: H - inset - line - 7 - line / 2 };
+    this.drop = { x: Math.min(GUTTER + 250, this.R - CW - 50), y: t.end - LINE - 7 - LINE / 2 };
     this.m = new Motion((m) => {
       const t = m.get("t"), p = m.get("p");
       const x = t > 0 ? lerp(this.from.x, this.drop.x, t) : lerp(W + 10, this.from.x, p);
