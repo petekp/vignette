@@ -77,9 +77,11 @@ export class Recent extends Column {
   reset() { this.twice.classList.remove("on"); this.m.forEach((m) => m.jump("x", this.off)); }
   final() { this.reset(); this.twice.classList.add("on"); this.m.forEach((m) => m.jump("x", 0)); }
   // The stack slides out, as a dismissal takes it.
+  // Done once the cards are past the edge, not when the spring's tail settles.
   async rewind() {
     this.twice.classList.remove("on");
-    await Promise.all(this.m.map((m) => m.to("x", this.off, UI.slideOut)));
+    this.m.forEach((m) => m.to("x", this.off, UI.slideOut));
+    await wait(UI.slideOut * 1.2);
   }
   async play() {
     this.reset();
@@ -312,10 +314,12 @@ export class Drag extends Column {
       const y = t > 0 ? lerp(this.from.y, this.drop.y, t) - Math.sin(Math.PI * t) * 30 : lerp(this.from.y + 50, this.from.y, p);
       at(this.pointer, x - 10, y - 7);
       at(this.ghost, x - this.grab.x, y - this.grab.y);
+      // The newest card is hovered while the pointer is over it, as a tracking area hovers it.
+      this.hover(x >= this.R - CW && x <= this.R && y >= this.bottom - CH && y <= this.bottom);
     }).add("t", 0, 0.001).add("p", 0, 0.001);
     return s;
   }
-  hover(on) { this.newest.style.scale = on ? String(UI.hoverScale) : ""; }
+  hover(on) { if (on !== this.hovered) this.newest.style.scale = (this.hovered = on) ? String(UI.hoverScale) : ""; }
   dropped(on) { this.typed.textContent = on ? "[Image #1] " : ""; this.typed.style.width = ""; }
   reset() {
     this.ghost.style.opacity = 0; this.pointer.classList.remove("down"); this.dropped(false); this.hover(false);
@@ -332,19 +336,20 @@ export class Drag extends Column {
     await wait(0.3);
   }
   final() { this.reset(); this.m.jump("p", 1); this.m.jump("t", 1); this.dropped(true); }
-  // The drag in mid-flight over the prompt.
-  poster() { this.reset(); this.m.jump("p", 1); this.m.jump("t", 0.65); this.ghost.style.opacity = 1; this.pointer.classList.add("down"); }
+  // The drag in mid-flight over the prompt. A narrow picture has no room for it beside the
+  // question, so it shows the dropped image instead.
+  poster() {
+    if (this.W < 520) return this.final();
+    this.reset(); this.m.jump("p", 1); this.m.jump("t", 0.65); this.ghost.style.opacity = 1; this.pointer.classList.add("down");
+  }
   async play() {
     this.reset();
     await wait(0.25);
     await this.m.to("p", 1, 0.45);
-    this.hover(true);
     await wait(0.15);
     this.pointer.classList.add("down");
     await wait(0.12);
     this.ghost.style.opacity = 1;
-    // The pointer leaves the card a moment into the drag.
-    setTimeout(() => this.hover(false), 120);
     await this.m.to("t", 1, 0.7);
     this.pointer.classList.remove("down");
     this.ghost.style.opacity = 0;

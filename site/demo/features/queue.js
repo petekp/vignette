@@ -8,7 +8,7 @@ import { handEase } from "./drawing.js";
 const LIST = [
   [IMAGES.packing, whole(IMAGES.packing), []],
   [IMAGES.stays, whole(IMAGES.stays), [{ type: "rect", who: "person", x: 40, y: 192, w: 588, h: 86 }]],
-  [IMAGES.chat, { x: 0, y: 200, w: 1040, h: 650 }, []],
+  [IMAGES.chat, { x: 0, y: 252, w: 1040, h: 650 }, []],
 ];
 const PICKS = [1, 2], STEP = CH + UI.cardSpacing, COLUMN = LIST.length * STEP - UI.cardSpacing;
 // The editor's top, low enough that a flight's bow stays inside the picture.
