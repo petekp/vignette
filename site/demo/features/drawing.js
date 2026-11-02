@@ -96,15 +96,17 @@ export class Later {
     const s = el("div", "scene");
     s.style.width = `${W}px`; s.style.height = `${H}px`;
     this.fw = W - GUTTER + 40;
-    this.from = { x: 1010, y: 470 }; this.to = { x: 1222, y: 252 };
+    // The note ends on open map between the river and the route, right of stop 2 and the arrow's
+    // tail, where it covers no label or stop.
+    this.from = { x: 1010, y: 470 }; this.to = { x: 1360, y: 220 };
     this.note = { ...PERSON_MARKS[3] };
     this.arrow = PERSON_MARKS[2];
     // Across the part of the frame the tile shows: from the day the arrow points at, "MON, OCT 13",
-    // to past the note's end at its new place, with room for the pointer gripping it. Down: stop 1
-    // whole, and the arrow's head and its day inside the height every tile shows.
-    const end = markBounds({ ...this.note, ...this.to }, IMAGES.itin), left = 640;
-    this.k = (W - GUTTER) / (end.x + end.w + 64 - left);
-    this.view = { x: left, y: 190, w: this.fw / this.k, h: 240 / this.k };
+    // to past the note's end at its new place, with room for the pointer gripping it. Down: the
+    // map's top edge, and the arrow's head and its day inside the height every tile shows.
+    const left = 640, right = 1720;
+    this.k = (W - GUTTER) / (right - left);
+    this.view = { x: left, y: 125, w: this.fw / this.k, h: 240 / this.k };
     const f = el("div", "frame-x");
     place(f, { x: GUTTER, y: 0, w: this.fw, h: 240 });
     const sh = shot(IMAGES.itin, this.view, [], this.fw, 240);
