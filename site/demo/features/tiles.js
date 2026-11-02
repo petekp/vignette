@@ -116,6 +116,9 @@ export function buildFeatures(section) {
   matchMedia(reducedMotion.media).addEventListener("change", (e) => {
     tiles.forEach((tile) => {
       if (e.matches) { tile.still(); return; }
+      // The poster can differ from the end, which a replay rewinds from, so the scene is rebuilt there.
+      tile.key = null;
+      tile.fit();
       tile.unseen = true;
       tile.settle();
       tile.showReplay();
@@ -136,13 +139,14 @@ export function buildFeatures(section) {
   tiles.forEach((tile) => {
     watch.observe(tile.root);
     // Pointing at a tile that has played plays it again once the pointer has stayed still there for
-    // 0.4 s, so a pointer passing across the grid, or moving within a tile, sets nothing off. It
-    // plays once per visit; looking around the result afterwards leaves it alone.
+    // 0.4 s, so a pointer passing across the grid, or moving within a tile, sets nothing off. A
+    // rest counts once per visit, during a play too; looking around the result afterwards leaves
+    // it alone.
     let rest = 0, armed = false;
     const settle = (e) => {
       if (e.pointerType !== "mouse" || !armed) return;
       clearTimeout(rest);
-      rest = setTimeout(() => { if (tile.played && !tile.playing) { armed = false; tile.run(true); } }, 400);
+      rest = setTimeout(() => { armed = false; if (tile.played && !tile.playing) tile.run(true); }, 400);
     };
     tile.root.addEventListener("pointerenter", (e) => { armed = true; settle(e); });
     tile.root.addEventListener("pointermove", settle);
