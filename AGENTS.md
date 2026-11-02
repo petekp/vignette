@@ -304,22 +304,23 @@ images opening measured no narrowing at all, and `stack.widthScale` in `[state]`
 
 The end-to-end tests: `scripts/e2e/e2e.py run` builds the test copy (`scripts/e2e/build.sh`: its
 own bundle id, name and URL scheme, given on the `xcodebuild` line) and runs the scenarios in
-`scripts/e2e/scenarios.py`, each on a fresh scratch home, settings file and watch folder. Before
-each launch the runner links the home the copy's Info.plist names to the scenario's, so a launch
-with no environment comes back on the scenario's files. It removes the link when the scenario
-ends. Before the first scenario it runs the copy once, as `<executable> reply --help`, which exits
-before the app starts. macOS checks a new build the first time it runs, and now and then kills that
-run: syspolicyd logs "Terminating process due to Gatekeeper rejection". In the VM that was 1 first
+`scripts/e2e/scenarios.py` and `live_ink.py`, each on a fresh scratch home, settings file and watch
+folder. Before each launch the runner links the home the copy's Info.plist names to the scenario's,
+and unlinks it after, so a launch with no environment comes back on the scenario's files. Before the
+first scenario it runs the copy once, as `<executable> reply --help`, which exits before the app
+starts. macOS checks a new build's first run, and now and then kills it:
+syspolicyd logs "Terminating process due to Gatekeeper rejection". In the VM that was 1 first
 run in about 30 (measured 2026-10-26). `open` still answers 0 for a killed launch, so a scenario
-would wait its full 30 s for a process that is gone. The runner tries a killed run again and prints
-how long the run took and whether macOS killed it. It saves the pasteboard and puts it back, even when stopped (`e2e.py restore` after a
+would wait out its 30 s. The runner retries a killed run and prints how long it took
+and whether macOS killed it. It saves the pasteboard and puts it back, even when stopped (`e2e.py restore` after a
 crash), and writes a report under `scripts/e2e/out/runs/`. `--input` adds the scenarios that post keys and clicks, each
-gated on the test copy's own state; they need `Vignette E2E` granted Accessibility and Screen
-Recording once, by hand. Without Screen Recording, every live ink ask fails at its picture.
-The terminal that runs them needs Accessibility and Screen Recording. On macOS 15, the run's first
-screen capture can raise a prompt asking whether the terminal may "bypass the system private window
+gated on the test copy's own state; they need `Vignette E2E` and the terminal that runs them granted
+Accessibility and Screen Recording, once by hand. Without Screen Recording, every live ink ask fails
+at its picture, which `ink_no_recording` checks on `Vignette E2E Fresh` (`build.sh fresh`), granted
+nothing and reset with `tccutil` before it. On macOS 15, the run's first screen capture
+can raise a prompt asking whether the terminal may "bypass the system private window
 picker". While that prompt is up, the test copy cannot become active (observed 2026-10-01 in a
-clean VM), so the editor never takes the keys and every scenario that needs them stops at its gate.
+clean VM), so every scenario that needs the keys stops at its gate.
 Allow it and run again.
 `docs/e2e-suite-plan-2026-09-29.md` has the design and what is still to come.
 

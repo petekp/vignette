@@ -184,6 +184,8 @@ Pete approved the plan, the release gate, running on this Mac, the test hooks, a
 | `corner_select` | yes | a click on a corner card's circle makes the corner the stack, with the strip out |
 | `capture_origin` | yes | with Instant Draw on, a selection taken with `screencapture -i` flies into the editor from the rect it was taken from |
 
+Live ink's four scenarios are in `scripts/e2e/live_ink.py`: an ask answered on the window, a note sent to a session, an ask without Screen Recording (run on `Vignette E2E Fresh`, which `build.sh fresh` builds and `tccutil` resets), and an ask with no `claude`.
+
 **Found while building it:**
 
 - **The git stamp could land before Xcode wrote the Info.plist.** The phase declared no inputs, so
