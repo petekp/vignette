@@ -49,6 +49,8 @@
 /* Drag (drag.js): Claude Code fills Ghostty's window under its title bar, so the window, not the
    terminal, draws the edge and the shadow. */
 :root .scene .window.ghostty .term-x { border-radius: 0; box-shadow: none; }
+/* Stitch (stitch.js): the menu bar, which stays out of the view's push-in. */
+.scene .desk.pinned { pointer-events: none; }
 /* Stitch (stitch.js): the selection strip over Calendar, on the app's .regularMaterial, which blurs
    the window under it. */
 .scene .qstrip.material { background: rgb(40 40 42 / 0.72); -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); }
