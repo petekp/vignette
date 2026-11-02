@@ -23,15 +23,17 @@ const SHOTS = [
     { type: "note", who: "person", x: 40, y: 972, text: "this one" },
   ]],
 ];
-// What Stitch joins: a whole page and two region captures, about the same day. Stitch lays them out
-// in one column whose shape a card shows whole, so every badge shows, and each badge sits on plain
-// page at its piece's top-left.
+// What Stitch joins, in the order they were picked: captures of the chat about a day, of three
+// versions of that day's card, and of its stay's picture. Stitch lays them out in one column whose
+// shape a card shows whole, and each badge sits on plain page at its piece's top-left. The first
+// piece is narrower than the second, so the column centres it and its badge clears the card's
+// rounded corner.
 const PIECES = [
-  [IMAGES.variants, whole(IMAGES.variants), []],
-  [IMAGES.chat, { x: 0, y: 250, w: 1040, h: 550 }, []],
-  [IMAGES.stays, { x: 0, y: 352, w: 1808, h: 600 }, []],
+  [IMAGES.chat, { x: 0, y: 150, w: 1040, h: 960 }, []],
+  [IMAGES.variants, { x: 24, y: 200, w: 1760, h: 720 }, []],
+  [IMAGES.stays, { x: 0, y: 760, w: 325, h: 196 }, []],
 ];
-const at =(node, x, y, s = 1) => { node.style.transform = `translate(${x}px, ${y}px) scale(${s})`; };
+const at = (node, x, y, s = 1) => { node.style.transform = `translate(${x}px, ${y}px) scale(${s})`; };
 async function tap(key, hold = 0.09) { key.classList.add("down"); await wait(hold); key.classList.remove("down"); }
 
 class Column {
@@ -138,9 +140,17 @@ export class Stitch extends Column {
     const size = cardSize(plan);
     this.slot = { w: size.w * SCALE, h: size.h * SCALE };
     Object.assign(this.slot, { x: this.R - this.slot.w, y: this.bottom - this.slot.h });
+    // Each picked card takes its capture's shape by the stack's card-size rule, newest at the bottom.
+    let top = this.bottom + UI.cardSpacing;
+    const from = [];
+    for (let i = picked.length - 1; i >= 0; i--) {
+      const { w, h } = cardSize(picked[i][1]);
+      top -= h * SCALE + UI.cardSpacing;
+      from[i] = { x: this.R - w * SCALE, y: top, w: w * SCALE, h: h * SCALE };
+    }
     // The cards above the three, which move down to the new card.
-    this.kept = this.column([[IMAGES.frame, whole(IMAGES.frame), []], SHOTS[1]], this.bottom - 3 * STEP);
-    this.drop = this.slot.y - UI.cardSpacing - (this.bottom - 3 * STEP);
+    this.kept = this.column([[IMAGES.frame, whole(IMAGES.frame), []], SHOTS[1]], top - UI.cardSpacing);
+    this.drop = this.slot.y - top;
     this.off = W - (this.R - CW) + 24;
     this.result = el("div", "cardx");
     place(this.result, this.slot);
@@ -171,14 +181,14 @@ export class Stitch extends Column {
       c.pic.parentNode.style.width = c.pic.parentNode.style.height = "";
       c.num = el("div", "scircle", String(i + 1));
       c.append(c.num);
-      c.from = { x: this.R - CW, y: this.bottom - CH - (2 - i) * STEP, w: CW, h: CH };
+      c.from = from[i];
       s.append(c);
       return c;
     });
     // The selection strip, a strip gap left of the cards and centred on the picked ones
     // (StackLayout.stripPlacement), with the rows Config.stripRows shows for three screenshots.
     this.strip = selectionStrip();
-    Object.assign(this.strip.style, { right: `${W - (this.R - CW) + 16 * SCALE}px`, top: `${this.bottom - STEP - CH / 2 - 64}px` });
+    Object.assign(this.strip.style, { right: `${W - (this.R - CW) + 16 * SCALE}px`, top: `${(top + this.bottom) / 2 - 64}px` });
     this.stitchRow = this.strip.children[2];
     s.append(this.strip);
     this.m = new Motion((m) => {
