@@ -8,7 +8,7 @@ final class FolderWritesTests: XCTestCase {
         case showCard(URL)
         case removeCards([URL])
         case removeDrawings([ScreenshotKey], TimeInterval)
-        case removeReply(URL)
+        case fileRemoved(URL)
         case renameCards([ScreenshotKey], [ScreenshotKey])
         case renameDrawings([ScreenshotKey], [ScreenshotKey])
         case sweepDrawings(TimeInterval)
@@ -60,7 +60,7 @@ final class FolderWritesTests: XCTestCase {
             },
             removeCards: { [unowned self] shots in self.events.append(.removeCards(shots.map(\.url))) },
             removeDrawings: { [unowned self] keys, observedAt in self.events.append(.removeDrawings(keys, observedAt)) },
-            removeReply: { [unowned self] shot in self.events.append(.removeReply(shot.url)) },
+            fileRemoved: { [unowned self] shot in self.events.append(.fileRemoved(shot.url)) },
             renameCards: { [unowned self] renames in self.events.append(.renameCards(renames.map(\.from), renames.map(\.to))) },
             renameDrawings: { [unowned self] renames in self.events.append(.renameDrawings(renames.map(\.from), renames.map(\.to))) },
             sweepDrawings: { [unowned self] inventory in self.events.append(.sweepDrawings(inventory.observedAt)) },
@@ -107,7 +107,7 @@ final class FolderWritesTests: XCTestCase {
     }
 
     private func leaves(_ url: URL, _ observedAt: TimeInterval) -> [Event] {
-        [.removeCards([url]), .removeDrawings([url.screenshotKey], observedAt), .removeReply(url)]
+        [.removeCards([url]), .removeDrawings([url.screenshotKey], observedAt), .fileRemoved(url)]
     }
 
     // MARK: Adds
@@ -161,7 +161,7 @@ final class FolderWritesTests: XCTestCase {
         writes.callbacks.isVisible = { $0.lastPathComponent != "hidden.png" }
         let from = folder.appendingPathComponent("a.png"), to = folder.appendingPathComponent("hidden.png")
         writes.renamed([(from: from.screenshotKey, to: to.screenshotKey)], in: try inventory(observedAt: 20))
-        XCTAssertEqual(events, [.removeCards([from]), .removeDrawings([from.screenshotKey], 20), .removeReply(from)])
+        XCTAssertEqual(events, [.removeCards([from]), .removeDrawings([from.screenshotKey], 20), .fileRemoved(from)])
     }
 
     func testACaptureNamedLikeAPushInASubfolderIsStillACapture() throws {
