@@ -34,6 +34,13 @@ enum SessionStart: Equatable, Codable, Sendable {
     static func newRowID(folder: String) -> String { "new:\(folder)" }
 }
 
+extension StartableSessions {
+    static func isFolder(_ path: String) -> Bool {
+        var folder: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &folder) && folder.boolValue
+    }
+}
+
 extension AgentDestination {
     /// Whether sending here starts a process. Only a person's pick may do that, so these rows travel
     /// apart from the running sessions (`DestinationChoice.Candidates.startable`).
@@ -58,10 +65,6 @@ struct StartableSessions: Sendable {
     var transcripts = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
     /// Whether Vignette can start a session at all. Without a launcher no row is offered.
     var canStart: @Sendable () -> Bool = { HerdrFocus.binaryToRun() != nil }
-    var folderExists: @Sendable (String) -> Bool = { path in
-        var folder: ObjCBool = false
-        return FileManager.default.fileExists(atPath: path, isDirectory: &folder) && folder.boolValue
-    }
     var now: @Sendable () -> Date = { Date() }
     var home = NSHomeDirectory()
 
@@ -82,7 +85,7 @@ struct StartableSessions: Sendable {
             ClaudeCodeConnection.tail(of: file, bytes: Self.historyBytes).map(Self.entries(in:)) ?? []
         }
         let since = now().addingTimeInterval(-Self.window)
-        return Self.projects(in: entries, since: since).filter { folderExists($0.folder) }.flatMap { project -> [AgentDestination] in
+        return Self.projects(in: entries, since: since).filter { Self.isFolder($0.folder) }.flatMap { project -> [AgentDestination] in
             let folders = [transcripts.appendingPathComponent(Self.transcriptFolder(of: project.folder))]
             let last = project.sessions.prefix(Self.sessionsPerProject).compactMap { session -> (String, ClaudeCodeConnection.Transcript)? in
                 guard let file = ClaudeCodeConnection.transcriptFile(session: session, folders: folders) else { return nil }

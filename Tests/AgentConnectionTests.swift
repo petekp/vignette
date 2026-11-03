@@ -21,11 +21,10 @@ final class AgentConnectionTests: XCTestCase {
         """
     }
 
-    /// A connection over inboxes in a temporary folder. Every process id in `running` is taken to
-    /// be alive.
     func claude(inboxes root: URL, running: Set<Int32> = [101, 102], now: Date = Date()) -> ClaudeCodeConnection {
         var connection = ClaudeCodeConnection()
         connection.inboxes = root
+        connection.modStore = { [:] }
         connection.transcripts = URL(fileURLWithPath: "/nonexistent/projects")
         connection.isRunning = { running.contains($0) }
         connection.now = { now }
