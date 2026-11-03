@@ -172,8 +172,8 @@ struct LivePacket: @unchecked Sendable {
     }
 
     /// What `plan` says to capture, read. For one window, as `build(at:window:)`. For an area, that
-    /// part of the display as the person sees it, without Vignette's windows, with each window the
-    /// plan sends alone captured after it; `inkWindows` says which window each of `ink` is on.
+    /// part of the display with only what the ink is on, then each window the plan sends alone;
+    /// `inkWindows` says which window each of `ink` is on.
     @MainActor
     static func build(_ plan: Plan, at point: CGPoint, ink: [Mark], inkWindows: [Mark.ID: CGWindowID] = [:], style: TextStyle,
                       markStyle: MarkStyle, glanced: (@Sendable (Glance) -> Void)? = nil) async throws -> LivePacket {
@@ -203,8 +203,8 @@ struct LivePacket: @unchecked Sendable {
                     ?? content.displays.first(where: { $0.frame.contains(point) }) ?? content.displays.first {
             let own = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
             asSeen = SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
-            // Only what the ink is on is sent: its windows, a menu it is over, and the desktop, which
-            // `shareableContent` does not list and so is never left out.
+            // Only what the ink is on: its windows, a menu it is over, and the desktop, which
+            // `shareableContent` never lists.
             let holders = Set((area?.windows ?? []) + (area?.alone ?? []).map(\.window))
             let kept = content.windows.filter { window in
                 holders.contains(window.windowID) || (window.windowLayer > Self.menuBarLevel
@@ -223,7 +223,7 @@ struct LivePacket: @unchecked Sendable {
             throw Failure(reason: "Vignette couldn't see the screen.", detail: "no window or display")
         }
         let capture: CGImage
-        // As the person sees it, for the brightness under each mark the answer draws. It stays on the Mac.
+        // As the person sees it, for the brightness under the answer's marks. Never sent.
         var seen: CGImage?
         do {
             let settings = configuration(frame, scale: scale(at: area == nil ? point : CGPoint(x: frame.midX, y: frame.midY)), source: source)
@@ -233,6 +233,7 @@ struct LivePacket: @unchecked Sendable {
             throw captureFailed(error)
         }
         let captured = Date()
+        try Task.checkCancellation()
         // Each Accessibility call may wait out its 0.1 s timeout, and a web page takes many, so the
         // page is looked for while the text is read.
         // Ink an area's picture does not show is numbered with the rest, for the pictures of its windows.
@@ -257,6 +258,7 @@ struct LivePacket: @unchecked Sendable {
         let page = await found.value
         var alone: [Alone] = []
         for each in area?.alone ?? [] {
+            try Task.checkCancellation()
             guard let window = content.windows.first(where: { $0.windowID == each.window }) else { continue }
             let own = ink.filter { inkWindows[$0.id] == each.window }
             alone.append(try await picture(of: window, ink: own, numbers: assembled.numbers, plan: each, style: style, markStyle: markStyle))

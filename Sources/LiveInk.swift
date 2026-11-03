@@ -984,13 +984,14 @@ final class LiveInk {
         run(asks.reduce(event))
     }
 
-    /// How long a new note waits out of sight for the window's text before it shows where it opened.
+    /// How long a new note waits unseen for the window's text before showing where it opened.
     private static let revealLimit: TimeInterval = 0.8
 
-    /// Starts capturing the window under the ink as a stroke ends, while the chord is still held,
-    /// so the note can open clear of the window's text without waiting for a capture of its own. The
-    /// note waits only for the glance at where the text is, which comes long before the packet.
+    /// Starts capturing the window under the ink as a stroke ends, with the chord still held,
+    /// so the note can open clear of the window's text without a capture of its own. It waits only
+    /// for the glance at where the text is, which comes long before the packet.
     private func prefetch(at point: CGPoint) {
+        prepared?.packet.cancel()
         let person = ink
         let plan = picturePlan(for: newInk)
         let inkWindows = inkWindows(of: person)
@@ -1024,10 +1025,9 @@ final class LiveInk {
     /// The window a mark is on, or goes onto once the menu it was drawn over has closed.
     private func window(of id: Mark.ID) -> CGWindowID? { windows.window(of: id) ?? pinsAfterMenus[id] }
 
-    /// Shows the note against its ink, where a hand would write it, which needs the window's frame
-    /// and text from a glance at the window: the one started as the stroke ended, which also serves
-    /// the ask when the ink is the same, or a new one. Without an answer in `revealLimit`, the note
-    /// shows where it opened.
+    /// Shows the note against its ink, where a hand would write it, from a glance at the window's
+    /// frame and text: the one started as the stroke ended, which also serves an ask about the same
+    /// ink, or a new one. Without one in `revealLimit`, the note shows where it opened.
     private func prepare(beside newest: Mark, panel: LiveNotePopover) {
         let person = ink
         let extent = newest.shapeExtent ?? .zero
@@ -1725,6 +1725,7 @@ final class LiveInk {
         letGoOfTour(because: "cleared")
         run(asks.reduce(.cleared))
         responders.stop()
+        prepared?.packet.cancel()
         prepared = nil
     }
 
