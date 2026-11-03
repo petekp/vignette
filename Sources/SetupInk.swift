@@ -44,7 +44,7 @@ final class SetupInkPlayer: ObservableObject {
     /// Which agent the note starts on: Codex where only Codex can answer, else Claude.
     var responders: ResponderStatus?
 
-    /// The demo's targets after its responder: a Codex thread, then the Claude Code session the note goes to.
+    /// The demo's targets after its responder: a Codex thread, then the note's Claude Code session.
     private static let sessions: [AgentDestination] = {
         let now = Date()
         return [AgentDestination(id: "setup-demo-codex", name: "inbox", address: .codexThread(uuid: "setup-demo-codex"), lastUsed: now),
@@ -76,7 +76,7 @@ final class SetupInkPlayer: ObservableObject {
         Log.write("[setup] live ink demo began")
     }
 
-    /// The page went: the demo stops, and its ink and note leave with the page.
+    /// The page went: the demo stops, and its ink and note leave with it.
     func stop() {
         stage.isRunning = false
         stage.marks.hang(nil, place: nil)
@@ -245,7 +245,7 @@ final class SetupInkPlayer: ObservableObject {
 
     /// Between the note and the second line below it, in points.
     private static let lineTwoGap: CGFloat = 10
-    /// How long the second line takes to move out of the note's way, at full motion.
+    /// How long the second line takes to move out of the note's way at full motion.
     static let makingRoom: CFTimeInterval = 0.3
 
     /// The session's turn ended: the ink turns green with its check and leaves, and the note with it.
@@ -306,7 +306,7 @@ struct LiveInkPage: View {
                 // As tall as the grown keys from the start, so only the line's words move as they grow.
                 .frame(height: SetupInkKeys.grown)
                 .inkAnchor(SetupInkPlayer.lineAnchors[0])
-                // The page has no room for a third line, so why Claude cannot answer takes this one's place.
+                // With no room for a third line, why Claude cannot answer takes this one's place.
                 Text(responders.askLine)
                     .foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 340)
@@ -364,10 +364,10 @@ struct LiveInkSetupPage: View {
     let guide: SetupInkGuide
     let trusted: Bool
     let screenRecording: Bool
-    /// Where the Allow buttons go: macOS, or the Setup Lab.
+    /// Where the Allow buttons go: macOS or the Setup Lab.
     let callbacks: SetupWindowController.Callbacks
     @ObservedObject var responders: ResponderStatus
-    @State private var askedScreenRecording = false
+    @State private var askedScreenRecording = SetupModel.returnsToLiveInkSetup
     private let accessibility = SetupInkGuide.Step.accessibility
     private let recording = SetupInkGuide.Step.screenRecording
 
