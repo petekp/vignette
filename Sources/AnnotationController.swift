@@ -675,9 +675,6 @@ final class AnnotationController {
         container?.layer?.borderColor = NSColor.white.withAlphaComponent(ui.cardBorderOpacity).cgColor
     }
 
-    /// The image in the editor, by path, or nil between sessions.
-    var currentKey: ScreenshotKey? { current?.key }
-
     /// The opening the editor is in, or nil between them. A send compares its rendering's answer
     /// with this rather than the path: after Esc and a reopen of the same image, the path matches
     /// and the opening does not.
