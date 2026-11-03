@@ -96,6 +96,8 @@ struct CornerPresentation: Equatable {
     mutating func reduce(_ event: Event) -> [Effect] {
         switch event {
         case .cardsShown:
+            // A card that flew off the screen's edge never landed, and new cards are not it.
+            stackOnLanding = false
             guard !listing else { return [] }
             mode = .thumbnails
             return [.releaseKeys]
