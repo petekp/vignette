@@ -1267,7 +1267,7 @@ final class LiveInk {
         let effects = asks.reduce(.arrived(.answerCame, for: id))
         guard effects.contains(.drawAnswer) else { return nil }
         run(effects)
-        let targets = answer.marks.map { $0.target(in: packet.lines, sent: sent).map(packet.global) }
+        let targets = answer.marks.map { packet.target(of: $0, sent: sent) }
         let layout = LiveAnswerLayout.placed(for: answer, targets: targets, asked: asked,
                                              scene: scene(for: packet, answering: id), sizes: answerSizes, agent: agent,
                                              streamed: asks.ask(id)?.say, below: LiveAnswerActions.room(for: answer.actions),

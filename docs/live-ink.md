@@ -2,8 +2,7 @@
 
 Live ink is drawing straight on the screen, over any app, while a pair of modifiers is held, and
 asking an agent about what was drawn. This file has its rules and says where each part of it lives.
-`docs/live-ink-integration-2026-10-04.md` has the plan, and the dated `docs/live-ink-*.md` notes
-have the measurements.
+The dated `docs/live-ink-*.md` notes have the measurements.
 
 ## Before it ships
 
@@ -189,12 +188,10 @@ The names in brackets are `// MARK:` sections.
   frontmost app, where ⌃⌥⌫ deletes a word.
 - While inking, the pointer field says the screen takes ink (`PointerField`, a Metal layer under
   the marks; `docs/live-ink-cursor-2026-10-10.md`). It is a ring round the pointer.
-  Nothing follows the pen while it draws: a wake that rippled the screen behind the stroke was
-  removed on 2026-10-12 as too much. The default style is Lamp, a soft pool of light in the ink's
+  Nothing follows the pen while it draws. The default style is Lamp, a soft pool of light in the ink's
   colours, the ice over dark content and deep blue over light, that breathes, brightens with the
   pointer's speed and has light drifting inside it
-  (`docs/live-ink-lamp-and-stroke-colour-2026-10-12.md`). It is the only style: the other five (Glass,
-  Lens, Squircle, Droplet and Caustic) were removed, with the screen picture they bent. The lamp
+  (`docs/live-ink-lamp-and-stroke-colour-2026-10-12.md`). It is the only style. The lamp
   draws no picture of the screen, so the field never starts Screen Recording.
   It is centred a little below and right of the arrow's tip, round the arrow's middle, and macOS
   draws the real arrow above it. It grows in as it shows, tightens and brightens while the button
@@ -475,8 +472,10 @@ The names in brackets are `// MARK:` sections.
   is planned and captured as its last stroke ends, while the menu is still open. An ask about that
   same ink uses that plan and capture. `LivePacket.Plan` decides which picture an ask gets, and
   `Tests/LiveInkTests.swift` tests it. The screen's picture is the
-  part of the newest ink's display that those windows' frames cover. It is captured as the person
-  sees it, without Vignette's windows, with every stroke drawn in and numbered. A stroke is covered
+  part of the newest ink's display that those windows' frames cover. It shows only what the ink is
+  on: its windows, a menu it is over and the desktop. Other windows, Vignette's too, are left out,
+  and every stroke is drawn in and numbered. Marks take their brightness from a capture as the person
+  sees it, kept on the Mac. A mark at a part left out is not drawn (`LivePacket.target(of:sent:)`). A stroke is covered
   when a normal window in front of its own window overlaps it. A window of the stroke's own app
   covers it only when it is at least 200 by 200 pt (`LivePacket.ownAppCoverSize`), since an app's
   sheets and title bar windows sit over its own window. A stroke is outside when it is past that
@@ -485,8 +484,7 @@ The names in brackets are `// MARK:` sections.
   of those windows holds, and which of them are covered or outside. The answer's marks go on the
   screen's picture only, each pinned to the window under it (`LiveInk.put`, `eachOnItsWindow`). The
   responder is told to say in words what it finds at a covered stroke. The text lines are Vision's
-  reading of the screen's picture, so they hold only what the person can see. No page or URL is
-  read. A note to a session gets the screen's picture, and its line says which strokes a window
+  reading of that picture. No page or URL is read. A note to a session gets the screen's picture, and its line says which strokes a window
   covers. The person's ink is kept in the order it was drawn, across windows (`LiveInk.shownMarks`).
   That order numbers the strokes and decides which is the newest.
   Ink across a line garbled what Vision read of it, and the fast level garbled code

@@ -100,7 +100,7 @@ final class NoteContent: NSView {
 extension NoteContent {
     static let askPlaceholder = "Ask about this"
     /// Until the first ask to a responder, the prompt says what it sees (`SetupInkCopy.costNote`).
-    static func firstAskPlaceholder(_ name: String) -> String { "Ask about this. \(name) sees the window's picture, title and URL." }
+    static func firstAskPlaceholder(_ name: String) -> String { "Ask about this. \(name) sees each window you drew on, with its title and URL." }
     static let sendPlaceholder = "Send to session"
 
     /// What the empty note says. Aimed at a responder, why it cannot answer comes first, `problem`.
