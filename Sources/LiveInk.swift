@@ -67,22 +67,24 @@ final class LiveInk {
     /// A key or another modifier cut the chord short, as the start of a shortcut.
     private var chordInterrupted = false
     /// The note on the ink no ask has been about, while there is some (`keepNoteWithItsInk`).
-    private var note: LiveNotePopover?
+    var note: LiveNotePopover?
     /// Where the note hangs, in global top-left points, from the mark its `anchor` names.
     private var notePlace: PopoverPlace?
     /// Listening to the person while they draw, with speech on. It can span several presses of the
     /// chord, so "this" and "that" drawn in two strokes are one note.
-    private var listening: LiveListening?
+    var listening: LiveListening?
     /// Why speech cannot listen, or nil when it can. A note says so in its prompt.
-    private var speechProblem: String? {
+    var speechProblem: String? {
         didSet { note?.speechProblem = speechProblem }
     }
     /// The note's words are the person's to keep: typed, or in the note before this listening began, so
     /// what they say no longer replaces them.
-    private var typedOver = false
+    var typedOver = false
     /// The final words of the last listening, while the note holds them as they were said, and when
     /// that listening began, which their times count from.
-    private var spoken: (words: [SpokenWord], began: Date)?
+    var spoken: (words: [SpokenWord], began: Date)?
+    /// What a listening that reached its limit before the note opened heard, for the note to take.
+    var heardBeforeNote: (words: [SpokenWord], began: Date)?
     /// When the stroke under way began.
     private var strokeBegan: Date?
     /// The diagonal of the screen the stroke under way began on, which sets how much line it keeps.
@@ -1925,7 +1927,7 @@ final class LiveInk {
     /// note opens without the keys.
     private func finishInking() {
         stopInking(because: chordInterrupted ? "a key cut the chord short" : "the chord was let go", keepingInkAboveMenus: true)
-        let opensNote = !newInk.isEmpty && (drewWhileInking || listening != nil || !chordInterrupted)
+        let opensNote = !newInk.isEmpty && (drewWhileInking || listening != nil || heardBeforeNote != nil || !chordInterrupted)
         drewWhileInking = false
         let menus = opensNote ? LiveMenus.open() : []
         guard !menus.isEmpty else {
@@ -1970,6 +1972,7 @@ final class LiveInk {
         keepNoteWithItsInk()
         // What is said goes into the note; with no note there is nowhere for it to go.
         if note != nil { listening?.released() } else { stopListening() }
+        if note != nil, let heard = heardBeforeNote { doneListening(heard.words, began: heard.began) }
         if !noteHasKeys { FocusReturn.shared.restore(reason: "live ink inking") }
     }
 
@@ -2019,73 +2022,6 @@ final class LiveInk {
         for surface in surfaces {
             surface.overlay.holdField(held.contains { $0 === surface }, ui: ui)
         }
-    }
-
-    // MARK: Listening
-
-    /// Starts listening, with speech on, as the pointer field shows: the chord on its way to a shortcut
-    /// shows no field, so it never turns the microphone on either.
-    private func listen() {
-        guard listening == nil else { return }
-        let settings = Settings.shared.data
-        guard settings.liveInkSpeech else { speechProblem = nil; return }
-        guard SpeechPermission.granted else {
-            Log.write("[speech] not listening: the microphone or speech recognition is not allowed")
-            speechProblem = Self.speechNotice
-            return
-        }
-        guard let transcriber = SpeechEngine.make() else {
-            Log.write("[speech] error no recognizer for \(Locale.current.identifier)")
-            speechProblem = AppleTranscriber.noModel
-            return
-        }
-        speechProblem = nil
-        let listening = LiveListening(transcriber: transcriber)
-        listening.onWords = { [weak self] words in self?.heard(words) }
-        listening.onFinished = { [weak self, weak listening] words in
-            guard let self, let listening, self.listening === listening else { return }
-            self.doneListening(words, began: listening.began)
-        }
-        listening.start { [weak self, weak listening] failure in
-            Log.write("[speech] error \(failure.detail)")
-            guard let self, let listening, self.listening === listening else { return }
-            self.listening = nil
-            self.speechProblem = failure.reason
-        }
-        self.listening = listening
-        typedOver = note.map { !$0.isEmpty } ?? false
-    }
-
-    private func heard(_ words: [SpokenWord]) {
-        guard !typedOver else { return }
-        note?.hear(LiveListening.text(of: words))
-    }
-
-    /// Listening ended by itself: the final words replace the partial ones, and the ask goes when the
-    /// person stopped talking, if that is how it sends.
-    private func doneListening(_ words: [SpokenWord], began: Date) {
-        listening = nil
-        guard let note else { return }
-        let text = LiveListening.text(of: words)
-        guard !typedOver, !text.isEmpty else { return }
-        spoken = (words, began)
-        note.hear(text)
-        if Settings.shared.data.liveInkSendWhenQuiet { note.send() }
-    }
-
-    /// A key typed in the note takes over from speech: listening ends, and the words stay the
-    /// person's to edit.
-    private func typedInNote() {
-        spoken = nil
-        guard let listening, !typedOver else { return }
-        typedOver = true
-        listening.finish()
-    }
-
-    /// Stops listening and drops what was heard.
-    private func stopListening() {
-        listening?.cancel()
-        listening = nil
     }
 
     // MARK: Surfaces
