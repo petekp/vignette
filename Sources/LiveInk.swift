@@ -1821,11 +1821,11 @@ final class LiveInk {
         Log.write("[live-ink] stopped: \(reason)")
     }
 
-    /// Takes the pointer's events from the window server for as long as inking lasts, or leaves them to
-    /// the overlays when macOS refuses.
+    /// Takes the pointer's events while inking lasts, or leaves them to the overlays when macOS refuses.
     private func startTap(since began: Date) {
         guard tap == nil else { return }
         tap = LiveInkTap.start { [weak self] input in self?.tapped(input) }
+        tap?.onTurnedOff = { [weak self] in self?.inking.forEach { $0.overlay.tapTakesPresses = false } }
         inking.forEach { $0.overlay.tapTakesPresses = tap != nil }
         let ms = Int(Date().timeIntervalSince(began) * 1000)
         Log.write(tap == nil ? "[live-ink] error tap refused by macOS; the overlay takes the presses" : "[live-ink] tap on ms=\(ms)")
@@ -2135,8 +2135,7 @@ final class LiveInk {
         Log.write("[live-ink] moved \(moves.count) onto the screen")
     }
 
-    /// How much line the pen keeps of a stroke: `ui.inkLengthDiagonals` diagonals of the screen it began on, so a
-    /// loop can go round as much of a large screen as of a small one.
+    /// How much line the pen keeps: `ui.inkLengthDiagonals` diagonals of the stroke's screen.
     private func longestLine(for points: [CGPoint], ui: UITweaks) -> CGFloat {
         let diagonal = strokeScreenDiagonal ?? points.first.map(Self.screenDiagonal(at:)) ?? 0
         return ui.inkLengthDiagonals * diagonal
