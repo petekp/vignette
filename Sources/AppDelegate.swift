@@ -493,7 +493,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             },
             removeCards: { [weak self] in self?.thumbnail.remove($0) },
             removeDrawings: { [weak self] keys, observedAt in self?.drawings.remove(keys, observedAt: observedAt) },
-            removeReply: { [weak self] in self?.requests.fileRemoved($0) },
+            fileRemoved: { [weak self] in self?.requests.fileRemoved($0) },
             renameCards: { [weak self] renames in
                 guard let self else { return }
                 self.thumbnail.rename(renames)

@@ -20,6 +20,8 @@ final class LiveInkTap {
     private let link: Link
     private var source: CFRunLoopSource?
     private let take: (LiveInkOverlay.Input) -> Void
+    /// macOS turned the tap off for the person's input: the overlay takes the presses from then.
+    var onTurnedOff: (() -> Void)?
 
     private init(take: @escaping (LiveInkOverlay.Input) -> Void) {
         self.take = take
@@ -180,7 +182,7 @@ final class LiveInkTap {
                 Log.write("[live-ink] tap turned off by macOS: too slow; on again")
             } else {
                 Log.write("[live-ink] tap turned off by macOS: user input; the overlay takes the presses")
-                DispatchQueue.main.async { MainActor.assumeIsolated { stoppedTaking() } }
+                DispatchQueue.main.async { MainActor.assumeIsolated { stoppedTaking(); link.tap?.onTurnedOff?() } }
             }
             return Unmanaged.passUnretained(event)
         default: return nil

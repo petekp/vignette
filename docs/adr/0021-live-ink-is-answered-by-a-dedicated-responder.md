@@ -1,6 +1,7 @@
 # Live ink is answered by a responder Vignette runs
 
-Superseded by ADR 0026: Codex answers live ink too, from a warm `codex app-server`.
+Superseded in part by ADR 0026, which adds Codex. The Claude rules here still hold. The app now
+states an ask's cost as about one to four cents.
 
 An ask about live ink goes to one `claude` process Vignette keeps running, on the person's own
 Claude Code sign-in, not to the session they are working in. Over 7 days of Pete's transcripts a

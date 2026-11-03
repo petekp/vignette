@@ -7,7 +7,6 @@ using namespace metal;
 
 struct FieldUniforms {
     float4 color;          // the person's ink colour, lightened, in the layer's colour space
-    float2 size;           // the screen, in points
     float2 origin;         // the top-left corner of the layer being drawn, on the screen
     float2 area;           // that layer's size
     float2 ringCentre;

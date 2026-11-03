@@ -26,6 +26,8 @@ final class ResponderStatus: ObservableObject {
     @Published private(set) var signIn = SignIn.idle
     /// Hears Codex's home signed in or out, which leaves its process on the old sign-in.
     var onCodexSignIn: ((_ signedIn: Bool) -> Void)?
+    /// Codex's sign-out is about to remove the sign-in its process runs on.
+    var onCodexSigningOut: (() -> Void)?
 
     /// The driver whose check and words each agent has.
     static let drivers: [AgentClient: any ResponderDriver.Type] = [.claude: ClaudeDriver.self, .codex: CodexDriver.self]
@@ -128,6 +130,7 @@ final class ResponderStatus: ObservableObject {
     func signOut() {
         guard live, signIn != .signingOut else { return }
         signIn = .signingOut
+        onCodexSigningOut?()
         CodexLogin.signOut { [weak self] in
             self?.signIn = .idle
             self?.changed(signedIn: false)

@@ -461,11 +461,11 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     }
 
     /// Gives the keys back to where the person was, now rather than when the window goes, when it has
-    /// them. Without them, the person's app has them, and nothing is taken from it. A popover's window
-    /// also reads as key while its parent window is, so only the app's key window counts.
+    /// them; a popover's window reads as key while its parent is, so only the app's key window counts.
+    /// Standing aside, it gives them to nobody: the stack or the editor is taking them.
     private func letGoOfKeys() {
         guard let window = content.window, NSApp.keyWindow === window else { return }
-        FocusReturn.shared.restore(reason: "live ink note")
+        if !standsAside { FocusReturn.shared.restore(reason: "live ink note") }
         window.resignKey()
     }
 
@@ -496,14 +496,13 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         }
     }
 
-    /// A click elsewhere took the keys: the note stays where it hangs, inactive, with its words, its
-    /// target and the caret's place. The keys go back to the app the person was in only while Vignette
-    /// is still the active app (`FocusReturn`), as when the click landed on nothing.
+    /// A click elsewhere took the keys: the note stays, inactive, with its words, target and caret. A
+    /// turn later the keys go back to the person's app (`FocusReturn`), unless a Vignette window has them.
     private func resigned() {
         guard !closing, !menuOpen, !sent else { return }
         caret = content.field.currentEditor()?.selectedRange
         content.showsKeys(false, duration: Self.focusFade * Settings.shared.motionScale)
-        FocusReturn.shared.restore(reason: "live ink note")
+        DispatchQueue.main.async { if NSApp.keyWindow == nil { FocusReturn.shared.restore(reason: "live ink note") } }
         Log.write("[live-ink] note let go of the keys")
     }
 

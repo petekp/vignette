@@ -145,7 +145,7 @@ struct NoteCardGroups: Equatable {
             for (id, _) in sequenced.sorted(by: { $0.1 < $1.1 }) { actions += step(id, .cardFailed, at: now) }
             actions = Self.sayingDoneOnce(actions, quietlyAll: false)
         }
-        // A Codex note's wait ends with no input of its own, so every input lets the finished ones go.
+        // A wait can end by its time limits, with no input of its own, so every input lets the finished ones go.
         entries = entries.filter { !$0.value.wait.isFinished(at: now) }
         return actions
     }

@@ -237,9 +237,9 @@ final class ThumbnailController {
 
     var stackShowing: Bool { visible && keys.isStack }
 
-    /// The stack or the annotator is up, and the screen is theirs: live ink does not draw over them.
-    var holdsScreen: Bool { stackShowing || run.isActive }
-    /// The stack or the annotator is coming up, so `holdsScreen` turns true: live ink stops drawing.
+    /// The stack or the annotator is up, or a card lands to make the stack: no live ink.
+    var holdsScreen: Bool { visible && (keys.isStack || keys.becomesStack) || run.isActive }
+    /// The stack or the annotator is coming up: `holdsScreen` turns true.
     var onTakesScreen: (() -> Void)?
 
     /// The card with the keyboard focus ring, while the stack is up.

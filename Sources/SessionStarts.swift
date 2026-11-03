@@ -34,6 +34,13 @@ enum SessionStart: Equatable, Codable, Sendable {
     static func newRowID(folder: String) -> String { "new:\(folder)" }
 }
 
+extension StartableSessions {
+    static func isFolder(_ path: String) -> Bool {
+        var folder: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &folder) && folder.boolValue
+    }
+}
+
 extension AgentDestination {
     /// Whether sending here starts a process. Only a person's pick may do that, so these rows travel
     /// apart from the running sessions (`DestinationChoice.Candidates.startable`).
@@ -47,21 +54,17 @@ extension AgentDestination {
 /// transcript per project. A project that has a running session is left out when the listing joins
 /// this list to the running sessions (`SessionListing.startable(_:beside:)`).
 ///
-/// Claude Code's prompt history (`~/.claude/history.jsonl`) is the index: one line per prompt the
+/// Claude Code's prompt history (`history.jsonl` in `AgentPlugin.claudeRoot`) is the index: one line per prompt the
 /// person typed, with the folder Claude Code ran in and the session. It holds interactive sessions
 /// only, and its last 2 MB went back 45 days on Pete's Mac (2026-10-25). The transcripts have 11,606
 /// project folders there, most of them from scripted runs, so listing them is not the index. Each
 /// candidate session's facts then come from its own transcript, by the rule a running session's do
 /// (`ClaudeCodeConnection.transcript(tail:)`): its title and when it was last used.
 struct StartableSessions: Sendable {
-    var history = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/history.jsonl")
-    var transcripts = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
+    var history = AgentPlugin.claudeRoot.appendingPathComponent("history.jsonl")
+    var transcripts = AgentPlugin.claudeRoot.appendingPathComponent("projects")
     /// Whether Vignette can start a session at all. Without a launcher no row is offered.
     var canStart: @Sendable () -> Bool = { HerdrFocus.binaryToRun() != nil }
-    var folderExists: @Sendable (String) -> Bool = { path in
-        var folder: ObjCBool = false
-        return FileManager.default.fileExists(atPath: path, isDirectory: &folder) && folder.boolValue
-    }
     var now: @Sendable () -> Date = { Date() }
     var home = NSHomeDirectory()
 
@@ -82,7 +85,7 @@ struct StartableSessions: Sendable {
             ClaudeCodeConnection.tail(of: file, bytes: Self.historyBytes).map(Self.entries(in:)) ?? []
         }
         let since = now().addingTimeInterval(-Self.window)
-        return Self.projects(in: entries, since: since).filter { folderExists($0.folder) }.flatMap { project -> [AgentDestination] in
+        return Self.projects(in: entries, since: since).filter { Self.isFolder($0.folder) }.flatMap { project -> [AgentDestination] in
             let folders = [transcripts.appendingPathComponent(Self.transcriptFolder(of: project.folder))]
             let last = project.sessions.prefix(Self.sessionsPerProject).compactMap { session -> (String, ClaudeCodeConnection.Transcript)? in
                 guard let file = ClaudeCodeConnection.transcriptFile(session: session, folders: folders) else { return nil }
@@ -220,5 +223,15 @@ struct HerdrLauncher: Sendable {
         guard let tab = (result?["tab"] as? [String: Any])?["tab_id"] as? String,
               let pane = (result?["root_pane"] as? [String: Any])?["pane_id"] as? String else { return nil }
         return (tab, pane)
+    }
+}
+
+extension AgentDestination {
+    /// The session a send to this row reached: for a row Vignette starts, the one `record` names, which
+    /// runs once the send is accepted; any other row as it is.
+    func sent(as record: ScreenshotRequests.Record) -> AgentDestination {
+        guard start != nil else { return self }
+        return AgentDestination(id: record.destinationID, name: name, detail: detail, address: record.address, lastUsed: lastUsed,
+                                place: place, branch: branch, hasOwnName: hasOwnName, folder: folder)
     }
 }

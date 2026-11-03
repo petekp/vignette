@@ -4,8 +4,7 @@ This plan takes live ink from branch `live-ink` into main and into a public rele
 the "Before it ships" list that `docs/live-ink.md` held from 2026-10-18 to now, and every item from
 that list is placed here.
 
-It assumes Pete has decided to ship. On 2026-10-18 the proposal
-(`docs/live-ink-proposal-2026-10-18.md`) decided to freeze the branch for two weeks and measure
+It assumes Pete has decided to ship. On 2026-10-18 a proposal, which was never committed, decided to freeze the branch for two weeks and measure
 use first. Its numbers still stand: the chord was used 0 times on 10-11 to 10-13, against 65
 screenshots sent, and every number came from one person. A public release is the measurement that
 proposal said was missing: "No one but you." Decision 1 below asks whether the freeze is dropped.
@@ -30,8 +29,8 @@ proposal said was missing: "No one but you." Decision 1 below asks whether the f
     inbox mod's goal)
   - the spinning check on a copied card (`CheckCoin`)
   - the automatic microphone choice
-- **Plugin and protocol.** The plugin goes from 6.2.2 to 6.3.12, the skill from 10 to 21, and
-  the reply protocol from 1 to 5. A Claude Code session that is already open needs
+- **Plugin and protocol.** The plugin goes from 6.2.0 to 6.3.16, the skill from 8 to 25, and
+  the reply protocol from 1 to 6. A Claude Code session that is already open needs
   `/reload-plugins`.
 - **Already checked.** macOS 14.8 and 15.7 in VMs: light and dark mode, full screen, Spaces, a
   resolution change and display sleep. Pete tried two displays and sleep on 2026-10-22, and both
@@ -60,11 +59,7 @@ proposal said was missing: "No one but you." Decision 1 below asks whether the f
    `docs/live-ink-ask-cost-2026-10-06.md`, or plan usage on a subscription. That is fine for the
    builder but not for someone who never asked Claude anything.
 5. **Wrong words.**
-   - `docs/using.md` says "Turn it on in Settings → General". That is false while the gate exists.
-   - It also says marks "don't follow the window under them". That contradicts ADR 0024.
-   - The skill tells a Codex thread that a result card follows the turn. Codex turns are not
-     watched.
-   - The README and the site say nothing about live ink.
+   - The site says nothing about live ink.
 
 ## Decisions for Pete
 
@@ -95,8 +90,8 @@ the order they block work.
      on a question nobody asked, which the setup rules forbid for Accessibility.
 5. **Saying what leaves the Mac.** Decided 2026-10-24, Pete: "Notice on page and in note".
    - A notice in two places. One is a sentence on the setup page and under the switch:
-     Claude sees a picture of the window, its title and its URL, through your own Claude Code, at
-     about one to four cents an ask. The other is a line in the note until the first send.
+     Claude sees a picture of each window you drew on, with its title and URL, through your own
+     Claude Code, at about one to four cents an ask. The other is a line in the note until the first send.
    - Asking first adds a step to the one gesture that must be cheaper than a screenshot.
 6. **People without `claude`.** Decided 2026-10-24, Pete: "Check, then notes go to sessions".
    - Check for `claude` and its sign-in when live ink is turned on, and again on the

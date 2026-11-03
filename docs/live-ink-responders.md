@@ -54,7 +54,8 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
   registered itself as a session in Vignette's inbox and could read files, so those flags are the
   isolation.
 - The process stops before any screen content is sent unless its `init` line lists no tool but
-  `StructuredOutput` and no MCP server. Its warm-up ask ($0.001 to $0.01) checks that line and
+  `StructuredOutput` and no MCP server. An `init` line that never comes before the warm-up's result,
+  or lists no tools at all, stops it too, since it proves nothing. Its warm-up ask ($0.001 to $0.01) checks that line and
   caches the prompt. `docs/live-ink-ask-cost-2026-10-06.md` has what an ask costs and why.
 - It runs on Claude's 5-minute prompt cache (`CLAUDE_CODE_PROMPT_CACHE_TTL=5m`). An ask after the
   cache ends would write the whole conversation again, so the process stops 4.5 minutes after its

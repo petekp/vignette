@@ -86,8 +86,16 @@ final class CornerPresentationTests: XCTestCase {
 
     func testEscFromTheEditorOfACardAloneInTheCornerLeavesItLoneThumbnails() {
         var p = after(.cardsShown, .editorOpened, .editorClosed(.back))
+        XCTAssertTrue(p.becomesStack)
         XCTAssertEqual(p.reduce(.cardLanded(card, others: false)), [])
         XCTAssertEqual(p.mode, .thumbnails)
+        XCTAssertFalse(p.becomesStack)
+    }
+
+    func testCardsShownAfterAnEscCardFlewAwayDoNotWaitToBecomeTheStack() {
+        var p = after(.cardsShown, .editorOpened, .editorClosed(.back))
+        XCTAssertEqual(p.reduce(.cardsShown), [.releaseKeys])
+        XCTAssertFalse(p.becomesStack)
     }
 
     func testAClickOutsideDoneAndSendFromTheCornerHandTheKeysBackToTheFrontApp() {
@@ -152,6 +160,7 @@ final class CornerPresentationTests: XCTestCase {
                 }
                 let event = choices.randomElement(using: &rng)!
                 let effects = p.reduce(event)
+                if case .cardsShown = event { XCTAssertFalse(p.becomesStack, "seed \(seed)") }
                 trace.append("\(event) -> \(p.mode) \(effects)")
                 let context = "seed \(seed)\n" + trace.joined(separator: "\n")
                 if effects.contains(.closeEditor) { closing = true }

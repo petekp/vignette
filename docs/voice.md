@@ -109,9 +109,9 @@ live ink permissions page. It names the agents that can answer.
 
 | Agents that can answer | Words |
 | --- | --- |
-| Claude Code, or neither | When you ask, Claude sees a picture of the window, its title and URL, through your own Claude Code. An ask costs about one to four cents. |
-| Codex alone, or Codex before its sign-in where Claude Code can't answer | When you ask, Codex sees a picture of the window, its title and URL, through your ChatGPT account. An ask counts toward your plan's usage limit. |
-| Both | When you ask, Claude or Codex sees a picture of the window, its title and URL. An ask to Claude costs about one to four cents. One to Codex counts toward your ChatGPT plan's usage limit. |
+| Claude Code, or neither | When you ask, Claude sees a picture of each window you drew on, with its title and URL, through your own Claude Code. An ask costs about one to four cents. |
+| Codex alone, or Codex before its sign-in where Claude Code can't answer | When you ask, Codex sees a picture of each window you drew on, with its title and URL, through your ChatGPT account. An ask counts toward your plan's usage limit. |
+| Both | When you ask, Claude or Codex sees a picture of each window you drew on, with its title and URL. An ask to Claude costs about one to four cents. One to Codex counts toward your ChatGPT plan's usage limit. |
 
 Setup's live ink pages name Codex where Codex is installed and Claude Code can't answer
 (`ResponderStatus.namedAgent`), and Claude elsewhere. The guide's label is Start here beside
@@ -121,6 +121,8 @@ Accessibility's Allow…, and Then this beside Screen Recording's Allow… and S
 | --- | --- |
 | The live ink page, under the line about drawing (`SetupInkCopy.askLine`) | Then ask Claude about it, or send it to a Claude Code or Codex session. On that Mac: Then ask Codex about it, … |
 | Screen Recording's reason on the permissions page (`SetupInkCopy.screenRecordingReason`) | So Claude can see the window you drew on. On that Mac: So Codex can see the window you drew on. |
+| Accessibility's reason on the permissions page | So you can draw while holding *pair*. |
+| Under the permissions page while Screen Recording is missing (`SetupInkCopy.reopenNote`) | Once you allow Screen Recording, macOS asks to quit and reopen Vignette. Setup opens again on this page. |
 
 ### Setup's shortcut page, after the hold (`SetupBanter`)
 

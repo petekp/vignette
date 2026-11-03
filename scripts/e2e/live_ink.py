@@ -321,4 +321,51 @@ def ink_no_claude(app):
     app.command('live-ink-clear')
 
 
-ALL = [ink_answered, ink_to_session, ink_no_recording, ink_no_claude]
+def ink_claude_shows_no_tools(app):
+    """Live ink with a `claude` that writes no `init` line, so nothing shows it started without tools:
+    Vignette stops it after the warm-up, and an ask fails beside the ink having sent it nothing of the
+    screen."""
+    claude, env = fake_claude(app)
+    open(os.path.join(claude, 'no-init'), 'w').close()
+    launch(app, **env)
+    require_screen_recording(app, True)
+    _, lines = page(app)
+    # The first stroke starts Claude, so its refusal may come before the ask.
+    offset = app.log_size()
+    draw_note(app, lines[1])
+    ask(app)
+    app.wait_log('[live-ink] responder error not-isolated', offset, timeout=20)
+    ink = failed_ask(app, 'Live ink stopped Claude, which started with tools.')
+    if any(m['images'] for m in claude_messages(claude)):
+        raise Failed('Claude was sent a picture')
+    app.report.step('Claude was stopped after its warm-up and sent no picture')
+    time.sleep(1)
+    capture_reply(app, ink, 'failure')
+    app.command('live-ink-clear')
+
+
+def ink_offered_once(app):
+    """An install updated from 0.1.6, whose settings.json has no live ink keys, is offered live ink on
+    its first launch only: Settings opens on its General tab, the offer is recorded, and the next
+    launch offers nothing."""
+    app.write_settings()
+    with open(app.settings) as f:
+        old = json.load(f)
+    old.pop('liveInkOffered')
+    with open(app.settings, 'w') as f:
+        json.dump(old, f, indent=2)
+    start(app)
+    app.wait_log('[settings] offered live ink', 0)
+    with open(app.settings) as f:
+        if not json.load(f).get('liveInkOffered'):
+            raise Failed('the offer was not recorded in settings.json')
+    app.report.step('the first launch offered live ink and recorded it')
+    app.stop()
+    offset = app.log_size()
+    start(app)
+    if '[settings] offered live ink' in app.log_since(offset):
+        raise Failed('the second launch offered live ink again')
+    app.report.step('the second launch offered nothing')
+
+
+ALL = [ink_answered, ink_to_session, ink_no_recording, ink_no_claude, ink_claude_shows_no_tools, ink_offered_once]

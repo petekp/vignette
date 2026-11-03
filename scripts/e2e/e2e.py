@@ -142,8 +142,8 @@ class App:
     # -- Setup
 
     def write_settings(self, **overrides):
-        data = {'version': 2, 'setup': 'done', 'agentSkill': 'off', 'launchAtLogin': False,
-                # Not a double tap: the person's own Vignette answers that one.
+        # The live ink offer made, or Settings opens. A double tap reaches the person's Vignette.
+        data = {'version': 2, 'setup': 'done', 'agentSkill': 'off', 'liveInkOffered': True, 'launchAtLogin': False,
                 'recentHotkey': 'ctrl+opt+cmd+9'}
         data.update(overrides)
         with open(self.settings, 'w') as f:
@@ -154,7 +154,7 @@ class App:
 
     def reset_defaults(self):
         """Clears the copy's preference domains, which every scenario shares: macOS keeps them in
-        the real ~/Library/Preferences whatever the home."""
+        ~/Library/Preferences whatever the home."""
         for domain in (self.copy['bundle'], f"{self.copy['bundle']}.screencapture"):
             subprocess.run(['defaults', 'delete', domain], capture_output=True)
             if subprocess.run(['defaults', 'read', domain], capture_output=True).returncode == 0:
@@ -172,8 +172,7 @@ class App:
 
     def link_relaunch_home(self):
         """Points the home the copy's Info.plist names at this scenario's, so a launch with no
-        environment comes back on this scenario's files. A folder there was made by such a launch
-        while nothing was linked."""
+        environment comes back on its files. A folder there is from such a launch with no link."""
         link = self.copy['relaunchHome']
         os.makedirs(os.path.dirname(link), exist_ok=True)
         if os.path.isdir(link) and not os.path.islink(link):

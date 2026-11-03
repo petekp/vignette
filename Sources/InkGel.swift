@@ -393,6 +393,9 @@ final class InkBackdrop {
     /// How long after the person's last click, scroll or key the maps are read again, in seconds, so
     /// a scroll or a burst of typing is read once it stops and what it changed has drawn.
     static let settle: TimeInterval = 0.3
+    /// Whether the pointer is near the ink, from `LiveInk`. Only a click, scroll or key there, or an
+    /// app coming forward, reads the screen again: one far from the ink changes nothing behind it.
+    var isNearInk: () -> Bool = { true }
 
     private var interactions: Any?
     private var appCameForward: NSObjectProtocol?
@@ -404,15 +407,15 @@ final class InkBackdrop {
         guard interactions == nil else { return }
         let events: NSEvent.EventTypeMask = [.leftMouseUp, .rightMouseUp, .otherMouseUp, .scrollWheel, .keyDown]
         interactions = NSEvent.addGlobalMonitorForEvents(matching: events) { [weak self] _ in
-            MainActor.assumeIsolated { self?.interacted() }
+            MainActor.assumeIsolated { self?.interacted(nearInk: self?.isNearInk() == true) }
         }
         appCameForward = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
                                                                           object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.interacted() }
+            MainActor.assumeIsolated { self?.interacted(nearInk: true) }
         }
     }
 
-    private func interacted() {
+    private func interacted(nearInk: Bool) {
         guard InkClock.shared.showsInk else {
             interactions.map(NSEvent.removeMonitor)
             appCameForward.map(NSWorkspace.shared.notificationCenter.removeObserver)
@@ -421,6 +424,7 @@ final class InkBackdrop {
             settling?.cancel()
             return
         }
+        guard nearInk else { return }
         settling?.cancel()
         let read = DispatchWorkItem { [weak self] in self?.refresh() }
         settling = read
@@ -453,41 +457,21 @@ final class InkBackdrop {
     func brightness(in rect: CGRect) -> CGFloat? {
         maps.lazy.compactMap { $0.luminance.mean(in: rect) }.first
     }
-
-    /// Each display behind the ink, drawn down to its map's cells. Vignette's own windows are left
-    /// out, so the ink and its glow never brighten their own map.
-    nonisolated private static func capture() async -> [(frame: CGRect, luminance: LivePacket.Luminance)] {
-        guard CGPreflightScreenCaptureAccess(),
-              let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true) else { return [] }
-        let own = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
-        var maps: [(frame: CGRect, luminance: LivePacket.Luminance)] = []
-        for display in content.displays {
-            let filter = SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
-            let configuration = SCStreamConfiguration()
-            // A pixel every two points gives each cell sixteen to take its mean from.
-            configuration.width = max(1, Int(display.frame.width / 2))
-            configuration.height = max(1, Int(display.frame.height / 2))
-            configuration.showsCursor = false
-            guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration),
-                  let luminance = LivePacket.Luminance(image, frame: display.frame, columns: max(1, Int(display.frame.width / cell))) else { continue }
-            maps.append((display.frame, luminance))
-        }
-        return maps
-    }
 }
 
 /// The clock every gel layer draws from: one display link, running while a layer moves. The light
 /// and the film drift on the material's own time, which runs at `inkGelMotion` times the motion
-/// scale, so motion 0 holds them still. Idle ink redraws at about 30 frames a second; ink that is
-/// easing onto its shape redraws every frame.
+/// scale, so motion 0 holds them still, and slows to still once nothing stirs the ink (`InkRest`).
+/// Drifting ink redraws at about 30 frames a second; ink easing onto its shape, every frame.
 @MainActor
 final class InkClock: NSObject {
     static let shared = InkClock()
 
     private var layers: [ObjectIdentifier: Weak] = [:]
-    private var link: CADisplayLink?
+    private var link: ScreenLink?
     private var last = CACurrentMediaTime()
     private var lastIdle: CFTimeInterval = 0
+    private var rest = InkRest(stirredAt: CACurrentMediaTime())
     /// The material's time, in seconds of drift.
     private(set) var time: CFTimeInterval = 0
     private var settingsChanged: AnyCancellable?
@@ -506,6 +490,11 @@ final class InkClock: NSObject {
         layers[ObjectIdentifier(layer)] = Weak(layer: layer)
         InkBackdrop.shared.keepFresh()
         watchPointer()
+        stir()
+    }
+
+    private func stir() {
+        rest.stir(at: CACurrentMediaTime())
         wake()
     }
 
@@ -519,10 +508,10 @@ final class InkClock: NSObject {
         guard pointerWatch.isEmpty else { return }
         let moves: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
         if let global = NSEvent.addGlobalMonitorForEvents(matching: moves, handler: { [weak self] _ in
-            MainActor.assumeIsolated { self?.wake() }
+            MainActor.assumeIsolated { self?.stir() }
         }) { pointerWatch.append(global) }
         if let local = NSEvent.addLocalMonitorForEvents(matching: moves, handler: { [weak self] event in
-            MainActor.assumeIsolated { self?.wake() }
+            MainActor.assumeIsolated { self?.stir() }
             return event
         }) { pointerWatch.append(local) }
     }
@@ -559,10 +548,7 @@ final class InkClock: NSObject {
 
     /// Ticks again, after being paused for want of anything moving.
     func wake() {
-        if link == nil, let screen = NSScreen.screens.first {
-            link = screen.displayLink(target: self, selector: #selector(tick(_:)))
-            link?.add(to: .main, forMode: .common)
-        }
+        if link == nil, !NSScreen.screens.isEmpty { link = ScreenLink(self, #selector(tick(_:))) }
         link?.isPaused = false
     }
 
@@ -570,7 +556,7 @@ final class InkClock: NSObject {
         tickers.values.forEach { $0(link.targetTimestamp) }
         let now = CACurrentMediaTime()
         let ui = Settings.shared.data.ui
-        let rate = Settings.shared.motionScale * ui.inkGelMotion
+        let rate = Settings.shared.motionScale * ui.inkGelMotion * rest.drift(at: now)
         time += min(now - last, 0.1) * rate
         last = now
         layers = layers.filter { $0.value.layer != nil }
@@ -597,9 +583,9 @@ final class InkClock: NSObject {
         if !tickers.isEmpty {
             return
         } else if layers.isEmpty || (!moving && rate <= 0 && !shown.contains(where: \.needsGel)) {
-            link.isPaused = true
+            self.link?.isPaused = true
         } else if shown.isEmpty {
-            link.isPaused = true
+            self.link?.isPaused = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 if self?.layers.isEmpty == false { self?.wake() }
             }

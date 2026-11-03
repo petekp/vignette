@@ -2,7 +2,9 @@ import Foundation
 
 /// What Esc does next while live ink is up: one step back out of it per press, the first that applies
 /// (docs/live-ink.md, "Esc"). `LiveInk` holds Esc as a hotkey only while `next` has a step, so with
-/// nothing to back out of the key is the frontmost app's.
+/// nothing to back out of the key is the frontmost app's. Past the note and Reply's field, which have
+/// the keys, a step applies only while the pointer is on live ink: otherwise the person is typing in
+/// another app, where Esc stops a terminal's agent, closes a dialog or leaves a mode.
 enum LiveEscape {
     /// The key code of Esc.
     static let keyCode: UInt32 = 53
@@ -42,6 +44,9 @@ enum LiveEscape {
         var answerShown = false
         /// Some mark shows that is not already leaving.
         var marksShown = false
+        /// The pointer is on a mark or a reply that shows on the active Space. Read only when a step
+        /// needs it (`needsPointer`).
+        var pointerOnInk = false
     }
 
     enum Note: Equatable {
@@ -56,10 +61,18 @@ enum LiveEscape {
         guard state.isOn, state.screenIsFree, !state.menuOpen, state.note != .withoutKeys else { return nil }
         if state.note == .hasKeys { return .discardNote }
         if state.replyFieldOpen { return .closeReplyField }
+        guard state.pointerOnInk else { return nil }
         if state.askCanBeCancelled { return .cancelAsk }
         if state.tourRunning { return .endTour }
         if state.answerShown { return .closeAnswer }
         if state.marksShown { return .clearInk }
         return nil
+    }
+
+    /// Whether `next` reads `pointerOnInk`: a step past the note and Reply's field could apply.
+    static func needsPointer(_ state: Snapshot) -> Bool {
+        var pointed = state
+        pointed.pointerOnInk = true
+        return next(pointed).map { $0 != .discardNote && $0 != .closeReplyField } ?? false
     }
 }

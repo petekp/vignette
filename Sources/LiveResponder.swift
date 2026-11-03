@@ -7,7 +7,7 @@ import Foundation
 /// This is the rest, the same for both: one ask at a time, the time limits, the idle stop and the
 /// conversation's length.
 ///
-/// It starts on the first inking, since an idle process costs memory, and stops `idleLimit` after
+/// It starts at the first stroke, since an idle process costs memory, and stops `idleLimit` after
 /// its last request. Starting runs the driver's warm-up, which checks that the process has no tools
 /// before any screen content is sent, and warms the agent's cache for the first real ask.
 @MainActor

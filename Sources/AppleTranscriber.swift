@@ -32,7 +32,7 @@ final class AppleTranscriber: Transcriber, @unchecked Sendable {
         lock.withLock { request?.nativeAudioFormat } ?? SFSpeechAudioBufferRecognitionRequest().nativeAudioFormat
     }
 
-    func begin(hints: [String]) throws {
+    func begin() throws {
         // Without an on-device model the request would go to Apple's servers, which speech input
         // never does.
         guard recognizer.supportsOnDeviceRecognition else {
@@ -46,7 +46,6 @@ final class AppleTranscriber: Transcriber, @unchecked Sendable {
         request.shouldReportPartialResults = true
         request.addsPunctuation = true
         request.taskHint = .dictation
-        request.contextualStrings = Array(hints.prefix(Self.hintLimit))
         lock.withLock {
             self.request = request
             latest = []
@@ -60,9 +59,6 @@ final class AppleTranscriber: Transcriber, @unchecked Sendable {
 
     /// For the person, when this Mac has no on-device recognizer for their language.
     static let noModel = "This Mac can't turn speech into words on its own yet."
-
-    /// Apple gives no limit for `contextualStrings`; a window's text can run to hundreds of lines.
-    static let hintLimit = 100
 
     func append(_ buffer: AVAudioPCMBuffer) {
         lock.withLock { request }?.append(buffer)

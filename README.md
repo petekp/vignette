@@ -61,6 +61,18 @@ the Agents tab in Settings adds or removes it.
   open when you installed the plugin needs `/reload-plugins` first.
 - Codex needs the Codex app or its command-line tool.
 
+### Live ink
+
+Hold Control and Option and draw right on your screen, over any app, without taking a screenshot.
+A loop becomes a circle around what you meant, and any other stroke an arrow. Marks you draw on a
+window move with it.
+
+Let go and a note opens beside your ink. Ask a question and Claude or Codex answers on the screen,
+with marks of its own pointing at what it means. It sees only the windows you drew on. Or send your
+ink to a Claude Code or Codex session, as Send sends a drawing.
+
+Live ink is off until you turn it on in Settings. It needs Accessibility and Screen Recording.
+
 ### A few more things
 
 - **Stitch** joins the cards you selected into one image and numbers each piece. Claude shrinks

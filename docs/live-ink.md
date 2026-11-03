@@ -2,8 +2,7 @@
 
 Live ink is drawing straight on the screen, over any app, while a pair of modifiers is held, and
 asking an agent about what was drawn. This file has its rules and says where each part of it lives.
-`docs/live-ink-integration-2026-10-04.md` has the plan, and the dated `docs/live-ink-*.md` notes
-have the measurements.
+The dated `docs/live-ink-*.md` notes have the measurements.
 
 ## Before it ships
 
@@ -26,9 +25,9 @@ The names in brackets are `// MARK:` sections.
 | A note sent to a session: its card, its turn, its result card | `LiveInk.swift` (Asking), `LiveNoteCards.swift`, `LiveNoteCardWait.swift`, `LiveNoteCardGroups.swift` |
 | Where an answer's marks and words go on a result card | `ResultCard.swift`, `LiveAnswer.swift` (`cardMarks`), `AgentMarks.swift` (`AgentMark.note`) |
 | What an ask sends | `LivePacket.swift` |
-| Speaking while drawing | `LiveInk.swift` (Listening), `LiveListening.swift`, `Microphone.swift`, `Transcriber.swift`, `AppleTranscriber.swift` |
+| Speaking while drawing | `LiveInk+Listening.swift`, `LiveListening.swift`, `Microphone.swift`, `Transcriber.swift`, `AppleTranscriber.swift` |
 | Claude and Codex on the screen (`docs/live-ink-responders.md`) | `LiveResponders.swift`, `LiveResponder.swift`, `ClaudeDriver.swift`, `CodexDriver.swift`, `CodexIsolation.swift`, `CodexSignIn.swift` |
-| Esc: which step is next, the hotkey that holds it | `LiveEscape.swift`, `LiveInk.swift` (Esc), `HotKey.swift` |
+| Esc: which step is next, the hotkey that holds it | `LiveEscape.swift`, `LiveInk+Escape.swift`, `HotKey.swift` |
 | The answer: reading it, drawing it, steps | `LiveAnswer.swift`, `LiveInk.swift` (Answering) |
 | The reply's popover, the conversation: its question, its row, its words, what it is laid over | `LiveReplyPopover.swift`, `LiveInkOverlay.swift` (`LiveMarksLayer.showPopover`) |
 | The thinking light round a popover's rim | `LiveRimLight.swift` |
@@ -42,14 +41,14 @@ The names in brackets are `// MARK:` sections.
 ## Checking a change
 
 - `Tests/LiveInkTests.swift` holds the unit tests: the chord, strokes, placement and result cards.
-  `Tests/NoteCardWaitTests.swift` holds how a note card's wait ends, in any order of reply, turn end and delivery. It also covers a turn end that answers several notes.
+  `Tests/NoteCardWaitTests.swift` holds how a note card's wait ends, in any order of reply, turn end and delivery.
   `Tests/LiveAsksTests.swift` holds the asks' sequences: asks waiting their turn, answers on the screen together, late
   callbacks, erasing, follow-ups, dismiss, finish and clear, and random sequences that check the invariants.
-- A script reaches the note without a hand on the keys: `live-ink-chord-down`, then
-  `live-ink-stroke` for each stroke, then `live-ink-chord-up` (all need `debug`). A VM's VNC cannot
-  press ⌃⌥, so this is the only way a VM check opens the note.
-- A take performs the developer demo on a stage and records it
-  (`docs/live-ink-dev-demo-plan-2026-10-05.md`). It takes over the screen for several minutes. From
+- A script reaches the note with no hand on the keys: `live-ink-chord-down`, `live-ink-stroke` per
+  stroke, then `live-ink-chord-up` (all need `debug`). A VM's VNC cannot press ⌃⌥, so a VM check
+  opens the note only this way.
+- A take records the developer demo on a stage
+  (`docs/live-ink-dev-demo-plan-2026-10-05.md`), taking the screen for minutes. From
   `media/live-ink-demo/`: `python3 ../trailer/trailer.py build`, then `python3 dev.py up`, left
   running until it prints "the stage is up", then `python3 devtake.py [--only BEAT]`, then
   `python3 dev.py down`.
@@ -63,14 +62,14 @@ The names in brackets are `// MARK:` sections.
 - Live ink is an option (`liveInk`), turned on as `docs/live-ink-setup.md` says. `LiveInk` owns it: the chord, and a surface per screen per
   Space, each a `LiveInkOverlay` and the marks on it. A mark drawn on a window belongs to that window
   (`LiveWindows`) and keeps its offset from the window's top-left, whatever the window's content
-  does: a scroll or a page's own change leaves it where it is, and so does a resize. It moves with
-  the window, the windows above it cover it, it fades out as the window minimises and back once the
-  window is on the screen again, 0.2 s after it lands, and it goes when the window closes. When the
+  does: a scroll, a page's own change or a resize leaves it where it is. It moves with the window,
+  windows above it cover it, it fades out as the window minimises and back 0.2 s after the window
+  lands again, and it goes when the window closes. When the
   window shrinks past a mark's point (`LiveWindows.point(of:)`), the mark fades out until the window
   grows over that point again (`LiveWindows.fits`); a reply, a popover that may hang past the edge,
   stays (ADR 0024). A mark drawn on no window stays at its place on the screen.
-  When a smaller resolution leaves it with no part on any screen, it moves the least way back onto
-  its screen, as macOS moves a window (`[live-ink] moved <n> onto the screen`).
+  When a smaller resolution leaves it on no screen, it moves the least way back onto its screen, as
+  macOS moves a window (`[live-ink] moved <n> onto the screen`).
   The note's URL and the page an answer keeps to come from the app's Accessibility tree. Only an
   Electron app is asked to build its page's tree (`AXManualAccessibility`,
   `WindowAccessibility.requestTree`), and only when a mark lands where it has none, since it keeps
@@ -156,13 +155,13 @@ The names in brackets are `// MARK:` sections.
      unlike the ×, which takes the ink it answered too.
   5. Clear what is left, as `clear()` does, which also ends the conversation.
 
-  While the note is up without the keys, shown or hidden with its ink, none of these steps applies.
-  The person is in another app, and Esc there is that app's. So a press meant for a terminal never
-  takes the note's words, and never stops, closes or clears anything else.
+  Steps 2 to 5 apply only while the pointer is on a mark or a reply on the active Space
+  (`LiveInk.pointerIsOnInk`), and none applies while the note is up without the keys. Otherwise the
+  person is typing in another app, and Esc is that app's: in a terminal it stops the agent. So such a
+  press never takes the note's words, stops an ask, closes an answer or clears ink.
 
   `LiveInk` holds Esc as a Carbon hotkey on plain Esc (`HotKey`, no permission needed) only while
-  `LiveEscape.next` has a step, and lets it go at once when it has none, so Esc is the frontmost
-  app's again. Esc that reached a terminal would interrupt the agent running there. Live ink never holds it
+  `LiveEscape.next` has a step, and lets it go at once when it has none. Live ink never holds it
   while the stack or the annotator holds the screen, since they use Esc, while the note's target menu
   is up, which closes on Esc and gives the note's field the keys back, or while live ink is off.
   Whether to hold the key is decided before each wait of the main run loop (`LiveInk.holdEscape`, a
@@ -182,19 +181,19 @@ The names in brackets are `// MARK:` sections.
 - The chord is `HeldChord`, a pure value with tests: exactly its pair, ended by any key or another
   modifier, and not begun again until its modifiers are let go, so a window manager's ⌃⌥-arrow
   never inks, and neither does letting go of ⌘ out of ⌘⌃⌥. A key another app takes as a shortcut
-  reaches no event monitor (measured with a Carbon hotkey), so `ModifierChord` reads keys from the
-  HID state, every 50 ms while the chord is held. It has no hold threshold; the pointer field
-  waits `ui.liveInkFieldDelay` instead, or shows at the first press. An overlay never becomes key. Erasing
+  reaches no event monitor (measured with a Carbon hotkey), so `ModifierChord` reads keys and the
+  pair's modifiers from the HID state every 50 ms while it is held: a release no monitor
+  heard still ends it, as do sleep and a switch to another user. It has no hold threshold; the
+  pointer field waits `ui.liveInkFieldDelay` instead, or shows at the first press, and the focus
+  and the backdrop's capture wait with it. An overlay never becomes key. Erasing
   is a tap on a mark with the chord held, not a key: Vignette sees a key but cannot keep it from the
   frontmost app, where ⌃⌥⌫ deletes a word.
 - While inking, the pointer field says the screen takes ink (`PointerField`, a Metal layer under
   the marks; `docs/live-ink-cursor-2026-10-10.md`). It is a ring round the pointer.
-  Nothing follows the pen while it draws: a wake that rippled the screen behind the stroke was
-  removed on 2026-10-12 as too much. The default style is Lamp, a soft pool of light in the ink's
+  Nothing follows the pen while it draws. It is Lamp, a soft pool of light in the ink's
   colours, the ice over dark content and deep blue over light, that breathes, brightens with the
   pointer's speed and has light drifting inside it
-  (`docs/live-ink-lamp-and-stroke-colour-2026-10-12.md`). It is the only style: the other five (Glass,
-  Lens, Squircle, Droplet and Caustic) were removed, with the screen picture they bent. The lamp
+  (`docs/live-ink-lamp-and-stroke-colour-2026-10-12.md`). The lamp
   draws no picture of the screen, so the field never starts Screen Recording.
   It is centred a little below and right of the arrow's tip, round the arrow's middle, and macOS
   draws the real arrow above it. It grows in as it shows, tightens and brightens while the button
@@ -335,12 +334,13 @@ The names in brackets are `// MARK:` sections.
 - With `liveInkSpeech` on, live ink listens while the person draws
   (`docs/live-ink-speech-input-2026-10-06.md`). Listening starts when the pointer field shows, so the chord on
   its way to a shortcut never turns the microphone on, and a press of the chord while it listens goes
-  on with the same listening, so "this" and "that" drawn in two strokes are one note. The note opens
+  on with the same listening, so "this" and "that" in two strokes are one note. The note opens
   on release with what was said so far and fills as the person talks. A key typed in it ends
   listening and keeps the words; Esc, an ask and clearing drop them. Standing aside stops listening,
   and the note keeps what it heard. Words already in the note when listening starts stay, and what is
   said then does not replace them. `ListeningEnd`
-  decides the end: listening stops 0.3 s after the chord is let go, and never past 60 s. With `liveInkSendWhenQuiet`, the final words are sent as Return sends them. Speech is
+  decides the end: listening stops 0.3 s after the chord is let go, and never past 60 s; words heard
+  by then wait for the note. With `liveInkSendWhenQuiet`, the final words are sent as Return sends them. Speech is
   turned into words on the Mac only: `Transcriber` is the interface every engine conforms to,
   `SpeechEngine.make` picks one, and `AppleTranscriber` refuses to run without an on-device model
   rather than send audio to Apple. The Settings switch asks for the microphone and speech
@@ -475,8 +475,10 @@ The names in brackets are `// MARK:` sections.
   is planned and captured as its last stroke ends, while the menu is still open. An ask about that
   same ink uses that plan and capture. `LivePacket.Plan` decides which picture an ask gets, and
   `Tests/LiveInkTests.swift` tests it. The screen's picture is the
-  part of the newest ink's display that those windows' frames cover. It is captured as the person
-  sees it, without Vignette's windows, with every stroke drawn in and numbered. A stroke is covered
+  part of the newest ink's display that those windows' frames cover. It shows only what the ink is
+  on: its windows, a menu it is over and the desktop. Other windows, Vignette's too, are left out,
+  and every stroke is drawn in and numbered. Marks take their brightness from a capture as the person
+  sees it, kept on the Mac. A mark at a part left out is not drawn (`LivePacket.target(of:sent:)`). A stroke is covered
   when a normal window in front of its own window overlaps it. A window of the stroke's own app
   covers it only when it is at least 200 by 200 pt (`LivePacket.ownAppCoverSize`), since an app's
   sheets and title bar windows sit over its own window. A stroke is outside when it is past that
@@ -485,8 +487,7 @@ The names in brackets are `// MARK:` sections.
   of those windows holds, and which of them are covered or outside. The answer's marks go on the
   screen's picture only, each pinned to the window under it (`LiveInk.put`, `eachOnItsWindow`). The
   responder is told to say in words what it finds at a covered stroke. The text lines are Vision's
-  reading of the screen's picture, so they hold only what the person can see. No page or URL is
-  read. A note to a session gets the screen's picture, and its line says which strokes a window
+  reading of that picture. No page or URL is read. A note to a session gets the screen's picture, and its line says which strokes a window
   covers. The person's ink is kept in the order it was drawn, across windows (`LiveInk.shownMarks`).
   That order numbers the strokes and decides which is the newest.
   Ink across a line garbled what Vision read of it, and the fast level garbled code

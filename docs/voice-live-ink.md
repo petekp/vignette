@@ -16,7 +16,7 @@ The menu bar menu names the switch as the General tab does.
 | The menu's first item while Screen Recording is missing | Allow Screen Recording for Live Ink… |
 | The menu bar intro's popover, while Screen Recording is missing | Live ink needs Screen Recording. Click the icon to allow it. |
 | The note's placeholder, with Claude or Codex as its target (`NoteContent.askPlaceholder`) | Ask about this |
-| The same, until the first ask to that agent (`NoteContent.firstAskPlaceholder`) | Ask about this. *agent* sees the window's picture, title and URL. |
+| The same, until the first ask to that agent (`NoteContent.firstAskPlaceholder`) | Ask about this. *agent* sees each window you drew on, with its title and URL. |
 | The note's placeholder, with a session as its target (`NoteContent.sendPlaceholder`) | Send to session |
 | The note's placeholder with Claude as its target, Claude's row in the target menu under its name, and setup's live ink page in place of its line about asking Claude, when Claude Code is not found (`ClaudeDriver.problem`) | Vignette couldn't find Claude Code. You can send your ink to a session. |
 | The same, when Claude Code is signed out | Claude Code isn't signed in. You can sign in by running claude in Terminal. |
