@@ -85,6 +85,8 @@ struct CornerPresentation: Equatable {
     private var stackOnLanding = false
 
     var isStack: Bool { if case .stack = mode { return true }; return false }
+    /// The card coming home from the editor will make the corner's lone thumbnails the stack.
+    var becomesStack: Bool { stackOnLanding && mode == .thumbnails }
     /// Keys pressed reach the stack.
     var isKeyed: Bool { isStack && !editorOpen }
     /// Lone thumbnails leave on their own after a while, unless the stack is opening over them; the
@@ -131,8 +133,8 @@ struct CornerPresentation: Equatable {
             guard let ending, ending != .shortcut else { return [] }
             return [.restoreFocus(reason: "annotator closed")]
         case .cardLanded(let id, let others):
+            defer { stackOnLanding = false }
             if stackOnLanding, mode == .thumbnails, !editorOpen, others {
-                stackOnLanding = false
                 mode = .stack(recent: false)
                 return [.takeKeys(.card(id))]
             }

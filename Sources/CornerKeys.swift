@@ -68,6 +68,7 @@ final class CornerKeys {
     }
 
     var isStack: Bool { presentation.isStack }
+    var becomesStack: Bool { presentation.becomesStack }
     var isKeyed: Bool { presentation.isKeyed }
     var leavesOnItsOwn: Bool { presentation.leavesOnItsOwn }
     var backdropState: [String: Any] { backdrop.stateJSON }

@@ -86,8 +86,10 @@ final class CornerPresentationTests: XCTestCase {
 
     func testEscFromTheEditorOfACardAloneInTheCornerLeavesItLoneThumbnails() {
         var p = after(.cardsShown, .editorOpened, .editorClosed(.back))
+        XCTAssertTrue(p.becomesStack)
         XCTAssertEqual(p.reduce(.cardLanded(card, others: false)), [])
         XCTAssertEqual(p.mode, .thumbnails)
+        XCTAssertFalse(p.becomesStack)
     }
 
     func testAClickOutsideDoneAndSendFromTheCornerHandTheKeysBackToTheFrontApp() {
