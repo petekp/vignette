@@ -1,7 +1,7 @@
 import Foundation
 import QuartzCore
 
-/// When live ink stops listening, from the input's level and the chord: a pure value, so the rule
+/// When live ink stops listening, from the chord and a time limit: a pure value, so the rule
 /// has tests. Times are seconds on one clock, whichever the caller uses.
 struct ListeningEnd: Equatable {
     /// How long listening goes on after the chord is let go, so the end of the last word is heard.

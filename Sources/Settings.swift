@@ -42,7 +42,7 @@ struct SettingsData: Codable, Equatable {
     var liveInkAskedCodex = false            // the same for Codex
     var liveInkChord = LiveInkChord.standard.rawValue  // the two modifiers that hold live ink on: ⌃⌥ unless another pair is chosen
     var liveInkSpeech = false                // talking while drawing fills the note; needs the microphone and speech recognition
-    var liveInkSendWhenQuiet = true          // experiment: the ask goes once the person stops talking, or waits for Return
+    var liveInkSendWhenQuiet = true          // experiment: the ask goes as the pair is let go, or waits for Return
     var debug = false                        // unlocks tweaks, install-skill root=, live-ink-stroke, and file= outside the watch folder
     var agentSkill = AgentSkill.unasked.rawValue  // whether the skill was offered: unasked, then off
     var setup = SetupState.unasked.rawValue  // whether the setup window has run: unasked, then done
@@ -293,8 +293,8 @@ struct UITweaks: Codable, Equatable {
     var liveInkFieldDelay = 0.25     // how long the chord is held before it shows, unless a press shows it sooner
     var liveInkFieldFade = 0.5       // how long it fades in and out, and the ring grows in
     var liveInkFieldOpacity = 1.0
-    // The ring: it bends the screen under it and glows in the ink colour, with a still middle so what
-    // the pointer is on stays put.
+    // The ring: a soft pool of light in the ink colour round the pointer, clear in the middle so what
+    // the pointer is on still reads.
     var liveInkFieldSize = 23.0      // the ring's radius in points; 0 turns it off
     var liveInkFieldGlow = 1.0       // 0 to 1: the ink-coloured light on and round the ring
     var liveInkFieldFollow = 0.04    // how long the ring takes to catch up with the pointer; 0 holds it on it
@@ -312,7 +312,6 @@ struct UITweaks: Codable, Equatable {
     var liveInkShowFade = 0.22       // a mark fading back in once its window is back or has grown over it
     var liveInkTextSize = 15.0       // an answer's note, in points of the screen
     var liveInkTextWidth = 320.0     // the widest an answer's note wraps at, in points
-    // Live ink's speech input
     // The person's live ink as opal gel (InkGel; docs/live-ink-gel-2026-10-12.md): a rod of milky
     // material under a thin film whose pale colours follow the line, with a glow under it.
     var inkGelLight = "#0085ff"      // the ice's hue, over dark content
