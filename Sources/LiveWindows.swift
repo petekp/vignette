@@ -102,9 +102,10 @@ final class LiveWindows {
 
     // MARK: Marks
 
-    /// The topmost window under `point`, in global top-left points, that is not Vignette's, below the
-    /// Dock's level, as `LivePacket.window(under:)` finds it.
-    static func window(under point: CGPoint) -> Target? {
+    /// The topmost window under `point`, in global top-left points, not Vignette's and below the Dock,
+    /// whose window covers the screen. With `ordinary`, nil unless it is an app's ordinary window: a
+    /// panel or menu over one comes and goes, so marks never go on it.
+    static func window(under point: CGPoint, ordinary: Bool = true) -> Target? {
         let own = ProcessInfo.processInfo.processIdentifier
         let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         for info in windows {
@@ -113,8 +114,7 @@ final class LiveWindows {
                   let level = info[kCGWindowLayer as String] as? Int, level < Int(CGWindowLevelForKey(.dockWindow)),
                   (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
                   let frame = WindowList.bounds(info), frame.width > 40, frame.height > 40, frame.contains(point) else { continue }
-            // Only an app's ordinary windows carry marks: a panel or a menu over them comes and goes.
-            guard level == 0 else { return nil }
+            guard level == 0 || !ordinary else { return nil }
             return Target(id: id, pid: pid, app: info[kCGWindowOwnerName as String] as? String, frame: frame)
         }
         return nil
@@ -123,7 +123,7 @@ final class LiveWindows {
     /// The window under `point`, when it is one marks can be pinned to.
     func target(under point: CGPoint) -> Target? { Self.window(under: point) }
 
-    /// The window `id`, while it is on screen.
+    /// The window `id`, while on screen.
     func target(id: CGWindowID) -> Target? {
         if let window = windows[id] { return Target(id: id, pid: window.pid, app: window.app, frame: window.frame) }
         guard let info = WindowList.describe([id]).first, info[kCGWindowIsOnscreen as String] as? Bool ?? false,
@@ -270,7 +270,7 @@ final class LiveWindows {
     }
 
     /// Draws the marks of `all` that are not `lit` faint, as an answer's action points at its own
-    /// findings, and the rest at full strength. A hidden mark takes its strength when it shows again.
+    /// findings. A hidden mark takes its strength when it shows again.
     func light(_ lit: Set<Mark.ID>, among all: Set<Mark.ID>) {
         for window in windows.values {
             for index in window.pins.indices where all.contains(window.pins[index].mark.id) {
@@ -490,7 +490,7 @@ final class LiveWindows {
     private func minimising(_ pid: pid_t?) {
         guard let pid else { return }
         let infos = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-        // Its frontmost window, passing over the small window macOS 15 puts over a titled window's title bar.
+        // Its frontmost window, past the small one macOS 15 puts over a titled window's title bar.
         guard let front = infos.first(where: {
             ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && ($0[kCGWindowLayer as String] as? Int) == 0
                 && (WindowList.bounds($0).map { $0.width > 60 && $0.height > 60 } ?? false)

@@ -186,7 +186,7 @@ struct LivePacket: @unchecked Sendable {
         case .area(let rect, let windows, let alone): area = (rect, windows, alone)
         }
         let named = id.flatMap { id in content.windows.contains { $0.windowID == id } ? (id: id, frame: CGRect.null) : nil }
-        let target = area == nil ? named ?? window(under: point) : nil
+        let target = area == nil ? named ?? LiveWindows.window(under: point, ordinary: false).map { ($0.id, $0.frame) } : nil
         let filter: SCContentFilter
         let frame: CGRect
         var source: CGRect?
@@ -493,27 +493,6 @@ struct LivePacket: @unchecked Sendable {
     }
 
     // MARK: Pieces
-
-    /// The topmost window under `point` that is not Vignette's, from the window server's list,
-    /// which runs front to back. The Dock, the menu bar and menus are left out by their level: the
-    /// Dock has a window over the whole screen at its level, and it was taken for the window under
-    /// the ink.
-    @MainActor
-    static func window(under point: CGPoint) -> (id: CGWindowID, frame: CGRect)? {
-        let own = ProcessInfo.processInfo.processIdentifier
-        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-        for info in windows {
-            guard let id = info[kCGWindowNumber as String] as? CGWindowID,
-                  (info[kCGWindowOwnerPID as String] as? pid_t) != own,
-                  let level = info[kCGWindowLayer as String] as? Int, level < Int(CGWindowLevelForKey(.dockWindow)),
-                  (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
-                  let bounds = info[kCGWindowBounds as String] as? NSDictionary,
-                  let frame = CGRect(dictionaryRepresentation: bounds),
-                  frame.width > 40, frame.height > 40, frame.contains(point) else { continue }
-            return (id, frame)
-        }
-        return nil
-    }
 
     /// Vision's lines, in reading order: top to bottom, and left to right within a row.
     static func read(_ image: CGImage) -> [Line] {
