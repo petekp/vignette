@@ -1,5 +1,7 @@
 # Live ink: marks that stay on their window (spike, 2026-10-04)
 
+Superseded in part by ADR 0024: marks keep their offset on the window they were drawn on.
+
 Status: done. The probes are no longer on the branch. Commit `cbacbae` has them in
 `spikes/live-ink-anchors/`, and each one builds on its own with `swiftc -O -swift-version 5 <file>.swift`.
 

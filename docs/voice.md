@@ -121,6 +121,8 @@ Accessibility's Allow…, and Then this beside Screen Recording's Allow… and S
 | --- | --- |
 | The live ink page, under the line about drawing (`SetupInkCopy.askLine`) | Then ask Claude about it, or send it to a Claude Code or Codex session. On that Mac: Then ask Codex about it, … |
 | Screen Recording's reason on the permissions page (`SetupInkCopy.screenRecordingReason`) | So Claude can see the window you drew on. On that Mac: So Codex can see the window you drew on. |
+| Accessibility's reason on the permissions page | So you can draw while holding *pair*. |
+| Under the permissions page while Screen Recording is missing (`SetupInkCopy.reopenNote`) | Once you allow Screen Recording, macOS asks to quit and reopen Vignette. Setup opens again on this page. |
 
 ### Setup's shortcut page, after the hold (`SetupBanter`)
 

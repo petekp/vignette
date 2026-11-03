@@ -193,13 +193,15 @@ covers changing it.
 Live ink lets you draw straight on your screen, over any app, without taking a screenshot. Turn it
 on in Settings → General, or with Live Ink in the menu bar menu.
 
-Hold Control and Option and draw. A glowing ring follows the pointer while you hold the keys. A loop becomes
+Hold Control and Option and draw. To use another pair, pick it under Hold to draw in Settings →
+General. A glowing ring follows the pointer while you hold the keys. A loop becomes
 an ellipse round what you circled, and any other stroke becomes an arrow, in your red. To erase a
 mark, click on it or inside its circle with the keys held. Clear Live Ink in the menu erases them all, and so does turning
 live ink off.
 
-Your marks stay at their place on the screen, on the Space you drew them on. They don't follow the
-window under them, and they're gone when Vignette quits. Screenshots leave them out, and they step
+Marks you draw on a window move with it, hide behind windows in front of it, and go when it closes.
+Ink on no window stays where it is on the screen, on the Space you drew it on. All your marks are
+gone when Vignette quits. Screenshots leave them out, and they step
 out of sight while you take one, so Cmd+Shift+4 and Space pick the window under a mark. Menus, the Dock and floating windows cover
 them until you hold the keys again.
 
@@ -214,19 +216,22 @@ Allow Accessibility for Live Ink….
 ### Asking about your ink
 
 When you let go of the keys after drawing, a note opens beside your ink. Type a question, or
-nothing, and press Return: Claude looks at the window under your ink and answers on the screen. Its
+nothing, and press Return: Claude or Codex looks at the windows your ink is on and answers on the
+screen. Its
 reply appears beside your ink as it's written, and its own marks draw themselves on, in its colour,
 pointing at what it means. Esc, or a click anywhere else, closes the note and keeps your ink.
 
 Ask again with no new ink and it's a follow-up about the same thing. A new question replaces the
 last answer, and Clear Live Ink starts over. Erase an answer's mark or note as you erase your own.
 
-The note's target starts on Claude. Click it, or press the Down arrow, to send your ink to one of
-your coding agent sessions instead: the picture goes as Send sends a drawing, and the session's
+The note's target starts on the agent you used last, Claude or Codex. Click it, or press the Down
+arrow, to ask the other agent or to send your ink to one of your coding agent sessions instead: the picture goes as Send sends a drawing, and the session's
 reply comes back as a card. A note on your ink says whether it went.
 
 Claude answers through Claude Code, which must be installed and signed in, on your own Claude
-account, without your settings, plugins or tools. It sees only the window under your ink. Asking
+account, without your settings, plugins or tools. Codex answers on its own ChatGPT sign-in, which
+you make once in Settings → General. It also runs without your settings or tools. Each sees only
+the windows your ink is on, with their titles and URLs. Asking
 needs Screen Recording: turning live ink on asks for it, and until it's allowed the menu bar menu
 starts with Allow Screen Recording for Live Ink….
 

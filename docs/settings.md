@@ -76,17 +76,30 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
   screenshot on the clipboard as it lands: the image, plus its file URL and path for apps that take
   those. It is on by default. An image that arrives through `add` skips this and Instant Draw, since
   a push from an agent is not a capture.
-- **`liveInk`** is Live ink in Settings → General and in the menu bar menu. It is internal for now:
-  it runs, and the window and the menu show it, only while `debug` is also on. While it is on, hold
-  Control and Option and draw over any app: a loop becomes an ellipse and any other stroke an arrow.
-  Click a mark with the keys held to erase it, or use Clear Live Ink in the menu. Letting go opens a
-  note where you can ask Claude about what you drew, and the answer is drawn on the screen. It needs
-  Accessibility, like the double tap, and Screen Recording to ask. Asking runs Claude Code on your
-  own Claude account, with Sonnet: about $0.02 for a new screen and $0.01 for a follow-up. Off by
-  default.
+- **`liveInk`** is Live ink in Settings → General and in the menu bar menu. While it is on, hold
+  Control and Option, or the pair `liveInkChord` names, and draw over any app: a loop becomes an
+  ellipse and any other stroke an arrow. Click a mark with the keys held to erase it, or use Clear
+  Live Ink in the menu. Letting go opens a note where you can ask Claude or Codex about what you
+  drew, and the answer is drawn on the screen. It needs Accessibility, like the double tap, and
+  Screen Recording to ask. An ask to Claude runs Claude Code on your own Claude account and costs
+  about one to four cents. An ask to Codex runs on a ChatGPT sign-in of its own and counts toward
+  your plan's usage limit. Off by default.
+- **`liveInkChord`** is Hold to draw in Settings → General: the pair of modifiers you hold to draw.
+  It is `control+option` by default. The others are `control+shift`, `option+shift`,
+  `control+command` and `option+command`.
+- **`liveInkSpeech`** is Speak while you draw: what you say while drawing goes into the note. It
+  needs the microphone and speech recognition, and the words are made on this Mac. Off by default.
+- **`liveInkSendWhenQuiet`**: with speech on, the ask goes as you let go of the keys, without
+  Return. Turned off, the note waits for Return. On by default, with no switch in Settings.
+- **`liveInkOffered`** records that live ink's one-time offer was made, to an install that finished
+  setup before setup had a live ink page. This Mac keeps its own record too, so a file synced from
+  another Mac doesn't skip the offer here.
+- **`liveInkAskedClaude`** and **`liveInkAskedCodex`** record that an ask has gone to that agent,
+  which ends the note's first line about what the agent sees. This Mac keeps its own record too.
 - **`debug`** shows the Developer tab and the menu's Developer section. It also unlocks the
-  `tweaks`, `intro-lab`, `live-ink-stroke` and `live-ink-ask` commands, `install-skill?root=`, and
-  `file=` outside the screenshots folder.
+  `tweaks`, `check-lab`, `intro-lab`, `setup-lab`, `live-ink-stroke`, `live-ink-ask`,
+  `live-ink-chord-down` and `live-ink-chord-up` commands, `install-skill?root=`, and `file=` outside
+  the screenshots folder.
 - **`agentSkill`** records only whether the app has offered the skill for coding agents:
   `unasked` until the offer, then `off`. The setup window's last page makes the offer. Whether the
   skill is installed is read from disk, and the Agents tab's switches install or remove it per
@@ -107,7 +120,7 @@ annotator window's limits, the drawing editor's sizes, and a stitch's largest si
 the behaviour those numbers drive: how far a card bows and swells on its way to the annotator, how
 narrow the stack goes to make room for it and how far it stays from it, how deep the drag-select's
 edge band is and how fast it scrolls there, how near an edge of the image a zoom holds that
-edge, the ring live ink shows round the pointer while Control and Option are held, how an answer
+edge, the ring live ink shows round the pointer while its pair is held, how an answer
 to live ink is drawn: how long its marks take to draw on, and the size and widest wrap of its notes,
 and the coin, light, spin and bloom of the check on a copied or sent card (the `check` keys).
 

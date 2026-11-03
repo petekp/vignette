@@ -7,6 +7,9 @@ ask, since live ink is off by default and setup's job is the shortcut. Without p
 would have only the window's name, and Accessibility gives little in the apps measured: Ghostty no
 text under a point, Dia nothing until asked, the Codex app nothing.
 
+Amended 2026-11-02: setup now has a live ink page. Its permissions page, which follows Use Live Ink,
+asks for Screen Recording from its own button.
+
 On macOS 15 the first capture also raises macOS's "bypass the system private window picker" alert,
 and macOS asks again about once a month, so some people will turn the permission off.
 

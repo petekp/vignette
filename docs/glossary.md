@@ -83,10 +83,12 @@ All the marks on one screenshot. It is kept apart from the screenshot, which is 
 _Avoid_: Annotation, layer, overlay
 
 **Live ink**:
-Drawing straight on the screen, over any app, while Control and Option are held: the chord. While
+Drawing straight on the screen, over any app, while a pair of modifiers is held, Control and Option
+unless another pair is picked: the chord. While
 it is held the screen is inking, and each stroke becomes a mark or, as a tap, erases one. Its marks
-belong to no screenshot and are no drawing; they stay where they were drawn until they are erased,
-or until a note sent to an agent session takes them into its note card.
+belong to no screenshot and are no drawing. A mark drawn on a window moves with it and goes when it
+closes. One on no window stays where it was drawn. Either goes when it is erased, or when a note sent
+to an agent session takes it into its note card.
 _Avoid_: Live annotation, screen drawing
 
 **Note card**:
@@ -106,7 +108,7 @@ session: nothing lists it, and it cannot be sent a drawing.
 _Avoid_: Live agent, assistant
 
 **Ask**:
-One question about live ink, from the note beside it: the picture of the window under the ink, its
+One question about live ink, from the note beside it: a picture of the windows the ink is on, their
 text, the ink, and the words typed. A follow-up is an ask with no new ink.
 
 **Mark**:
