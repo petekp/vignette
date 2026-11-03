@@ -344,4 +344,28 @@ def ink_claude_shows_no_tools(app):
     app.command('live-ink-clear')
 
 
-ALL = [ink_answered, ink_to_session, ink_no_recording, ink_no_claude, ink_claude_shows_no_tools]
+def ink_offered_once(app):
+    """An install updated from 0.1.6, whose settings.json has no live ink keys, is offered live ink on
+    its first launch only: Settings opens on its General tab, the offer is recorded, and the next
+    launch offers nothing."""
+    app.write_settings()
+    with open(app.settings) as f:
+        old = json.load(f)
+    old.pop('liveInkOffered')
+    with open(app.settings, 'w') as f:
+        json.dump(old, f, indent=2)
+    start(app)
+    app.wait_log('[settings] offered live ink', 0)
+    with open(app.settings) as f:
+        if not json.load(f).get('liveInkOffered'):
+            raise Failed('the offer was not recorded in settings.json')
+    app.report.step('the first launch offered live ink and recorded it')
+    app.stop()
+    offset = app.log_size()
+    start(app)
+    if '[settings] offered live ink' in app.log_since(offset):
+        raise Failed('the second launch offered live ink again')
+    app.report.step('the second launch offered nothing')
+
+
+ALL = [ink_answered, ink_to_session, ink_no_recording, ink_no_claude, ink_claude_shows_no_tools, ink_offered_once]
