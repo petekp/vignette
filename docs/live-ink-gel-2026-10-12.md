@@ -39,7 +39,7 @@ clears 3.5 everywhere:
 - **The brightness map.** `InkBackdrop` captures each display, without Vignette's own windows, when
   inking starts (the chord press) and after an answer is drawn, since the agent may have changed the
   window. While ink is on the screen it captures again 0.3 s after the person's last click, scroll or
-  key, or when another app comes forward, so ink over a window that changed takes the colour that
+  key within 160 pt of the ink (`LiveInk.backdropReach`), or when another app comes forward, so ink over a window that changed takes the colour that
   stands out there. Each capture lights macOS's purple screen recording indicator for a few seconds,
   so nothing captures on a timer: a change nobody caused, such as a video playing under the ink, is
   read at the next interaction. Each capture is drawn down to a grid of 8 pt cells (`LivePacket.Luminance`). It takes about
@@ -81,7 +81,9 @@ clears 3.5 everywhere:
 - **Motion.** `InkClock` is one display link for every gel layer. It drifts the light and a slow
   shimmer along the line at about 30 frames a second, and draws every frame while a line eases onto
   its shape or a map fades in. Its time runs at `inkGelMotion` times the motion scale, so motion 0
-  holds the gel still and the link rests. A tweak redraws every gel.
+  holds the gel still and the link rests. The drift also comes to rest once nothing has stirred the
+  ink for 4 s, fading over 1 s (`InkRest`); a pointer move or a new mark wakes it. A tweak redraws
+  every gel.
 - **What stays the same.** `show`, `showPen`, `ease`, `drawOn`, `undraw`, `twin` and `centreLine`.
   Drawing on and undrawing go through a reveal mask wide enough for the glow.
 - **The pen.** A point's width compares how fast the hand moved there with its speed over the 48

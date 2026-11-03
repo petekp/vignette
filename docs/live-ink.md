@@ -25,7 +25,7 @@ The names in brackets are `// MARK:` sections.
 | A note sent to a session: its card, its turn, its result card | `LiveInk.swift` (Asking), `LiveNoteCards.swift`, `LiveNoteCardWait.swift`, `LiveNoteCardGroups.swift` |
 | Where an answer's marks and words go on a result card | `ResultCard.swift`, `LiveAnswer.swift` (`cardMarks`), `AgentMarks.swift` (`AgentMark.note`) |
 | What an ask sends | `LivePacket.swift` |
-| Speaking while drawing | `LiveInk.swift` (Listening), `LiveListening.swift`, `Microphone.swift`, `Transcriber.swift`, `AppleTranscriber.swift` |
+| Speaking while drawing | `LiveInk+Listening.swift`, `LiveListening.swift`, `Microphone.swift`, `Transcriber.swift`, `AppleTranscriber.swift` |
 | Claude and Codex on the screen (`docs/live-ink-responders.md`) | `LiveResponders.swift`, `LiveResponder.swift`, `ClaudeDriver.swift`, `CodexDriver.swift`, `CodexIsolation.swift`, `CodexSignIn.swift` |
 | Esc: which step is next, the hotkey that holds it | `LiveEscape.swift`, `LiveInk+Escape.swift`, `HotKey.swift` |
 | The answer: reading it, drawing it, steps | `LiveAnswer.swift`, `LiveInk.swift` (Answering) |
@@ -41,14 +41,14 @@ The names in brackets are `// MARK:` sections.
 ## Checking a change
 
 - `Tests/LiveInkTests.swift` holds the unit tests: the chord, strokes, placement and result cards.
-  `Tests/NoteCardWaitTests.swift` holds how a note card's wait ends, in any order of reply, turn end and delivery. It also covers a turn end that answers several notes.
+  `Tests/NoteCardWaitTests.swift` holds how a note card's wait ends, in any order of reply, turn end and delivery.
   `Tests/LiveAsksTests.swift` holds the asks' sequences: asks waiting their turn, answers on the screen together, late
   callbacks, erasing, follow-ups, dismiss, finish and clear, and random sequences that check the invariants.
-- A script reaches the note without a hand on the keys: `live-ink-chord-down`, then
-  `live-ink-stroke` for each stroke, then `live-ink-chord-up` (all need `debug`). A VM's VNC cannot
-  press ⌃⌥, so this is the only way a VM check opens the note.
-- A take performs the developer demo on a stage and records it
-  (`docs/live-ink-dev-demo-plan-2026-10-05.md`). It takes over the screen for several minutes. From
+- A script reaches the note with no hand on the keys: `live-ink-chord-down`, `live-ink-stroke` per
+  stroke, then `live-ink-chord-up` (all need `debug`). A VM's VNC cannot press ⌃⌥, so a VM check
+  opens the note only this way.
+- A take records the developer demo on a stage
+  (`docs/live-ink-dev-demo-plan-2026-10-05.md`), taking the screen for minutes. From
   `media/live-ink-demo/`: `python3 ../trailer/trailer.py build`, then `python3 dev.py up`, left
   running until it prints "the stage is up", then `python3 devtake.py [--only BEAT]`, then
   `python3 dev.py down`.
@@ -62,14 +62,14 @@ The names in brackets are `// MARK:` sections.
 - Live ink is an option (`liveInk`), turned on as `docs/live-ink-setup.md` says. `LiveInk` owns it: the chord, and a surface per screen per
   Space, each a `LiveInkOverlay` and the marks on it. A mark drawn on a window belongs to that window
   (`LiveWindows`) and keeps its offset from the window's top-left, whatever the window's content
-  does: a scroll or a page's own change leaves it where it is, and so does a resize. It moves with
-  the window, the windows above it cover it, it fades out as the window minimises and back once the
-  window is on the screen again, 0.2 s after it lands, and it goes when the window closes. When the
+  does: a scroll, a page's own change or a resize leaves it where it is. It moves with the window,
+  windows above it cover it, it fades out as the window minimises and back 0.2 s after the window
+  lands again, and it goes when the window closes. When the
   window shrinks past a mark's point (`LiveWindows.point(of:)`), the mark fades out until the window
   grows over that point again (`LiveWindows.fits`); a reply, a popover that may hang past the edge,
   stays (ADR 0024). A mark drawn on no window stays at its place on the screen.
-  When a smaller resolution leaves it with no part on any screen, it moves the least way back onto
-  its screen, as macOS moves a window (`[live-ink] moved <n> onto the screen`).
+  When a smaller resolution leaves it on no screen, it moves the least way back onto its screen, as
+  macOS moves a window (`[live-ink] moved <n> onto the screen`).
   The note's URL and the page an answer keeps to come from the app's Accessibility tree. Only an
   Electron app is asked to build its page's tree (`AXManualAccessibility`,
   `WindowAccessibility.requestTree`), and only when a mark lands where it has none, since it keeps
@@ -181,17 +181,19 @@ The names in brackets are `// MARK:` sections.
 - The chord is `HeldChord`, a pure value with tests: exactly its pair, ended by any key or another
   modifier, and not begun again until its modifiers are let go, so a window manager's ⌃⌥-arrow
   never inks, and neither does letting go of ⌘ out of ⌘⌃⌥. A key another app takes as a shortcut
-  reaches no event monitor (measured with a Carbon hotkey), so `ModifierChord` reads keys from the
-  HID state, every 50 ms while the chord is held. It has no hold threshold; the pointer field
-  waits `ui.liveInkFieldDelay` instead, or shows at the first press. An overlay never becomes key. Erasing
+  reaches no event monitor (measured with a Carbon hotkey), so `ModifierChord` reads keys and the
+  pair's modifiers from the HID state every 50 ms while it is held: a release no monitor
+  heard still ends it, as do sleep and a switch to another user. It has no hold threshold; the
+  pointer field waits `ui.liveInkFieldDelay` instead, or shows at the first press, and the focus
+  and the backdrop's capture wait with it. An overlay never becomes key. Erasing
   is a tap on a mark with the chord held, not a key: Vignette sees a key but cannot keep it from the
   frontmost app, where ⌃⌥⌫ deletes a word.
 - While inking, the pointer field says the screen takes ink (`PointerField`, a Metal layer under
   the marks; `docs/live-ink-cursor-2026-10-10.md`). It is a ring round the pointer.
-  Nothing follows the pen while it draws. The default style is Lamp, a soft pool of light in the ink's
+  Nothing follows the pen while it draws. It is Lamp, a soft pool of light in the ink's
   colours, the ice over dark content and deep blue over light, that breathes, brightens with the
   pointer's speed and has light drifting inside it
-  (`docs/live-ink-lamp-and-stroke-colour-2026-10-12.md`). It is the only style. The lamp
+  (`docs/live-ink-lamp-and-stroke-colour-2026-10-12.md`). The lamp
   draws no picture of the screen, so the field never starts Screen Recording.
   It is centred a little below and right of the arrow's tip, round the arrow's middle, and macOS
   draws the real arrow above it. It grows in as it shows, tightens and brightens while the button
@@ -332,12 +334,13 @@ The names in brackets are `// MARK:` sections.
 - With `liveInkSpeech` on, live ink listens while the person draws
   (`docs/live-ink-speech-input-2026-10-06.md`). Listening starts when the pointer field shows, so the chord on
   its way to a shortcut never turns the microphone on, and a press of the chord while it listens goes
-  on with the same listening, so "this" and "that" drawn in two strokes are one note. The note opens
+  on with the same listening, so "this" and "that" in two strokes are one note. The note opens
   on release with what was said so far and fills as the person talks. A key typed in it ends
   listening and keeps the words; Esc, an ask and clearing drop them. Standing aside stops listening,
   and the note keeps what it heard. Words already in the note when listening starts stay, and what is
   said then does not replace them. `ListeningEnd`
-  decides the end: listening stops 0.3 s after the chord is let go, and never past 60 s. With `liveInkSendWhenQuiet`, the final words are sent as Return sends them. Speech is
+  decides the end: listening stops 0.3 s after the chord is let go, and never past 60 s; words heard
+  by then wait for the note. With `liveInkSendWhenQuiet`, the final words are sent as Return sends them. Speech is
   turned into words on the Mac only: `Transcriber` is the interface every engine conforms to,
   `SpeechEngine.make` picks one, and `AppleTranscriber` refuses to run without an on-device model
   rather than send audio to Apple. The Settings switch asks for the microphone and speech
