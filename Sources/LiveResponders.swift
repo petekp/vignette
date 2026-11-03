@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// Live ink's responders, one for each agent that answers on the screen, Claude Code's and Codex's;
 /// which of them can answer; which one the conversation is with; and what each conversation has been
@@ -23,7 +23,13 @@ final class LiveResponders {
         self.status = status
         // Codex's process keeps the sign-in it started with.
         status.onCodexSignIn = { [weak self] _ in self?.all[.codex]?.restart(whenIdle: "sign-in changed") }
+        // Stopped rather than left to see their input close, which a `claude -p` mid-turn answers by
+        // finishing the turn it is billed for.
+        quitting = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil,
+                                                          queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.stop() } }
     }
+
+    private var quitting: NSObjectProtocol?
 
     private var availability: [AgentClient: LiveResponder.Availability] { status.availability }
 
