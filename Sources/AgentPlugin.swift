@@ -7,9 +7,8 @@ import Foundation
 /// Each agent installs it with its own command line tool, from a marketplace the app writes into its
 /// Application Support folder: the bundled `agent-plugin` folder, the bundled skill, and the path of
 /// this app's session inboxes, which the scripts read. A fork writes its own marketplace, named by its
-/// URL scheme, with its own inboxes. Claude Code loads a plugin from a folder marketplace in place, so
-/// rewriting that folder is what reaches Claude Code's sessions, from their next start or
-/// `/reload-plugins`.
+/// URL scheme, with its own inboxes. Claude Code's sessions read the rewritten folder at their next
+/// start or `/reload-plugins`.
 enum AgentPlugin {
     static let name = "vignette"
     static var marketplace: String { Identity.urlScheme }
@@ -96,7 +95,7 @@ enum AgentPlugin {
             .write(to: skill, atomically: true, encoding: .utf8)
     }
 
-    /// Sets a marketplace list's top-level `name`, leaving the rest as written.
+    /// Sets a marketplace list's top-level `name`.
     private static func rename(list: URL, to marketplace: String) throws {
         let data = try Data(contentsOf: list)
         guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
@@ -143,6 +142,9 @@ enum AgentPlugin {
         let own = AgentClient.allCases.map { root(of: $0, home: personHome, environment: [:]).resolvingSymlinksInPath().path }
         return own.contains(folder.resolvingSymlinksInPath().path)
     }
+
+    /// `~/.claude`, or where `CLAUDE_CONFIG_DIR` points.
+    static var claudeRoot: URL { root(of: .claude, home: URL(fileURLWithPath: NSHomeDirectory())) }
 
     static func root(of client: AgentClient, home: URL, environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
         switch client {
@@ -394,7 +396,7 @@ struct AgentPluginStatus: Equatable, Identifiable {
     let root: URL
     let client: AgentClient
     let installed: Bool
-    /// Whether the agent's command line tool is on this Mac. Without it the plugin can't be installed.
+    /// Whether the agent's command line tool, which installs the plugin, is on this Mac.
     let hasTool: Bool
 
     var name: String { client.label }
@@ -406,8 +408,8 @@ struct AgentPluginStatus: Equatable, Identifiable {
 /// Comparing two folders file by file, for the marketplace copy the app writes.
 enum SkillFiles {
     /// True when `installed` holds exactly the files `source` does, byte for byte. .DS_Store is
-    /// skipped on both sides: macOS leaves it behind. A file that will not read matches
-    /// nothing, so the copy is written again rather than taken on trust.
+    /// skipped on both sides: macOS leaves it behind. An unreadable file matches nothing, so the
+    /// copy is written again.
     static func matches(source: URL, installed: URL) -> Bool {
         let wanted = files(under: source), found = files(under: installed)
         guard Set(wanted.keys) == Set(found.keys) else { return false }

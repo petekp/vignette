@@ -54,15 +54,15 @@ extension AgentDestination {
 /// transcript per project. A project that has a running session is left out when the listing joins
 /// this list to the running sessions (`SessionListing.startable(_:beside:)`).
 ///
-/// Claude Code's prompt history (`~/.claude/history.jsonl`) is the index: one line per prompt the
+/// Claude Code's prompt history (`history.jsonl` in `AgentPlugin.claudeRoot`) is the index: one line per prompt the
 /// person typed, with the folder Claude Code ran in and the session. It holds interactive sessions
 /// only, and its last 2 MB went back 45 days on Pete's Mac (2026-10-25). The transcripts have 11,606
 /// project folders there, most of them from scripted runs, so listing them is not the index. Each
 /// candidate session's facts then come from its own transcript, by the rule a running session's do
 /// (`ClaudeCodeConnection.transcript(tail:)`): its title and when it was last used.
 struct StartableSessions: Sendable {
-    var history = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/history.jsonl")
-    var transcripts = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
+    var history = AgentPlugin.claudeRoot.appendingPathComponent("history.jsonl")
+    var transcripts = AgentPlugin.claudeRoot.appendingPathComponent("projects")
     /// Whether Vignette can start a session at all. Without a launcher no row is offered.
     var canStart: @Sendable () -> Bool = { HerdrFocus.binaryToRun() != nil }
     var now: @Sendable () -> Date = { Date() }

@@ -208,7 +208,7 @@ struct ClaudeCodeConnection: AgentConnection {
     var inboxes = AgentPlugin.inboxRoot
     /// Where Claude Code keeps its transcripts, one folder per project, for a session whose inbox
     /// does not name its transcript yet.
-    var transcripts = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
+    var transcripts = AgentPlugin.claudeRoot.appendingPathComponent("projects")
     /// What the inbox mod knows about each session, by session id. Injected so a test never reads the
     /// person's own store.
     var modStore: @Sendable () -> [String: InboxModStore.Entry] = { InboxModStore.read() }
