@@ -3,14 +3,16 @@ import AppKit
 // MARK: Esc
 
 extension LiveInk {
-    /// Whether the pointer is on a mark, as near as a tap would erase it, or on a reply, that shows
-    /// on the active Space.
-    func pointerIsOnInk() -> Bool {
+    /// How far from the ink a click, scroll or key reads the screen behind it again (`InkBackdrop.isNearInk`).
+    static let backdropReach: CGFloat = 160
+
+    /// Whether the pointer is within `reach` of a mark, or on a reply, that shows on the active Space.
+    func pointerIsOnInk(reach: CGFloat = LiveInk.eraseReach) -> Bool {
         let mouse = NSEvent.mouseLocation
         let point = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
         let onMark = shownMarks.contains { mark in
-            let reach = Self.eraseReach
-            return (mark.shapeExtent?.insetBy(dx: -reach, dy: -reach) ?? Self.drawnExtent(of: mark, sizes: answerSizes))?.contains(point) == true
+            let box = mark.shapeExtent ?? Self.drawnExtent(of: mark, sizes: answerSizes)
+            return box?.insetBy(dx: -reach, dy: -reach).contains(point) == true
         }
         return onMark || shownReplies().values.contains { $0.note.contains(point) }
     }

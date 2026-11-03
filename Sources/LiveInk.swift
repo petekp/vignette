@@ -191,6 +191,7 @@ final class LiveInk {
         self.mayInk = mayInk
         windows.onGone = { [weak self] ids in self?.forget(ids) }
         windows.drawnExtent = { [weak self] mark in self.flatMap { Self.drawnExtent(of: mark, sizes: $0.answerSizes) } }
+        InkBackdrop.shared.isNearInk = { [weak self] in self?.pointerIsOnInk(reach: Self.backdropReach) ?? false }
         let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, 0) { [weak self] _, _ in
             MainActor.assumeIsolated {
                 self?.bringNoteBack()
@@ -1873,9 +1874,6 @@ final class LiveInk {
         let markStyle = ui.markStyle
         inking.forEach { $0.overlay.showPen(points, longest: longest, markStyle: markStyle) }
     }
-
-    static let screenRecordingNotice = "Live ink needs Screen Recording to see the window under your ink. You can allow it in System Settings."
-    static let speechNotice = "Speaking needs the microphone and speech recognition. You can allow them in System Settings."
 
     /// Starts the responder the note this ink goes to will be aimed at, so its first answer does not
     /// wait for a cold start. A note to a session starts no process, and a tap starts none. Called on
