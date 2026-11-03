@@ -75,6 +75,7 @@ final class LiveResponders {
         conversing = client
         responder.ask(ask)
         guard !Self.asked(client) else { return nil }
+        ThisMac.record(Self.askedKey(client))
         Settings.shared.update {
             switch client {
             case .claude: $0.liveInkAskedClaude = true
@@ -84,13 +85,16 @@ final class LiveResponders {
         return nil
     }
 
-    /// Whether a live ink ask has gone to `client`, which ends the note's line about what it sees.
+    /// Whether a live ink ask has gone to `client` from this Mac, which ends the note's line about what it sees.
     static func asked(_ client: AgentClient) -> Bool {
-        switch client {
+        let recorded = switch client {
         case .claude: Settings.shared.data.liveInkAskedClaude
         case .codex: Settings.shared.data.liveInkAskedCodex
         }
+        return recorded && ThisMac.saw(askedKey(client))
     }
+
+    private static func askedKey(_ client: AgentClient) -> String { "liveInkAsked-\(client.rawValue)-OnThisMac" }
 
     /// What an ask about `packet` sends `client`'s conversation `conversation`, with `note` as its words
     /// and `near` the text lines near its ink: the pictures, unless that conversation has this window
