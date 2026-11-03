@@ -15,7 +15,7 @@ final class LiveWindows {
     var drawnExtent: ((Mark) -> CGRect?)?
 
     private var windows: [CGWindowID: Tracked] = [:]
-    private var link: CADisplayLink?
+    private var link: ScreenLink?
     private var monitors: [Any] = []
     private var observers: [(NotificationCenter, Any)] = []
     /// One per app with marked windows: says when one of them starts to move or resize, which
@@ -392,10 +392,8 @@ final class LiveWindows {
     // MARK: The tick
 
     private func start() {
-        guard link == nil, let screen = NSScreen.main ?? NSScreen.screens.first else { return }
-        let link = screen.displayLink(target: self, selector: #selector(tick))
-        link.add(to: .main, forMode: .common)
-        self.link = link
+        guard link == nil, !NSScreen.screens.isEmpty else { return }
+        link = ScreenLink(self, #selector(tick))
         activeUntil = CACurrentMediaTime() + 1
         monitors = [
             NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged, .rightMouseDown, .keyDown]) { [weak self] event in

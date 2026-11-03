@@ -468,7 +468,7 @@ final class InkClock: NSObject {
     static let shared = InkClock()
 
     private var layers: [ObjectIdentifier: Weak] = [:]
-    private var link: CADisplayLink?
+    private var link: ScreenLink?
     private var last = CACurrentMediaTime()
     private var lastIdle: CFTimeInterval = 0
     private var rest = InkRest(stirredAt: CACurrentMediaTime())
@@ -548,10 +548,7 @@ final class InkClock: NSObject {
 
     /// Ticks again, after being paused for want of anything moving.
     func wake() {
-        if link == nil, let screen = NSScreen.screens.first {
-            link = screen.displayLink(target: self, selector: #selector(tick(_:)))
-            link?.add(to: .main, forMode: .common)
-        }
+        if link == nil, !NSScreen.screens.isEmpty { link = ScreenLink(self, #selector(tick(_:))) }
         link?.isPaused = false
     }
 
@@ -586,9 +583,9 @@ final class InkClock: NSObject {
         if !tickers.isEmpty {
             return
         } else if layers.isEmpty || (!moving && rate <= 0 && !shown.contains(where: \.needsGel)) {
-            link.isPaused = true
+            self.link?.isPaused = true
         } else if shown.isEmpty {
-            link.isPaused = true
+            self.link?.isPaused = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 if self?.layers.isEmpty == false { self?.wake() }
             }
