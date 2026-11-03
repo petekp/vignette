@@ -106,10 +106,10 @@ Before you drive the app:
   alone`. It neither registers nor removes a login item. It runs no updater, and logs
   `[update] test launch: no updater`, unless `VIGNETTE_FEED` names a feed. With one, it checks that
   feed in place of the release feed. Each of these gates reads `Launch.isTest`. To test the plugin, also launch with
-  `CFFIXED_USER_HOME=<scratch home>` (`docs/test-isolation-2026-09-29.md`). It runs no codex and
-  no herdr unless `VIGNETTE_CODEX` or `VIGNETTE_HERDR` names one (`AgentTools.forSessions`), since
-  any other found on the Mac reaches the person's own sessions; the launch logs
-  `[tools] test launch: codex=… herdr=…`. The plugin's skill names the copy's own URL scheme and log
+  `CFFIXED_USER_HOME=<scratch home>` (`docs/test-isolation-2026-09-29.md`). It runs no codex, herdr
+  or claude unless `VIGNETTE_CODEX`, `VIGNETTE_HERDR` or `VIGNETTE_CLAUDE` names one
+  (`AgentTools.forSessions`), since any other found on the Mac reaches the person's own sessions or
+  account; the launch logs `[tools] test launch: codex=… herdr=… claude=…`. The plugin's skill names the copy's own URL scheme and log
   (`AgentPlugin.stage`), and every `open` in it names that copy's path with `-a`, so an agent's
   command never starts another build of the same bundle id on the person's settings.
 - Stop a test copy by its PID before you launch another copy of the same bundle id. On 2026-09-26,
@@ -155,8 +155,8 @@ The steps below have the details.
    before that worktree is rebuilt; a rebuild rewrites the bundle under the running process.
    Every command ends with one `[<cmd>] ok <detail>` or `[<cmd>] error <code> <detail>` line; the
    codes are the `CommandError` cases in `Commands.swift`. `file=` must point inside the watch
-   folder, and `tweaks`, `install-skill?root=` and `live-ink-stroke` are refused, unless settings.json has
-   `"debug": true`. A `file=` inside the folder becomes a `ScreenshotKey` through
+   folder, and `install-skill?root=` and the commands `help` marks as needing `debug` (the labs,
+   `tweaks` and the `live-ink-*` commands) are refused, unless settings.json has `"debug": true`. A `file=` inside the folder becomes a `ScreenshotKey` through
    `ScreenshotKey(resolving:in:)`, which resolves links on both sides and answers the folder's own
    spelling, so `/tmp/x.png` and `/private/tmp/x.png` reach one drawing.
    `add` is the exception, and it takes two paths the folder rule does not cover.
@@ -230,9 +230,8 @@ The steps below have the details.
    Accessibility. Its coordinates are global Core Graphics points: top-left of the primary
    display, y down, so a display above it has negative y. Every frame in the `[state]` line uses
    the same convention, so a card or annotator frame from there can be clicked as is.
-   Never send Escape that way to close the stack: if the stack is not key, the keystroke reaches
-   the frontmost app, and in a terminal running an agent that is the interrupt key. Use
-   `open -g vignette://dismiss` for the stack and `open -g vignette://cancel` for the annotator.
+   Never send Escape that way (the loop's rules above): if the stack is not key, the frontmost app
+   gets it, and a terminal running an agent takes it as the interrupt key.
    Before any key or click, read `[state]` and confirm the stack or annotator is up and key: a
    synthetic key reaches whatever is frontmost otherwise, and a click lands in whatever window is
    there. A single `move` does not fire hover; walk the cursor in several steps and confirm
@@ -267,7 +266,7 @@ The steps below have the details.
    the watcher's index, and times the listing and then the cards' presentation.
 
 A fake screenshot for testing: `screencapture -x -R 200,200,900,560 "<watch folder>/Screenshot test.png"`.
-Delete test files afterwards; the watch folder is the user's real screenshot folder. Never retype a
+Delete it afterwards. Never retype a
 real capture's name to reach it: macOS writes the time with U+202F, a narrow no-break space, before
 AM and PM, so a typed path with an ordinary space is a different path and every call on it answers
 ENOENT while `ls` still lists the file, which reads as the file being unreadable rather than
@@ -467,8 +466,8 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   Accessibility. Nothing else may raise that dialog: `ModifierTap` is constructed with
   `prompt: false`, so the only
   `trusted(prompt: true)` in the app is `Accessibility.request()`, which runs from a button the user
-  pressed: this window's, after choosing the double tap, the Settings window's, and the status
-  menu's Allow Accessibility for the Shortcut…. A dialog raised
+  pressed: this window's shortcut and live ink pages, the Settings window's shortcut and live ink
+  rows, and the status menu's Allow Accessibility for the Shortcut, Live Ink or both. A dialog raised
   during launch, on a question nobody asked, is the one people dismiss. `request()` raises macOS's
   own alert and nothing else, and opens the pane itself only when no `universalAccessAuthWarn`
   window is up 1.5 s later (measured: the alert came up within half a second). Opening both at
