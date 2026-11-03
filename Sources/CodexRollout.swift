@@ -96,8 +96,8 @@ struct RolloutTurns: Equatable {
 }
 
 /// The rollouts of the Codex threads Vignette sent lines to this launch, each read on from where
-/// the last reading stopped. One per `CodexConnection`, shared by its copies. Its lock is held while
-/// a file is read, never while a server is asked for a path.
+/// the last reading stopped. One per `CodexConnection`, shared by its copies. Files are read and
+/// servers asked outside its lock.
 final class CodexTurns: Sendable {
     /// How long a rollout may stay the same size while a sent line waits or its turn runs before
     /// the thread's path is asked again, which starts an app-server. A long thread moves on to a new
@@ -132,30 +132,26 @@ final class CodexTurns: Sendable {
         /// The open turn that has been said to be quiet for `TurnWatch.workingLimit`.
         var quietTurn: String?
 
-        /// Reads what was added since the last reading. Answers whether to ask for the path again:
+        var place: Place { Place(path: path, offset: offset) }
+
+        /// Takes in what was added since the last reading. Answers whether to ask for the path again:
         /// there is none to read, the file has gone or shrunk, or it has stopped growing while a line
         /// waits or its turn runs, each once `askAfter` has passed; or an engine has just opened the
-        /// thread.
-        mutating func readOn(at now: Date, loaded: Bool) -> Bool {
+        /// thread. A reading of a place the watch has since left changes nothing.
+        mutating func readOn(_ reading: Reading, at now: Date, loaded: Bool) -> Bool {
+            guard reading.place == place else { return false }
             let opened = loaded && !self.loaded
             self.loaded = loaded
-            guard let path, !path.hasSuffix(".zst"),
-                  let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? UInt64,
-                  size >= offset else { return opened || now.timeIntervalSince(asked) >= askAfter }
-            if size > offset, let file = FileHandle(forReadingAtPath: path) {
-                defer { try? file.close() }
-                try? file.seek(toOffset: offset)
-                let chunk = (try? file.read(upToCount: Int(size - offset))) ?? Data()
-                offset += UInt64(chunk.count)
-                partial.append(chunk)
-                if let end = partial.lastIndex(of: UInt8(ascii: "\n")) {
-                    for line in partial[..<end].split(separator: UInt8(ascii: "\n")) { turns.read(Data(line)) }
-                    partial = Data(partial[partial.index(after: end)...])
-                }
-                if !chunk.isEmpty {
-                    grew = now
-                    askAfter = CodexTurns.staleAfter
-                }
+            guard let size = reading.size, size >= offset else { return opened || now.timeIntervalSince(asked) >= askAfter }
+            offset += UInt64(reading.added.count)
+            partial.append(reading.added)
+            if let end = partial.lastIndex(of: UInt8(ascii: "\n")) {
+                for line in partial[..<end].split(separator: UInt8(ascii: "\n")) { turns.read(Data(line)) }
+                partial = Data(partial[partial.index(after: end)...])
+            }
+            if !reading.added.isEmpty {
+                grew = now
+                askAfter = CodexTurns.staleAfter
             }
             let quiet = now.timeIntervalSince(grew) >= CodexTurns.staleAfter && now.timeIntervalSince(asked) >= askAfter
             return turns.expectsMore && (opened || quiet)
@@ -178,6 +174,41 @@ final class CodexTurns: Sendable {
         }
     }
 
+    /// Where a watch reads from next.
+    private struct Place: Equatable {
+        let path: String?
+        let offset: UInt64
+    }
+
+    /// A place's file as it was read: its size, nil when it cannot be read, and what lies past the offset.
+    private struct Reading {
+        let place: Place
+        let size: UInt64?
+        let added: Data
+
+        init(_ place: Place) {
+            self.place = place
+            guard let path = place.path, !path.hasSuffix(".zst") else {
+                size = nil
+                added = Data()
+                return
+            }
+            let size = CodexTurns.size(of: path)
+            self.size = size
+            guard let size, size > place.offset, let file = FileHandle(forReadingAtPath: path) else {
+                added = Data()
+                return
+            }
+            defer { try? file.close() }
+            try? file.seek(toOffset: place.offset)
+            added = (try? file.read(upToCount: Int(size - place.offset))) ?? Data()
+        }
+    }
+
+    private static func size(of path: String) -> UInt64? {
+        (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? UInt64
+    }
+
     private let watches = OSAllocatedUnfairLock(initialState: [String: Watch]())
     private let now: @Sendable () -> Date
 
@@ -192,12 +223,13 @@ final class CodexTurns: Sendable {
     /// it is now, or from its start when the file is not there yet.
     func sending(_ line: String, to thread: String, rollout: Path, loaded: Bool) {
         let time = now()
+        let size: UInt64? = if case .at(let path) = rollout { Self.size(of: path) } else { nil }
         watches.withLock { watches in
             let watched = watches[thread] != nil
             var watch = watches[thread] ?? Watch(grew: time, asked: time, loaded: loaded)
             if case .at(let path) = rollout, path != watch.path {
                 watch.path = path
-                watch.offset = watched ? 0 : (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? UInt64 ?? 0
+                watch.offset = watched ? 0 : size ?? 0
                 watch.partial = Data()
             } else if rollout == .unnamed {
                 watch.move(to: .unnamed, at: time)
@@ -222,19 +254,23 @@ final class CodexTurns: Sendable {
     func turn(of thread: String, loaded: (String) -> Bool, path: (String) -> Path) -> SessionTurn? {
         let time = now()
         let isLoaded = loaded(thread)
-        let asks = watches.withLock { watches -> Bool in
-            guard var watch = watches[thread] else { return false }
-            defer { watches[thread] = watch }
-            return watch.readOn(at: time, loaded: isLoaded)
-        }
-        if asks {
-            let found = path(thread)
-            watches.withLock { watches in
-                guard var watch = watches[thread] else { return }
-                watch.move(to: found, at: time)
-                _ = watch.readOn(at: time, loaded: isLoaded)
-                watches[thread] = watch
+        func readOn(from place: Place) -> Bool {
+            let reading = Reading(place)
+            return watches.withLock { watches -> Bool in
+                guard var watch = watches[thread] else { return false }
+                defer { watches[thread] = watch }
+                return watch.readOn(reading, at: time, loaded: isLoaded)
             }
+        }
+        if let place = watches.withLock({ $0[thread]?.place }), readOn(from: place) {
+            let found = path(thread)
+            let moved = watches.withLock { watches -> Place? in
+                guard var watch = watches[thread] else { return nil }
+                defer { watches[thread] = watch }
+                watch.move(to: found, at: time)
+                return watch.place
+            }
+            if let moved { _ = readOn(from: moved) }
         }
         return watches.withLock { watches -> SessionTurn? in
             guard var watch = watches[thread] else { return nil }
