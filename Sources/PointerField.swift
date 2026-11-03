@@ -44,14 +44,11 @@ final class PointerField: NSObject {
     private static let metal: (device: MTLDevice, queue: MTLCommandQueue, ring: MTLRenderPipelineState)? = {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue(),
               let library = device.makeDefaultLibrary() else { return nil }
-        func pipeline(_ fragment: String) -> MTLRenderPipelineState? {
-            let descriptor = MTLRenderPipelineDescriptor()
-            descriptor.vertexFunction = library.makeFunction(name: "fieldVertex")
-            descriptor.fragmentFunction = library.makeFunction(name: fragment)
-            descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-            return try? device.makeRenderPipelineState(descriptor: descriptor)
-        }
-        guard let ring = pipeline("ringFragment") else { return nil }
+        let descriptor = MTLRenderPipelineDescriptor()
+        descriptor.vertexFunction = library.makeFunction(name: "fieldVertex")
+        descriptor.fragmentFunction = library.makeFunction(name: "ringFragment")
+        descriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        guard let ring = try? device.makeRenderPipelineState(descriptor: descriptor) else { return nil }
         return (device, queue, ring)
     }()
 
@@ -262,7 +259,7 @@ final class PointerField: NSObject {
         defer { CATransaction.commit() }
         let area = ringArea(on: size)
         ringLayer.isHidden = area == nil
-        guard let area, let ring = render(ringLayer, metal.ring, area: area, uniforms: uniforms(size: size)) else { return }
+        guard let area, let ring = render(ringLayer, metal.ring, area: area, uniforms: uniforms()) else { return }
         ring.commands.commit()
         // A layer that presents with its transaction shows a drawable only once it is scheduled.
         ring.commands.waitUntilScheduled()
@@ -308,7 +305,7 @@ final class PointerField: NSObject {
         return (commands, drawable)
     }
 
-    private func uniforms(size: CGSize) -> FieldUniforms {
+    private func uniforms() -> FieldUniforms {
         var uniforms = FieldUniforms()
         let colour = ice + (deep - ice) * Float(motion.deepness)
         uniforms.color = SIMD4(colour, 1)
@@ -317,7 +314,6 @@ final class PointerField: NSObject {
         uniforms.ringEnergy = Float(motion.energy)
         uniforms.lampLife = SIMD4(Float(ui.liveInkLampBreath), Float(max(ui.liveInkLampBreathSeconds, 0.1)),
                                   Float(ui.liveInkLampEnergy), Float(ui.liveInkLampDrift))
-        uniforms.size = SIMD2(Float(size.width), Float(size.height))
         if ui.ringShows {
             uniforms.ringCentre = SIMD2(Float(motion.centre.x), Float(motion.centre.y))
             uniforms.ringVelocity = SIMD2(Float(motion.velocity.dx), Float(motion.velocity.dy))
@@ -410,7 +406,6 @@ struct PointerFieldMotion {
 /// The shader's uniforms, in the order and alignment of `FieldUniforms` in PointerField.metal.
 struct FieldUniforms {
     var color = SIMD4<Float>(repeating: 0)
-    var size = SIMD2<Float>(repeating: 0)
     var origin = SIMD2<Float>(repeating: 0)
     var area = SIMD2<Float>(repeating: 0)
     var ringCentre = SIMD2<Float>(repeating: 0)
