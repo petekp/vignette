@@ -30,7 +30,7 @@ final class Microphone: @unchecked Sendable {
 
     private func begin(_ transcriber: Transcriber) -> TranscriberFailure? {
         do {
-            try transcriber.begin(hints: [])
+            try transcriber.begin()
         } catch {
             return error as? TranscriberFailure ?? TranscriberFailure(reason: "Vignette couldn't start listening.", detail: "\(error)")
         }
