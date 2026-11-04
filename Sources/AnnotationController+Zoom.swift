@@ -7,6 +7,7 @@ extension AnnotationController {
         let center = NSPoint(x: frame.midX, y: frame.midY)
         let screen = NSScreen.screens.first { $0.frame.contains(center) } ?? NSScreen.main ?? NSScreen.screens[0]
         zoomScreen = screen
+        zoom.pixelScale = screen.backingScaleFactor
         if win.frame != screen.visibleFrame { win.setFrame(screen.visibleFrame, display: false) }
         moveFrame(to: frame, picture: zoom.picture)
     }
