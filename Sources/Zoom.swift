@@ -35,6 +35,25 @@ enum Zoom {
         return f
     }
 
+    /// `rect` with each edge moved to the nearest boundary of a grid of `scale` per point, and kept
+    /// inside `limit` when it was inside. Each edge is rounded on its own, so an edge that held still
+    /// before still holds.
+    static func aligned(_ rect: CGRect, to scale: CGFloat, within limit: CGRect?) -> CGRect {
+        guard scale > 0, rect.width > 0, rect.height > 0 else { return rect }
+        func snap(_ v: CGFloat, low: CGFloat?, high: CGFloat?) -> CGFloat {
+            var s = (v * scale).rounded() / scale
+            if let low, v >= low, s < low { s = (v * scale).rounded(.up) / scale }
+            if let high, v <= high, s > high { s = (v * scale).rounded(.down) / scale }
+            return s
+        }
+        let minX = snap(rect.minX, low: limit?.minX, high: limit?.maxX)
+        let maxX = snap(rect.maxX, low: limit?.minX, high: limit?.maxX)
+        let minY = snap(rect.minY, low: limit?.minY, high: limit?.maxY)
+        let maxY = snap(rect.maxY, low: limit?.minY, high: limit?.maxY)
+        guard maxX > minX, maxY > minY else { return rect }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
     /// Aims a zoom at `cursor`, a fraction of `shown`, the frame on screen now: the window ends up
     /// at `target`, where it is drawn at `window`, as far as `limit` allows. The anchor it starts
     /// from reproduces `shown`, so the step begins where the window already is.

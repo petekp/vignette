@@ -203,6 +203,7 @@ final class AnnotatorZoomTests: XCTestCase {
             var rng = SeededGenerator(seed: UInt64(seed))
             var zoom = AnnotatorZoom()
             zoom.edge = AnnotatorZoom.EdgePull(band: .random(in: 0...400, using: &rng), pull: .random(in: 0...1, using: &rng))
+            zoom.pixelScale = [nil, 1, 2, 3].randomElement(using: &rng)!
             var fitted = CGRect.zero
             /// The level the spring is carrying the level to, if it is moving.
             var spring: CGFloat?
@@ -242,6 +243,10 @@ final class AnnotatorZoomTests: XCTestCase {
                     spring = to
                 case .place(let frame, let picture)?:
                     if !room.insetBy(dx: -1e-6, dy: -1e-6).contains(frame) { fail("\(frame) left the room") }
+                    if let scale = zoom.pixelScale {
+                        let edges = [frame.minX, frame.maxX, frame.minY, frame.maxY].map { $0 * scale }
+                        if edges.contains(where: { abs($0 - $0.rounded()) > 1e-6 }) { fail("\(frame) is off the \(scale)x pixel grid") }
+                    }
                     if picture.minX > 1e-6 || picture.minY > 1e-6 || picture.maxX < frame.width - 1e-6 || picture.maxY < frame.height - 1e-6 {
                         fail("\(picture) does not cover \(frame.size)")
                     }
@@ -271,6 +276,8 @@ final class AnnotatorZoomTests: XCTestCase {
                 let w = CGFloat.random(in: 200...1000, using: &rng), h = CGFloat.random(in: 150...600, using: &rng)
                 fitted = CGRect(x: .random(in: room.minX...(room.maxX - w), using: &rng),
                                 y: .random(in: room.minY...(room.maxY - h), using: &rng), width: w, height: h)
+                // `StackLayout.annotationFrame` fits the frame to whole points.
+                if zoom.pixelScale != nil { fitted = fitted.integral }
                 send(.prepare(fitted: fitted, room: room))
                 spring = nil
                 send(.tick(1))

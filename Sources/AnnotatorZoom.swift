@@ -46,6 +46,11 @@ struct AnnotatorZoom: Equatable {
     }
 
     var edge = EdgePull(band: 0, pull: 0)
+    /// Device pixels per point on the screen the frame is on. A tick puts each edge of the frame on
+    /// a pixel boundary, so the frame's 1 px border is drawn in whole pixels at every level rather
+    /// than spread across two at a fraction that changes on every tick. Nil leaves the rect as the
+    /// geometry gives it.
+    var pixelScale: CGFloat?
 
     private(set) var phase = Phase.closed
     /// The frame the image opened in; the zoom grows the frame from here.
@@ -113,7 +118,7 @@ struct AnnotatorZoom: Equatable {
     mutating func reduce(_ input: Input) -> Effect? {
         switch input {
         case .prepare(let fitted, let room):
-            self = AnnotatorZoom(edge: edge, phase: .flying, fitted: fitted, room: room, frame: fitted)
+            self = AnnotatorZoom(edge: edge, pixelScale: pixelScale, phase: .flying, fitted: fitted, room: room, frame: fitted)
             return nil
         case .landed:
             if phase == .flying { phase = .landed }
@@ -197,6 +202,7 @@ struct AnnotatorZoom: Equatable {
         center = pan.center(at: step.camera)
         // Kept in the room: a frame grown to the screen's height slides rather than clips.
         frame = Zoom.frame(fitted: fitted, scale: step.window, anchor: aim.anchor(at: level), within: room)
+        if let pixelScale { frame = Zoom.aligned(frame, to: pixelScale, within: room) }
         return .place(frame: frame, picture: picture)
     }
 
