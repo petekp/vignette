@@ -36,14 +36,14 @@ final class AnnotationController {
     let editor = EditorView()
     private let toolbar = AnnotatorToolbar()
     private let titleView = AgentTitleView()
-    private var window: AnnotationWindow?
+    var window: AnnotationWindow?
     /// The window spans the screen's visible frame and stays put. The visible frame is `frameView`
     /// inside it (shadow) with `container` (clip, corner, ring, editor), so a zoom step moves the
     /// frame and the picture inside it in one layer commit: a window resize and a layer change do
     /// not land on the same display frame, and the picture would drift from the frame between them.
-    private var frameView: NSView?
+    var frameView: NSView?
     private var container: NSView?
-    private var zoomScreen: NSScreen?
+    var zoomScreen: NSScreen?
     /// The shot in the editor, from `prepare` until `hide` parks it. Not the session: see AnnotatorTransition.
     private var current: Screenshot?
     private let outsideClick = OutsideClick()
@@ -80,8 +80,8 @@ final class AnnotationController {
     }
 
     /// The zoom's rules and where they put the frame and the picture. The spring is `zoomTween`.
-    private var zoom = AnnotatorZoom()
-    private lazy var zoomTween = Tween(initial: 1) { [weak self] level in self?.run(.tick(level)) }
+    var zoom = AnnotatorZoom()
+    lazy var zoomTween = Tween(initial: 1) { [weak self] level in self?.run(.tick(level)) }
     /// Counts the title's ink measurements, so an answer for a block that has moved since is dropped.
     private var inkMeasurement = 0
     /// Where the title's ink came from, for `[state]`.
@@ -243,19 +243,11 @@ final class AnnotationController {
         image.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
 
-    private func place(_ win: NSWindow, frame: NSRect) {
-        let center = NSPoint(x: frame.midX, y: frame.midY)
-        let screen = NSScreen.screens.first { $0.frame.contains(center) } ?? NSScreen.main ?? NSScreen.screens[0]
-        zoomScreen = screen
-        if win.frame != screen.visibleFrame { win.setFrame(screen.visibleFrame, display: false) }
-        moveFrame(to: frame, picture: zoom.picture)
-    }
-
     /// The one place the frame's rect is set: the frame view, the clip, the shadow's path and the
     /// editor inside it all take it from here, in the same tick, so nothing can be a frame behind.
     /// `frameOnScreen` reads the result back for anyone who needs the rect. `picture` is where the
     /// whole picture sits in the editor, in its coordinates, which run down from the top.
-    private func moveFrame(to frame: NSRect, picture: CGRect) {
+    func moveFrame(to frame: NSRect, picture: CGRect) {
         guard let win = window, let frameView, let container else { return }
         frameView.frame = NSRect(x: frame.minX - win.frame.minX, y: frame.minY - win.frame.minY, width: frame.width, height: frame.height)
         container.frame = frameView.bounds
@@ -286,7 +278,7 @@ final class AnnotationController {
     /// appearance: Vignette cannot see other apps' windows then, and a light appearance mostly
     /// means light windows. An answer for a block that has moved since, or an image that has gone,
     /// is dropped.
-    private func measureTitleInk() {
+    func measureTitleInk() {
         guard titleView.title != nil, current != nil, let win = window else { inkSource = nil; return }
         inkMeasurement += 1
         let measurement = inkMeasurement
@@ -350,85 +342,6 @@ final class AnnotationController {
     var frameOnScreen: NSRect? {
         guard let win = window, let frameView else { return nil }
         return win.convertToScreen(frameView.frame)
-    }
-
-    // MARK: Zoom
-
-    /// Hands `input` to the zoom and does what it answers. A spring that lands at once, at motion 0,
-    /// ticks and arrives inside `animate`, after the zoom has answered.
-    private func run(_ input: AnnotatorZoom.Input) {
-        switch zoom.reduce(input) {
-        case .spring(let level, let seconds)?:
-            // The title sits over another part of the screen once a step has moved the frame.
-            zoomTween.animate(to: level, duration: motionScaled(seconds)) { [weak self] in
-                self?.run(.arrived)
-                self?.measureTitleInk()
-            }
-        case .place(let frame, let picture)?:
-            guard window != nil else { return }
-            moveFrame(to: frame, picture: picture)
-        case .movePicture(let picture)?:
-            editor.pictureRect = picture
-        case nil:
-            break
-        }
-    }
-
-    /// The editor's zoom keys and its double-click on empty space.
-    private func zoomRequested(_ request: EditorCore.ZoomRequest) {
-        switch request {
-        case .zoomIn: run(.zoomIn)
-        case .zoomOut: run(.zoomOut)
-        case .fit: run(.fit)
-        case .smart(let point):
-            run(.smart(at: cursorFraction(editor.convert(editor.viewPoint(forImagePoint: point), to: nil))))
-        }
-    }
-
-    /// A pinch, a scroll or a two-finger double tap over the editor. Cmd or ctrl on a scroll zooms,
-    /// as the pinch does; a plain scroll moves the part of a magnified picture in view. A trackpad's
-    /// scroll is a gesture, and lifting the fingers lets go of a pull below the fit; momentum after
-    /// the lift is ignored, as a pinch's end is, so the zoom stops where the hand did. A mouse wheel
-    /// has no phases, and each notch is a step.
-    private func zoomGesture(_ event: NSEvent) {
-        switch event.type {
-        case .magnify:
-            if event.phase == .ended || event.phase == .cancelled { run(.lift); return }
-            run(.pinch(by: event.magnification, at: cursorFraction(event.locationInWindow)))
-        case .smartMagnify:
-            run(.smart(at: cursorFraction(event.locationInWindow)))
-        case .scrollWheel:
-            let line: CGFloat = event.hasPreciseScrollingDeltas ? 1 : Self.wheelLinePoints
-            if event.modifierFlags.intersection([.command, .control]).isEmpty {
-                run(.pan(by: CGVector(dx: event.scrollingDeltaX * line, dy: event.scrollingDeltaY * line)))
-                return
-            }
-            if event.phase.contains(.ended) || event.phase.contains(.cancelled) { run(.lift); return }
-            guard event.momentumPhase.isEmpty else { return }
-            run(.wheel(points: event.scrollingDeltaY * line, at: cursorFraction(event.locationInWindow),
-                       fingers: !event.phase.isEmpty))
-        default:
-            break
-        }
-    }
-
-    /// Zoom's springs are in code rather than in the tweaks, but the motion scale still shortens
-    /// them, so `ui.motion: 0` and Reduce Motion land a zoom step at once.
-    private func motionScaled(_ seconds: Double) -> Double { seconds * Settings.shared.motionScale }
-
-    private static func edgePull(_ ui: UITweaks) -> AnnotatorZoom.EdgePull {
-        AnnotatorZoom.EdgePull(band: ui.zoomEdgeBandPoints, pull: ui.zoomEdgePull)
-    }
-
-    /// A line of a mouse wheel's notch in points, for wheels that report lines rather than points.
-    private static let wheelLinePoints: CGFloat = 10
-
-    /// A point in the window's coordinates as a fraction of the visible frame, x from the left and
-    /// y from the top.
-    private func cursorFraction(_ locationInWindow: NSPoint) -> CGPoint? {
-        guard let frameView, frameView.bounds.width > 0, frameView.bounds.height > 0 else { return nil }
-        let p = frameView.convert(locationInWindow, from: nil)
-        return Zoom.clamped(CGPoint(x: p.x / frameView.bounds.width, y: 1 - p.y / frameView.bounds.height))
     }
 
     // MARK: Showing and hiding
