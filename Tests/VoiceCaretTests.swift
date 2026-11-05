@@ -43,6 +43,16 @@ final class VoiceCaretTests: XCTestCase {
         XCTAssertEqual(wave.left, 6)
     }
 
+    func testTheBarsAreStrongestInTheMiddleAndFadeTowardBothEnds() {
+        var wave = VoiceCaret(lineWidth: 276, edge: edge(x: 0, line: 0))
+        for _ in 0..<60 { wave.tick(1.0 / 60, edge: edge(x: 0, line: 0), level: 1, motion: 1) }
+        let opacities = wave.bars.map(\.opacity)
+        let strongest = opacities.indices.max { opacities[$0] < opacities[$1] }!
+        XCTAssertEqual(CGFloat(strongest) / CGFloat(opacities.count - 1), 0.5, accuracy: 0.15)
+        XCTAssertLessThan(opacities.first!, opacities[strongest] / 2)
+        XCTAssertLessThan(opacities.last!, opacities[strongest] / 2)
+    }
+
     func testTheWaveformFoldsIntoTheCaretAtTheWordsEnd() {
         var wave = VoiceCaret(lineWidth: 276, edge: edge(x: 50, line: 0))
         XCTAssertNil(wave.caret)

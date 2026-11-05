@@ -25,7 +25,8 @@ While it listens the words show at full strength, keys or not, and the empty not
 The waveform is ten bars on a fixed grid, 4 pt apart. Each bar is centred on the middle of the
 lowercase letters and is never taller than 11 pt, so it stays inside the line. The bars follow the
 input's level, which `Microphone` measures in 10 ms slices and `VoiceLevels` plays back at that rate.
-Each grid slot has its own shape, so neighbouring bars differ.
+Each grid slot has its own shape, so neighbouring bars differ. The middle bars are the strongest, and the bars fade toward
+both ends of the waveform.
 
 The words come a letter at a time. Each letter fades in, and the letters are never more than 0.4 s
 behind what was heard (`HeardLetters`). The newest word shows lighter until the next one comes,

@@ -17,7 +17,9 @@ struct VoiceCaret {
     static let barWidth: CGFloat = 2
     static let shortest: CGFloat = 2
     static let tallest: CGFloat = 11
+    /// The middle bars' opacity, and the share of it the bars at either end keep.
     static let opacity: CGFloat = 0.7
+    static let edgeOpacity: CGFloat = 0.2
     /// How fast the left end follows the words and the bars follow the voice: the time for a step to
     /// close by 1 - 1/e, at full motion.
     static let follow: TimeInterval = 0.04
@@ -100,7 +102,7 @@ struct VoiceCaret {
             guard into <= Self.width, past >= 0, x + Self.barWidth <= lineWidth else { return nil }
             let lead = min(1, (past + 2) / 5), tail = min(1, (Self.width - into) / 6)
             let height = Self.shortest + (Self.tallest - Self.shortest) * CGFloat(level) * Self.shape(n) * min(lead, tail)
-            let opacity = Self.opacity * min(1, tail * 1.5)
+            let opacity = Self.opacity * Self.fade(at: into / Self.width)
             let shown = height * (1 - ease)
             let folding = x + (edge.x + 1 - x) * ease
             return Bar(x: folding, top: edge.middle - shown / 2, height: shown, opacity: opacity * (1 - ease))
@@ -112,6 +114,12 @@ struct VoiceCaret {
         guard folded != nil else { return nil }
         let height = (edge.lineHeight - 2) * ease
         return Bar(x: edge.x + 1, top: edge.middle - height / 2, height: height, opacity: 1)
+    }
+
+    /// A bar's share of the opacity at `place` across the waveform, 0 its left end and 1 its right:
+    /// all of it in the middle, tapering to `edgeOpacity` at either end.
+    static func fade(at place: CGFloat) -> CGFloat {
+        edgeOpacity + (1 - edgeOpacity) * sin(.pi * min(1, max(0, place)))
     }
 
     /// A bar's share of the level in grid slot `n`, from 0.45 to 1.
