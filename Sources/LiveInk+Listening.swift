@@ -21,6 +21,7 @@ extension LiveInk {
         speechProblem = nil
         let listening = LiveListening(transcriber: transcriber)
         listening.onWords = { [weak self] words in self?.heard(words) }
+        listening.onLevels = { [weak self] levels in self?.note?.hearLevels(levels) }
         listening.onFinished = { [weak self, weak listening] words in
             guard let self, let listening, self.listening === listening else { return }
             self.doneListening(words, began: listening.began)
@@ -29,10 +30,34 @@ extension LiveInk {
             Log.write("[speech] error \(failure.detail)")
             guard let self, let listening, self.listening === listening else { return }
             self.listening = nil
+            self.note?.stopListening()
             self.speechProblem = failure.reason
         }
         self.listening = listening
         typedOver = note.map { !$0.isEmpty } ?? false
+        if !typedOver { note?.startListening() }
+    }
+
+    /// While live ink listens, a stroke ending opens the note without the keys, or moves it to the new
+    /// ink, so the words show as they are said. The chord's release gives it the keys. A menu still
+    /// open waits for the release, which closes it first.
+    func showNoteWhileListening() {
+        guard isInking, listening != nil, releaseWatch == nil, LiveMenus.open().isEmpty else { return }
+        showNote(takingKeys: false)
+    }
+
+    /// A note opened while live ink listens shows what was said so far, with the waveform.
+    func listen(into panel: LiveNotePopover) {
+        guard let listening, !typedOver else { return }
+        panel.startListening()
+        if !listening.words.isEmpty { panel.hear(listening.text) }
+    }
+
+    /// The chord was let go and the note settled: what is said goes into the note, and with no note
+    /// there is nowhere for it to go.
+    func listenOnceLetGo() {
+        if note != nil { listening?.released() } else { stopListening() }
+        if note != nil, let heard = heardBeforeNote { doneListening(heard.words, began: heard.began) }
     }
 
     func heard(_ words: [SpokenWord]) {
@@ -46,6 +71,7 @@ extension LiveInk {
         listening = nil
         heardBeforeNote = nil
         guard let note else { heardBeforeNote = (words, began); return }
+        defer { note.stopListening() }
         let text = LiveListening.text(of: words)
         guard !typedOver, !text.isEmpty else { return }
         spoken = (words, began)
@@ -64,6 +90,7 @@ extension LiveInk {
 
     /// Stops listening and drops what was heard.
     func stopListening() {
+        note?.stopListening()
         listening?.cancel()
         listening = nil
         heardBeforeNote = nil

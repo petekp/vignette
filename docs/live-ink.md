@@ -334,8 +334,8 @@ The names in brackets are `// MARK:` sections.
 - With `liveInkSpeech` on, live ink listens while the person draws
   (`docs/live-ink-speech-input-2026-10-06.md`). Listening starts when the pointer field shows, so the chord on
   its way to a shortcut never turns the microphone on, and a press of the chord while it listens goes
-  on with the same listening, so "this" and "that" in two strokes are one note. The note opens
-  on release with what was said so far and fills as the person talks. A key typed in it ends
+  on with the same listening, so "this" and "that" in two strokes are one note. Ink drawn
+  then opens the note, with the words as said (`docs/live-ink-voice.md`). A key typed in it ends
   listening and keeps the words; Esc, an ask and clearing drop them. Standing aside stops listening,
   and the note keeps what it heard. Words already in the note when listening starts stay, and what is
   said then does not replace them. `ListeningEnd`

@@ -13,6 +13,11 @@ final class NoteContent: NSView {
     let session = SessionButton()
     private let key = NSTextField(labelWithString: "↩")
     let light = RimLight()
+    /// The waveform caret, over the words while live ink listens (`NoteVoice`).
+    let voiceView = VoiceCaretView()
+    /// While live ink listens, the height of the words shown so far, which the field takes in place of
+    /// its words' own: words still to show never grow the note.
+    var voiceHeight: CGFloat?
     /// The popover's height, which springs to the words' as they change (`fit`).
     private var height: Tween?
 
@@ -26,7 +31,8 @@ final class NoteContent: NSView {
         key.toolTip = "Return asks"
         field.setAccessibilityLabel("Note")
         key.setAccessibilityElement(false)
-        for view in [field, session, key] { addSubview(view) }
+        voiceView.isHidden = true
+        for view in [field, voiceView, session, key] { addSubview(view) }
         wantsLayer = true
         layer?.addSublayer(light)
     }
@@ -57,8 +63,9 @@ final class NoteContent: NSView {
     @discardableResult func layOut(over duration: TimeInterval = 0) -> CGSize {
         let typed = field.currentEditor()?.string ?? field.stringValue
         // Empty, the field shows its prompt, which can say why Claude cannot answer in two lines.
-        let words = NoteLayout.wordsHeight(typed.isEmpty ? field.placeholderString ?? "" : typed)
+        let words = voiceHeight ?? NoteLayout.wordsHeight(typed.isEmpty ? field.placeholderString ?? "" : typed)
         field.frame = NoteLayout.fieldFrame(height: words)
+        voiceView.frame = wordsFrame
         let rowY = NoteLayout.top + words + NoteLayout.belowWords
         key.sizeToFit()
         let (session, key) = duration > 0 ? (self.session.animator(), self.key.animator()) : (self.session, self.key)
@@ -74,14 +81,29 @@ final class NoteContent: NSView {
     }
 
     /// Words at full strength and the ↩ shown while the note has the keys, dimmed and faded while it
-    /// does not, over `duration`.
+    /// does not, over `duration`. While live ink listens the words show at full strength either way.
     func showsKeys(_ keys: Bool, duration: CFTimeInterval) {
+        hasKeys = keys
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
-            field.animator().alphaValue = keys ? 1 : Self.inactiveWords
+            field.animator().alphaValue = keys || listening ? 1 : Self.inactiveWords
             key.animator().alphaValue = keys ? 1 : 0
         }
     }
+
+    private var hasKeys = true
+
+    /// Live ink is listening into the note: its words show at full strength, keys or not, and the
+    /// waveform shows over them. Once it stops, the words dim again if the note has no keys.
+    func showsListening(_ listening: Bool, duration: CFTimeInterval) {
+        guard listening != self.listening else { return }
+        self.listening = listening
+        if !listening { voiceHeight = nil }
+        voiceView.isHidden = !listening
+        showsKeys(hasKeys, duration: duration)
+    }
+
+    private(set) var listening = false
 
     /// How strongly the words show while the note does not have the keys.
     private static let inactiveWords: CGFloat = 0.55

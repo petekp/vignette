@@ -22,7 +22,7 @@ final class LiveInk {
     /// The chord shows the pointer field on the surfaces taking ink: its delay passed, or a press came.
     private var chordShowsField = false
     /// Runs while a stroke outlives the chord, until the button is up: inking ends then.
-    private var releaseWatch: Timer?
+    private(set) var releaseWatch: Timer?
     /// Takes the pointer's events while inking, so no app hears them (`LiveInkTap`).
     private var tap: LiveInkTap?
     /// The surface the press under way began on, which takes its drags and its release, as the window
@@ -599,11 +599,11 @@ final class LiveInk {
     /// its words, its target and its caret, and moves to hang from the newest ink. Answers whether the
     /// note took the keys.
     @discardableResult
-    private func showNote(takingKeys: Bool = true) -> Bool {
+    func showNote(takingKeys: Bool = true) -> Bool {
         guard let mark = newInk.last(where: { $0.shapeExtent != nil }), let first = firstPlace(beside: mark) else { return false }
         if let note {
             if notePlace?.anchor != mark.id {
-                hang(note, from: mark, at: first)
+                hang(note, from: mark, at: first, takingKeys: takingKeys)
                 prepare(beside: mark, panel: note)
                 Log.write("[live-ink] note moved to the newest ink")
             }
@@ -640,10 +640,8 @@ final class LiveInk {
         hang(panel, from: mark, at: first, takingKeys: takingKeys)
         prepare(beside: mark, panel: panel)
         if held == nil { refreshTargets(of: panel) }
-        if let listening {
-            if !typedOver, !listening.words.isEmpty { panel.hear(listening.text) }
-        }
-        Log.write("[live-ink] note open\(takingKeys ? "" : " without the keys: a menu is still open")")
+        listen(into: panel)
+        Log.write("[live-ink] note open\(takingKeys ? "" : " without the keys: " + (isInking ? "the chord is held" : "a menu is still open"))")
         return panel.hasKeys
     }
 
@@ -1913,7 +1911,10 @@ final class LiveInk {
         take(InkHand.trailing(points, length: longestLine(for: points, ui: Settings.shared.data.ui)), on: surface, among: inking)
         strokeBegan = nil
         strokeScreenDiagonal = nil
-        if newInk.count > before, let extent = newInk.last?.shapeExtent { prefetch(at: CGPoint(x: extent.midX, y: extent.midY)) }
+        if newInk.count > before, let extent = newInk.last?.shapeExtent {
+            prefetch(at: CGPoint(x: extent.midX, y: extent.midY))
+            showNoteWhileListening()
+        }
         // The mark the preview was on has gone, or a stroke was drawn; the next move shows it again.
         hover(at: nil)
         if releaseWatch != nil { finishInking() }
@@ -1970,9 +1971,7 @@ final class LiveInk {
     private func settleInking(opensNote: Bool, takingKeys: Bool = true) {
         let noteHasKeys = opensNote && showNote(takingKeys: takingKeys)
         keepNoteWithItsInk()
-        // What is said goes into the note; with no note there is nowhere for it to go.
-        if note != nil { listening?.released() } else { stopListening() }
-        if note != nil, let heard = heardBeforeNote { doneListening(heard.words, began: heard.began) }
+        listenOnceLetGo()
         if !noteHasKeys { FocusReturn.shared.restore(reason: "live ink inking") }
     }
 

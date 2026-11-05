@@ -43,6 +43,8 @@ final class LiveListening {
     let began = Date()
     private(set) var words: [SpokenWord] = []
     var onWords: (([SpokenWord]) -> Void)?
+    /// The input's level, 0 to 1, a slice at a time (`Microphone.start`).
+    var onLevels: (([Float]) -> Void)?
     /// The final words, once listening has ended by itself or by `finish`.
     var onFinished: (([SpokenWord]) -> Void)?
 
@@ -63,7 +65,11 @@ final class LiveListening {
             self.words = words
             self.onWords?(words)
         }
-        microphone.start(into: transcriber) { [weak self] failure in
+        let onLevels: @MainActor @Sendable ([Float]) -> Void = { [weak self] levels in
+            guard let self, !self.finishing else { return }
+            self.onLevels?(levels)
+        }
+        microphone.start(into: transcriber, onLevels: onLevels) { [weak self] failure in
             guard let self, !self.finishing else { return }
             guard let failure else {
                 Log.write("[speech] listening engine=\(self.transcriber.name)")
