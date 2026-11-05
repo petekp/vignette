@@ -9,6 +9,9 @@ final class VoiceCaretView: NSView {
 
     override var isFlipped: Bool { true }
 
+    /// Lies over the field, so a click on the words reaches the field.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
     init() {
         super.init(frame: .zero)
         wantsLayer = true
