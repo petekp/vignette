@@ -90,6 +90,16 @@ final class StackModel: ObservableObject {
         if let focused, !cards.contains(where: { $0.id == focused }) { self.focused = cards.first?.id }
     }
 
+    /// Drops the oldest card when the column holds more than `limit`. True when it did. A card in
+    /// the annotator or in a stitch is passed over: it is coming back to its slot.
+    func removeOverflow(over limit: Int) -> Bool {
+        let away = outCards.union(forming)
+        guard cards.count > limit, let oldest = cards.last(where: { !away.contains($0.id) }) else { return false }
+        removeCards { $0.id == oldest.id }
+        deselect([oldest.id])
+        return true
+    }
+
     /// Cards for a bulk action, in the order they were selected.
     func selectedCards() -> [Card] { selection.compactMap { id in cards.first { $0.id == id } } }
     /// Where the selected cards sit in the column; 0 is the newest, at the bottom.

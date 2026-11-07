@@ -1458,14 +1458,8 @@ final class ThumbnailController {
         return lift * CGFloat(max(0, 1 - covered))
     }
 
-    /// Drops the oldest card when the column holds more than `recentCount`. True when it did.
     @discardableResult
-    private func removeOverflow() -> Bool {
-        guard model.cards.count > Settings.shared.data.recentCount, let last = model.cards.last else { return false }
-        model.removeCards { $0.id == last.id }
-        model.deselect([last.id])
-        return true
-    }
+    private func removeOverflow() -> Bool { model.removeOverflow(over: Settings.shared.data.recentCount) }
 
     private func relayout() {
         guard visible else { return }

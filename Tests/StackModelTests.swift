@@ -52,6 +52,18 @@ final class StackModelTests: XCTestCase {
         XCTAssertEqual(model.focused, model.cards[1].id)
     }
 
+    func testTheOverflowKeepsTheCardsInTheEditorAndInAStitch() {
+        let model = model(cards: 4)
+        let (inEditor, forming, oldestFree) = (model.cards[3].id, model.cards[2].id, model.cards[1].id)
+        model.outCards = [inEditor]
+        model.forming = [forming]
+        XCTAssertTrue(model.removeOverflow(over: 3))
+        XCTAssertFalse(model.cards.contains { $0.id == oldestFree })
+        XCTAssertEqual(model.cards.count, 3)
+        XCTAssertTrue(model.cards.contains { $0.id == inEditor })
+        XCTAssertTrue(model.cards.contains { $0.id == forming })
+    }
+
     func testPickingACardAgainPutsItLast() {
         let model = model(cards: 3)
         for card in model.cards { model.toggleSelection(of: card.id) }
