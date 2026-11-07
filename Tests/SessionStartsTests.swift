@@ -190,6 +190,26 @@ final class SessionStartsTests: XCTestCase {
         XCTAssertEqual(clock.launches.count, 2)
     }
 
+    func testASecondSendWhileItsSessionIsStillStartingJoinsThatStart() async throws {
+        let root = temporaryFolder()
+        let clock = Clock()
+        var starting = connection(root, clock: clock) { _, _ in .started(tab: "t", pane: "p") }
+        starting.later = { delay, look in
+            clock.advance(delay)
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.02, execute: look)
+        }
+        let destination = AgentDestination(id: past, name: "x", address: .claudeSession(past), start: .resume(folder: "/site"))
+        async let first = submit("one", to: destination, through: starting)
+        async let second = submit("two", to: destination, through: starting)
+        let deadline = Date().addingTimeInterval(0.3)
+        while clock.launches.count < 2, Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
+        try Self.inbox(root, pid: 301, session: past)
+        let outcomes = await [first, second]
+        XCTAssertEqual(clock.launches.count, 1)
+        XCTAssertTrue(outcomes.allSatisfy(\.isAccepted), "\(outcomes)")
+        XCTAssertEqual(lines(in: root.appendingPathComponent("301")).count, 2)
+    }
+
     func testHerdrOpensATabInTheFolderAndTypesTheCommandIntoItsShell() {
         final class Calls: @unchecked Sendable { var all: [[String]] = []; let lock = NSLock() }
         let calls = Calls()

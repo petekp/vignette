@@ -83,9 +83,21 @@ final class StackModel: ObservableObject {
 
     /// Takes cards out of the column for good and lets their marks go, with every text still being
     /// drawn for them. A lone thumbnail that leaves for the annotator comes back, and does not come here.
+    /// The focused card is where keys act; when it leaves, the newest card takes the focus.
     func removeCards(where leaves: (Card) -> Bool) {
         for card in cards where leaves(card) { card.marks?.clear() }
         cards.removeAll(where: leaves)
+        if let focused, !cards.contains(where: { $0.id == focused }) { self.focused = cards.first?.id }
+    }
+
+    /// Drops the oldest card when the column holds more than `limit`. True when it did. A card in
+    /// the annotator or in a stitch is passed over: it is coming back to its slot.
+    func removeOverflow(over limit: Int) -> Bool {
+        let away = outCards.union(forming)
+        guard cards.count > limit, let oldest = cards.last(where: { !away.contains($0.id) }) else { return false }
+        removeCards { $0.id == oldest.id }
+        deselect([oldest.id])
+        return true
     }
 
     /// Cards for a bulk action, in the order they were selected.

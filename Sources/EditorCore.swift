@@ -573,10 +573,9 @@ struct EditorCore {
 
     private mutating func open(_ drawing: Drawing, style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle, selectsNewest: Bool) {
         if typing != nil { emit(.endTyping) }
-        let zoom = self.zoom, pending = effects
+        let kept = (zoom, finishes, effects)
         self = EditorCore()
-        self.zoom = zoom
-        effects = pending
+        (zoom, finishes, effects) = kept
         guard drawing.pixels.width > 0, drawing.pixels.height > 0, drawing.pointScale > 0, drawing.pointScale.isFinite else { return }
         isOpen = true
         self.drawing = drawing

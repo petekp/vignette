@@ -82,7 +82,7 @@ struct CardNotices {
         case finished(request: String, client: AgentClient, sessionTitle: String)
     }
 
-    /// A notice the card now shows. `hold`: when to call `expire(_:on:)`, nil while a send waits for
+    /// A notice the card now shows. `hold`: when to call `expire(_:)`, nil while a send waits for
     /// its answer.
     struct Posted: Equatable {
         let id: Int
@@ -144,10 +144,11 @@ struct CardNotices {
         return show(notice, on: file, hold: noticeHold * (Self.explains(notice) ? 3 : 1))
     }
 
-    /// Takes a notice down if it is still the one `id` posted. A send still in its grace comes back
-    /// when a notice that covered it goes, so Don't send is never lost behind a Copied.
-    mutating func expire(_ id: Int, on file: ScreenshotKey) {
-        guard shown[file]?.id == id else { return }
+    /// Takes a notice down if it is still the one `id` posted, on whichever file a rename moved it to.
+    /// A send still in its grace comes back when a notice that covered it goes, so Don't send is
+    /// never lost behind a Copied.
+    mutating func expire(_ id: Int) {
+        guard let file = shown.first(where: { $0.value.id == id })?.key else { return }
         shown[file] = nil
         if let send = awaitingAnswer[file], send.state == .inGrace { _ = show(.send(send), on: file, hold: nil) }
     }

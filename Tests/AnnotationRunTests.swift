@@ -72,6 +72,49 @@ final class AnnotationRunTests: XCTestCase {
         XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .endRun(.back)])
     }
 
+    func testACancelDuringASwapsParkClosesInsteadOfOpeningTheNextImage() {
+        var r = R()
+        _ = reduce(&r, .annotate(["a"])); _ = shown(&r)
+        XCTAssertEqual(reduce(&r, .annotate(["b"])), [.park(o("a", 1))])
+        _ = reduce(&r, .cancel(.shortcut))
+        XCTAssertNil(r.heading)
+        XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .endRun(.shortcut)])
+        XCTAssertFalse(r.isActive)
+    }
+
+    func testRemovingTheOpenFileDuringASwapsParkEndsTheRun() {
+        var r = R()
+        _ = reduce(&r, .annotate(["a"])); _ = shown(&r)
+        _ = reduce(&r, .annotate(["b"]))
+        XCTAssertEqual(reduce(&r, .remove(["a"])), [])
+        XCTAssertEqual(parked(&r), [.hideAnnotator, .endRun(nil)])
+    }
+
+    func testACardSelectedWhileEscParksQueuesNothing() {
+        var r = R()
+        _ = reduce(&r, .annotate(["a", "b"])); _ = shown(&r)
+        _ = reduce(&r, .cancel(.back))
+        XCTAssertEqual(reduce(&r, .selectionChanged(added: ["c"], removed: [])), [])
+        XCTAssertEqual(r.queue, [])
+        XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .endRun(.back)])
+    }
+
+    func testACardSelectedWhileSendParksIsQueuedNext() {
+        var r = R()
+        _ = reduce(&r, .annotate(["a"])); _ = shown(&r)
+        _ = reduce(&r, .sent)
+        XCTAssertEqual(reduce(&r, .selectionChanged(added: ["c"], removed: [])), [.queued("c", place: 2, of: 2)])
+        XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .next("c", place: 2, of: 2), .prepare(o("c", 2))])
+    }
+
+    func testAHandoverForgetsHowTheImageBeforeEnded() {
+        var r = R()
+        _ = reduce(&r, .annotate(["a", "b"])); _ = shown(&r)
+        _ = reduce(&r, .finish); _ = parked(&r); _ = shown(&r)
+        _ = reduce(&r, .dismiss(nil))
+        XCTAssertEqual(parked(&r), [.hideAnnotator, .endRun(nil)])
+    }
+
     func testSendGoesOnToTheNextFile() {
         var r = R()
         _ = reduce(&r, .annotate(["a", "b"])); _ = shown(&r)

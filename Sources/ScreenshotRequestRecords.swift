@@ -107,6 +107,9 @@ extension ScreenshotRequests {
             return destination.standardizedFileURL
         }
 
+        /// The person has the reply: a card, or live ink's own result card. Clearing leaves it be.
+        var isPresented: Bool { stage == .published || stage == .shown }
+
         /// Where the published file is now.
         var publishedURL: URL? { renamedTo?.standardizedFileURL ?? outputURL }
 

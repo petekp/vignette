@@ -27,6 +27,43 @@ final class StackModelTests: XCTestCase {
         XCTAssertEqual(model.selectedIndices(), [0, 2, 3], "where they sit in the column, whatever the order")
     }
 
+    func testWhenTheFocusedCardLeavesTheNewestTakesTheFocus() {
+        let model = model(cards: 3)
+        let oldest = model.cards[2].id
+        model.focused = oldest
+        model.removeCards { $0.id == oldest }
+        XCTAssertEqual(model.focused, model.cards.first?.id)
+        model.removeCards { _ in true }
+        XCTAssertNil(model.focused)
+    }
+
+    func testASweepWhoseFirstCardLeavesStartsAgainFromTheCardUnderThePointer() {
+        let model = model(cards: 3)
+        let sweep = StackSweep(model: model, screen: { NSScreen.screens[0] },
+                               column: { .init(layout: StackLayout(ui: UITweaks()), cards: model.cards.map(\.size), contentHeight: 0, maxScroll: 0) },
+                               isVisible: { false }, selected: {}, relayout: {})
+        let oldest = model.cards[2].id
+        sweep.move(toYFromTop: 10)
+        XCTAssertEqual(model.selection, [oldest])
+        model.removeCards { $0.id == oldest }
+        model.deselect([oldest])
+        sweep.move(toYFromTop: 10)
+        XCTAssertEqual(model.selection, [model.cards[1].id])
+        XCTAssertEqual(model.focused, model.cards[1].id)
+    }
+
+    func testTheOverflowKeepsTheCardsInTheEditorAndInAStitch() {
+        let model = model(cards: 4)
+        let (inEditor, forming, oldestFree) = (model.cards[3].id, model.cards[2].id, model.cards[1].id)
+        model.outCards = [inEditor]
+        model.forming = [forming]
+        XCTAssertTrue(model.removeOverflow(over: 3))
+        XCTAssertFalse(model.cards.contains { $0.id == oldestFree })
+        XCTAssertEqual(model.cards.count, 3)
+        XCTAssertTrue(model.cards.contains { $0.id == inEditor })
+        XCTAssertTrue(model.cards.contains { $0.id == forming })
+    }
+
     func testPickingACardAgainPutsItLast() {
         let model = model(cards: 3)
         for card in model.cards { model.toggleSelection(of: card.id) }

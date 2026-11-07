@@ -483,8 +483,6 @@ final class ThumbnailController {
         if !visible || model.cards.allSatisfy({ urls.contains($0.shot.url) }) { dismiss(by: .removed); return }
         model.removeCards { urls.contains($0.shot.url) }
         model.setSelection(model.selection.filter { id in model.cards.contains { $0.id == id } })
-        // The focused card is where keys act; when its file goes, the newest takes the focus.
-        if let focused = model.focused, !model.cards.contains(where: { $0.id == focused }) { model.focused = model.cards.first?.id }
         relayout()
     }
 
@@ -555,10 +553,10 @@ final class ThumbnailController {
         let ids = Set(cards.map(\.id))
         model.forming.formUnion(ids)
         model.forming.insert(result.id)
+        if let focused = model.focused, ids.contains(focused) { model.focused = nil }
         model.removeCards { ids.contains($0.id) }
         model.clearSelection()
-        sweep.end()   // the pieces leave the column and the new card takes index 0: the anchor moved
-        if let focused = model.focused, ids.contains(focused) { model.focused = nil }
+        sweep.end()
         model.cards.insert(result, at: 0)
         withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = 0 }
         relayout()
@@ -663,7 +661,7 @@ final class ThumbnailController {
         guard let posted = model.notices.post(event, on: file, seen: seen, noticeHold: ui.markSeconds + ui.expandDuration) else { return }
         if !seen && comesUp { show(shot) }
         guard let hold = posted.hold else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in self?.model.notices.expire(posted.id, on: file) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in self?.model.notices.expire(posted.id) }
         if seen || comesUp { leaveCorner(after: hold) }
     }
 
@@ -1366,7 +1364,7 @@ final class ThumbnailController {
     private func insert(_ card: Card, entrance: Entrance = .slide) {
         guard !model.cards.contains(where: { $0.shot.url == card.shot.url }) else { return }
         dismissGeneration += 1
-        sweep.end()   // the new card takes index 0 and shifts every other, the sweep's anchor included
+        sweep.end()
         if entrance != .inPlace { _ = model.offscreen.insert(card.id) }
         model.slidingOut = false
         if visible && !model.cards.isEmpty && entrance == .slide { return shiftUp(for: card) }
@@ -1460,14 +1458,8 @@ final class ThumbnailController {
         return lift * CGFloat(max(0, 1 - covered))
     }
 
-    /// Drops the oldest card when the column holds more than `recentCount`. True when it did.
     @discardableResult
-    private func removeOverflow() -> Bool {
-        guard model.cards.count > Settings.shared.data.recentCount, let last = model.cards.last else { return false }
-        model.removeCards { $0.id == last.id }
-        model.deselect([last.id])
-        return true
-    }
+    private func removeOverflow() -> Bool { model.removeOverflow(over: Settings.shared.data.recentCount) }
 
     private func relayout() {
         guard visible else { return }

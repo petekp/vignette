@@ -820,7 +820,7 @@ final class ScreenshotRequests {
 
     private func cleanup(_ id: String, inventory: ScreenshotWatcher.Inventory? = nil) {
         guard requests[id]?.status == .cleared else { return }
-        for reply in replies.values where reply.requestID == id && reply.stage != .published {
+        for reply in replies.values where reply.requestID == id && !reply.isPresented {
             if reply.stage == .cancelled, reply.errorCode == "request-cleared", reply.needsOutputCleanup == false,
                !pendingCleanupWrites.contains(reply.id) { continue }
             pendingImports.removeAll { $0 == reply.id }
