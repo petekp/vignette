@@ -108,6 +108,15 @@ final class AnnotatorTransitionTests: XCTestCase {
         XCTAssertEqual(t.reduce(.parked(a)), [.returnCard(a, copied: false)])
     }
 
+    func testRemovingTheFileParkingForASwapHidesItAndOpensNothing() {
+        var t = T()
+        _ = t.reduce(.annotate(a)); _ = t.reduce(.shown(a))
+        _ = t.reduce(.annotate(b))
+        XCTAssertEqual(t.reduce(.remove("a")), [])
+        XCTAssertEqual(t.reduce(.parked(a)), [.hideAnnotator])
+        XCTAssertEqual(t.phase, .idle)
+    }
+
     func testStrayEventsDoNothing() {
         var t = T()
         for e in [T.Event.shown(a), .parked(a), .close, .finish, .dismiss, .remove("x"), .newShot("y")] { XCTAssertEqual(t.reduce(e), [], "\(e)") }

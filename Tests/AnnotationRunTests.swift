@@ -72,6 +72,24 @@ final class AnnotationRunTests: XCTestCase {
         XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .endRun(.back)])
     }
 
+    func testACancelDuringASwapsParkClosesInsteadOfOpeningTheNextImage() {
+        var r = R()
+        _ = reduce(&r, .annotate(["a"])); _ = shown(&r)
+        XCTAssertEqual(reduce(&r, .annotate(["b"])), [.park(o("a", 1))])
+        _ = reduce(&r, .cancel(.shortcut))
+        XCTAssertNil(r.heading)
+        XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .endRun(.shortcut)])
+        XCTAssertFalse(r.isActive)
+    }
+
+    func testRemovingTheOpenFileDuringASwapsParkEndsTheRun() {
+        var r = R()
+        _ = reduce(&r, .annotate(["a"])); _ = shown(&r)
+        _ = reduce(&r, .annotate(["b"]))
+        XCTAssertEqual(reduce(&r, .remove(["a"])), [])
+        XCTAssertEqual(parked(&r), [.hideAnnotator, .endRun(nil)])
+    }
+
     func testACardSelectedWhileEscParksQueuesNothing() {
         var r = R()
         _ = reduce(&r, .annotate(["a", "b"])); _ = shown(&r)

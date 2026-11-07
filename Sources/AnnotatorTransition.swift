@@ -210,14 +210,19 @@ struct AnnotatorTransition: Equatable {
                 return []
             case .remove(let r):
                 switch next {
+                case .annotate where r == o.key, .close where r == o.key, .finish where r == o.key:
+                    phase = .parking(o, then: .remove)
                 case .annotate(let o2) where r == o2.key: phase = .parking(o, then: .close)
-                case .close where r == o.key, .finish where r == o.key: phase = .parking(o, then: .remove)
                 default: break
                 }
                 return []
+            case .close:
+                // A later request wins over a swap, as a swap wins over an earlier close.
+                if case .annotate = next { phase = .parking(o, then: .close) }
+                return []
             case .newShot(let n):
                 return [.join(n)]
-            case .close, .finish, .shown, .renamed:
+            case .finish, .shown, .renamed:
                 return []
             }
         }
