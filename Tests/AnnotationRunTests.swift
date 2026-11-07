@@ -72,6 +72,31 @@ final class AnnotationRunTests: XCTestCase {
         XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .endRun(.back)])
     }
 
+    func testACardSelectedWhileEscParksQueuesNothing() {
+        var r = R()
+        _ = reduce(&r, .annotate(["a", "b"])); _ = shown(&r)
+        _ = reduce(&r, .cancel(.back))
+        XCTAssertEqual(reduce(&r, .selectionChanged(added: ["c"], removed: [])), [])
+        XCTAssertEqual(r.queue, [])
+        XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .endRun(.back)])
+    }
+
+    func testACardSelectedWhileSendParksIsQueuedNext() {
+        var r = R()
+        _ = reduce(&r, .annotate(["a"])); _ = shown(&r)
+        _ = reduce(&r, .sent)
+        XCTAssertEqual(reduce(&r, .selectionChanged(added: ["c"], removed: [])), [.queued("c", place: 2, of: 2)])
+        XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .next("c", place: 2, of: 2), .prepare(o("c", 2))])
+    }
+
+    func testAHandoverForgetsHowTheImageBeforeEnded() {
+        var r = R()
+        _ = reduce(&r, .annotate(["a", "b"])); _ = shown(&r)
+        _ = reduce(&r, .finish); _ = parked(&r); _ = shown(&r)
+        _ = reduce(&r, .dismiss(nil))
+        XCTAssertEqual(parked(&r), [.hideAnnotator, .endRun(nil)])
+    }
+
     func testSendGoesOnToTheNextFile() {
         var r = R()
         _ = reduce(&r, .annotate(["a", "b"])); _ = shown(&r)

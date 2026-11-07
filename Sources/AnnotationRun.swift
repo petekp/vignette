@@ -102,6 +102,8 @@ struct AnnotationRun: Equatable {
             }
             effects += cannotOpen(opening.key)
         }
+        // The image opening now is ended by its own hand, not by the one that ended the image before.
+        if effects.contains(where: { $0.prepares != nil }) { ending = nil }
         return effects
     }
 
@@ -252,7 +254,7 @@ struct AnnotationRun: Equatable {
     /// While an image is in the annotator, a card selected in the stack is queued next, in the
     /// order picked, and one deselected leaves the queue. The image in the annotator is not "next".
     private mutating func select(added: [ScreenshotKey], removed: [ScreenshotKey]) -> [Effect] {
-        guard transition.isActive else { return [] }
+        guard transition.isActive, !listEnded else { return [] }
         let before = queue.count
         queue.removeAll { removed.contains($0) }
         total -= before - queue.count
@@ -264,6 +266,10 @@ struct AnnotationRun: Equatable {
         }
         return effects
     }
+
+    /// Esc, a dismissal or the open file going ended the list while its last image parks, so a card
+    /// selected now joins nothing. A file opened since starts a list of its own.
+    private var listEnded: Bool { total == 0 }
 
     private mutating func endQueue() {
         queue = []
