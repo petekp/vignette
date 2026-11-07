@@ -483,8 +483,6 @@ final class ThumbnailController {
         if !visible || model.cards.allSatisfy({ urls.contains($0.shot.url) }) { dismiss(by: .removed); return }
         model.removeCards { urls.contains($0.shot.url) }
         model.setSelection(model.selection.filter { id in model.cards.contains { $0.id == id } })
-        // The focused card is where keys act; when its file goes, the newest takes the focus.
-        if let focused = model.focused, !model.cards.contains(where: { $0.id == focused }) { model.focused = model.cards.first?.id }
         relayout()
     }
 
@@ -555,10 +553,10 @@ final class ThumbnailController {
         let ids = Set(cards.map(\.id))
         model.forming.formUnion(ids)
         model.forming.insert(result.id)
+        if let focused = model.focused, ids.contains(focused) { model.focused = nil }
         model.removeCards { ids.contains($0.id) }
         model.clearSelection()
         sweep.end()   // the pieces leave the column and the new card takes index 0: the anchor moved
-        if let focused = model.focused, ids.contains(focused) { model.focused = nil }
         model.cards.insert(result, at: 0)
         withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = 0 }
         relayout()

@@ -83,9 +83,11 @@ final class StackModel: ObservableObject {
 
     /// Takes cards out of the column for good and lets their marks go, with every text still being
     /// drawn for them. A lone thumbnail that leaves for the annotator comes back, and does not come here.
+    /// The focused card is where keys act; when it leaves, the newest card takes the focus.
     func removeCards(where leaves: (Card) -> Bool) {
         for card in cards where leaves(card) { card.marks?.clear() }
         cards.removeAll(where: leaves)
+        if let focused, !cards.contains(where: { $0.id == focused }) { self.focused = cards.first?.id }
     }
 
     /// Cards for a bulk action, in the order they were selected.

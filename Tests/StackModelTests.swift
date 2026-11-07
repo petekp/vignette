@@ -27,6 +27,16 @@ final class StackModelTests: XCTestCase {
         XCTAssertEqual(model.selectedIndices(), [0, 2, 3], "where they sit in the column, whatever the order")
     }
 
+    func testWhenTheFocusedCardLeavesTheNewestTakesTheFocus() {
+        let model = model(cards: 3)
+        let oldest = model.cards[2].id
+        model.focused = oldest
+        model.removeCards { $0.id == oldest }
+        XCTAssertEqual(model.focused, model.cards.first?.id)
+        model.removeCards { _ in true }
+        XCTAssertNil(model.focused)
+    }
+
     func testPickingACardAgainPutsItLast() {
         let model = model(cards: 3)
         for card in model.cards { model.toggleSelection(of: card.id) }
