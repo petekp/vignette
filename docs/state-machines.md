@@ -90,7 +90,8 @@ An `Opening` (`AnnotatorTransition.swift:7`) is one image sent to the annotator.
 | any other state | `parked`, or a `parked` for another opening | — | — |
 | `flyingOut(o)` | `close` | `idle` | `abandon(o)`, `returnCard(o, false)` (same turn) |
 | `annotating(o)` | `close` | `parking(o, close)` | `park(o)` |
-| `parking(o, any N)` | `close` | — (ignored in every `N`) ([run-2](#run-2)) | — |
+| `parking(o, annotate(o2))` | `close` | `parking(o, close)` (**fixed**, [run-2](#run-2)) | — |
+| `parking(o, close, finish, dismiss or remove)` | `close` | — | — |
 | `flyingOut(o)`, `annotating(o)` | `finish` | `parking(o, finish)` | `park(o)` |
 | `parking(o, any N)` | `finish` | — (ignored in every `N`) | — |
 | `flyingOut(o)`, `annotating(o)`, `parking` | `dismiss` | `parking(o, dismiss)` | `park(o)`, except none from `parking` |
@@ -98,7 +99,7 @@ An `Opening` (`AnnotatorTransition.swift:7`) is one image sent to the annotator.
 | `flyingOut(o)`, `annotating(o)` | `remove(r)`, other key | — | — |
 | `parking(o, annotate(o2))` | `remove(r)`, `r == o2.key` | `parking(o, close)` | — |
 | `parking(o, close or finish)` | `remove(r)`, `r == o.key` | `parking(o, remove)` | — |
-| `parking(o, annotate(o2))` | `remove(r)`, `r == o.key` | — (ignored; the swap goes on and `returnCard` can re-insert the deleted file's card) ([run-3](#run-3)) | — |
+| `parking(o, annotate(o2))` | `remove(r)`, `r == o.key` | `parking(o, remove)`: the annotator hides and nothing opens (**fixed**, [run-3](#run-3)) | — |
 | `parking(o, dismiss or remove)` | `remove` | — | — |
 | not `idle` | `newShot(n)` | unchanged | `join(n)` (the controller ignores `.join` under `dismiss` and `remove`, `ThumbnailController.swift:863`) |
 | not `idle` | `renamed(old, new)` | unchanged, `o` re-keyed (also the `o2` in `annotate(o2)`) | — |
@@ -111,8 +112,8 @@ An `Opening` (`AnnotatorTransition.swift:7`) is one image sent to the annotator.
 - At most one park is in flight, and `park` and `abandon` name the prepared opening. Checked by: the same test.
 - An answer naming another opening changes nothing. Checked by: the same test and the guards at `:119` and `:179`.
 - `annotating` implies the image was prepared. A dismissal ends `idle` with everything hidden. Checked by: the same test.
-- `close` (Esc) and `finish` always take effect. Checked by: nothing; `parking` ignores both ([run-2](#run-2)).
-- `returnCard` is never emitted for a file that no longer exists. Checked by: nothing ([run-3](#run-3)).
+- A close takes effect over a swap that is parking. Checked by: `AnnotationRunTests.testACancelDuringASwapsParkClosesInsteadOfOpeningTheNextImage` (**fixed**, [run-2](#run-2)). A close or a finish during any other park is ignored: the park already ends the image.
+- `returnCard` is never emitted for a file that no longer exists. Checked by: `AnnotatorTransitionTests.testRemovingTheFileParkingForASwapHidesItAndOpensNothing` for the swap's park (**fixed**, [run-3](#run-3)); nothing else checks it.
 
 **Late and concurrent answers**
 
@@ -159,9 +160,10 @@ Owns the list of files to annotate and how a hand ended the run. It wraps the tr
 | any | `sent` | `ending = .sent` if active; queue kept, then `T.close` | as `T` |
 | any | `finish` | `ending = .finished` if active; queue kept, then `T.finish` ([run-4](#run-4)) | as `T` |
 | any | `dismiss(e)` | `ending = e` if `e` is set and active; `queue = []`, then `T.dismiss` | as `T` |
-| any | `remove(keys)` | drops them from `queue` (`total` is not reduced, [run-6](#run-6)); if the open key is removed, `queue = []` even when `T` ignores the remove (`:136`) ([run-3](#run-3)), then one `T.remove` per key | as `T` |
+| any | `remove(keys)` | drops them from `queue` (`total` is not reduced, [run-6](#run-6)); if the open key is removed, `queue = []` (`:136`), then one `T.remove` per key ([run-3](#run-3)) | as `T` |
 | any | `renamed` | re-keys `queue`, `fromQueue`, `uncopied` and `T` | — |
-| active | `selectionChanged` | removes, then appends the added keys, whatever `T` is parking for (`:255`, guard is `transition.isActive` only) ([run-1](#run-1)) | `queued` |
+| active, list not ended | `selectionChanged` | removes, then appends the added keys | `queued` |
+| active, list ended (`total == 0`: Esc, a dismissal or the open file going) | `selectionChanged` | — (**fixed**, [run-1](#run-1)) | — |
 | idle | `selectionChanged` | — | — |
 | `parking(o, finish)` | `copyFailed(o)` | `uncopied = o` (`:148`) | — |
 | other | `copyFailed` | — | — |
@@ -171,14 +173,14 @@ After every `T` result:
 - `.prepare` resets `uncopied` and `lift` (`:211`).
 - `.returnCard` drops the Copied mark if `uncopied == opening` (`:218`).
 - `.hideAnnotator` calls `endQueue` (`:221`).
-- When the transition goes from active to idle, `continueOrEnd` (`:227`) opens `queue.first` (`next`, then annotate) or emits `endRun(ending)` and clears `ending` (`:232-239`). Opening the next file does not clear `ending` ([run-4](#run-4)).
+- When the transition goes from active to idle, `continueOrEnd` (`:227`) opens `queue.first` (`next`, then annotate) or emits `endRun(ending)` and clears `ending` (`:232-239`). `reduce` also clears `ending` whenever a `prepare` is left after the files that cannot open are passed over (**fixed**, [run-4](#run-4)).
 - `reduce` (`:94`) asks `opens(key)` for the last `prepare`. When the file cannot open it deletes that `prepare` and `next`, and `cannotOpen` (`:198`) resets the transition to `idle` and calls `continueOrEnd`.
 
 **Invariants**
 
 - The queue is empty whenever idle and right after a cancel or dismiss. `endRun` comes exactly when the run goes idle, once per run. Nothing opens while a dismissal ends the run. Every opening is new. A flight lifts once. Handover, landed and lift name the opening in the editor. A file that does not open is never prepared. A failed copy leaves its card unmarked. A page replaces the queue. A repeat in flight changes nothing. Checked by: `AnnotationRunTests.testRandomSequencesKeepTheInvariants`.
-- Only Esc (a person stopping) empties the queue. Checked by: the random test, only right after `cancel` or `dismiss`; nothing checks it later ([run-1](#run-1)).
-- `ending` describes only the run it was set in (comment at `:246`). Checked by: nothing, and not true ([run-4](#run-4)).
+- Once Esc, a dismissal or the open file going empties the queue, nothing refills it before the park ends. Checked by: `AnnotationRunTests.testACardSelectedWhileEscParksQueuesNothing` (**fixed**, [run-1](#run-1)).
+- `ending` describes only the image it was set for (comment at `:246`). Checked by: `AnnotationRunTests.testAHandoverForgetsHowTheImageBeforeEnded` (**fixed**, [run-4](#run-4)).
 - `place ... of total` stays inside `1...total`. Checked by: the random test. `total` is not reduced when a queued file is removed, so the log says "2 of 3" for two files (`AnnotationRunTests.testAFileGoneFromTheQueueSkipsNoNumber` asserts it); log only ([run-6](#run-6)).
 
 **Late and concurrent answers**
@@ -879,7 +881,7 @@ Events (`post`, `:101`): `copied`, `notCopied`, `sending`, `released`, `cancelle
 - An earlier timer leaves a later notice up. Checked by: `testAnEarlierTimerLeavesALaterNoticeUp`.
 - An answer to an earlier send is dropped. Checked by: `testAnAnswerToAnEarlierSendIsDropped`. The written rule "a failure is never lost" disagrees for a re-sent card. ([corner-10](#corner-10))
 - The grace countdown returns when a covering Copied expires. Checked by: `testACopiedNoticeGivesTheCountdownBackWhenItExpires`.
-- A notice moved by `rename` still expires. Checked by: `testANoticeOnAFileRenamedDuringItsHoldStillExpires`, which `expire`'s guard on the old key fails today. ([corner-1](#corner-1))
+- A notice moved by `rename` still expires. Checked by: `CardNoticesTests.testANoticeOnAFileRenamedDuringItsHoldStillExpires`: `expire` takes only the notice's id (**fixed**, [corner-1](#corner-1)).
 - `awaitingAnswer` entries for files that left, the controller's timer wiring and the `seen` computation. Checked by: nothing.
 
 **Late and concurrent answers**
@@ -909,13 +911,13 @@ Which card keys act on, which card the pointer is over, and which cards are sele
 | card exists | `takeKeys(.card(id))` | `focused = id` | — |
 | any | `releaseKeys` (`:282`) | `focused = nil` | — |
 | any | `present` | `focused`, `hoveredCard` (unless kept), selection, `lift`, `entranceRanks` cleared | — |
-| any | `remove(_:)` (`:476`) | selection filtered; `focused` reset to the newest if its card left (`:487`); `hoveredCard` untouched ([corner-2](#corner-2)) | — |
+| any | `StackModel.removeCards`, which `remove(_:)`, `removeOverflow`, the stitch and the slide-out all call | `focused` moves to the newest card if its card left (**fixed**, [corner-3](#corner-3)); `remove(_:)` also filters the selection, `removeOverflow` deselects the card it drops; `hoveredCard` untouched ([corner-2](#corner-2)) | — |
 | any | wheel `scroll` → `holdHover` (`:1187`) | `holdsHover = true`; 0.15 s timer replaced on each step | — |
 | `wheelSettling` fires | `hoverAfterWheel` (`:1198`) | `holdsHover = false` | if `visible`, hover = the card under the pointer now |
 
 **Invariants**
 
-- The focused card is where keys act, and `focused` and `hoveredCard` name a card in `cards`. Checked by: nothing. `removeOverflow` clears neither `focused` ([corner-3](#corner-3)) nor `hoveredCard` ([corner-2](#corner-2)).
+- The focused card is where keys act, and `focused` and `hoveredCard` name a card in `cards`. For `focused`, checked by `StackModelTests.testWhenTheFocusedCardLeavesTheNewestTakesTheFocus`: `StackModel.removeCards` gives the focus to the newest card when its card leaves (**fixed**, [corner-3](#corner-3)). For `hoveredCard`, checked by nothing: no removal clears it ([corner-2](#corner-2)).
 
 **Late and concurrent answers**
 
@@ -1107,7 +1109,7 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | not open | any but `open` | — | Ignored (`:481`). |
-| any | `open(d)` | open, idle (every other property reset, `zoom` kept) | If `typing != nil`: `.endTyping`. Unsaved edits, `undoSteps`, `gesture`, `finishes`, `noteMark`, `heldArrows` are dropped. `.cancelTimer`, `.tool`. Refused, `isOpen` stays false, when the pixels are 0 or `pointScale` is invalid (`:580`). ([editor-1](#editor-1)) |
+| any | `open(d)` | open, idle (every other property reset, `zoom` and `finishes` kept) | If `typing != nil`: `.endTyping`. Unsaved edits, `undoSteps`, `gesture`, `noteMark`, `heldArrows` are dropped. `.cancelTimer`, `.tool`. Refused, `isOpen` stays false, when the pixels are 0 or `pointScale` is invalid (`:580`). **(fixed)** `finishes` is kept ([editor-1](#editor-1)). |
 | open, idle | `pointerPressed` | `gesture = pressed`, or typing begins, or a zoom request | `pressed` (`:733`) ends typing first if any; the press target decides. |
 | `pressed` | drag past the drag distance | `drawing`, `moving`, `resizing`, `draggingEnd`, `bending`, `wrapping` or `brushing` | `dragPhase` (`:818`) picks the phase; `startDrag` (`:842`) opens `edit` for the phases that change marks. |
 | any gesture | `pointerDragged`, `modifiersChanged` | same gesture, redrawn | `update` (`:868`) redraws from the press to the pointer. |
@@ -1144,7 +1146,7 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 - `gesture` and `typing` are never both non-nil. Every writer of `typing` runs after the gesture is cancelled or cleared. Checked by: nothing.
 - `edit != nil` exactly while a changing gesture or a typing session is open. Checked by: nothing.
 - `unsaved` implies a `.scheduleTimer` was emitted since the last `.handOver` or `.cancelTimer`: only `changed()` sets `unsaved`, and it emits `.scheduleTimer` in the same call (`:641`). Checked by: nothing; the sequence test never compares hand-over payloads with `drawingForHost`.
-- `finishes` is the host's, and opening an image leaves it alone (comment at `:367`). The code resets it to `Finishes()` in `open` (`:578`). Checked by: `EditorCoreOpeningTests.testTheNextImageFinishesWithWhatTheBarStillOffers` ([editor-1](#editor-1), [issue 1](#issue-1))
+- `finishes` is the host's, and opening an image leaves it alone (comment at `:367`). `open` reset it until [issue 1](#issue-1). Checked by: `EditorCoreOpeningTests.testTheNextImageFinishesWithWhatTheBarStillOffers` ([editor-1](#editor-1))
 - A held arrow key is cleared by `park` and by the stale-key guard (`:1335`). Checked by: nothing.
 - Any new undo step clears the redo stack, an agent push included (`push` `:700`), so agent marks arriving after Cmd+Z drop the redo history. Checked by: nothing.
 
@@ -1689,7 +1691,7 @@ Takes a line for a Claude Code session. A running session is listed, checked by 
 
 - A line is written only if the inbox still holds that exact session immediately before the write (`AddressGuard.preflight`, `:405`). Checked by: the guard.
 - A second send after the inbox is live does not launch again. Checked by: `SessionStartsTests.testASendToASessionThatIsNotRunningStartsItThenWritesTheLineIntoItsInbox`.
-- Two sends to one startable row while the first start still polls launch one `claude` per session. Checked by: nothing ([toolbar-3](#toolbar-3)).
+- One start runs per session at a time. Not true: two sends to one startable row while the first start still polls launch `claude` twice for one session. Checked by: nothing yet ([toolbar-3](#toolbar-3), [issue 3](#issue-3)).
 
 **Late and concurrent answers**
 
@@ -1907,7 +1909,7 @@ How `ScreenshotRequests.run` treats effects: `.arm` schedules a timer; `.submit`
 - A cancel takes every waiting send of the file, in send order. Checked by: `testCancellingSeveralDiscardsThemInSendOrder`.
 - Quit hands every wait over once, in order. Checked by: `testQuitSubmitsEveryWaitInSendOrderOnce`.
 - After `.discard` or `.dropped` the record is `cleared`. Checked by: nothing. `clear` sends `.cleared` before its write (`:809`), and `defer { run(stopped) }` runs even if the write throws (comment `:807-808`, pinned by `testClearWriteFailureKeepsStateAndOwnedFiles`). A failed clear still stops the wait and tells the card "cancelled" while the record stays `prepared`.
-- A deleted file cancels its waiting send. Broken for a removal held back by `FolderWrites` ([requests-1](#requests-1)).
+- A deleted file cancels its waiting send, a removal held back by `FolderWrites` included (**fixed**, [requests-1](#requests-1)).
 
 **Late and concurrent answers**
 
@@ -1941,7 +1943,7 @@ Three tables that must agree about one send: which card it was sent from, which 
 **Late and concurrent answers**
 
 - Rename during the grace: both tables follow it, see Transitions.
-- File removed during the grace: `fileRemoved` (`:161`) cancels when the removal is immediate; a held-back removal does not ([requests-1](#requests-1)).
+- File removed during the grace: `fileRemoved` (`:161`) cancels, whether the removal is immediate or held back for a newer listing (**fixed**, [requests-1](#requests-1)).
 
 ### Reply.Stage (explicit)
 
@@ -2117,7 +2119,7 @@ Holds back a removal or rename reported by a listing older than the app's own la
 | current | `renamed(renames, inventory)` | — | `rename` now (`:284`); does not flush `deferredRenames` ([requests-5](#requests-5)) |
 | older | `renamed` | in `deferredRenames` (`:282`) | — |
 | older | `listed(inventory)` | — | rescan asked only (`:303`) |
-| current | `listed(inventory)` | deferreds applied | flush `deferredRenames`, `sweepDrawings`, `reconcileRequests`, then remove the cards of confirmed deferred removals (`:308-316`); those take only the card, never `fileRemoved` ([requests-1](#requests-1)) |
+| current | `listed(inventory)` | deferreds applied | flush `deferredRenames`, `sweepDrawings`, `reconcileRequests`, then the confirmed deferred removals leave through `left`: cards, drawings and `fileRemoved` (**fixed**, [requests-1](#requests-1)) |
 | any | `trash` | — | `left(..., .infinity)` at once (`:253`) |
 
 `rename` (`:287`) sends a rename to a name every listing hides (`callbacks.isVisible`) as a removal. Other renames go to `renameCards`, `renameDrawings`, `renameRequests`, in that order.
@@ -2125,7 +2127,7 @@ Holds back a removal or rename reported by a listing older than the app's own la
 **Invariants**
 
 - A held-back report applies once a newer listing confirms it. Checked by: the four tests above.
-- A deferred removal reaches every party a direct one reaches. Checked by: nothing ([requests-1](#requests-1)).
+- A deferred removal reaches every party a direct one reaches. Checked by: `FolderWritesTests.testARemovalFromAnOlderListingWaitsForANewerOne` (**fixed**, [requests-1](#requests-1)).
 - Renames apply in watcher order. Checked by: nothing ([requests-5](#requests-5)).
 - Deferred keys from a previous watch folder stay (`:318-321`). Harmless leak.
 
@@ -3325,7 +3327,7 @@ Side tables: `picks[askID]` (the answer a picked button was picked under, plus `
 - An erased mark loses its roles and its finish; asks under way are unchanged. Checked by: `testAnErasedMarkLosesItsRolesAndItsFinish`.
 - Overlapping finish timers: the first ends the marks. Checked by: `testAnOverlappingFinishIsEndedByTheFirstTimer`, `testAFinishAfterAClearDoesNothing`.
 - Ids strictly increase. Checked by: `testRandomSequencesKeepTheInvariants`.
-- Every ask ends by answer, failure, stop or clear. Checked by: nothing. The test model drops a responder-held ask only on `clear` (`LiveAsksTests:1817`), so it assumes the responder never drops one any other way ([asks-1](#asks-1)).
+- Every ask ends by answer, failure, stop or clear. Checked by: `LiveResponderTests.testAnAskUnderWayWhenTheSignInGoesFailsOnce` for the sign-out (**fixed**, [asks-1](#asks-1)). The test model drops a responder-held ask only on `clear` (`LiveAsksTests:1817`), so it assumes the responder drops one no other way.
 - Erasing the reply mark of an ask under way: the ask keeps `say`, and the next `replyCame` draws it again. Checked by: nothing ([asks-6](#asks-6)).
 
 **Late and concurrent answers**
@@ -3417,13 +3419,14 @@ Valid combinations: `asking` implies `current != nil` or `interrupting`; `curren
 | any | `askTimer` 45 s | `stopped` | `shutDown(timeout, .stopped)`: `current` and `pending` failed |
 | `interrupting` | `askTimer` 3 s | — | `interruptUnanswered`: `stop()`, then `ask(pending)` again |
 | any | `idleTimer` | `stopped` | `stop()` only if no `current` or `pending` |
-| any | `stop()` | `stopped` | `shutDown(nil, …)`: `current` and `pending` dropped with no answer and no failure ([asks-1](#asks-1)) |
+| any | `stop()` | `stopped` | `shutDown(nil, …)`: `current` and `pending` dropped with no answer and no failure |
+| any | `stop(failingAsks: true)` | `stopped` | `current` and `pending` each fail with the driver's `couldNotAnswer` (**fixed**, [asks-1](#asks-1)) |
 | any | `restart(whenIdle:)` | — | sets `restartDue`; acts when `current == nil`, not `interrupting`, not `starting`: `shutDown(nil, .stopped)` then `ask(pending)` |
 
 **Invariants**
 
 - One ask at a time (`LiveResponder.swift:7`). Holds only because `LiveAsks.sendNext` sends one; `ask` itself overwrites `pending`. Checked by: nothing here; `LiveAsks` random test covers the sender.
-- A `stop()` gives the ask under way or pending no answer and no failure (comment at 158-161). Right for `endConversation`, which clears `LiveAsks` first; wrong for sign-out, which tells `LiveAsks` nothing, so the ask stays `asking` forever ([asks-1](#asks-1)). Checked by: nothing.
+- A `stop()` gives the ask under way or pending no answer and no failure. That is right for `endConversation`, which clears `LiveAsks` first, and for the idle stop and the conversation limit, which hold no ask. The sign-out, which tells `LiveAsks` nothing, stops with `failingAsks` (**fixed**, [asks-1](#asks-1)). Checked by: `LiveResponderTests.testAnAskUnderWayWhenTheSignInGoesFailsOnce`.
 - A command found after a stop starts nothing. Checked by: the guard `start == starts, running` (200).
 - A driver reports nothing after its own stop. Checked by: `ClaudeDriver.stop` setting `report = nil`; `JSONLinesProcess.stop` clearing `relay.onLine` and `relay.onEnd` (76-77); `CodexDriver.stop` dropping `run`, whose callbacks are weak.
 
@@ -3522,7 +3525,7 @@ Tells Settings, Setup and note waits which agents can answer, and runs Codex sig
 | `waiting` | signed in | `idle` | `availability[.codex] = .ready`, `onCodexSignIn(true)` calls the responder's `restart(whenIdle:)` |
 | `waiting` | cancelled | `idle` | — |
 | `waiting` | failed | `failed(reason)` | — |
-| any | `signOut` | `signingOut` | `onCodexSigningOut()` calls `LiveResponder.stop()` at once ([asks-1](#asks-1)); logout runs off-thread (up to 15 s) |
+| any | `signOut` | `signingOut` | `onCodexSigningOut()` calls `LiveResponder.stop(failingAsks: true)` at once (**fixed**, [asks-1](#asks-1)); logout runs off-thread (up to 15 s) |
 | `signingOut` | logout done | `idle` | `availability = .signedOut`, `onCodexSignIn(false)` |
 | any | `check` result lands | — | `availability[client] = found`, unconditionally (line 84). A check that read before a sign-in or sign-out can overwrite its result ([asks-5](#asks-5)) |
 
@@ -3724,7 +3727,7 @@ Line references are to commit 358d988 unless a finding says otherwise. Those in 
   replying.
 - **Test**: `EditorCoreOpeningTests.testTheNextImageFinishesWithWhatTheBarStillOffers`.
 - **Fix**: `open` keeps `finishes`, as it keeps `zoom`.
-- **Status**: open, [issue 1](#issue-1).
+- **Status**: fixed, [issue 1](#issue-1), in `72f89df`.
 
 <a id="toolbar-3"></a>
 #### toolbar-3: A second send to a session that is still starting starts it again
@@ -3740,7 +3743,9 @@ Line references are to commit 358d988 unless a finding says otherwise. Those in 
   tab is left. When the first inbox exists but is not live yet, the second start never finds it
   (`look` takes only folders made since its own launch, `:289`) and fails after 45 s. That second
   case is traced, not tested; the test shows the double launch.
-- **Test**: `SessionStartsTests.testASecondSendWhileItsSessionIsStillStartingJoinsThatStart`.
+- **Test**: `SessionStartsTests.testASecondSendWhileItsSessionIsStillStartingJoinsThatStart`, which sends
+  twice while the first start looks for its inbox and expects one launch. It fails today, so it is
+  committed with the fix.
 - **Fix**: one start per session id at a time. A send for a session already starting waits for that
   start's answer and writes its line into the same inbox. This adds a state, so it waits for Pete
   ([issue 3](#issue-3)).
@@ -3766,7 +3771,7 @@ Line references are to commit 358d988 unless a finding says otherwise. Those in 
   and replies are already gone by then, and removing them again does nothing (`Drawings.remove`
   filters on the keys it holds, and `fileRemoved` skips a reply already deleted), so `left` is safe
   to reuse. The test's own comment, which named that second removal as a fault, changes with it.
-- **Status**: open, [issue 6](#issue-6).
+- **Status**: fixed, [issue 6](#issue-6), in `b9b76b8`.
 
 <a id="asks-1"></a>
 #### asks-1: Signing out of Codex while it answers leaves the ask waiting forever
@@ -3785,7 +3790,7 @@ Line references are to commit 358d988 unless a finding says otherwise. Those in 
   (`LiveInk.swift:1728-1729`, and `docs/live-ink.md` states the silent drop for it); the idle stop
   and the conversation limit run with nothing held; the restart after an unanswered interrupt asks
   the pending ask again.
-- **Status**: open, [issue 4](#issue-4).
+- **Status**: fixed, [issue 4](#issue-4), in `95c1a56`.
 
 <a id="run-2"></a>
 #### run-2: The shortcut pressed while a zoomed swap parks does not close the editor
@@ -3805,7 +3810,7 @@ Line references are to commit 358d988 unless a finding says otherwise. Those in 
 - **Test**: `AnnotationRunTests.testACancelDuringASwapsParkClosesInsteadOfOpeningTheNextImage`.
 - **Fix**: `.close` in `parking(o, then: .annotate)` becomes `parking(o, then: .close)`: a later
   request wins, as it already does the other way round.
-- **Status**: open, [issue 8](#issue-8).
+- **Status**: fixed, [issue 8](#issue-8), in `b225449`.
 
 <a id="run-3"></a>
 #### run-3: The open file deleted while a zoomed swap parks comes back as a card
@@ -3822,7 +3827,7 @@ Line references are to commit 358d988 unless a finding says otherwise. Those in 
   `AnnotationRunTests.testRemovingTheOpenFileDuringASwapsParkEndsTheRun`.
 - **Fix**: that row becomes `parking(o, then: .remove)`, as for `close` and `finish`: the annotator
   hides and nothing takes its place, which is the run's own rule (`AnnotationRun.swift:135`).
-- **Status**: open, [issue 8](#issue-8).
+- **Status**: fixed, [issue 8](#issue-8), in `b225449`.
 
 <a id="run-1"></a>
 #### run-1: A card selected while Esc's park runs opens in the editor
@@ -3838,7 +3843,7 @@ Line references are to commit 358d988 unless a finding says otherwise. Those in 
 - **Fix**: a run whose queue was ended (Esc, a dismissal, the open file going) takes no more
   selected files. A click on a card during the same park still opens that card, as a click does
   when nothing is open; only a selection, which opens nothing on its own, is refused.
-- **Status**: open, [issue 7](#issue-7).
+- **Status**: fixed, [issue 7](#issue-7), in `aaba2a2`.
 
 <a id="run-4"></a>
 #### run-4: A list's run reports how an earlier image ended
@@ -3856,7 +3861,7 @@ Line references are to commit 358d988 unless a finding says otherwise. Those in 
   cannot open are passed over, and only when a `prepare` is left. Clearing it in the handover
   itself would be wrong: when Done is pressed and no queued file opens, the run must still report
   `.finished` (`AnnotationRunTests.testAQueuedFileThatDoesNotOpenIsPassedOver`).
-- **Status**: open, [issue 7](#issue-7).
+- **Status**: fixed, [issue 7](#issue-7), in `aaba2a2`.
 
 <a id="corner-1"></a>
 #### corner-1: A notice on a file renamed during its hold never goes
@@ -3872,7 +3877,7 @@ Line references are to commit 358d988 unless a finding says otherwise. Those in 
   so it stays until something else arms the timer.
 - **Test**: `CardNoticesTests.testANoticeOnAFileRenamedDuringItsHoldStillExpires`.
 - **Fix**: `expire` takes only the notice's id, which no rename changes.
-- **Status**: open, [issue 5](#issue-5).
+- **Status**: fixed, [issue 5](#issue-5), in `4e16467`.
 
 <a id="corner-3"></a>
 #### corner-3: The focus stays on a card the column dropped
@@ -3891,7 +3896,7 @@ Line references are to commit 358d988 unless a finding says otherwise. Those in 
 - **Fix**: `StackModel.removeCards` owns the rule `remove(_:)` states: when the focused card leaves,
   the newest card takes the focus. The stitch, which wants no focus once its pieces leave, clears it
   before it removes them.
-- **Status**: open, [issue 2](#issue-2).
+- **Status**: fixed, [issue 2](#issue-2), in `fc3077b`.
 
 ### Plausible findings
 
@@ -4008,21 +4013,21 @@ with its regression tests, except issue 3, which waits for Pete.
 
 | Rank | Issue | Findings | What a person hits | Status |
 |---|---|---|---|---|
-| 1 | [The next image forgets what Return and Cmd+Return do](#issue-1) | [editor-1](#editor-1) | Return copies instead of replying when paging between two replies from one session, every time | Open |
-| 2 | [The focus stays on a card the column dropped](#issue-2) | [corner-3](#corner-3) | with a full column, a capture takes the focus ring away, and Return, Copy and Trash act on the newest card | Open |
+| 1 | [The next image forgets what Return and Cmd+Return do](#issue-1) | [editor-1](#editor-1) | Return copies instead of replying when paging between two replies from one session, every time | Fixed in `72f89df` |
+| 2 | [The focus stays on a card the column dropped](#issue-2) | [corner-3](#corner-3) | with a full column, a capture takes the focus ring away, and Return, Copy and Trash act on the newest card | Fixed in `fc3077b` |
 | 3 | [A session that is still starting is started again](#issue-3) | [toolbar-3](#toolbar-3) | two sends to a session that is starting run two Claude Code processes on it, which forks its transcript | Waits for Pete: the fix adds a state |
-| 4 | [A Codex sign-out leaves its ask waiting forever](#issue-4) | [asks-1](#asks-1) | live ink answers nothing more, from Claude too, until Esc is pressed on the stuck ask | Open |
-| 5 | [A notice on a renamed file never goes](#issue-5) | [corner-1](#corner-1) | a stale Copied or failure notice, a send's countdown that never comes back, and a lone thumbnail that stays | Open |
-| 6 | [A deleted screenshot is still sent](#issue-6) | [requests-1](#requests-1) | the image the person deleted reaches the agent session; very rare | Open |
-| 7 | [The run keeps what a hand did after the hand is done](#issue-7) | [run-1](#run-1), [run-4](#run-4) | a card selected after Esc opens in the editor; the focus goes back, or stays, when no hand asked | Open |
-| 8 | [A cancel or a deletion while a swap parks is ignored](#issue-8) | [run-2](#run-2), [run-3](#run-3) | the shortcut does not close the editor; a card for a deleted file stays in the stack; very rare | Open |
+| 4 | [A Codex sign-out leaves its ask waiting forever](#issue-4) | [asks-1](#asks-1) | live ink answers nothing more, from Claude too, until Esc is pressed on the stuck ask | Fixed in `95c1a56` |
+| 5 | [A notice on a renamed file never goes](#issue-5) | [corner-1](#corner-1) | a stale Copied or failure notice, a send's countdown that never comes back, and a lone thumbnail that stays | Fixed in `4e16467` |
+| 6 | [A deleted screenshot is still sent](#issue-6) | [requests-1](#requests-1) | the image the person deleted reaches the agent session; very rare | Fixed in `b9b76b8` |
+| 7 | [The run keeps what a hand did after the hand is done](#issue-7) | [run-1](#run-1), [run-4](#run-4) | a card selected after Esc opens in the editor; the focus goes back, or stays, when no hand asked | Fixed in `aaba2a2` |
+| 8 | [A cancel or a deletion while a swap parks is ignored](#issue-8) | [run-2](#run-2), [run-3](#run-3) | the shortcut does not close the editor; a card for a deleted file stays in the stack; very rare | Fixed in `b225449` |
 
 <a id="issue-1"></a>
 ### Issue 1: The next image forgets what Return and Cmd+Return do
 
 `EditorCore.open` keeps `finishes` as it keeps `zoom`, so the bar's offer, which the host sets only
 when it changes, still holds for the next image. Test:
-`EditorCoreOpeningTests.testTheNextImageFinishesWithWhatTheBarStillOffers`. **Status**: open.
+`EditorCoreOpeningTests.testTheNextImageFinishesWithWhatTheBarStillOffers`. **Status**: fixed in `72f89df`.
 
 <a id="issue-2"></a>
 ### Issue 2: The focus stays on a card the column dropped
@@ -4030,7 +4035,7 @@ when it changes, still holds for the next image. Test:
 `StackModel.removeCards`, which every removal goes through, now owns the rule that `remove(_:)`
 stated alone: when the focused card leaves, the newest card takes the focus. `remove(_:)` no longer
 repairs it itself, and the stitch clears the focus before its pieces leave, so a stitch still ends
-with no focus. Test: `StackModelTests.testWhenTheFocusedCardLeavesTheNewestTakesTheFocus`. **Status**: open.
+with no focus. Test: `StackModelTests.testWhenTheFocusedCardLeavesTheNewestTakesTheFocus`. **Status**: fixed in `fc3077b`.
 
 <a id="issue-3"></a>
 ### Issue 3: A session that is still starting is started again
@@ -4053,8 +4058,9 @@ that every send shares: **a start under way for session id S**.
 
 The start code would move to its own file, `ClaudeSessionStart.swift`, as an extension of
 `ClaudeCodeConnection`, because `AgentConnection.swift` is over the size limit and must not grow.
-`SessionStartsTests.testASecondSendWhileItsSessionIsStillStartingJoinsThatStart` is written and
-fails today: herdr is asked to launch Claude Code twice for one session.
+Its test, `SessionStartsTests.testASecondSendWhileItsSessionIsStillStartingJoinsThatStart`, fails
+today because herdr is asked to launch Claude Code twice for one session. It is committed with the
+fix.
 
 <a id="issue-4"></a>
 ### Issue 4: A Codex sign-out leaves its ask waiting forever
@@ -4062,13 +4068,13 @@ fails today: herdr is asked to launch Claude Code twice for one session.
 The sign-out stops Codex's responder with `stop(failingAsks: true)`, which fails the ask under way
 or pending with Codex's "couldn't answer" reason, so `LiveAsks` ends it and the next ask goes. Every
 other `stop()` keeps dropping silently, which is right for each of them (see [asks-1](#asks-1)).
-Test: `LiveResponderTests.testAnAskUnderWayWhenTheSignInGoesFailsOnce`. **Status**: open.
+Test: `LiveResponderTests.testAnAskUnderWayWhenTheSignInGoesFailsOnce`. **Status**: fixed in `95c1a56`.
 
 <a id="issue-5"></a>
 ### Issue 5: A notice on a renamed file never goes
 
 `CardNotices.expire` takes only the notice's id, which no rename changes, and finds the file that
-holds it. Test: `CardNoticesTests.testANoticeOnAFileRenamedDuringItsHoldStillExpires`. **Status**: open.
+holds it. Test: `CardNoticesTests.testANoticeOnAFileRenamedDuringItsHoldStillExpires`. **Status**: fixed in `4e16467`.
 
 <a id="issue-6"></a>
 ### Issue 6: A deleted screenshot is still sent
@@ -4076,7 +4082,7 @@ holds it. Test: `CardNoticesTests.testANoticeOnAFileRenamedDuringItsHoldStillExp
 A held-back removal, once a listing confirms it, leaves through `FolderWrites.left` like every
 other removal, so `fileRemoved` cancels a send still in its grace. Test:
 `FolderWritesTests.testARemovalFromAnOlderListingWaitsForANewerOne`, which pinned the card-only
-removal. **Status**: open.
+removal. **Status**: fixed in `b9b76b8`.
 
 <a id="issue-7"></a>
 ### Issue 7: The run keeps what a hand did after the hand is done
@@ -4084,7 +4090,7 @@ removal. **Status**: open.
 `AnnotationRun.select` queues nothing once the run's list has been ended (Esc, a dismissal, the
 open file going), and `reduce` clears `ending` when another image really opens. Tests:
 `AnnotationRunTests.testACardSelectedWhileEscParksQueuesNothing`,
-`testACardSelectedWhileSendParksIsQueuedNext`, `testAHandoverForgetsHowTheImageBeforeEnded`. **Status**: open.
+`testACardSelectedWhileSendParksIsQueuedNext`, `testAHandoverForgetsHowTheImageBeforeEnded`. **Status**: fixed in `aaba2a2`.
 
 <a id="issue-8"></a>
 ### Issue 8: A cancel or a deletion while a swap parks is ignored
@@ -4094,7 +4100,7 @@ Two rows of `AnnotatorTransition` change. In `parking(o, then: .annotate(o2))`, 
 wins over a swap, as a swap already wins over an earlier close. Tests:
 `AnnotatorTransitionTests.testRemovingTheFileParkingForASwapHidesItAndOpensNothing`,
 `AnnotationRunTests.testACancelDuringASwapsParkClosesInsteadOfOpeningTheNextImage`,
-`testRemovingTheOpenFileDuringASwapsParkEndsTheRun`. **Status**: open.
+`testRemovingTheOpenFileDuringASwapsParkEndsTheRun`. **Status**: fixed in `b225449`.
 
 ## What the review changed
 
