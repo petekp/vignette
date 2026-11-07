@@ -3784,7 +3784,8 @@ Line references are to commit 358d988 unless a finding says otherwise. Those in 
   (`:369-380`). The ask timer was invalidated, so no timeout comes either.
 - **Breaks**: `LiveAsks` keeps the ask `asking`: its thinking light stays on, and every later ask,
   to Claude too, waits behind it until the person presses Esc on each stuck ask.
-- **Test**: `LiveResponderTests.testAnAskUnderWayWhenTheResponderStopsFailsOnce`.
+- **Test**: `LiveResponderTests.testAnAskUnderWayWhenTheSignInGoesFailsOnce`. Before the fix it failed
+  through `stop()`, which the sign-out called.
 - **Fix**: the sign-out fails the asks it drops: `stop(failingAsks: true)`. Every other caller of
   `stop()` keeps the silent drop. Clearing has already ended its asks in `LiveAsks`
   (`LiveInk.swift:1728-1729`, and `docs/live-ink.md` states the silent drop for it); the idle stop
