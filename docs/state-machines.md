@@ -970,7 +970,7 @@ Inserts a card into the open stack without animating the layout change; the new 
 
 **Invariants**
 
-- `removeOverflow` (`:1465`) removes `cards.last` without checking `outCards` or `forming`. ([corner-4](#corner-4))
+- `removeOverflow`, now `StackModel.removeOverflow(over:)`, drops the oldest card that is not in `outCards` or `forming` (**fixed**, [corner-4](#corner-4)).
 - A dismissal in the same turn as `shiftUp` gets undone by `first`, which un-parks the new card. ([corner-13](#corner-13))
 
 **Late and concurrent answers**
@@ -995,7 +995,7 @@ The drag-select gesture over the selection circles, with auto-scroll while the p
 
 **Invariants**
 
-- `anchor` is a valid index into the current `cards` (relied on at `:73`). Checked by: nothing. `removeOverflow` and `slideOut`'s final `removeCards` do not call `end()`. ([corner-9](#corner-9))
+- `anchor` names the card the drag started on, by id; when that card has left, the next move starts a new sweep. Checked by: `StackModelTests.testASweepWhoseFirstCardLeavesStartsAgainFromTheCardUnderThePointer` (**fixed**, [corner-9](#corner-9)). `removeOverflow` and `slideOut`'s final `removeCards` do not call `end()`, which is now safe.
 
 **Late and concurrent answers**
 
@@ -1669,7 +1669,7 @@ Owner: `AgentConnection.swift:195`; inbox reads `ClaudeInbox.swift:23-52`. Tests
 
 Takes a line for a Claude Code session. A running session is listed, checked by a preflight (`:405`), then written (`:443`). A startable row is started in a herdr tab, polled for its inbox, then written. A Claude Code process has an inbox folder; its monitor touches an `alive` file, and `isLive` means touched within 10 s.
 
-**States**: for a running session: listed, preflighted, written. For a startable row: requested, launched, polling, then up, failed or timed out (45 s), then written.
+**States**: for a running session: listed, preflighted, written. For a startable row: requested, joined (waiting on a start of the same session already under way), launched, polling, then up, failed or timed out (45 s), then written. The start code is in `ClaudeSessionStart.swift`, and the starts under way are in `SessionStartsUnderWay`, which every copy of the connection shares.
 
 **Transitions**
 
@@ -1679,19 +1679,20 @@ Takes a line for a Claude Code session. A running session is listed, checked by 
 | listed | `submit`, inbox holds exactly this session now (`listedInbox(of:) ?? liveInbox(holding:)`, `:416`) | written | aside file, then rename (`write`) |
 | listed | `submit`, inbox does not hold it | `.destinationChanged` | "cleared" if another running inbox lists it in `past`, else "closed" |
 | requested | `startSession` (`:270`), id not a UUID | failed | nothing reaches the shell (`new:<folder>` rows) |
-| requested | `startSession`, `liveInbox(holding:)` already live (`:274`) | up | no launch |
+| requested | `startSession`, a start of this session under way | joined | no launch; waits for that start's answer (**fixed**, [toolbar-3](#toolbar-3)) |
+| requested | `startSession`, none under way, `liveInbox(holding:)` already live | up | no launch |
 | requested | `startSession` otherwise | launched | `before` = inbox folder names now; `launch` (herdr `tab create`, `pane run`) |
 | launched | launch returns `.failed` | `.notStarted` | — |
 | launched | launch started | polling | `look` (`:288`) every 0.25 s via `later` |
-| polling | `look` finds the first folder not in `before` whose `session` equals the id and which `isLive` | up, then written | — |
-| polling | `now - began >= 45` | timed out | nothing sent |
+| polling | `look` finds the first folder not in `before` whose `session` equals the id and which `isLive` | up, then written | every joined send gets the same inbox and writes its own line |
+| polling | `now - began >= 45` | timed out | nothing sent, by this send or any joined one |
 | any read | `liveInboxes()` (`:329`) | — | deletes an inbox folder whose pid is not running |
 
 **Invariants**
 
 - A line is written only if the inbox still holds that exact session immediately before the write (`AddressGuard.preflight`, `:405`). Checked by: the guard.
 - A second send after the inbox is live does not launch again. Checked by: `SessionStartsTests.testASendToASessionThatIsNotRunningStartsItThenWritesTheLineIntoItsInbox`.
-- One start runs per session at a time. Not true: two sends to one startable row while the first start still polls launch `claude` twice for one session. Checked by: nothing yet ([toolbar-3](#toolbar-3), [issue 3](#issue-3)).
+- One start runs per session at a time: a send to a session already starting joins that start (`SessionStartsUnderWay`). Checked by: `SessionStartsTests.testASecondSendWhileItsSessionIsStillStartingJoinsThatStart` (**fixed**, [toolbar-3](#toolbar-3)).
 
 **Late and concurrent answers**
 
@@ -1724,7 +1725,7 @@ Opens a herdr tab in the project's folder and runs `claude` there. It runs on a 
 
 **Late and concurrent answers**
 
-- None. Two calls run two launches ([toolbar-3](#toolbar-3)).
+- Two calls run two launches. `ClaudeCodeConnection` now makes one call per session start, however many sends wait on it (**fixed**, [toolbar-3](#toolbar-3)).
 
 ### CodexConnection: discover and submit (implicit)
 
@@ -1964,7 +1965,7 @@ The durable record of one reply, from the app accepting its bytes to its card ex
 | `accepted` | live ink answer drawn (`publish` `:630-636`) | `shown` | — |
 | `accepted`, `reserved` | `fail` (`:731`) | `failed` or `cancelled` | — |
 | any but `published` | `cleanup` (`:821-854`) | `cancelled` | `needsOutputCleanup` set; output at `destination` removed (`reserved`) |
-| `shown` | `cleanup` | `cancelled` with `needsOutputCleanup` true for good | request never pruned ([requests-2](#requests-2)) |
+| `shown` | `cleanup` | stays `shown`, as `published` does (**fixed**, [requests-2](#requests-2)) | — |
 | `cancelled` | live answer's capture fails after a clear (`:629`, `:648`) | `reserved` | stale copy overwrites the record ([requests-4](#requests-4)) |
 | `cancelled` | `cleanup` | — (skipped, `:824`) | — |
 | `published` | `cleanup` | — (untouched, `:823`) | the file is the person's |
@@ -1980,7 +1981,7 @@ Every `write(Reply)` calls `refreshReceipts` (`:908`), so each accepted attempt'
 - A cleared request never publishes. Checked by: `testAClearWhileMarksAreAddedCancelsTheImportInsteadOfPublishingIt`, `testLoadReplaysClearCleanupAndCannotPublishAnUncancelledReply`.
 - A published file is the person's: clear never removes it, and a deletion is a removal, not a rebuild. Checked by: the guard at `:823`, `testDeletingAPublishedReplyIsARemovalAndNotARebuild`.
 - `cancelled` is terminal. Checked by: nothing ([requests-4](#requests-4)).
-- A `shown` reply stays `shown` after a clear. Checked by: nothing ([requests-2](#requests-2)).
+- A `shown` reply stays `shown` after a clear. Checked by: `ScreenshotRequestsClearingTests.testAClearedRequestWhoseAnswerLiveInkDrewStaysDrawnAndIsPrunedAfterAWeek` (**fixed**, [requests-2](#requests-2)).
 
 **Late and concurrent answers**
 
@@ -2036,14 +2037,14 @@ Ends a request: commits the terminal state, cancels its replies, removes their u
 | cleared request, `publicationReady` false | `cleanup` | — | output removal waits (`:834`) |
 | cleared request, `publicationReady` true | `cleanup` | replies `cancelled` | output removed; a failed removal counts as done only if `inventory.confirmsAbsence` (`:839`) |
 | cleared for 7 days (`clearedKept`, `:59`) | `prune` | request folder removed | only if no reply has `needsOutputCleanup` (`:785`) and every published reply's absence is confirmed (`:786-791`) |
-| cleared, a reply is `shown` | `cleanup` | reply `cancelled`, `needsOutputCleanup` true, never reset | `prune` skips it forever ([requests-2](#requests-2)) |
+| cleared, a reply is `shown` | `cleanup` | reply left `shown` | `prune` removes the request after a week (**fixed**, [requests-2](#requests-2)) |
 
 **Invariants**
 
 - The terminal state is committed before payloads are removed. Checked by: `testClearWriteFailureKeepsStateAndOwnedFiles`.
 - An inventory older than a publication cannot remove it (`publishedAt <= observedAt`, `:177`, `:789`). Checked by: `testAQueuedInventoryCannotRemoveANewerPublishedReply`.
 - An interrupted cleanup replays at the next launch or `reconcile`. Checked by: `testLoadReplaysClearCleanupAndCannotPublishAnUncancelledReply`.
-- Clearing a request with a `shown` reply. Checked by: nothing ([requests-2](#requests-2)).
+- Clearing a request with a `shown` reply. Checked by: `ScreenshotRequestsClearingTests` (**fixed**, [requests-2](#requests-2)).
 
 **Late and concurrent answers**
 
@@ -2616,7 +2617,7 @@ Installs, updates and removes the Vignette plugin in Claude Code and Codex, one 
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | plugin not on, legacy skill folder present | `launch` (`startAgentPlugin`, `AppDelegate.swift:282`, only when setup is not unasked) | on | installs the plugin (`AgentPlugin.swift:488-489`); the folder is removed afterwards |
-| plugin not on, legacy skill is a link | `launch` | on | installs the plugin; the link stays, so a removal by the person is undone at the next launch ([setup-1](#setup-1)) |
+| plugin not on, legacy skill is a link | `launch` | on | installs the plugin; the link stays, so a removal by the person is undone at the next launch ([setup-1](#setup-1), [issue 12](#issue-12)) |
 | plugin not on, no legacy skill | `launch` | — | — |
 | plugin on, marketplace changed or version differs | `launch` | on | `plugin update` (`:492`) |
 | any | `install(into:)` (Settings switch, setup `record`, `install-skill`) | on | stage the marketplace, run the tool's install steps, remove the legacy folder |
@@ -3703,7 +3704,7 @@ The note panel a person types into. Created at `showNote` (`LiveInk.swift:616`).
 
 ## Findings
 
-The area maps raised 84 invalid states and transitions, and the reviewer found one more. A **confirmed** finding has a traced sequence and a unit test that failed before its fix, and belongs to one of the [issues](#issues). A **plausible** finding is traced, but no unit test reaches it yet or one step of it was not checked, and it is not fixed. Each plausible entry ends with how sure its mapper was and what was left unchecked, and with the review's verdict where it gave one.
+The area maps raised 84 invalid states and transitions, and the reviewer found one more. A **confirmed** finding has a traced sequence and a unit test that failed before its fix, and belongs to one of the [issues](#issues). Fourteen are confirmed. A **plausible** finding is traced, but no unit test reaches it yet or one step of it was not checked, and it is not fixed. Each plausible entry ends with how sure its mapper was and what was left unchecked, and with the review's verdict where it gave one.
 
 Line references are to commit 358d988 unless a finding says otherwise. Those in the confirmed findings were checked; the rest are the mappers', partly corrected, and drift as the code changes. Search for the symbol a reference names.
 
@@ -3744,12 +3745,11 @@ Line references are to commit 358d988 unless a finding says otherwise. Those in 
   (`look` takes only folders made since its own launch, `:289`) and fails after 45 s. That second
   case is traced, not tested; the test shows the double launch.
 - **Test**: `SessionStartsTests.testASecondSendWhileItsSessionIsStillStartingJoinsThatStart`, which sends
-  twice while the first start looks for its inbox and expects one launch. It fails today, so it is
-  committed with the fix.
+  twice while the first start looks for its inbox and expects one launch.
 - **Fix**: one start per session id at a time. A send for a session already starting waits for that
-  start's answer and writes its line into the same inbox. This adds a state, so it waits for Pete
-  ([issue 3](#issue-3)).
-- **Status**: waits for Pete, [issue 3](#issue-3): the fix adds a state.
+  start's answer and writes its line into the same inbox. It adds a state, a start under way, which
+  Pete approved ([issue 3](#issue-3)).
+- **Status**: fixed, [issue 3](#issue-3), in `f1ea7c3`.
 
 <a id="requests-1"></a>
 #### requests-1: A screenshot deleted during its send's grace period is still sent
@@ -3899,6 +3899,75 @@ Line references are to commit 358d988 unless a finding says otherwise. Those in 
   before it removes them.
 - **Status**: fixed, [issue 2](#issue-2), in `fc3077b`.
 
+<a id="corner-9"></a>
+#### corner-9: A drag over the oldest card when a capture fills the column crashes the app
+
+- **Sequence**: the stack is open with a full column. The person drags from a selection circle, and
+  a capture or an agent's push arrives while the pointer is over the oldest card.
+- **Trace**: `insert` ends the sweep (`ThumbnailController.swift:1367`) and `shiftUp` puts the new card
+  at index 0, so the column holds one card too many until the next turn, when `springLifts` runs
+  `removeOverflow` (`:1446`). A drag move in between anchors the new sweep on the oldest card, at an
+  index that `removeOverflow` then takes away. The sweep kept its anchor as an index
+  (`StackSweep.swift:17`), so the next move reads `model.cards[anchor]` past the end (`:73`).
+- **Breaks**: "Index out of range", which ends the app.
+- **Test**: `StackModelTests.testASweepWhoseFirstCardLeavesStartsAgainFromTheCardUnderThePointer`,
+  which crashed the test process at `StackSweep.swift:73` before the fix.
+- **Fix**: the sweep anchors on the card's id. When that card has left, the sweep ends and the drag
+  starts a new one from the card under the pointer, as it does after an insert.
+- **Status**: fixed, [issue 9](#issue-9), in `8451a9c`.
+
+<a id="corner-4"></a>
+#### corner-4: A capture into a full column drops the card open in the editor
+
+- **Sequence**: the stack is open with a full column, and the oldest card is open in the editor, its
+  slot drawn empty. A capture with `annotateOnCapture` off, or an agent's push, arrives. Pushes while
+  the person draws are the agent loop's normal case.
+- **Trace**: `removeOverflow` dropped `model.cards.last` without checking `outCards` or `forming`
+  (`ThumbnailController.swift:1465-1470`), and `removeCards` cleared its marks (`StackModel.swift:87`).
+  When the editor closes, `returnCard` finds the card missing and inserts it again at index 0
+  (`ThumbnailController.swift:886-892`), and that insert drops the next oldest card.
+- **Breaks**: the card comes home to the newest slot, and an unrelated card leaves the column.
+- **Test**: `StackModelTests.testTheOverflowKeepsTheCardsInTheEditorAndInAStitch`. The overflow moved
+  into `StackModel` unchanged so a test could reach it, and the test failed against it.
+- **Fix**: the overflow drops the oldest card that is not in the annotator or in a stitch.
+- **Status**: fixed, [issue 10](#issue-10), in `72f89df`0.
+
+<a id="requests-2"></a>
+#### requests-2: A cleared request whose answer live ink drew is never pruned
+
+- **Sequence**: live ink asks a session, and its answer becomes live ink's own result card, so the
+  reply is `shown`. Later the request is cleared, by `requests?clear=` or by the 50-request limit,
+  which clears the oldest on its own.
+- **Trace**: `cleanup` treated every reply but a published one as unpublished
+  (`ScreenshotRequests.swift:823`). It turned the shown reply `cancelled` and set
+  `needsOutputCleanup`, since its stage is not `accepted` (`:828-830`). A shown reply has no
+  `destination`, which only `publishCard` sets (`:649`), so its `outputURL` is nil and the flag
+  never clears. `prune` skips any request with that flag (`:785`).
+- **Breaks**: every such request's folder stays forever, with its records, and `load` reads all of
+  them. The drawn answer's receipt also changed from ready to cancelled.
+- **Test**: `ScreenshotRequestsClearingTests.testAClearedRequestWhoseAnswerLiveInkDrewStaysDrawnAndIsPrunedAfterAWeek`,
+  in a new file because `ScreenshotRequestsTests.swift` is over the size limit.
+- **Fix**: clearing leaves a shown reply as it leaves a published one (`Reply.isPresented`).
+- **Status**: fixed, [issue 11](#issue-11), in `72f89df`1.
+
+<a id="setup-1"></a>
+#### setup-1: A plugin switched off comes back at the next launch when the old skill is a link
+
+- **Sequence**: the person kept the skill from before the plugin as a link, as Pete does
+  (`docs/claude-code-without-herdr-2026-09-27.md:415-416`). They turn the plugin off with the Agents
+  tab's switch, then Vignette launches again.
+- **Trace**: the switch runs `plugin remove`, so `isInstalled` reads false at launch. The launch
+  installs wherever an old skill is, folder or link (`AgentPlugin.swift:487-489`). A link is never
+  removed (`removeLegacySkill`, `testOldSkillFolderGoesAndALinkStays`), so every launch installs
+  again.
+- **Breaks**: the switch's off does not hold. AGENTS.md says the switch is the only thing that
+  removes the plugin, and the person's choice is undone at each launch.
+- **Test**: `AgentPluginTests.testALaunchLeavesThePluginOffAfterTheSwitchTurnedItOffWhereTheOldSkillIsALink`,
+  which launches twice and expects the second launch to install nothing. It passes under either fix
+  below. It fails today and is committed with the fix.
+- **Fix**: waits on Pete ([issue 12](#issue-12)).
+- **Status**: waits for Pete, [issue 12](#issue-12): one fix changes a stored file.
+
 ### Plausible findings
 
 Grouped by area. An entry with no review verdict was skimmed by the reviewer and left as its mapper wrote it.
@@ -3920,12 +3989,10 @@ Grouped by area. An entry with no review verdict was skimmed by the reviewer and
 #### The corner and the stack
 
 - <a id="corner-2"></a>**corner-2**: `hoveredCard` names a card that was removed, so a lone thumbnail never leaves. Sequence: two or more lone thumbnails in the corner. The pointer is on card A (hover set). A's file is removed (Trash button, Finder delete, `vignette://trash`) so `remove(_:)` runs and other cards remain. Where: `CardView.swift:204`. Mapper: medium. Not checked: SwiftUI hover-exit on view removal. **Status**: Review: plausible: whether SwiftUI ends a hover for a view that is removed is unverified, and AppKit's tracking areas do not, which makes it likely. Open.
-- <a id="corner-4"></a>**corner-4**: `removeOverflow` can drop the card that is open in the annotator (or a forming card). Sequence: stack open with `recentCount` cards. The oldest card is opened in the editor (it stays in the column as an empty slot, `outCards`). A new screenshot arrives. Where: `StackModel.swift:87`. Mapper: medium-high. Not checked: whether `homeFlightMarks` recovers the cleared marks. **Status**: Review: stands, more serious than plausible: with a full column and the oldest card in the editor, a capture or a push drops that card; it comes home to the newest slot and another card leaves. Open.
 - <a id="corner-5"></a>**corner-5**: A shortcut press that finds nothing to list leaves lone thumbnails with no timer. Sequence: lone thumbnails are showing (timer armed) while `recentListing()` returns no shots (watcher index empty or not listed yet, or the card is a file the recent listing excludes). The shortcut is pressed. Mapper: medium. Not checked: how often a card in the corner is absent from the recent listing. **Status**: Review: downgraded to very rare. Open.
 - <a id="corner-6"></a>**corner-6**: Dismissing mid-stitch pops the column instead of sliding it out, and skips `slidOut`. Sequence: stitch from the stack, and dismiss (Esc, shortcut, click outside) during the converge. Where: `TransitionLayer.swift:275,283`, `CornerKeys.swift:143`. Mapper: medium. Not checked: how long the other cards actually show offscreen before `present` runs.
 - <a id="corner-7"></a>**corner-7**: Cmd+A (or a second Stitch) can select forming cards. Sequence: stitch; during the converge press Cmd+A, then a Stitch key, Copy or Trash. Where: `CardView.swift:60`. Mapper: low-medium. Not checked: `TransitionLayer`'s behaviour for a duplicate id (flights mapper).
 - <a id="corner-8"></a>**corner-8**: A card inserted during a converge moves the destination slot. Sequence: stitch; a new screenshot arrives before the converge completes. Mapper: low-medium.
-- <a id="corner-9"></a>**corner-9**: `StackSweep.anchor` out of range after `removeOverflow`. Sequence: drag from the oldest card's selection circle; a new screenshot arrives in the same run-loop turn gap between `insert` (which calls `sweep.end()`, `:1368`) and the next-turn `springLifts` block. Where: `StackSweep.swift:68`. Mapper: low (narrow window; the trace is complete). **Status**: Review: upgraded: it is a crash. A drag anchored on the oldest card between `insert`'s `sweep.end()` and the next turn's `removeOverflow` reads `model.cards[anchor]` past the end (`StackSweep.swift:73`). Rare. Open: no test yet.
 - <a id="corner-10"></a>**corner-10**: A re-sent card loses the first send's failure. Sequence: send card A (request 1, answer slow), reopen and send again (request 2), request 1 then fails. Where: `CardNotices.swift:111`. Mapper: medium (design question). **Status**: Review: refuted: intended, and pinned by `CardNoticesTests.testAnAnswerToAnEarlierSendIsDropped`.
 - <a id="corner-11"></a>**corner-11**: `ModifierTap` hold fires after another modifier is pressed. Sequence: double-tap right Shift, keep it down, press another modifier within 0.4 s. Where: `ModifierTap.swift:65`. Mapper: low-medium.
 - <a id="corner-12"></a>**corner-12**: `HotKey.isDown` stuck if a release event is never delivered. Sequence: the key release is lost (Carbon release not delivered, as when the key was released while another app held a keyboard grab). Where: `HotKey.swift:62`. Mapper: low.
@@ -3945,7 +4012,7 @@ Grouped by area. An entry with no review verdict was skimmed by the reviewer and
 
 #### The toolbar and destinations
 
-- <a id="toolbar-1"></a>**toolbar-1**: A Send press the editor ignores leaves `sendingTo` set, and a later Return sends to the old session. Sequence: editor zoomed in, target D1 listed. Esc or Done closes it. Within the zoom's fit-back spring (up to a few hundred ms) or the bar's 0.2 s fade, the person clicks Send (or presses Cmd+Return in the field). Next image opens (swap or reopen) with a different target D2, or as a Reply to R. Where: `AnnotationController.swift:472-477`, `AnnotatorToolbar.swift:532-552`, `AnnotationController.swift:97-100`. Mapper: high on the code path (every step traced, no guard); medium on how often the window is hit (zoomed close is the wide window). **Status**: Review: stands. Rare to reach (a Send press during the 0.2 s fit-out or the bar's fade), but it sends to the wrong session. The reviewer prefers carrying the destination through the editor's send effect over a second flag. Open.
+- <a id="toolbar-1"></a>**toolbar-1**: A Send press the editor ignores leaves `sendingTo` set, and a later Return sends to the old session. Sequence: editor zoomed in, target D1 listed. Esc or Done closes it. Within the zoom's fit-back spring (up to a few hundred ms) or the bar's 0.2 s fade, the person clicks Send (or presses Cmd+Return in the field). Next image opens (swap or reopen) with a different target D2, or as a Reply to R. Where: `AnnotationController.swift:472-477`, `AnnotatorToolbar.swift:532-552`, `AnnotationController.swift:97-100`. Mapper: high on the code path (every step traced, no guard); medium on how often the window is hit (zoomed close is the wide window). **Status**: Review: stands. Rare to reach (a Send press during the 0.2 s fit-out or the bar's fade), but it sends to the wrong session. Not confirmed: the flag lives in `AnnotationController`, which no unit test can build. Two fixes, for Pete: a guard in `toolbar.onSend` that ignores a press once `current` is nil, which only the running app can check; or carrying the destination through the editor's send effect, which removes the second flag but changes `EditorCore`'s send contract. Open.
 - <a id="toolbar-2"></a>**toolbar-2**: A failed Codex listing replaces the kept list with an empty one, and the target can change or vanish. Sequence: (a) previous listing left `kept[codex]` = threads incl. T. Open editor; kept list answers at once and T (session used last) becomes the target. The fresh Codex job fails (codex not found at that moment, `process.run()` throws, or 8 s timeout with no listing line). The job returns `[]`. (b) Or: the next opening starts from `kept = []`. Where: `AppServer.swift:150`, `SessionListing.swift:149`, `AnnotatorToolbar.swift:181`. Mapper: medium. Traced every step; not checked whether a hung/failed app-server happens in practice, and an empty store would legitimately empty ….
 - <a id="toolbar-4"></a>**toolbar-4**: A menu pick applied a turn later lands on a different opening or a hidden bar. Sequence: target menu open (modal). A queued main-queue block runs `prepare` for another image (an agent `vignette://annotate`, or a card click already queued), which calls `model.begin`. The pick's deferred block then runs. Where: `AnnotatorToolbar.swift:260-266`. Mapper: low. The window is the gap between a menu action and the next main-queue turn; no input reaches it, only a block already queued.
 - <a id="toolbar-5"></a>**toolbar-5**: `SendOverlay` step closures from an earlier state change can fire after a later change's and overwrite `shown`. Sequence: notice goes `inGrace -> sent` (steps `[sending, sent]`, `sent` scheduled at about `glide + 0.45 s`). Before that fires, the notice changes again, e.g. `sent -> replyFailed`. Where: `SendOverlay.swift:81`. Mapper: low. A reply failing within a second of a send is not reachable in practice.
@@ -3953,7 +4020,6 @@ Grouped by area. An entry with no review verdict was skimmed by the reviewer and
 
 #### Requests, replies and the screenshots folder
 
-- <a id="requests-2"></a>**requests-2**: Clearing a request that has a `shown` reply turns the reply into `cancelled` with `needsOutputCleanup` stuck true, so the request is never pruned. Sequence: a live ink answer is drawn on the window (stage `shown`, no destination). The request is cleared by `vignette://requests?clear=<id|all>`, or automatically as the oldest of 50 open requests. Where: `ScreenshotRequests.swift:823`, `ScreenshotRequestRecords.swift:104-106`, `LiveNoteCards.swift:176`. Mapper: high. Every step traced and no `shown` handling in `cleanup`. **Status**: Review: stands, upgraded: the 50-request limit clears old requests on its own, so every live ink note answered as a result card leaves a request folder that is never pruned. The fix is one condition in `cleanup`. Open.
 - <a id="requests-3"></a>**requests-3**: A launch that replaces a running copy keeps a stale `prepared` record and can write it back over the old copy's `uncertain`/`submitted`. Sequence: 1. Copy A: Send with the grace on. The request is `prepared`, the line waits. 2. Copy B launches and replaces A (`AppDelegate.swift:85`), calling `load(clearingUnsent: false)` (`:165`, `ScreenshotRequests.swift:129`). B holds the record as `prepared` in memory. 3. Where: `AppDelegate.swift:85`, `ScreenshotRequests.swift:129`. Mapper: medium-high. I did not check whether anything else makes B reload; I found no caller. **Status**: Review: stands, very low: it needs a replacing launch inside a send's grace and then a rename. Open.
 - <a id="requests-4"></a>**requests-4**: A live ink answer whose capture fails after the request was cleared resurrects its cancelled reply as `reserved`. Sequence: a live ink answer is accepted and `presentLive` is outstanding; the request is cleared; `presentLive` then answers nil (the window could not be captured). Where: `ReplyCommand.swift:149-152`. Mapper: medium. Traced fully; I did not check how `LiveNoteCards` times its capture, so I do not know how often the sequence occurs.
 - <a id="requests-5"></a>**requests-5**: A fresh rename is applied before an older held-back rename of the same file. Sequence: the app writes a file; the person renames `A` to `B`; that listing is older than the write, so `FolderWrites.renamed` defers it. Before the rescan's flush, a delivery arrives that carries `B` to `C` with a current inventory. Where: `FolderWrites.swift:284`. Mapper: high on the code order. Reaching it needs two renames of one file inside one listing interval, so low in practice.
@@ -3963,7 +4029,6 @@ Grouped by area. An entry with no review verdict was skimmed by the reviewer and
 
 #### Setup, settings and launch
 
-- <a id="setup-1"></a>**setup-1**: A plugin the person switched off is reinstalled at the next launch when the old skill is a symlink. Sequence: (1) A person has `~/.codex/skills/vignette` or `~/.agents/skills/vignette` as a link to the repo's skill (dotfiles). (2) Launch installs the plugin for the skill, link kept. (3) The person turns the Agents tab switch off. (4) They quit and relaunch. Where: `AgentPlugin.swift:528-538`. Mapper: high on the trace. Not checked: how many installs have a linked skill (AGENTS.md says people link to `skills/vignette`). **Status**: Review: stands, and it hits Pete's own setup: his linked skills (`docs/claude-code-without-herdr-2026-09-27.md:415-416`) bring the plugin back at every launch. The fix needs Pete's choice. Open.
 - <a id="setup-2"></a>**setup-2**: A person who saw live ink's page in setup and said Not Now is offered live ink again at the next launch. Sequence: first launch, setup, live ink page shown, Not Now (or X), setup closes. Next launch, the agent plugin has nothing to offer. Where: `SetupWindow.swift:215`, `AppDelegate.swift:194`, `AppDelegate+LiveInkOffer.swift:8`. Mapper: high on the trace; medium on intent (the one-time wording may allow a repeat on the next launch; nothing says it does).
 - <a id="setup-3"></a>**setup-3**: A settings write that fails is recorded as written, and the next reload reverts the app to the old file. Sequence: the app changes a setting; the 0.3 s write runs while the disk cannot take it (disk full, the file or folder made unwritable). Any directory event follows (the failed atomic write's temp file appears and goes, or another tool touches the folder). Where: `Settings.swift:951-953`. Mapper: medium. The reducer path is certain. Whether a directory event follows a failed atomic write on a full disk was not checked (unverified).
 - <a id="setup-4"></a>**setup-4**: Quitting soon after setup closes loses the plugin install, and the offer is already marked made. Sequence: finish setup on the agents page with Claude Code's switch on; quit (or the machine sleeps and the app is killed) within the install's seconds. Where: `SetupWindow.swift:225`, `AgentPlugin.swift:503`, `AppDelegate.swift:210`. Mapper: medium. Not checked: how long the real tool takes; process termination mid-install was not observed.
@@ -4007,21 +4072,26 @@ Grouped by area. An entry with no review verdict was skimmed by the reviewer and
 
 ## Issues
 
-The confirmed findings, grouped by the change that fixes them. They are ranked by impact: how much
-a person loses, weighed by how often the sequence comes up. The review moved several of them, and
+The confirmed findings, grouped by the change that fixes them. An issue keeps its number, which
+commit messages cite; the table is in rank order. Rank is impact: how much a person loses, weighed
+by how often the sequence comes up. The review moved several of them, and
 [What the review changed](#what-the-review-changed) says how. Each issue is fixed in its own commit
-with its regression tests, except issue 3, which waits for Pete.
+with its regression tests, except issue 12, which waits for Pete.
 
 | Rank | Issue | Findings | What a person hits | Status |
 |---|---|---|---|---|
-| 1 | [The next image forgets what Return and Cmd+Return do](#issue-1) | [editor-1](#editor-1) | Return copies instead of replying when paging between two replies from one session, every time | Fixed in `72f89df` |
-| 2 | [The focus stays on a card the column dropped](#issue-2) | [corner-3](#corner-3) | with a full column, a capture takes the focus ring away, and Return, Copy and Trash act on the newest card | Fixed in `fc3077b` |
-| 3 | [A session that is still starting is started again](#issue-3) | [toolbar-3](#toolbar-3) | two sends to a session that is starting run two Claude Code processes on it, which forks its transcript | Waits for Pete: the fix adds a state |
-| 4 | [A Codex sign-out leaves its ask waiting forever](#issue-4) | [asks-1](#asks-1) | live ink answers nothing more, from Claude too, until Esc is pressed on the stuck ask | Fixed in `95c1a56` |
-| 5 | [A notice on a renamed file never goes](#issue-5) | [corner-1](#corner-1) | a stale Copied or failure notice, a send's countdown that never comes back, and a lone thumbnail that stays | Fixed in `4e16467` |
-| 6 | [A deleted screenshot is still sent](#issue-6) | [requests-1](#requests-1) | the image the person deleted reaches the agent session; very rare | Fixed in `b9b76b8` |
-| 7 | [The run keeps what a hand did after the hand is done](#issue-7) | [run-1](#run-1), [run-4](#run-4) | a card selected after Esc opens in the editor; the focus goes back, or stays, when no hand asked | Fixed in `aaba2a2` |
-| 8 | [A cancel or a deletion while a swap parks is ignored](#issue-8) | [run-2](#run-2), [run-3](#run-3) | the shortcut does not close the editor; a card for a deleted file stays in the stack; very rare | Fixed in `b225449` |
+| 1 | [1. The next image forgets what Return and Cmd+Return do](#issue-1) | [editor-1](#editor-1) | Return copies instead of replying when paging between two replies from one session, every time | Fixed in `72f89df` |
+| 2 | [10. A capture into a full column drops the card open in the editor](#issue-10) | [corner-4](#corner-4) | the card comes home to the newest slot, and another card leaves the column | Fixed in `72f89df`0 |
+| 3 | [2. The focus stays on a card the column dropped](#issue-2) | [corner-3](#corner-3) | with a full column, a capture takes the focus ring away, and Return, Copy and Trash act on the newest card | Fixed in `fc3077b` |
+| 4 | [3. A session that is still starting is started again](#issue-3) | [toolbar-3](#toolbar-3) | two sends to a session that is starting run two Claude Code processes on it, which forks its transcript | Fixed in `f1ea7c3` |
+| 5 | [11. A cleared request whose answer live ink drew is never pruned](#issue-11) | [requests-2](#requests-2) | a request folder left behind for every such answer, forever | Fixed in `72f89df`1 |
+| 6 | [12. A plugin switched off comes back at the next launch when the old skill is a link](#issue-12) | [setup-1](#setup-1) | the Agents tab's off does not hold, at every launch | Waits for Pete: one fix changes a stored file |
+| 7 | [9. A drag over the oldest card when a capture fills the column crashes the app](#issue-9) | [corner-9](#corner-9) | the app quits; rare | Fixed in `8451a9c` |
+| 8 | [4. A Codex sign-out leaves its ask waiting forever](#issue-4) | [asks-1](#asks-1) | live ink answers nothing more, from Claude too, until Esc is pressed on the stuck ask | Fixed in `95c1a56` |
+| 9 | [5. A notice on a renamed file never goes](#issue-5) | [corner-1](#corner-1) | a stale Copied or failure notice, a send's countdown that never comes back, and a lone thumbnail that stays | Fixed in `4e16467` |
+| 10 | [7. The run keeps what a hand did after the hand is done](#issue-7) | [run-1](#run-1), [run-4](#run-4) | a card selected after Esc opens in the editor; the focus goes back, or stays, when no hand asked | Fixed in `aaba2a2` |
+| 11 | [8. A cancel or a deletion while a swap parks is ignored](#issue-8) | [run-2](#run-2), [run-3](#run-3) | the shortcut does not close the editor; a card for a deleted file stays in the stack; very rare | Fixed in `b225449` |
+| 12 | [6. A deleted screenshot is still sent](#issue-6) | [requests-1](#requests-1) | the image the person deleted reaches the agent session; very rare | Fixed in `b9b76b8` |
 
 <a id="issue-1"></a>
 ### Issue 1: The next image forgets what Return and Cmd+Return do
@@ -4041,27 +4111,23 @@ with no focus. Test: `StackModelTests.testWhenTheFocusedCardLeavesTheNewestTakes
 <a id="issue-3"></a>
 ### Issue 3: A session that is still starting is started again
 
-**Not fixed: the fix adds a state, so it waits for Pete.** A start has three states today, all
-local to one send: launching, looking for the inbox, and up or failed (`startSession` and `look`,
-`AgentConnection.swift:270-300`). No send can see another's start. The fix needs one more state
-that every send shares: **a start under way for session id S**.
+A start had three states, all local to one send: launching, looking for the inbox, and up or
+failed. No send could see another's start. The fix adds one state that every send shares: **a start
+under way for session S**, held in `SessionStartsUnderWay` (`ClaudeSessionStart.swift`).
 
-- `ClaudeCodeConnection` gets one shared table, session id to the sends waiting on that start. It
-  is a class behind a lock, since each send runs `startSession` on its own pool thread
-  (`submit(watchingTurn:)`, `:425-437`). The connection is a struct, and its copies share the one
-  table.
-- A send that finds S in the table joins it and launches nothing. The first send launches and
-  polls as now. When `look` answers, every send waiting on S gets the same answer: `up(inbox)`, and
-  each writes its own line into that inbox, or `failed`, and each reports the same failure on its
-  own card.
-- S leaves the table when its start answers, so a later send after a failed start launches again.
-- What a person sees: one herdr tab opens, and both lines reach the session once it is up.
+- `ClaudeCodeConnection` holds one table, from session id to the sends waiting on that start. It is
+  a class behind a lock, since each send runs `startSession` on its own pool thread, and the
+  connection's copies share it. The app has one connection, in `AppDelegate.connections`.
+- A send that finds S in the table joins it and launches nothing. The first send checks for a live
+  inbox, launches, and looks as before. Checking after joining means a start that answered just
+  before is found up rather than started again.
+- When the start answers, every send waiting on S gets the same answer: `up(inbox)`, and each writes
+  its own line into that inbox, or `failed`, and each card reports it. S then leaves the table, so a
+  later send after a failure starts again.
 
-The start code would move to its own file, `ClaudeSessionStart.swift`, as an extension of
-`ClaudeCodeConnection`, because `AgentConnection.swift` is over the size limit and must not grow.
-Its test, `SessionStartsTests.testASecondSendWhileItsSessionIsStillStartingJoinsThatStart`, fails
-today because herdr is asked to launch Claude Code twice for one session. It is committed with the
-fix.
+The start code moved to `ClaudeSessionStart.swift`, which keeps `AgentConnection.swift` under its
+size. Test: `SessionStartsTests.testASecondSendWhileItsSessionIsStillStartingJoinsThatStart`. Pete
+approved the new state on 2026-11-07. **Status**: fixed in `f1ea7c3`.
 
 <a id="issue-4"></a>
 ### Issue 4: A Codex sign-out leaves its ask waiting forever
@@ -4103,6 +4169,47 @@ wins over a swap, as a swap already wins over an earlier close. Tests:
 `AnnotationRunTests.testACancelDuringASwapsParkClosesInsteadOfOpeningTheNextImage`,
 `testRemovingTheOpenFileDuringASwapsParkEndsTheRun`. **Status**: fixed in `b225449`.
 
+<a id="issue-9"></a>
+### Issue 9: A drag over the oldest card when a capture fills the column crashes the app
+
+`StackSweep` keeps the card the drag started on by its id, not its index. When that card has left
+the column, the sweep ends and the drag starts a new one from the card under the pointer. Test:
+`StackModelTests.testASweepWhoseFirstCardLeavesStartsAgainFromTheCardUnderThePointer`. **Status**: fixed in `8451a9c`.
+
+<a id="issue-10"></a>
+### Issue 10: A capture into a full column drops the card open in the editor
+
+The overflow moves into `StackModel.removeOverflow(over:)` and drops the oldest card that is not in
+the annotator or in a stitch, since those come back to their slots. Test:
+`StackModelTests.testTheOverflowKeepsTheCardsInTheEditorAndInAStitch`. **Status**: fixed in `72f89df`.0
+
+<a id="issue-11"></a>
+### Issue 11: A cleared request whose answer live ink drew is never pruned
+
+Clearing leaves a reply the person already has, published or shown, as it is (`Reply.isPresented`),
+so the request has nothing left to clean up and is pruned after a week. Test:
+`ScreenshotRequestsClearingTests.testAClearedRequestWhoseAnswerLiveInkDrewStaysDrawnAndIsPrunedAfterAWeek`.
+**Status**: fixed in `72f89df`.1
+
+<a id="issue-12"></a>
+### Issue 12: A plugin switched off comes back at the next launch when the old skill is a link
+
+**Not fixed: the choice is Pete's, and one option changes a stored file.** Two fixes would hold the
+switch's off:
+
+- **Only a skill folder triggers the launch install.** A link never installs the plugin at launch;
+  a person who keeps one installs it from the Agents tab or setup. Nothing new is stored. A person
+  upgrading from a build before the plugin, with a linked skill, does not get the plugin on their
+  own.
+- **The launch records, once per agent folder, that it migrated the old skill.** A link then gets
+  the plugin at the first launch, as a folder does, and the switch's off holds after that. The
+  record is new persisted state, in settings.json or Application Support, so it changes a file
+  format.
+
+Recommendation: record the migration. The launch install exists so that someone who chose the old
+skill keeps it, and a link is that choice too. Test, which passes under either fix:
+`AgentPluginTests.testALaunchLeavesThePluginOffAfterTheSwitchTurnedItOffWhereTheOldSkillIsALink`.
+
 ## What the review changed
 
 One reviewer, an agent that did not write the findings, tried to refute each one against the code
@@ -4128,3 +4235,7 @@ at 358d988 with the new tests. It read the code and did not run it.
 - **Refuted**: corner-10 and run-6 as intended, and flights-3 as a bug.
 - **Merged**: hand-7 duplicates asks-2.
 - **Added**: corner-14, which no map had.
+
+After the review, four of the upgraded findings were confirmed by a failing test: corner-9,
+corner-4, requests-2 and setup-1. toolbar-1 was not, because no unit test can build
+`AnnotationController`, which holds its flag.
