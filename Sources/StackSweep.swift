@@ -14,7 +14,9 @@ final class StackSweep: NSObject {
         let maxScroll: CGFloat
     }
 
-    private var anchor: Int?
+    /// The card the drag started on. A card is named by id, since the column's indexes shift as
+    /// cards come and go.
+    private var anchor: UUID?
     private var selecting = true
     private var before: [UUID] = []
     /// How far the drag point sits below the top of the visible column, kept while a sweep runs so
@@ -41,8 +43,7 @@ final class StackSweep: NSObject {
         self.relayout = relayout
     }
 
-    /// The drag is over: it ended, or the cards it was sweeping changed under it, which makes the
-    /// anchor point at another card. The selection stays as it is.
+    /// The drag is over: it ended, or the column changed under it. The selection stays as it is.
     func end() {
         anchor = nil
         fromTop = nil
@@ -64,13 +65,15 @@ final class StackSweep: NSObject {
     private func select(toYFromTop y: CGFloat) {
         let column = self.column()
         guard let index = column.layout.cardIndex(atYFromTop: y, cards: column.cards) else { return }
-        if anchor == nil {
-            anchor = index
+        // A card that left the column ends the sweep it started, and the drag starts a new one here.
+        let anchored = anchor.flatMap { anchor in model.cards.firstIndex { $0.id == anchor } }
+        if anchored == nil {
+            anchor = model.cards[index].id
             selecting = !model.isSelected(model.cards[index].id)
             before = model.selection
         }
-        let anchor = self.anchor!
-        let passed = stride(from: anchor, through: index, by: index < anchor ? -1 : 1).map { model.cards[$0].id }
+        let start = anchored ?? index
+        let passed = stride(from: start, through: index, by: index < start ? -1 : 1).map { model.cards[$0].id }
         let next = selecting ? before + passed : before.filter { !passed.contains($0) }
         // The auto-scroll runs this every frame; a relayout that changes nothing would still move
         // the panel and animate the strip.
