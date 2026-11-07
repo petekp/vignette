@@ -4230,7 +4230,7 @@ at 358d988 with the new tests. It read the code and did not run it.
 - **More consequences found**: corner-1 also keeps a lone thumbnail in the corner. toolbar-3's second
   start can wait the full 45 s and fail. run-4 has a second path: a click during Esc's park.
 - **Plausible findings upgraded**: corner-4, corner-9, requests-2, setup-1 and toolbar-1. corner-9 is
-  a crash. None of them has a unit test yet, so none is fixed.
+  a crash. None had a unit test when the review ran.
 - **Downgraded**: flights-1 and run-5 to low, corner-5 to very rare, setup-9 to a missing feature.
 - **Refuted**: corner-10 and run-6 as intended, and flights-3 as a bug.
 - **Merged**: hand-7 duplicates asks-2.
