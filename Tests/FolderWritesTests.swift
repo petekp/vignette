@@ -376,9 +376,9 @@ final class FolderWritesTests: XCTestCase {
     // MARK: Removals
 
     /// Catches a stale listing removing a file the app just wrote, a held-back removal never
-    /// confirmed or confirmed twice, the held-back path removing drawings and replies a second time,
-    /// a listing of one folder dropping the removals held back for another, or a later write not
-    /// holding back removals from a listing that was current until then.
+    /// confirmed, confirmed twice or leaving only its card, a listing of one folder dropping the
+    /// removals held back for another, or a later write not holding back removals from a listing
+    /// that was current until then.
     func testARemovalFromAnOlderListingWaitsForANewerOne() throws {
         let other = base.appendingPathComponent("other")
         try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
@@ -395,13 +395,13 @@ final class FolderWritesTests: XCTestCase {
         XCTAssertEqual(events, [.rescan("after an app write")])
         events = []
         writes.listed(try inventory(observedAt: 10))
-        XCTAssertEqual(events, settled(10) + [.removeCards([gone])])
+        XCTAssertEqual(events, settled(10) + leaves(gone, 10))
         events = []
         writes.listed(try inventory(observedAt: 12))
         XCTAssertEqual(events, settled(12))
         events = []
         writes.listed(ScreenshotWatcher.Inventory(folder: other, names: [], dates: [:], observedAt: 13))
-        XCTAssertEqual(events, settled(13) + [.removeCards([elsewhere])])
+        XCTAssertEqual(events, settled(13) + leaves(elsewhere, 13))
 
         clock = 20
         writes.published(Screenshot(key: folder.appendingPathComponent("r2.png").screenshotKey))

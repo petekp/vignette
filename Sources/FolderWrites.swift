@@ -310,10 +310,8 @@ final class FolderWrites {
         rename(renames, observedAt: inventory.observedAt)
         callbacks.sweepDrawings(inventory)
         callbacks.reconcileRequests(inventory)
-        // The two calls above already removed the drawings and replies of the files this listing
-        // confirms absent, so a held-back removal takes only its card.
         let deferred = deferredRemovals.filter { inventory.confirmsAbsence(of: $0.url) }
-        if !deferred.isEmpty { callbacks.removeCards(deferred.map(Screenshot.init(key:))) }
+        if !deferred.isEmpty { left(deferred.map(Screenshot.init(key:)), observedAt: inventory.observedAt) }
         let folder = inventory.folder.standardizedFileURL
         deferredRemovals = deferredRemovals.filter {
             $0.url.deletingLastPathComponent().standardizedFileURL != folder
