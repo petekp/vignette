@@ -158,10 +158,12 @@ final class LiveResponder {
     }
 
     /// Stops the process, which ends the conversation; the next ask starts a new one. An ask under
-    /// way or pending gets no answer and no failure. A failure stays until the next ask.
-    func stop() {
-        if case .failed = state { return shutDown(nil, state: state) }
-        shutDown(nil, state: .stopped)
+    /// way or pending gets no answer, and a failure only with `failingAsks`, for a caller whose asks
+    /// are still waiting on it. A failure stays until the next ask.
+    func stop(failingAsks: Bool = false) {
+        let failure = failingAsks ? Failure(reason: driver.couldNotAnswer, detail: "stopped") : nil
+        if case .failed = state { return shutDown(failure, state: state) }
+        shutDown(failure, state: .stopped)
     }
 
     /// The person stopped the ask under way or pending: it gets no answer and no failure. A turn

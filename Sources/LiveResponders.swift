@@ -23,7 +23,8 @@ final class LiveResponders {
         self.status = status
         // Codex's process keeps the sign-in it started with.
         status.onCodexSignIn = { [weak self] _ in self?.all[.codex]?.restart(whenIdle: "sign-in changed") }
-        status.onCodexSigningOut = { [weak self] in self?.all[.codex]?.stop() }
+        // Nothing else ends an ask the sign-out stops, so it fails rather than waiting forever.
+        status.onCodexSigningOut = { [weak self] in self?.all[.codex]?.stop(failingAsks: true) }
         // Stopped rather than left to see their input close, which a `claude -p` mid-turn answers by
         // finishing the turn it is billed for.
         quitting = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil,
