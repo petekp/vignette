@@ -556,7 +556,7 @@ final class ThumbnailController {
         if let focused = model.focused, ids.contains(focused) { model.focused = nil }
         model.removeCards { ids.contains($0.id) }
         model.clearSelection()
-        sweep.end()   // the pieces leave the column and the new card takes index 0: the anchor moved
+        sweep.end()
         model.cards.insert(result, at: 0)
         withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = 0 }
         relayout()
@@ -1364,7 +1364,7 @@ final class ThumbnailController {
     private func insert(_ card: Card, entrance: Entrance = .slide) {
         guard !model.cards.contains(where: { $0.shot.url == card.shot.url }) else { return }
         dismissGeneration += 1
-        sweep.end()   // the new card takes index 0 and shifts every other, the sweep's anchor included
+        sweep.end()
         if entrance != .inPlace { _ = model.offscreen.insert(card.id) }
         model.slidingOut = false
         if visible && !model.cards.isEmpty && entrance == .slide { return shiftUp(for: card) }
