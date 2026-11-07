@@ -2,9 +2,12 @@
 #include <SwiftUI/SwiftUI_Metal.h>
 using namespace metal;
 
-// The picture pouring into the menu bar icon (docs/intro-funnel-2026-09-30.md). All lengths are in
-// the view's points, y down. A row `v` of the picture runs from 0 at its top edge to 1 at its
-// bottom, and the top edge leads, since the menu bar is always above the window.
+// The picture pouring into a rect: setup's window into the menu bar icon
+// (docs/intro-funnel-2026-09-30.md), and a dropped card into the point it was dropped on. All lengths
+// are in the view's points, y down. A row `v` of the picture runs from 0 at its top edge to 1 at its
+// bottom. The row that meets the target's leads (`lead`): the top edge for the menu bar, which is
+// always above the window, and the rows at the point for a drop inside the card, the rest following
+// from both sides.
 
 struct Shape {
     float4 card;        // the picture's rect: x, y, width, height
@@ -14,11 +17,23 @@ struct Shape {
     float smoothing;    // 0 starts and stops each row abruptly, 1 eases both
 };
 
+// The row whose start and end heights agree, row by row: card.y + v h = icon.y + v ih. Every row
+// above it travels down and every row below it up, so the rows keep their order on screen, which
+// `rowAt` relies on. 0 when the icon is above the card, 1 when it is below.
+static float lead(Shape shape) {
+    float closing = shape.card.w - shape.icon.w;
+    if (closing <= 1.0e-3) return 0.0;
+    return clamp((shape.icon.y - shape.card.y) / closing, 0.0, 1.0);
+}
+
 struct Row { float y; float cx; float halfWidth; float s; };
 
 static float progress(float v, Shape shape) {
     float stagger = 0.6 * shape.strength;
-    float s = clamp((shape.t - stagger * v) / (1.0 - stagger), 0.0, 1.0);
+    // How far the row is from the leading row, as a share of the farthest: v itself when the top leads.
+    float from = lead(shape);
+    float behind = abs(v - from) / max(max(from, 1.0 - from), 1.0e-3);
+    float s = clamp((shape.t - stagger * behind) / (1.0 - stagger), 0.0, 1.0);
     // Eased at both ends, a row leaves and joins its neighbours without a corner in the outline.
     return mix(s, s * s * (3.0 - 2.0 * s), shape.smoothing);
 }
