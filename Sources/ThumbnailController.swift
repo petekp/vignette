@@ -661,7 +661,7 @@ final class ThumbnailController {
         guard let posted = model.notices.post(event, on: file, seen: seen, noticeHold: ui.markSeconds + ui.expandDuration) else { return }
         if !seen && comesUp { show(shot) }
         guard let hold = posted.hold else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in self?.model.notices.expire(posted.id, on: file) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + hold) { [weak self] in self?.model.notices.expire(posted.id) }
         if seen || comesUp { leaveCorner(after: hold) }
     }
 

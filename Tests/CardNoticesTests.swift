@@ -48,14 +48,14 @@ final class CardNoticesTests: XCTestCase {
         var notices = CardNotices()
         let first = try XCTUnwrap(post(&notices, .copied(label: "Copied")))
         post(&notices, .copied(label: "Copied"))
-        notices.expire(first.id, on: file)
+        notices.expire(first.id)
         XCTAssertEqual(notices.notice(on: file), .copied(label: "Copied"), "two copies a second apart")
 
         let failure = try XCTUnwrap(post(&notices, .notCopied(reason: "The disk is full.")))
         let again = try XCTUnwrap(post(&notices, .notCopied(reason: "The disk is full.")))
-        notices.expire(failure.id, on: file)
+        notices.expire(failure.id)
         XCTAssertNotNil(notices.notice(on: file), "the same failure twice")
-        notices.expire(again.id, on: file)
+        notices.expire(again.id)
         XCTAssertNil(notices.notice(on: file))
     }
 
@@ -169,8 +169,19 @@ final class CardNoticesTests: XCTestCase {
         post(&notices, waiting("a"))
         let copied = try XCTUnwrap(post(&notices, .copied(label: "Copied")))
         XCTAssertEqual(notices.notice(on: file), .copied(label: "Copied"))
-        notices.expire(copied.id, on: file)
+        notices.expire(copied.id)
         XCTAssertEqual(sendState(notices), .inGrace)
+    }
+
+    func testANoticeOnAFileRenamedDuringItsHoldStillExpires() throws {
+        var notices = CardNotices()
+        let renamed: ScreenshotKey = "/tmp/renamed.png"
+        post(&notices, waiting("a"))
+        let copied = try XCTUnwrap(post(&notices, .copied(label: "Copied")))
+        notices.rename(from: file, to: renamed)
+        notices.expire(copied.id)
+        guard case .send(let send)? = notices.notice(on: renamed) else { return XCTFail("the Copied notice outlived its hold") }
+        XCTAssertEqual(send.state, .inGrace)
     }
 
     /// Only the countdown comes back: a line already released gives its card the answer, as a send with no
@@ -180,7 +191,7 @@ final class CardNoticesTests: XCTestCase {
         post(&notices, waiting("a"))
         let copied = try XCTUnwrap(post(&notices, .copied(label: "Copied")))
         post(&notices, .released(request: "a"))
-        notices.expire(copied.id, on: file)
+        notices.expire(copied.id)
         XCTAssertNil(notices.notice(on: file))
         post(&notices, .answered(request: "a", state: .sent, reason: nil))
         XCTAssertEqual(sendState(notices), .sent)
