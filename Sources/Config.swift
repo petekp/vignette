@@ -1,7 +1,7 @@
 import AppKit
 
 /// Product behavior that lives in code. Per-machine knobs (folder, counts, hotkey, backdrop) live in
-/// ~/.config/vignette/settings.json; see Settings.swift.
+/// ~/.config/vignette/settings.json; see SettingsData.swift and UITweaks.swift.
 enum Config {
     /// Appended to the original file name when an annotated copy is saved next to it.
     static let annotatedSuffix = "-annotated"

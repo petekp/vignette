@@ -9,7 +9,7 @@ makes such a decision, and mark the old one superseded when a change reverses it
 ## Layout
 
 - `Sources/` Swift menu bar app. `AppDelegate.swift` wires everything; `Config.swift` holds the actions.
-- `~/.config/vignette/settings.json` holds per-machine settings (`Settings.swift` defines the keys).
+- `~/.config/vignette/settings.json` holds per-machine settings (`SettingsData` defines the keys).
   Its `ui` section (`UITweaks`) holds the layout, style, timing, flight, and backdrop numbers, and its
   defaults are the tuned UI, so a fresh install renders the same. The file holds only the `ui`
   values that differ from the defaults (`UITweaks.differencesOnly`), so a default tuned in a later
