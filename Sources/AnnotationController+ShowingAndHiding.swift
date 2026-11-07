@@ -152,11 +152,23 @@ extension AnnotationController {
     /// flight takes over from is the frame the flight starts at. The deadline brings the window down
     /// even if the spring never reports arriving.
     private func fitBeforeHide(_ done: @escaping () -> Void) {
-        guard case .spring(let level, let seconds)? = zoom.reduce(.close), window != nil else { done(); return }
+        stopPlayingOnLayers()
+        let fit = zoom.reduce(.close)
+        // The flight home draws the ring at full, so a ring a zoom faded comes back up with the fit.
+        let ringWaits = ring?.isFull == false
+        guard window != nil, fit != nil || ringWaits else { done(); return }
+        var seconds = motionScaled(AnnotatorZoom.fitToCloseSeconds)
+        var waiting = ringWaits ? 1 : 0
         var answered = false
         let once = { if !answered { answered = true; done() } }
-        zoomTween.animate(to: level, duration: motionScaled(seconds), completion: once)
-        DispatchQueue.main.asyncAfter(deadline: .now() + motionScaled(seconds) + 0.3) { once() }
+        let arrived = { waiting -= 1; if waiting == 0 { once() } }
+        if case .spring(let level, let fitSeconds)? = fit {
+            seconds = motionScaled(fitSeconds)
+            waiting += 1
+            zoomTween.animate(to: level, duration: seconds, completion: arrived)
+        }
+        if ringWaits { ring?.restore(over: seconds, then: arrived) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.3) { once() }
     }
 
     private func hideWindows() {

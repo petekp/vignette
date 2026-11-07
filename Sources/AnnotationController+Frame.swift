@@ -3,19 +3,30 @@ import AppKit
 // MARK: The frame
 
 extension AnnotationController {
-    /// The one place the frame's rect is set: the frame view, the clip, the shadow's path and the
-    /// editor inside it all take it from here, in the same tick, so nothing can be a frame behind.
-    /// `frameOnScreen` reads the result back for anyone who needs the rect. `picture` is where the
-    /// whole picture sits in the editor, in its coordinates, which run down from the top.
+    /// Lays the frame out at `frame` and tells the stack, which narrows as the frame grows towards it.
     func moveFrame(to frame: NSRect, picture: CGRect) {
+        layOutFrame(frame, picture: picture)
+        onFrame?(frame)
+    }
+
+    /// The one place the frame's rect is set: the frame view, the clip, the shadow's path, the ring
+    /// and the editor inside it all take it from here, in the same tick, so nothing can be a frame
+    /// behind. `frameOnScreen` reads the result back for anyone who needs the rect. `picture` is where
+    /// the whole picture sits in the editor, in its coordinates, which run down from the top.
+    func layOutFrame(_ frame: NSRect, picture: CGRect) {
         guard let win = window, let frameView, let container else { return }
         frameView.frame = NSRect(x: frame.minX - win.frame.minX, y: frame.minY - win.frame.minY, width: frame.width, height: frame.height)
         container.frame = frameView.bounds
-        let r = Settings.shared.data.ui.annotationCornerRadius
-        frameView.layer?.shadowPath = CGPath(roundedRect: frameView.bounds, cornerWidth: r, cornerHeight: r, transform: nil)
+        frameView.layer?.shadowPath = Self.shadowPath(for: frameView.bounds.size)
+        ring?.place(size: frameView.bounds.size)
         editor.setSize(container.bounds.size, picture: picture)
         placeTitle(frame: frame)
-        onFrame?(frame)
+    }
+
+    /// The frame view's shadow, cast by a frame of `size`.
+    static func shadowPath(for size: CGSize) -> CGPath {
+        let r = Settings.shared.data.ui.annotationCornerRadius
+        return CGPath(roundedRect: CGRect(origin: .zero, size: size), cornerWidth: r, cornerHeight: r, transform: nil)
     }
 
     /// The visible frame in screen coordinates.
@@ -64,6 +75,7 @@ extension AnnotationController {
         win.contentView = root
         self.frameView = frameView
         self.container = container
+        if let clip = container.layer, let frameLayer = frameView.layer { ring = FrameRing(clip: clip, in: frameLayer) }
         window = win
         return win
     }
@@ -73,7 +85,11 @@ extension AnnotationController {
         let ui = Settings.shared.data.ui
         container?.layer?.cornerRadius = ui.annotationCornerRadius
         container?.layer?.cornerCurve = .continuous
-        container?.layer?.borderWidth = ui.cardBorderWidth
-        container?.layer?.borderColor = NSColor.white.withAlphaComponent(ui.cardBorderOpacity).cgColor
+        applyRing()
+    }
+
+    func applyRing() {
+        ring?.apply(Settings.shared.data.ui, scale: zoomScreen?.backingScaleFactor ?? 2)
+        if let size = frameView?.bounds.size { ring?.place(size: size) }
     }
 }

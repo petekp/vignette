@@ -100,7 +100,7 @@ struct CardView: View, Equatable {
         // grows out of the resting border rather than switching on, and shrinks back into it. It is
         // there, 0 wide, while the slot is empty, so a card that lands focused grows its ring too.
         .overlay {
-            let shape = RoundedRectangle(cornerRadius: ui.cardCornerRadius, style: .continuous)
+            let shape = ui.ring(cornerRadius: ui.cardCornerRadius)
             ZStack {
                 if inSlot {
                     // The flight draws this border too, so it changes hands at once both ways, as the

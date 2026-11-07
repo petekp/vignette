@@ -80,7 +80,7 @@ final class Tween: NSObject {
         spring?.lastTick = now
         value = step.value
         velocity = step.velocity
-        let settled = abs(value - sp.target) < 0.001 && abs(velocity) < 0.01
+        let settled = Self.settled(value: value, velocity: velocity, target: sp.target)
         if settled { value = sp.target; velocity = 0 }
         apply(value)
         if settled {
@@ -114,4 +114,41 @@ final class Tween: NSObject {
     /// The rate of a critically damped spring that settles in `duration`: its step response is within
     /// 1% of its target at omega * t = 6.6.
     nonisolated static func omega(settling duration: Double) -> Double { 6.6 / duration }
+
+    /// Close enough to `target`, and slow enough, that the next tick puts the value on it and stops.
+    nonisolated static func settled(value: CGFloat, velocity: CGFloat, target: CGFloat) -> Bool {
+        abs(value - target) < 0.001 && abs(velocity) < 0.01
+    }
+
+    /// The spring in flight, as its last tick left it, or nil at rest.
+    var flight: Flight? {
+        spring.map { Flight(value: value, velocity: velocity, target: $0.target, omega: $0.omega, at: $0.lastTick) }
+    }
+
+    /// A spring's state at one moment: enough to say where it is at any later moment.
+    struct Flight: Equatable, Sendable {
+        var value: CGFloat
+        var velocity: CGFloat
+        var target: CGFloat
+        var omega: Double
+        /// When it was at `value`, in `CACurrentMediaTime`'s time.
+        var at: CFTimeInterval
+
+        /// The value every `interval` seconds from `at`, starting with `value` itself and ending on
+        /// `target` at the first moment the ticks would settle there.
+        func samples(every interval: Double) -> [CGFloat] {
+            guard interval > 0, omega > 0 else { return [target] }
+            var values: [CGFloat] = []
+            for k in 0..<Self.mostSamples {
+                let step = Tween.spring(value: value, velocity: velocity, target: target, omega: omega, dt: Double(k) * interval)
+                if Tween.settled(value: step.value, velocity: step.velocity, target: target) { break }
+                values.append(step.value)
+            }
+            values.append(target)
+            return values
+        }
+
+        /// Ten seconds at 120 Hz: past any spring Vignette runs.
+        private static let mostSamples = 1200
+    }
 }
