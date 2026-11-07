@@ -61,6 +61,9 @@ extension TweakCatalog {
                 .number("flightArcMax", "Arc cap", \.flightArcMax, 0...300, step: 2, unit: "pt", safe: 0...2000),
                 .number("flightDepth", "Depth", \.flightDepth, 0...0.3, step: 0.01, safe: 0...1),
             ], caption: { _ in "How far a card bows off the straight line between its slot and the annotator, and how much it swells halfway there." }),
+            TweakGroup(nil, [
+                .number("dropDuration", "Drop", \.dropDuration, 0...1.5, step: 0.05, unit: "s", safe: 0...60),
+            ], caption: { _ in "How long a card dragged out of the stack takes to pour into the point it was dropped on. A drop that fails slides home as macOS draws it." }),
         ]),
         TweakSection("Backdrop", [
             TweakGroup(nil, [

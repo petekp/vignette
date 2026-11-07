@@ -37,6 +37,8 @@ final class DragSourceView: NSView, NSDraggingSource {
     private var downPoint: NSPoint?
     private var dragging = false
     private var marksView: MarksView?
+    /// The drag under way: its picture, and where the picture and the pointer were on screen when it began.
+    private var drag: (picture: CGImage, frame: NSRect, pointer: NSPoint)?
 
     /// Draws `marks` over the card, clipped to its corners, or nothing for a screenshot with no drawing.
     func show(_ marks: MarkLayers?, picture: CGSize?, corner: CGFloat, restSize: CGSize?) {
@@ -74,13 +76,34 @@ final class DragSourceView: NSView, NSDraggingSource {
         onPress(false)
         let writers = items()
         guard !writers.isEmpty else { return }
-        let picture = image.map(dragImage)
+        // One bitmap is both the drag image and the picture that pours at the drop, so the two match.
+        let picture = image.flatMap { bitmap(of: dragImage($0)) }
         let dragged = writers.map { writer -> NSDraggingItem in
             let item = NSDraggingItem(pasteboardWriter: writer)
-            item.setDraggingFrame(bounds, contents: picture)
+            item.setDraggingFrame(bounds, contents: picture.map { NSImage(cgImage: $0, size: bounds.size) })
             return item
         }
+        if let picture, let window {
+            drag = (picture, window.convertToScreen(convert(bounds, to: nil)), NSEvent.mouseLocation)
+        }
         beginDraggingSession(with: dragged, event: event, source: self)
+    }
+
+    /// `image` drawn at the backing scale of the screen the card is on, in that screen's colour space.
+    private func bitmap(of image: NSImage) -> CGImage? {
+        let scale = window?.backingScaleFactor ?? 2
+        let size = bounds.size
+        guard size.width > 0, size.height > 0,
+              let space = window?.screen?.colorSpace?.cgColorSpace ?? CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: Int((size.width * scale).rounded(.up)), height: Int((size.height * scale).rounded(.up)),
+                                      bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.scaleBy(x: scale, y: scale)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        image.draw(in: NSRect(origin: .zero, size: size))
+        NSGraphicsContext.restoreGraphicsState()
+        return context.makeImage()
     }
 
     /// The card as it is drawn: its image filling it, over the matte, clipped to its corners, and the
@@ -112,5 +135,23 @@ final class DragSourceView: NSView, NSDraggingSource {
         downPoint = nil
     }
 
+    func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) {
+        if let begun = drag { drag = (begun.picture, begun.frame, screenPoint) }
+    }
+
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .copy }
+
+    /// A drop that took the card pours the picture into the release point (`DropLanding`). A drop
+    /// that failed or was cancelled leaves it to macOS, which slides the drag image home.
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        defer { drag = nil }
+        let point = "\(Int(screenPoint.x)),\(Int(screenPoint.y))"
+        guard !operation.isEmpty else { return Log.write("[drag] ended at=\(point) not dropped; slides home") }
+        guard let drag else { return Log.write("[drag] ended at=\(point) dropped; no picture to pour") }
+        // The drag image keeps its offset from the pointer, so it ends where the pointer took it.
+        let frame = drag.frame.offsetBy(dx: screenPoint.x - drag.pointer.x, dy: screenPoint.y - drag.pointer.y)
+        let played = DropLanding.play(drag.picture, from: frame, cornerRadius: marksView?.corner ?? 0, into: screenPoint)
+        Log.write("[drag] ended at=\(point) dropped from=\(Int(frame.minX)),\(Int(frame.minY)),\(Int(frame.width)),\(Int(frame.height)) "
+                  + (played ? "poured" : "no motion"))
+    }
 }

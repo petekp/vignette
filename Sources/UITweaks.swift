@@ -75,6 +75,7 @@ struct UITweaks: Codable, Equatable {
     var introFunnelRim = 0.9         // 0 to 1: the light along the pour's bent edges
     var introFunnelFade = 0.1        // the share of each row's travel over which it fades into the icon
     var hoverRevealDuration = 0.15
+    var dropDuration = 0.42          // a card dragged out and dropped pouring into the point it was dropped on
     // A flight between a stack slot and the annotator, bowed and swelled by FlightCurve
     var flightArc = 0.15             // how far the path bows, as a fraction of its length
     var flightArcMax = 240.0         // the bow never exceeds this many points
