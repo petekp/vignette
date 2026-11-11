@@ -195,33 +195,6 @@ final class AnnotatorZoomTests: XCTestCase {
 
     /// Random inputs, through a spring that ticks part of the way, is aimed somewhere else
     /// mid-way, and arrives, from images of random sizes and places in the room.
-    func testAStepOnLayersShowsWhatTheTicksWouldPlaceFromTheFrameOnScreenToTheTarget() {
-        var zoom = landed()
-        zoom.pixelScale = 2
-        _ = zoom.reduce(.tick(1))
-        settle(&zoom, zoom.reduce(.zoomIn))
-        let shown = zoom.frame
-        guard case .spring(let target, let seconds)? = zoom.reduce(.smart(at: CGPoint(x: 0.8, y: 0.3))) else {
-            return XCTFail("a double tap past the fit springs back to it")
-        }
-        let interval = 1.0 / 120
-        let flight = Tween.Flight(value: zoom.level, velocity: 0.7, target: target, omega: Tween.omega(settling: seconds), at: 50)
-        let step = try! XCTUnwrap(ZoomKeyframes.make(from: zoom, flight: flight, interval: interval))
-        XCTAssertEqual(zoom.frame, shown, "working the step out ahead moves nothing on screen")
-        XCTAssertEqual(step.start, 50)
-        XCTAssertEqual(step.frames.first, shown)
-        XCTAssertEqual(step.frames.count, step.pictures.count)
-        var ticked = zoom
-        for (k, level) in flight.samples(every: interval).enumerated() {
-            XCTAssertEqual(ticked.reduce(.tick(level)), .place(frame: step.frames[k], picture: step.pictures[k]), "keyframe \(k)")
-        }
-        XCTAssertEqual(ticked.level, target)
-        let ahead = Tween.spring(value: flight.value, velocity: flight.velocity, target: target, omega: flight.omega, dt: 3 * interval)
-        var third = zoom
-        XCTAssertEqual(third.reduce(.tick(ahead.value)), .place(frame: step.frames[3], picture: step.pictures[3]))
-        XCTAssertEqual(step.duration, interval * Double(step.frames.count), accuracy: 1e-12)
-    }
-
     func testRandomSequencesKeepTheRules() {
         let room = CGRect(x: 0, y: 100, width: 1400, height: 800)
         let image = CGSize(width: 1600, height: 1000)

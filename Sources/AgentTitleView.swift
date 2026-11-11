@@ -59,7 +59,8 @@ final class AgentTitleView: NSView {
         guard let title else { return }
         let parts = Self.parts(of: title, wrap: wrap, ui: ui)
         let size = Self.size(of: parts, ui: ui)
-        self.frame = NSRect(origin: Self.origin(above: frame, ui: ui), size: size)
+        self.frame = NSRect(x: frame.minX + ui.annotationCornerRadius, y: frame.maxY + ui.agentTitleGap,
+                            width: size.width, height: size.height)
         titleField.isHidden = parts.title == .zero
         descriptionField.isHidden = parts.description == .zero
         var top = bounds.height
@@ -72,11 +73,6 @@ final class AgentTitleView: NSView {
             descriptionField.frame = NSRect(x: 0, y: top - parts.description.height,
                                             width: parts.description.width, height: parts.description.height)
         }
-    }
-
-    /// The block's bottom-left corner above `frame`.
-    static func origin(above frame: NSRect, ui: UITweaks) -> NSPoint {
-        NSPoint(x: frame.minX + ui.annotationCornerRadius, y: frame.maxY + ui.agentTitleGap)
     }
 
     /// Fades the block in or out over `duration`. A later call takes over the fade.

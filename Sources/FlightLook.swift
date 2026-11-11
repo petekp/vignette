@@ -20,7 +20,7 @@ extension TransitionLayer {
         var ring: Double = 1
         var matte: Double = 1
         /// How far inside `ui.ring`'s line the ring is stroked. A card strokes it centred on the line;
-        /// the annotator's `FrameRing` is the clip's border, which lies wholly inside the frame.
+        /// the annotator's ring is its clip's border, which lies wholly inside the frame.
         var ringInset: CGFloat = 0
         /// The picture spans the frame's width and is never cut at the sides, as the editor draws it,
         /// rather than filling the frame and cutting off the excess, as a card does. The fitted frame
@@ -35,7 +35,7 @@ extension TransitionLayer {
         /// The annotator window's frame view carries exactly this shadow; see `AnnotationController`.
         static func annotator(_ ui: UITweaks) -> Look {
             Look(corner: ui.annotationCornerRadius, shadowOpacity: 0.45, shadowRadius: 24, shadowY: 10,
-                 ringInset: ui.ringOutsideImage ? 0 : ui.cardBorderWidth / 2, fillsWidth: true)
+                 ringInset: ui.cardBorderWidth / 2, fillsWidth: true)
         }
         /// The shape `image` is drawn in, width over height, filling `frame` at an end with this look.
         func aspect(of image: NSImage, in frame: NSRect) -> CGFloat {

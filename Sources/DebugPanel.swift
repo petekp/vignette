@@ -321,12 +321,6 @@ struct TweakRow: View, Equatable {
                 ForEach(options, id: \.self) { Text($0).tag($0) }
             }
             .labelsHidden()
-        case .toggle(let path):
-            Toggle("", isOn: Binding(get: { ui[keyPath: path] }, set: { write(path, $0) }))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-            Spacer()
         }
     }
 
@@ -406,7 +400,6 @@ extension TweakSpec {
         case .number(let path, _, _, _, _): ui[keyPath: path]
         case .integer(let path, _): ui[keyPath: path]
         case .colour(let path), .font(let path), .choice(let path, _): ui[keyPath: path]
-        case .toggle(let path): ui[keyPath: path]
         }
     }
 
@@ -417,7 +410,6 @@ extension TweakSpec {
         case .number(let path, _, let step, let unit, _): return Self.format(defaults[keyPath: path], step: step) + (unit.isEmpty ? "" : " \(unit)")
         case .integer(let path, _): return "\(defaults[keyPath: path])"
         case .colour(let path), .font(let path), .choice(let path, _): return defaults[keyPath: path]
-        case .toggle(let path): return defaults[keyPath: path] ? "on" : "off"
         }
     }
 

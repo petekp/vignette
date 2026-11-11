@@ -1,5 +1,13 @@
 import SwiftUI
 
+extension UITweaks {
+    /// The line a card's, a flight's and a dragged card's ring is stroked along, `cardBorderWidth`
+    /// wide: the frame's own edge.
+    func ring(cornerRadius: CGFloat) -> some InsettableShape {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    }
+}
+
 struct FlightsView: View {
     @ObservedObject var model: TransitionLayer.Model
     var body: some View {

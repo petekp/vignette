@@ -265,72 +265,45 @@ final class EditorOverlayLayers {
         if let shown, shown.overlay == overlay, shown.marks == marks, shown.transform == transform,
            shown.geometry.metrics == geometry.metrics, shown.geometry.markStyle == geometry.markStyle, shown.geometry.style == geometry.style { return }
         shown = (overlay, marks, transform, geometry)
-        hoverEdge.lineWidth = geometry.metrics.selectionOutlineWidth
-        selectionEdge.lineWidth = geometry.metrics.selectionOutlineWidth
-        let paths = Self.paths(overlay, marks: marks, geometry: geometry, transform: transform, sizedAt: transform.a)
-        for (layer, path) in tracks { layer.path = paths[keyPath: path] }
-    }
-
-    /// Plays a zoom step: at each keyframe the outlines are where that keyframe's transform puts the
-    /// marks, and the handles and dots keep the size on screen the core gave them for the zoom shown
-    /// now, the step's end.
-    func play(_ step: ZoomKeyframes, transforms: [CGAffineTransform], frameRate: Float) {
-        guard let shown else { return }
-        let frames = transforms.map {
-            Self.paths(shown.overlay, marks: shown.marks, geometry: shown.geometry, transform: $0, sizedAt: shown.transform.a)
-        }
-        for (layer, path) in tracks {
-            layer.add(step.animation("path", frames.map { $0[keyPath: path] }, on: layer, frameRate: frameRate), forKey: ZoomKeyframes.key("path"))
-        }
-    }
-
-    func stopPlaying() {
-        for (layer, _) in tracks { layer.removeAnimation(forKey: ZoomKeyframes.key("path")) }
-    }
-
-    private struct Paths {
-        let hovered = CGMutablePath(), selected = CGMutablePath(), brush = CGMutablePath()
-        let handles = CGMutablePath(), halos = CGMutablePath(), dots = CGMutablePath()
-    }
-
-    /// Each shape layer and the path it draws.
-    private var tracks: [(CAShapeLayer, KeyPath<Paths, CGMutablePath>)] {
-        [(hoverEdge, \.hovered), (hoverLine, \.hovered), (selectionEdge, \.selected), (selectionLine, \.selected),
-         (brush, \.brush), (handles, \.handles), (halos, \.halos), (dots, \.dots)]
-    }
-
-    /// The overlay's paths with `transform` taking image px to the editor's coordinates. The core sizes
-    /// the handles and dots in px for one zoom, `sizedAt`, and they keep that size on screen whatever
-    /// zoom `transform` is at.
-    private static func paths(_ overlay: EditorCore.Overlay, marks: [Mark], geometry: EditorGeometry, transform: CGAffineTransform,
-                              sizedAt sizedZoom: CGFloat) -> Paths {
         var transform = transform
         let zoom = transform.a
-        let grow = zoom > 0 ? sizedZoom / zoom : 1
+        hoverEdge.lineWidth = geometry.metrics.selectionOutlineWidth
+        selectionEdge.lineWidth = geometry.metrics.selectionOutlineWidth
         func outline(_ id: Mark.ID) -> CGPath? {
-            guard let mark = marks.first(where: { $0.id == id }) else { return nil }
+            guard let mark = drawing.marks.first(where: { $0.id == id }) else { return nil }
             return geometry.outline(of: mark).copy(using: &transform)
         }
-        let paths = Paths()
-        if let id = overlay.hovered, let path = outline(id) { paths.hovered.addPath(path) }
-        for id in overlay.selected { if let path = outline(id) { paths.selected.addPath(path) } }
-        if let frame = overlay.frame { paths.selected.addRect(frame, transform: transform) }
-        for rect in [overlay.brush, overlay.wrap].compactMap({ $0 }) { paths.brush.addRect(rect, transform: transform) }
-        for handle in overlay.handles {
-            guard let square = handle.square else { continue }
-            let side = CGSize(width: square.width * grow, height: square.height * grow)
-            paths.handles.addRect(CGRect(x: square.midX - side.width / 2, y: square.midY - side.height / 2, width: side.width, height: side.height),
-                                  transform: transform)
-        }
+
+        let hovered = CGMutablePath()
+        if let id = overlay.hovered, let path = outline(id) { hovered.addPath(path) }
+        hoverEdge.path = hovered
+        hoverLine.path = hovered
+
+        let selected = CGMutablePath()
+        for id in overlay.selected { if let path = outline(id) { selected.addPath(path) } }
+        if let frame = overlay.frame { selected.addRect(frame, transform: transform) }
+        selectionEdge.path = selected
+        selectionLine.path = selected
+
+        let brushPath = CGMutablePath()
+        for rect in [overlay.brush, overlay.wrap].compactMap({ $0 }) { brushPath.addRect(rect, transform: transform) }
+        brush.path = brushPath
+
+        let squares = CGMutablePath()
+        for handle in overlay.handles { if let square = handle.square { squares.addRect(square, transform: transform) } }
+        handles.path = squares
+
+        let haloPath = CGMutablePath(), dotPath = CGMutablePath()
         for dot in overlay.dots {
             let center = dot.center.applying(transform)
             if dot.hovered {
-                let r = dot.hitRadius * sizedZoom
-                paths.halos.addEllipse(in: CGRect(x: center.x - r, y: center.y - r, width: 2 * r, height: 2 * r))
+                let r = dot.hitRadius * zoom
+                haloPath.addEllipse(in: CGRect(x: center.x - r, y: center.y - r, width: 2 * r, height: 2 * r))
             }
-            let r = dot.radius * sizedZoom
-            paths.dots.addEllipse(in: CGRect(x: center.x - r, y: center.y - r, width: 2 * r, height: 2 * r))
+            let r = dot.radius * zoom
+            dotPath.addEllipse(in: CGRect(x: center.x - r, y: center.y - r, width: 2 * r, height: 2 * r))
         }
-        return paths
+        halos.path = haloPath
+        dots.path = dotPath
     }
 }
