@@ -9,7 +9,7 @@ import os
 /// `@unchecked Sendable`: `source` is confined to `queue`, the index sits behind a lock, and
 /// callbacks only run after an explicit hop to the main queue.
 final class ScreenshotWatcher: @unchecked Sendable {
-    private let folder: URL
+    let folder: URL
     private let onNew: (ScreenshotKey) -> Void
     private let onRemoved: ([ScreenshotKey], Inventory) -> Void
     private let onRenamed: ([(from: ScreenshotKey, to: ScreenshotKey)], Inventory) -> Void
@@ -251,7 +251,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
         candidates().keys.contains { include(ScreenshotKey(folder: folder, name: $0)) }
     }
 
-    private func candidates() -> [String: Date] {
+    func candidates() -> [String: Date] {
         let snapshot = state.withLock { ($0.files, $0.watching || !$0.indexed) }
         if !snapshot.1, case .available(let inventory) = Self.read(folder) {
             return inventory.candidates(retaining: snapshot.0)

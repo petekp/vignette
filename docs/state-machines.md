@@ -970,7 +970,7 @@ Inserts a card into the open stack without animating the layout change; the new 
 
 **Invariants**
 
-- `removeOverflow`, now `StackModel.removeOverflow(over:)`, drops the oldest card that is not in `outCards` or `forming` (**fixed**, [corner-4](#corner-4)).
+- `removeOverflow`, now `StackModel.removeOverflow(over:)`, drops the oldest card that is not in `outCards` or `forming` (**fixed**, [corner-4](#corner-4)), and none once older cards were loaded (`OlderShots.columnLimit`).
 - A dismissal in the same turn as `shiftUp` gets undone by `first`, which un-parks the new card. ([corner-13](#corner-13))
 
 **Late and concurrent answers**

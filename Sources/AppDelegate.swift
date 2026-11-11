@@ -20,7 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private var updateDot: NSView?
     private let menuBarIntro = MenuBarIntro()
     private var updater: Updater?
-    private var watcher: ScreenshotWatcher?
+    var watcher: ScreenshotWatcher?
     private var captureOrigin: CaptureOrigin?
     /// True on a first launch whose folder macOS protects, until setup asks for it.
     private var watcherWaitsForSetup = false
@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private var pressDismissed = false      // the last hotkey press closed the stack
     private var holdTarget: Screenshot?     // the card focused at that press
     private var modifierTap: ModifierTap?
-    private let thumbnail = ThumbnailController()
+    let thumbnail = ThumbnailController()
     private let annotator = AnnotationController()
     private lazy var liveInk = LiveInk(mayInk: { [weak self] in !(self?.thumbnail.holdsScreen ?? true) })
     let settingsWindow = SettingsWindowController()
@@ -64,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// One map, so Send submits through the same connections it lists.
     private static let connections: [AgentClient: any AgentConnection] = [.claude: ClaudeCodeConnection(), .codex: CodexConnection()]
     /// Sending drawings to agent sessions and taking their drawings back. See ScreenshotRequests.
-    private let requests = ScreenshotRequests(root: ScreenshotRequests.defaultRoot, connections: AppDelegate.connections)
+    let requests = ScreenshotRequests(root: ScreenshotRequests.defaultRoot, connections: AppDelegate.connections)
     /// The agent sessions Send can go to. See SessionListing.
     private lazy var sessions = SessionListing(connections: AppDelegate.connections, sends: { [unowned self] in requests.sendHistory() },
                                                startable: { StartableSessions().destinations() })
@@ -112,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             watcher?.rescan(reason: "recent")   // keeps the index honest for the next open; nothing waits for it
             return (index.recent.map(Screenshot.init(key:)), "files=\(index.files) ")
         }
+        listOlderShots()
         thumbnail.onAnnotatorPrepare = { [weak self] shot, opening, frame, room in
             guard let self else { return }
             self.annotator.prepare(shot, opening: opening, in: frame, room: room)
@@ -1295,24 +1296,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             })
         requests.load(clearingUnsent: clearingUnsent)
     }
-
-    /// The newest screenshots a person may act on: the folder's, less any agent reply whose import
-    /// has not committed. Every listing goes through here rather than through the index directly.
-    private func recentShots(limit: Int, where fits: (Screenshot) -> Bool = { _ in true }) -> (recent: [ScreenshotKey], files: Int) {
-        watcher?.recent(limit: limit, include: { [weak self] key in
-            (self?.isShown(key) ?? true) && fits(Screenshot(key: key))
-        }) ?? (recent: [], files: 0)
-    }
-
-    /// A file in the folder is shown unless it is an agent's reply that is not published yet.
-    private func isShown(_ key: ScreenshotKey) -> Bool { requests.isVisible(key.url) }
-
-    private func newestShot(where fits: (Screenshot) -> Bool = { _ in true }) -> ScreenshotKey? {
-        recentShots(limit: 1, where: fits).recent.first
-    }
-
-    /// Whether anything is there to show, by the same rule as `recentShots`.
-    private var hasScreenshots: Bool { watcher?.contains(where: isShown) ?? false }
 
     /// Where the bar can send while this image is open, and the session it came from: an agent's
     /// reply to a request, or a push that named its session. Reading the sessions runs
