@@ -127,11 +127,17 @@ What was built:
   own install reads, and logs `[plugin] test launch: <home> is the person's own home folder, so no
   install or update runs; …`. The end-to-end copies set a scratch `CFFIXED_USER_HOME` under
   `LSEnvironment`, so they still install.
-- Send lists and reads no Claude Code session in a test launch whose Claude Code folder is the
-  person's (`AgentPlugin.claudeRoot` is nil there).
-- `scripts/check-agent-folders.py`, which `scripts/build.sh --test` and so CI run, fails a default of
-  `ProcessInfo.processInfo.environment`, `NSHomeDirectory()` or `homeDirectoryForCurrentUser` in
-  `Sources/AgentPlugin*.swift`, and `AgentPlugins()` in a test. The app reads its own through
+- In a test launch whose Claude Code folder is the person's, Send reads neither its `history.jsonl`
+  nor its `projects` folder (`AgentPlugin.claudeRoot` is nil there).
+- Still open: without `CFFIXED_USER_HOME`, a copy with the shipped bundle id shares the person's
+  Application Support. It reads their session inboxes and the transcript each names, and a Send writes
+  into a real session's inbox. Its launch also writes the marketplace their own agents installed
+  from, aiming the skill's `open` commands at the test build.
+- `scripts/check-agent-folders.py`, which `scripts/build.sh --test` and so CI run, fails a parameter
+  default or a non-static `var` or `let` in `Sources/AgentPlugin*.swift` that reads
+  `ProcessInfo.processInfo.environment`, `NSHomeDirectory()`, `homeDirectoryForCurrentUser`,
+  `URL.homeDirectory`, `appHome` or `appEnvironment`. It fails a test that builds `AgentPlugins()` or
+  reads `AgentPlugin.app…` or the static `claudeRoot`. The app reads its own through
   `AgentPlugin.appHome`, `appEnvironment` and the `app…` entry points. `root(of:)` keeps its default,
   which `CodexConnection.isLoaded` relies on. The same defaults remain outside that code, in
   `AgentApp`, `AgentConnection`, `AgentTools`, `ClaudeReadRule`, `CodexConnection`, `CodexSignIn`,

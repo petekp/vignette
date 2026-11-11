@@ -20,13 +20,17 @@
   run there gets the person's `HOME`, and codex reads `$HOME/.agents/skills` whatever `CODEX_HOME`
   says. Its launch writes the marketplace and logs `[plugin] test launch: <home> is the person's own
   home folder, so no install or update runs; …`, and `install(into:)` and `remove(from:)` answer
-  `failed`. Send lists and reads no Claude Code session in a test launch whose Claude Code folder is
-  the person's: `StartableSessions` and `ClaudeCodeConnection.transcripts` read
-  `AgentPlugin.claudeRoot`, which is nil there. `AgentPlugins` takes the home folder, the
+  `failed`. In a test launch whose Claude Code folder is the person's, Send reads neither its
+  `history.jsonl` nor its `projects` folder: `StartableSessions` and
+  `ClaudeCodeConnection.transcripts` read `AgentPlugin.claudeRoot`, which is nil there. It still
+  reads the inboxes in Application Support, which a copy with the shipped bundle id shares with the
+  person's own, and the transcript each inbox names. `AgentPlugins` takes the home folder, the
   environment and the person's home as parameters, and gives each tool that home as `HOME`. Its
   `init()` and the `AgentPlugin.app…` entry points (`AgentPluginFolders.swift`) read the app's own.
-  `scripts/check-agent-folders.py`, which `scripts/build.sh --test` runs, fails a default of the
-  process's home or environment in `Sources/AgentPlugin*.swift`, and `AgentPlugins()` in a test.
+  `scripts/check-agent-folders.py`, which `scripts/build.sh --test` runs, fails a parameter default
+  or a non-static `var` or `let` that reads the process's home or environment, `appHome` and
+  `appEnvironment` included, in `Sources/AgentPlugin*.swift`. It fails a test that builds
+  `AgentPlugins()` or reads `AgentPlugin.app…` or the static `claudeRoot`.
   `root(of:)` keeps its default until `CodexConnection.isLoaded` passes an environment. The live
   check is `install-skill?root=<dir>` (debug only, a folder named `.claude` or `.codex`). A test copy
   launched with `CFFIXED_USER_HOME` installs into its scratch home, as the end-to-end copies do.

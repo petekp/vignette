@@ -17,13 +17,14 @@ extension AgentPlugin {
     static func appClient(of root: URL) -> AgentClient? { client(of: root, environment: appEnvironment) }
 
     /// The app's Claude Code folder: `~/.claude`, or where `CLAUDE_CONFIG_DIR` points. None in a test
-    /// launch where that is the person's own, so Send neither lists nor reads their sessions there.
+    /// launch where that is the person's own, so Send neither reads its history nor searches its
+    /// `projects` folder.
     static let claudeRoot: URL? = claudeRoot(home: appHome, environment: appEnvironment, personHome: personHome)
 
     static func claudeRoot(home: URL, environment: [String: String], personHome: URL) -> URL? {
         let root = root(of: .claude, home: home, environment: environment)
         guard isPersons(root, environment: environment, personHome: personHome) else { return root }
-        Log.write("[plugin] test launch: left \(root.path) alone, so Send lists no Claude Code session from it; launch with CFFIXED_USER_HOME to test Send")
+        Log.write("[plugin] test launch: left \(root.path) alone, so Send reads no history or transcript folder there; launch with CFFIXED_USER_HOME to test Send")
         return nil
     }
 

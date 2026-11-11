@@ -134,7 +134,7 @@ enum AgentPlugin {
 
     /// Whether `folder` is in one of the person's own agent folders and this is a test launch, which
     /// `VIGNETTE_SETTINGS` marks. A test copy that must install the plugin moves the home folder
-    /// with `CFFIXED_USER_HOME`, or names scratch folders with `CLAUDE_CONFIG_DIR` and `CODEX_HOME`.
+    /// with `CFFIXED_USER_HOME`.
     static func isGuarded(_ folder: URL, environment: [String: String], personHome: URL) -> Bool {
         isPersons(folder, environment: environment, personHome: personHome)
     }
