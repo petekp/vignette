@@ -78,6 +78,22 @@ it, and "Not sent" is the headline for a failure, not for a choice.
 | Anything else | Vignette couldn't send the drawing. The log has details. |
 | The screenshot is gone | Vignette can't read *name*. It may have been moved or deleted. |
 
+### The annotator's bar
+
+| When | Tooltip |
+| --- | --- |
+| Reply is unavailable: no message, and the agent's drawing as it sent it (`AnnotatorToolbar.Model.nothingToReplyTip`) | Add a message or draw to reply |
+
+### The line an agent receives (`ScreenshotRequests.requestLine`)
+
+The person's message leads, and the Vignette part follows in brackets. "From Vignette:" is fixed,
+because the skill loads on it. The sentence after it is `sendInstructions` from settings.json.
+
+| When | Vignette part |
+| --- | --- |
+| A drawing | From Vignette: "*folder*/image.png". If a drawing would answer better than words, you can send one back. |
+| Words alone on the agent's own image | From Vignette: about your image "*card*" ("*its title*"), unchanged since you sent it. The reply ticket is "*folder*/ticket.json". If a drawing would answer better than words, you can send one back. |
+
 ### Settings switches
 
 A switch's line says what changes when it is on, or what happens without it when that is the reason

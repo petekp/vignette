@@ -14,6 +14,8 @@ final class EditorView: NSView {
     /// The drawing to store: after the pause that follows a change, and when agents' marks join. With
     /// no marks the host removes its file. Park answers with its drawing instead (`park()`).
     var onHandOver: ((Drawing) -> Void)?
+    /// The drawing changed, at once rather than after the pause `onHandOver` waits for.
+    var onChange: ((Drawing) -> Void)?
     /// The active tool changed; the toolbar shows it.
     var onTool: ((EditorCore.Tool) -> Void)?
     /// Esc with nothing under way: the host decides whether and how the editor closes.
@@ -283,7 +285,7 @@ final class EditorView: NSView {
             // they never reach the editor.
             guard let event, let field = typingField else { return }
             field.textView.mouseDown(with: event)
-        case .scheduleTimer: scheduleHandOver()
+        case .scheduleTimer: scheduleHandOver(); onChange?(core.drawingForHost)
         case .cancelTimer:
             handOverTimer?.invalidate()
             handOverTimer = nil
@@ -758,37 +760,6 @@ final class EditorView: NSView {
     private var pointerIsInside: Bool {
         guard let window, window.isVisible else { return false }
         return bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
-    }
-
-    private static func cursor(_ cursor: EditorCore.Cursor) -> NSCursor {
-        switch cursor {
-        case .arrow: return .arrow
-        case .crosshair: return .crosshair
-        case .iBeam: return .iBeam
-        case .openHand: return .openHand
-        case .closedHand: return .closedHand
-        case .resize(let position):
-            if #available(macOS 15.0, *) {
-                let frame: NSCursor.FrameResizePosition
-                switch position {
-                case .topLeft: frame = .topLeft
-                case .topRight: frame = .topRight
-                case .bottomLeft: frame = .bottomLeft
-                case .bottomRight: frame = .bottomRight
-                case .top: frame = .top
-                case .bottom: frame = .bottom
-                case .left: frame = .left
-                case .right: frame = .right
-                }
-                return .frameResize(position: frame, directions: .all)
-            }
-            // macOS 14 has no public diagonal resize cursor.
-            switch position {
-            case .left, .right: return .resizeLeftRight
-            case .top, .bottom: return .resizeUpDown
-            case .topLeft, .topRight, .bottomLeft, .bottomRight: return .crosshair
-            }
-        }
     }
 
     // MARK: Clipboard and drops

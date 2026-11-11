@@ -11,7 +11,11 @@
   destination and goes where the bar's filled button sends. The bar is tools, one divider, then
   what `ToolbarOffer` says the image offers: Copy alone when there is no session to send to; Copy,
   the target, a message field and Send; or the message field and Reply on a card that names the
-  session it came from (an agent's reply, or a push with `session=`). Copy is Done under a label
+  session it came from (an agent's reply, or a push with `session=`). Reply is unavailable while
+  there is no message and the drawing is exactly what the agent sent (`Model.nothingToReply`,
+  `Model.drawingAsSent`, which the editor's `onChange` updates on every change). It rests as a
+  control beside a send does (`Resting`), Tab skips it, and its tooltip says why. Return and
+  Cmd+Return then copy and close as Done does (`AppDelegate.sendDrawing`). Copy is Done under a label
   that says what it does. The bar's panel takes the keys only for a press on the message field
   (`ToolbarPanel.sendEvent`), since SwiftUI's buttons ask for them as a field does; a press on a
   button leaves them with the editor. The panel also takes them once the image's window is up, when

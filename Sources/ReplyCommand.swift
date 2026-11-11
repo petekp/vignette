@@ -33,7 +33,7 @@ enum ReplyCommand {
            reply --ticket <ticket.json> --retry <bundle folder>
 
     Answers a Vignette screenshot request with a drawing of your own. Vignette sends a message
-    containing "From Vignette:" that names an image, and its ticket.json is in the same folder.
+    containing "From Vignette:" that names the ticket.json, or an image with one beside it.
     The marks arrive on a new card the person can edit like their own drawing.
 
     The marks file is a JSON array. Every number is a fraction of the image: x,y is a shape's
@@ -94,7 +94,7 @@ enum ReplyCommand {
 
     private static func send(_ options: Options) throws -> Never {
         guard let ticketPath = options.ticket else {
-            throw Failure("--ticket is required: the ticket.json in the same folder as the image you were sent")
+            throw Failure("--ticket is required: the ticket.json the message names, or the one beside its image")
         }
         let ticketFile = URL(fileURLWithPath: ticketPath).standardizedFileURL
         let ticket = try loadTicket(ticketFile.path)

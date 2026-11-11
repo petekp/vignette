@@ -62,6 +62,28 @@ final class ToolbarOfferTests: XCTestCase {
         XCTAssertEqual(model.fieldReturn, .send, "Return replies: the image names where it came from")
     }
 
+    func testReplyIsUnavailableOnlyWhileTheAgentsImageHasNothingNew() {
+        let model = AnnotatorToolbar.Model()
+        let mew = session("mew")
+        model.begin(replyTo: mew, carryingTarget: false)
+        model.drawingAsSent = true
+        XCTAssertTrue(model.nothingToReply)
+        XCTAssertFalse(model.controls.contains(.action))
+        model.message = " \n "
+        XCTAssertTrue(model.nothingToReply)
+        model.message = "bigger"
+        XCTAssertFalse(model.nothingToReply)
+        XCTAssertTrue(model.controls.contains(.action))
+        model.message = ""
+        model.drawingAsSent = false
+        XCTAssertFalse(model.nothingToReply)
+
+        model.begin(replyTo: nil, carryingTarget: false)
+        model.answered(answer([mew], complete: true, herdr: inPane("mew")))
+        model.drawingAsSent = true
+        XCTAssertFalse(model.nothingToReply)
+    }
+
     /// A Claude Code session missing from the whole list has closed, since herdr lists every pane.
     /// Codex lists only the threads used last, so a Codex thread missing from it may still be there.
     func testAReplyGivesWayOnlyWhenItsClaudeSessionHasClosed() {

@@ -1496,7 +1496,7 @@ The offer is recomputed whenever an input (`replyTo`, destinations, `listed`, `t
 
 Owner: `Model.sending` (`AnnotatorToolbar.swift:47`), `failure` (`:51`), `failures` (`:54`). Tests: `EditorCoreSendTests`.
 
-Tracks one Send press from the bar to the stored request. `AppDelegate.sendDrawing` (`:1387`) renders and submits.
+Tracks one Send press from the bar to the stored request. `sendDrawing` (`AppDelegate+Send.swift:29`) renders and submits.
 
 **States**: idle (`sending == false`, `failure == nil`); sending; notSent (`failure != nil`). A press's destination travels with it, in `EditorCore.Input.send` and `Effect.send(_:to:)`.
 
@@ -1505,9 +1505,10 @@ Tracks one Send press from the bar to the stored request. `AppDelegate.sendDrawi
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | idle or notSent | press (button, Cmd+Return, Space on the action, field Return: `AnnotatorToolbar.swift:283,335,795,799,955`) | — | `onSend` calls `editor.send(to:)` (`AnnotationController.swift:99`). The core emits `.send(drawing, to: destination)` only while open, and a key's send with `to: nil`. `editor.onSend` (`:135`) uses that destination, else `offer.destination`, then `sendDrawing` sets `sending = true`, which clears `failure` (`:47`) ([toolbar-1](#toolbar-1)) |
-| sending | press | refused at every entry (`!model.sending`, `AppDelegate.swift:1388`) | — |
+| idle or notSent | Return, no message, drawing as sent | as Done (`nothingToReply`) | — |
+| sending | press | refused at every entry (`!model.sending` in `sendDrawing`) | — |
 | sending | render fails, or `requests.send` throws | notSent: `sending = false`, `failure = reason`, `failures += 1` (`sendFailed`, `:56`) | — |
-| sending | render answers for an ended opening | dropped (`AppDelegate.swift:1397`); `sending` untouched | next `prepare` resets |
+| sending | render answers for an ended opening | dropped by the `opening` guard; `sending` untouched | next `prepare` resets |
 | sending | request stored | stays sending until the bar leaves | next `prepare` calls `resetSend` (`:63`, from `AnnotationController.swift:166`) |
 
 **Invariants**
@@ -1517,9 +1518,8 @@ Tracks one Send press from the bar to the stored request. `AppDelegate.sendDrawi
 
 **Late and concurrent answers**
 
-- A rendering that answers after its opening ended: dropped, guard at `AppDelegate.swift:1397`.
-- A second press while sending: refused, guard at `AppDelegate.swift:1388`.
-- Esc during the render: the opening ends, so the answer is dropped by the same guard.
+- A rendering that answers after its opening ended, and a second press while sending: as above.
+- Esc during the render: the opening ends, so the same guard drops the answer.
 
 ### Bar presence: shown, hideGeneration, sliding (implicit)
 
@@ -1965,7 +1965,7 @@ Three tables that must agree about one send: which card it was sent from, which 
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| none | `requests.send` returns (`AppDelegate.swift:1430`) | `sentShots[id]` set | same main turn |
+| none | `requests.send` returns (`submit`) | `sentShots[id]` set | same main turn |
 | waiting | rename (`renameCards` `AppDelegate.swift:501`, `ScreenshotRequests.renamed` `:223`) | same, new key | Don't send reaches the renamed card |
 | waiting or handed over | `delivered` (`AppDelegate.swift:1308`) or `cancelled` (`:1323`) | `sentShots[id]` removed | — |
 | waiting | `released` (`:1318`) | — | reads only |

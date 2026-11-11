@@ -34,7 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private var holdTarget: Screenshot?     // the card focused at that press
     private var modifierTap: ModifierTap?
     let thumbnail = ThumbnailController()
-    private let annotator = AnnotationController()
+    let annotator = AnnotationController()
     private lazy var liveInk = LiveInk(mayInk: { [weak self] in !(self?.thumbnail.holdsScreen ?? true) })
     let settingsWindow = SettingsWindowController()
     /// Whether the Settings window is showing live ink's one-time offer.
@@ -71,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let agentPlugins = AgentPlugins()
     /// The screenshot each request Send sent from the editor this launch was made from, until its
     /// client answers. A note card's is LiveNoteCards'.
-    private var sentShots: [String: Screenshot] = [:]
+    var sentShots: [String: Screenshot] = [:]
     /// Live ink notes sent to a session: their note cards, their waits and their result cards.
     private lazy var noteCards = LiveNoteCards(
         folder: folderWrites, drawings: drawings, requests: requests, cards: thumbnail, connections: AppDelegate.connections,
@@ -479,7 +479,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     // MARK: Drawings
 
-    private lazy var drawings = Drawings(store: DrawingStore(directory: Identity.applicationSupportURL.appendingPathComponent("drawings")))
+    lazy var drawings = Drawings(store: DrawingStore(directory: Identity.applicationSupportURL.appendingPathComponent("drawings")))
 
     /// What Vignette puts into the screenshots folder and takes out of it. See FolderWrites.
     private lazy var folderWrites: FolderWrites = {
@@ -492,6 +492,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 guard let self else { return }
                 addMarks(marks, from: agent, to: key, rule: settings.data.ui.markScaleRule, done: done)
             },
+            storedDrawing: { [weak self] in self?.storedDrawing($0) },
             removeCards: { [weak self] in self?.thumbnail.remove($0) },
             removeDrawings: { [weak self] keys, observedAt in self?.drawings.remove(keys, observedAt: observedAt) },
             fileRemoved: { [weak self] in self?.requests.fileRemoved($0) },
@@ -601,7 +602,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// Done: the rendering goes on the clipboard at once as a promise and the card goes home; the
     /// file is written when the rendering finishes. With nothing drawn, the original file is copied.
-    private func finishAnnotation(_ shot: Screenshot, _ drawing: Drawing) {
+    func finishAnnotation(_ shot: Screenshot, _ drawing: Drawing) {
         copyRendering(of: drawing, shot: shot, verb: "done", in: annotator.opening)
         // Quick annotate: the drawing was the point; nothing comes back.
         if settings.data.quickAnnotate { Log.write("[annotate] quick close") }
@@ -1293,7 +1294,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 guard let self else { return }
                 if let shot = sentShots.removeValue(forKey: record.id) { thumbnail.cancelled(shot, request: record.id) }
                 else { _ = noteCards.cancelled(record.id) }
-            })
+            },
+            storedDrawing: { [weak self] in self?.storedDrawing($0) })
         requests.load(clearingUnsent: clearingUnsent)
     }
 
@@ -1330,59 +1332,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard self.annotator.opening == opening else { return }
             self.annotator.destinationsAnswered(DestinationChoice.choose(candidates, for: .send(cameFrom: cameFrom)))
         }
-    }
-
-    /// Send, from the annotator's toolbar. The drawing is rendered without closing anything; the
-    /// image leaves the editor only once that rendering and the request are stored, so a failure
-    /// anywhere before then leaves the drawing exactly where the hand left it.
-    /// The button shows the send from the press until the bar leaves, and says "Not sent" when it
-    /// fails before the request is stored, since the drawing is still in the editor then.
-    private func sendDrawing(_ drawing: Drawing, of shot: Screenshot, to destination: AgentDestination, titled title: String, message: String?) {
-        guard !annotator.sending, let opening = annotator.opening else { return }
-        let name = shot.url.lastPathComponent
-        annotator.sending = true
-        let ui = settings.data.ui
-        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, output: .bytes, style: ui.textStyle, markStyle: ui.markStyle)
-        rendering.whenDone { [weak self] output in
-            guard let self else { return }
-            // A rendering that answers after the opening Send was pressed in has ended belongs to no
-            // image now, even the same one opened again: it is dropped, and nothing is sent and
-            // nothing closed. The image open now has its own `sending`, which this leaves alone.
-            guard annotator.opening == opening else {
-                Log.write("[send] dropped \(name); the editor moved on"); return
-            }
-            guard let png = output.png, output.failure == nil else {
-                let failure = output.failure ?? .writeFailed("the rendering made no image")
-                Commands.error("send", failure.code, "\(name): \(failure)")
-                if case .unreadableImage = failure { annotator.sendFailed(Self.unreadable(name)) }
-                else { annotator.sendFailed("Vignette couldn't render the drawing. The log has details.") }
-                return
-            }
-            submit(png, of: shot, to: destination, titled: title, message: message)
-        }
-    }
-
-    private static func unreadable(_ name: String) -> String {
-        "Vignette can't read \(name). It may have been moved or deleted."
-    }
-
-    private func submit(_ png: Data, of shot: Screenshot, to destination: AgentDestination, titled title: String, message: String?) {
-        let record: ScreenshotRequests.Record
-        do {
-            record = try requests.send(png: png, source: shot.key, to: destination, message: message,
-                                       instructions: settings.data.sendInstructions,
-                                       grace: settings.data.ui.sendGraceSeconds)
-        } catch {
-            annotator.sendFailed((error as? ScreenshotRequests.Refusal)?.reason ?? "Vignette couldn't send the drawing. The log has details.")
-            return
-        }
-        // Stored, so the request survives whatever the client does next. The image goes home
-        // with a send notice rather than a Copied one: copying is Done's contract. A queued run
-        // carries on. `sending` stays on, so the button keeps its plane while the bar leaves;
-        // the next `prepare` resets it.
-        sentShots[record.id] = shot
-        thumbnail.showSending(shot, request: record.id, to: destination, titled: title, grace: requests.grace(of: record.id))
-        thumbnail.annotationSent()
     }
 
     private func present(_ shot: Screenshot, annotate: Bool) {

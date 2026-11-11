@@ -19,6 +19,8 @@ final class FolderWrites {
         var joinMarks: ([AgentMark], _ agent: String?, ScreenshotKey, @escaping (Result<Int, Drawings.Failure>) -> Void) -> Void = { _, _, _, done in
             done(.failure(Drawings.Failure(code: .writeFailed, description: "nothing stores drawings")))
         }
+        /// A screenshot's drawing as the editor would open it.
+        var storedDrawing: (ScreenshotKey) -> Drawing? = { _ in nil }
         var removeCards: ([Screenshot]) -> Void = { _ in }
         var removeDrawings: ([ScreenshotKey], _ observedAt: TimeInterval) -> Void = { _, _ in }
         var fileRemoved: (Screenshot) -> Void = { _ in }
@@ -126,7 +128,10 @@ final class FolderWrites {
         for part in title.cut {
             Log.write("[add] warning \(name): its \(part.rawValue) is longer than \(part.limit) characters and was cut")
         }
+        // The agent saw the drawing only when the file had none before this push.
+        let agentsDrawing = origin != nil && (callbacks.storedDrawing(key)?.marks.isEmpty ?? true)
         guard !marks.isEmpty else {
+            recordSentDrawing(of: key, at: destination, agentsDrawing)
             presentAdd(key)
             Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request, origin, titled: title.value != nil))")
             return
@@ -135,13 +140,22 @@ final class FolderWrites {
             guard let self else { return }
             switch result {
             case .success(let joined):
+                recordSentDrawing(of: key, at: destination, agentsDrawing)
                 Commands.ok("add", "\(name)\(detail(request, origin, titled: title.value != nil)) marks=\(joined)")
             case .failure(let failure):
+                Agent.forgetSentDrawing(on: destination)
                 Commands.error("add", failure.code, "\(name): the image is in the folder, its marks are not: \(failure)")
             }
             pendingAdds[key]?.addingMarks = false
             presentAdd(key)
         }
+    }
+
+    /// Records the drawing a push that names its session sent, so Reply can tell the person changed
+    /// nothing. Not for a file already drawn on, whose marks, the agent's included, the person may
+    /// have moved since.
+    private func recordSentDrawing(of key: ScreenshotKey, at url: URL, _ agentsDrawing: Bool) {
+        if agentsDrawing { Agent.record(sentDrawing: callbacks.storedDrawing(key), on: url) } else { Agent.forgetSentDrawing(on: url) }
     }
 
     /// The watcher reported `key`. True when it is a file `add` is waiting for, so it is not a capture.
