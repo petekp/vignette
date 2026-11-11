@@ -69,9 +69,9 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   `TitleBackdrop.swift` or `FlightCaption.swift`, read `docs/rules/agent-push.md`.
 - Before changing `agent-plugin/`, `skills/vignette/`, `AgentPlugin.swift` or `AgentTools.swift`,
   read `docs/rules/agent-plugin.md`.
-- Before changing the states or transitions of a type `docs/state-machines.md` maps, read its
-  Index and that type's section. The file maps the app's state machines and the invalid states
-  found in them. It is about 85,000 tokens, so read only those parts.
+- Before changing the states or transitions of a type `docs/state-machines.md` maps, find the
+  type in its Index and read the one file in `docs/state-machines/` that the row names. Those files
+  map the app's state machines and the invalid states found in them. Each is under 5,000 tokens.
 - `Sources/Live*.swift`, `ModifierChord.swift` and `InkStroke.swift` are live ink, drawing on the
   live screen. `docs/live-ink.md` has its rules, which file owns which part, and how to check a
   change: read it before changing those files, the `vignette` skill's live ink answers, or
