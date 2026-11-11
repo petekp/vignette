@@ -26,6 +26,12 @@ extension AnnotationController {
         Log.write("[send] target \(to.address.description) project=\(to.detail) focus=\(to.focus?.rawValue ?? "none")\(offer.isSend ? "" : " reply")")
     }
 
+    /// Whether the open image's drawing is still exactly what its agent sent, which Reply reads
+    /// (`AnnotatorToolbar.Model.nothingToReply`).
+    func drawingChanged(_ drawing: Drawing) {
+        toolbar.model.drawingAsSent = current.map { Agent.hasSentDrawing(drawing, at: $0.url) } ?? false
+    }
+
     /// Return and Cmd+Return do what the bar offers, and a message field that arrived with the
     /// session list may take the keys.
     func offerChanged(_ offer: ToolbarOffer) {

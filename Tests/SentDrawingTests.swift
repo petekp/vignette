@@ -44,7 +44,7 @@ final class SentDrawingTests: XCTestCase {
         let sent = agentDrawing(at: url)
         XCTAssertFalse(Agent.hasSentDrawing(sent, at: url))
 
-        Agent.record(sentDrawing: Agent.fingerprint(of: sent), on: url)
+        Agent.record(sentDrawing: sent, on: url)
         XCTAssertTrue(Agent.hasSentDrawing(sent, at: url))
 
         var undone = sent
@@ -71,13 +71,24 @@ final class SentDrawingTests: XCTestCase {
         rescaled.pointScale = 1
         XCTAssertFalse(Agent.hasSentDrawing(rescaled, at: url))
 
-        Agent.record(sentDrawing: nil, on: url)
+        Agent.forgetSentDrawing(on: url)
+        XCTAssertFalse(Agent.hasSentDrawing(sent, at: url))
+    }
+
+    func testAPictureEditedInAnotherAppIsAChange() throws {
+        let url = try card()
+        let sent = agentDrawing(at: url)
+        Agent.record(sentDrawing: sent, on: url)
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data([0]))
+        try handle.close()
         XCTAssertFalse(Agent.hasSentDrawing(sent, at: url))
     }
 
     func testAnImageSentWithoutMarksIsUnchangedUntilAMarkIsDrawn() throws {
         let url = try card()
-        Agent.record(sentDrawing: Agent.fingerprint(of: nil), on: url)
+        Agent.record(sentDrawing: nil, on: url)
         let empty = Drawing(key: url.path, pixels: PixelSize(width: 4, height: 4), pointScale: 2, marks: [])
         XCTAssertTrue(Agent.hasSentDrawing(empty, at: url))
         var drawn = empty
@@ -92,10 +103,11 @@ final class SentDrawingTests: XCTestCase {
         try store.write(sent)
         let read = try XCTUnwrap(store.read(key: url.path, pixels: sent.pixels, style: .standard))
         XCTAssertNotEqual(read.marks.map(\.id), sent.marks.map(\.id))
-        XCTAssertEqual(Agent.fingerprint(of: read), Agent.fingerprint(of: sent))
+        Agent.record(sentDrawing: read, on: url)
+        XCTAssertTrue(Agent.hasSentDrawing(sent, at: url))
     }
 
-    func testAPushRecordsItsDrawingOnlyWhenItNamesASessionAndHoldsOnlyTheAgentsMarks() throws {
+    func testAPushRecordsItsDrawingOnlyWhenItNamesASessionAndTheFileHadNoMarks() throws {
         let sources = base.appendingPathComponent("sources")
         try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
         var stored: [ScreenshotKey: Drawing] = [:]
@@ -128,11 +140,29 @@ final class SentDrawingTests: XCTestCase {
 
         let personDrew = try card("drawn.png")
         var theirs = agentDrawing(at: personDrew)
-        theirs.marks.append(Mark(geometry: .ellipse(CGRect(x: 0, y: 2, width: 1, height: 1))))
+        theirs.marks[0].geometry = .rectangle(CGRect(x: 1, y: 1, width: 2, height: 2))
         stored[personDrew.screenshotKey] = theirs
         writes.add(CommandRequest(name: "add", files: [personDrew], tag: nil, annotate: false, agent: "claude", session: session,
                                   marks: nil, title: nil, description: nil, root: nil, clear: nil))
         XCTAssertFalse(Agent.hasSentDrawing(theirs, at: personDrew))
+    }
+
+    func testWordsAloneGoOnlyToTheCardsOwnSessionAndOnlyWithTheDrawingAsTheAgentSentIt() throws {
+        let url = try card()
+        let mine = destination.address, other = AgentAddress.claudeSession("session-2")
+        typealias Carried = ScreenshotRequests.Carried
+        XCTAssertEqual(Carried.of(card: url, origin: mine, destination: mine, asTheAgentSent: true, message: "Bigger"), .wordsAlone)
+        XCTAssertEqual(Carried.of(card: url, origin: mine, destination: mine, asTheAgentSent: true, message: nil), .nothingNew)
+        XCTAssertEqual(Carried.of(card: url, origin: mine, destination: mine, asTheAgentSent: false, message: "Bigger"), .drawing)
+        XCTAssertEqual(Carried.of(card: url, origin: mine, destination: mine, asTheAgentSent: false, message: nil), .drawing)
+        XCTAssertEqual(Carried.of(card: url, origin: mine, destination: other, asTheAgentSent: true, message: "Bigger"), .drawing)
+        XCTAssertEqual(Carried.of(card: url, origin: nil, destination: mine, asTheAgentSent: true, message: nil), .drawing)
+        let broken = folder.appendingPathComponent("two\nlines.png")
+        XCTAssertEqual(Carried.of(card: broken, origin: mine, destination: mine, asTheAgentSent: true, message: "Bigger"), .drawing)
+
+        let sent = agentDrawing(at: url)
+        XCTAssertTrue(Carried.wordsAlone.rendering(sent).marks.isEmpty)
+        XCTAssertEqual(Carried.drawing.rendering(sent), sent)
     }
 
     func testWordsOnTheAgentsImageNameItsCardAndTicketAndKeepItsPictureForADrawnAnswer() throws {

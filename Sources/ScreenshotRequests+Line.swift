@@ -38,6 +38,36 @@ extension ScreenshotRequests {
         }
     }
 
+    /// What a press of Send or Reply carries.
+    enum Carried: Equatable {
+        /// Reply on the agent's own image with no words and the drawing as the agent sent it: nothing
+        /// is sent, and Return copies and closes as Done does.
+        case nothingNew
+        /// The person's words on the agent's own image, which the line names (`Picture.unchanged`).
+        case wordsAlone
+        /// The drawing, rendered.
+        case drawing
+
+        /// What a press carries. Words alone only to the session the card came from, since another
+        /// has not seen the image, and only for a card whose path the line can quote: a line break
+        /// in it would split the line into two messages.
+        static func of(card: URL, origin: AgentAddress?, destination: AgentAddress, asTheAgentSent: Bool,
+                       message: String?) -> Carried {
+            guard origin == destination, asTheAgentSent else { return .drawing }
+            guard message != nil else { return .nothingNew }
+            return card.path.rangeOfCharacter(from: .controlCharacters) == nil ? .wordsAlone : .drawing
+        }
+
+        /// The drawing to render for this press. Words alone keep the card's own picture, without
+        /// the agent's marks, as the one a drawn answer goes on.
+        func rendering(_ drawing: Drawing) -> Drawing {
+            guard self == .wordsAlone else { return drawing }
+            var picture = drawing
+            picture.marks = []
+            return picture
+        }
+    }
+
     /// Whether the file is a PNG by its bytes, which a request can clone as its `image.png`.
     nonisolated static func isPNG(_ url: URL) -> Bool {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil), let type = CGImageSourceGetType(source) else { return false }

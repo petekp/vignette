@@ -32,8 +32,9 @@ still answers `ok`. `docs/commands.md` has the format and the rest.
 `&title=<text>` and `&description=<text>` say what the pushed image shows. Both go through one
 type, `AgentTitle`. It makes each part one line and cuts it at a word to its limit, 60 and 140
 characters. A cut logs an `[add] warning` line, and `[add]` still answers `ok`.
-A push that names its session, and whose drawing holds only the agent's marks, records the
-drawing's fingerprint (`Agent.record(sentDrawing:on:)`). A published reply does too. Reply reads it
+A push that names its session, onto a file with no marks yet, records the fingerprint of the
+drawing and of the picture file's size and date (`Agent.record(sentDrawing:on:)`). A published
+reply does too. Reply reads it
 to tell that the person changed nothing (`docs/rules/send.md`).
 `Agent.record(title:on:)` writes the two parts as extended attributes beside the agent's name,
 and `Agent.title(of:)` reads them back through the same `AgentTitle` check. Only the editor shows

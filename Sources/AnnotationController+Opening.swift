@@ -68,6 +68,7 @@ extension AnnotationController {
         textStyle = ui.textStyle
         editor.open(drawing, image: decoded, picture: container?.bounds ?? .zero, style: textStyle, metrics: ui.editorMetrics,
                     markStyle: ui.markStyle, selectsNewest: !opening.paged)
+        drawingChanged(drawing)
         editor.noteSettleDuration = Settings.shared.motionUI.noteSettleDuration
         if decoded != nil { loaded(opening, started: started) }
         else {

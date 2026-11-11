@@ -85,29 +85,41 @@ enum Agent {
 
     /// Where the fingerprint of the drawing the agent sent with the file is stored.
     private static let sentDrawingAttribute = Identity.bundleID + ".sentDrawing"
-    private static let noMarks = "none"
 
-    /// What `record(sentDrawing:on:)` stores for a drawing: SHA-256 over the drawing as its file holds
-    /// it, without the screenshot's path, so a rename keeps it; one fixed value for no marks. A mark
-    /// read back gets a new id and the file has none, so two reads of one drawing match.
-    static func fingerprint(of drawing: Drawing?) -> String {
-        guard var drawing, !drawing.marks.isEmpty else { return noMarks }
-        drawing.key = ""
-        guard let data = try? drawing.encoded() else { return UUID().uuidString }
+    /// SHA-256 over the drawing as its file holds it, without the screenshot's path, so a rename keeps
+    /// it, and over the picture file's size and modification date, so an edit to the picture in
+    /// another app is a change. A mark read back gets a new id and the file has none, so two reads of
+    /// one drawing match. No marks is one value whatever the drawing's scale. Nil when the file is gone.
+    private static func fingerprint(of drawing: Drawing?, file url: URL) -> String? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attributes[.size] as? Int, let modified = attributes[.modificationDate] as? Date else { return nil }
+        var data = Data("\(size) \(modified.timeIntervalSinceReferenceDate)\n".utf8)
+        if var drawing, !drawing.marks.isEmpty {
+            drawing.key = ""
+            guard let encoded = try? drawing.encoded() else { return nil }
+            data += encoded
+        }
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Records the drawing an agent sent with the file, a push's or a reply's, so Reply can tell the
-    /// person changed nothing (`hasSentDrawing`). Nil removes it: a push that names no session.
-    static func record(sentDrawing fingerprint: String?, on url: URL) {
-        if let fingerprint { write(fingerprint, sentDrawingAttribute, "its drawing", on: url) }
-        else { removexattr(url.path, sentDrawingAttribute, 0) }
+    /// Records the drawing an agent sent with the file, a push's or a reply's, as it is now, so Reply
+    /// can tell the person changed nothing (`hasSentDrawing`). Nil is no marks.
+    static func record(sentDrawing drawing: Drawing?, on url: URL) {
+        guard let fingerprint = fingerprint(of: drawing, file: url) else { return forgetSentDrawing(on: url) }
+        write(fingerprint, sentDrawingAttribute, "its drawing", on: url)
     }
 
-    /// True when `drawing` is exactly the drawing the agent sent with the file at `url`. False for a
-    /// file no agent recorded one on: a person's screenshot, a live ink card, a push from an older build.
+    /// Removes the recorded drawing: a push that names no session, or one onto a file already drawn on.
+    static func forgetSentDrawing(on url: URL) {
+        removexattr(url.path, sentDrawingAttribute, 0)
+    }
+
+    /// True when `drawing` is exactly the drawing the agent sent with the file at `url`, on the same
+    /// picture. False for a file no agent recorded one on: a person's screenshot, a live ink card, a
+    /// push from an older build.
     static func hasSentDrawing(_ drawing: Drawing, at url: URL) -> Bool {
-        read(sentDrawingAttribute, of: url) == fingerprint(of: drawing)
+        guard let recorded = read(sentDrawingAttribute, of: url) else { return false }
+        return recorded == fingerprint(of: drawing, file: url)
     }
 
     /// The most bytes a title's part is read with. A character's bytes have no fixed bound, since

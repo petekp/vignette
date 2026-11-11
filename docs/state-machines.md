@@ -1505,7 +1505,7 @@ Tracks one Send press from the bar to the stored request. `sendDrawing` (`AppDel
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | idle or notSent | press (button, Cmd+Return, Space on the action, field Return: `AnnotatorToolbar.swift:283,335,795,799,955`) | — | `onSend` calls `editor.send(to:)` (`AnnotationController.swift:99`). The core emits `.send(drawing, to: destination)` only while open, and a key's send with `to: nil`. `editor.onSend` (`:135`) uses that destination, else `offer.destination`, then `sendDrawing` sets `sending = true`, which clears `failure` (`:47`) ([toolbar-1](#toolbar-1)) |
-| idle or notSent | Reply, no message, the agent's drawing as sent | as Done (`emptyReply`) | — |
+| idle or notSent | Return, no message, drawing as sent | as Done (`nothingToReply`) | — |
 | sending | press | refused at every entry (`!model.sending` in `sendDrawing`) | — |
 | sending | render fails, or `requests.send` throws | notSent: `sending = false`, `failure = reason`, `failures += 1` (`sendFailed`, `:56`) | — |
 | sending | render answers for an ended opening | dropped by the `opening` guard; `sending` untouched | next `prepare` resets |

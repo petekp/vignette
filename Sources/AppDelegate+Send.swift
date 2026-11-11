@@ -3,21 +3,6 @@ import AppKit
 // MARK: Send and Reply from the annotator
 
 extension AppDelegate {
-    /// What Reply does when the person changed nothing on the agent's image and typed nothing: there
-    /// is nothing new for the agent. Return on such a card is the person's habit of copying, so it
-    /// copies and closes as Done does.
-    enum EmptyReply {
-        /// Copy and close, as Done does. Nothing is sent.
-        case copy
-        /// Leave the editor open with "Not sent" and `emptyReplyReason`.
-        case refuse
-        /// Send the picture, as before 2026-11-11.
-        case sendPicture
-    }
-
-    static let emptyReply = EmptyReply.copy
-    static let emptyReplyReason = "There's nothing new to send yet. You can draw on it or add a message."
-
     /// Send, from the annotator's toolbar. The drawing is rendered without closing anything; the
     /// image leaves the editor only once that rendering and the request are stored, so a failure
     /// anywhere before then leaves the drawing exactly where the hand left it.
@@ -26,35 +11,26 @@ extension AppDelegate {
     ///
     /// A Reply to the agent's own image, with the drawing exactly as the agent sent it, sends the
     /// person's words and no picture: the agent has it (`ScreenshotRequests.Picture.unchanged`).
+    /// With no words either there is nothing new to send. The bar's Reply is unavailable then
+    /// (`AnnotatorToolbar.Model.nothingToReply`), and Return copies and closes as Done does.
     func sendDrawing(_ drawing: Drawing, of shot: Screenshot, to destination: AgentDestination, titled title: String, message: String?) {
         guard !annotator.sending, let opening = annotator.opening else { return }
         let name = shot.url.lastPathComponent
-        let toItsAgent = requests.origin(of: shot.url)?.address == destination.address
-        let asTheAgentSent = toItsAgent && Agent.hasSentDrawing(drawing, at: shot.url)
-        if asTheAgentSent, message == nil {
-            switch Self.emptyReply {
-            case .copy:
-                Log.write("[send] \(name): nothing new to reply with; copied as Done")
-                return finishAnnotation(shot, drawing)
-            case .refuse:
-                Log.write("[send] \(name): nothing new to reply with")
-                return annotator.sendFailed(Self.emptyReplyReason)
-            case .sendPicture:
-                break
-            }
+        let carried = ScreenshotRequests.Carried.of(card: shot.url, origin: requests.origin(of: shot.url)?.address,
+                                                    destination: destination.address,
+                                                    asTheAgentSent: Agent.hasSentDrawing(drawing, at: shot.url), message: message)
+        if carried == .nothingNew {
+            Log.write("[send] \(name): nothing new to reply with; copied as Done")
+            return finishAnnotation(shot, drawing)
         }
-        let wordsAlone = asTheAgentSent && message != nil
+        let wordsAlone = carried == .wordsAlone
         let agentTitle = wordsAlone ? Agent.title(of: shot.url)?.title : nil
         annotator.sending = true
         if wordsAlone, ScreenshotRequests.isPNG(shot.url) {
             return submit(.unchanged(card: shot.url, title: agentTitle, png: nil), of: shot, to: destination, titled: title, message: message)
         }
-        // Words alone on a card that is not a PNG: the picture a drawn answer goes on is the card's
-        // own, made a PNG, without the agent's marks.
-        var rendered = drawing
-        if wordsAlone { rendered.marks = [] }
         let ui = settings.data.ui
-        let rendering = RenderingQueue.shared.render(rendered, imageAt: shot.url, output: .bytes, style: ui.textStyle, markStyle: ui.markStyle)
+        let rendering = RenderingQueue.shared.render(carried.rendering(drawing), imageAt: shot.url, output: .bytes, style: ui.textStyle, markStyle: ui.markStyle)
         rendering.whenDone { [weak self] output in
             guard let self else { return }
             // A rendering that answers after the opening Send was pressed in has ended belongs to no

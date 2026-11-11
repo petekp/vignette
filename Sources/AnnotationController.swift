@@ -98,6 +98,7 @@ final class AnnotationController {
         toolbar.model.onOfferChanged = { [weak self] offer in self?.offerChanged(offer) }
         toolbar.onSend = { [weak self] destination in self?.editor.send(to: destination) }
         editor.onTool = { [weak self] tool in self?.toolbar.model.tool = tool }
+        editor.onChange = { [weak self] drawing in self?.drawingChanged(drawing) }
         editor.onHandOver = { [weak self] drawing in self?.onDrawing?(drawing, "saved") }
         editor.onClose = { [weak self] in self?.cancel() }
         // One Tab order: the marks, then the toolbar's controls, then the marks again.

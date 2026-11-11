@@ -77,7 +77,12 @@ it, and "Not sent" is the headline for a failure, not for a choice.
 | The request could not be written | Vignette couldn't save the request. *the system's words* |
 | Anything else | Vignette couldn't send the drawing. The log has details. |
 | The screenshot is gone | Vignette can't read *name*. It may have been moved or deleted. |
-| Reply with nothing new, only when `AppDelegate.emptyReply` is `.refuse` (by default Reply copies and closes instead) | There's nothing new to send yet. You can draw on it or add a message. |
+
+### The annotator's bar
+
+| When | Tooltip |
+| --- | --- |
+| Reply is unavailable: no message, and the agent's drawing as it sent it (`AnnotatorToolbar.Model.nothingToReplyTip`) | Add a message or draw to reply |
 
 ### The line an agent receives (`ScreenshotRequests.requestLine`)
 

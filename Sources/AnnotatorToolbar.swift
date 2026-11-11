@@ -50,6 +50,8 @@ final class AnnotatorToolbar {
         /// on: a click elsewhere, or Send again.
         @Published var failure: String?
         var notSent: Bool { failure != nil }
+        /// The open image's drawing is exactly what its agent sent (`Agent.hasSentDrawing`).
+        @Published var drawingAsSent = false
         /// Counts those failures; each one shakes the button.
         @Published private(set) var failures = 0
 
@@ -114,7 +116,7 @@ final class AnnotatorToolbar {
             var controls = EditorCore.Tool.allCases.map(Control.tool)
             if offer.destination == nil || offer.isSend { controls.append(.copy) }
             if offer.offersTarget { controls.append(.target) }
-            if offer.destination != nil { controls += [.message, .action] }
+            if offer.destination != nil { controls += nothingToReply ? [.message] : [.message, .action] }
             return controls
         }
 
@@ -332,7 +334,7 @@ final class AnnotatorToolbar {
             // items as one outside the editor. A turn later it is opened as a click opens it.
             DispatchQueue.main.async { [weak self] in self?.showTargetMenu() }
         case .action?:
-            guard !model.sending, let destination = model.offer.destination else { return }
+            guard !model.sending, !model.nothingToReply, let destination = model.offer.destination else { return }
             onSend?(destination)
         case .message?, nil: break
         }
@@ -798,6 +800,9 @@ private struct ToolbarView: View {
                 actionButton(offer.isSend ? "Send" : "Reply", key: offer.isSend ? "⌘↩" : "↩",
                              logo: offer.isSend ? nil : destination.client) { onSend(destination) }
                     .modifier(FocusRing(on: model.focus == .action))
+                    .modifier(Resting(while: model.nothingToReply))
+                    .contentShape(Rectangle())
+                    .modifier(TipSpot(control: .action, text: model.nothingToReply ? AnnotatorToolbar.Model.nothingToReplyTip : nil, hover: tip))
             }
         }
         .padding(.horizontal, 7)
@@ -1126,8 +1131,9 @@ private struct FailureReason: View {
     }
 }
 
-/// A control beside a send in progress: it fades back, on a spring rather than in one frame, and
-/// takes no clicks. Not `.disabled`, whose look AppKit's controls switch in one frame.
+/// A control that cannot be used now, beside a send in progress or a Reply with nothing new: it fades
+/// back, on a spring rather than in one frame, and takes no clicks. Not `.disabled`, whose look
+/// AppKit's controls switch in one frame.
 private struct Resting: ViewModifier {
     let resting: Bool
     init(while resting: Bool) { self.resting = resting }
@@ -1136,38 +1142,6 @@ private struct Resting: ViewModifier {
             .opacity(resting ? 0.4 : 1)
             .allowsHitTesting(!resting)
             .animation(Anim.spring(0.3 * Settings.shared.motionScale), value: resting)
-    }
-}
-
-/// The send inside Send's button: a paper plane that comes in from the lower left and settles, and
-/// carries on up and to the right as the bar leaves. The wait is usually a rendering of about
-/// 150 ms, too short for a spinner to read as anything but a flicker; past half a second a spinner
-/// takes the plane's place.
-private struct SendingGlyph: View {
-    let leaving: Bool
-    @State private var arrived = false
-    @State private var slow = false
-
-    var body: some View {
-        let motion = Settings.shared.motionScale
-        ZStack {
-            if slow && !leaving {
-                ProgressView().controlSize(.small).environment(\.colorScheme, .dark)
-                    .transition(.blurReplace)
-            } else {
-                Image(systemName: "paperplane.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .offset(x: leaving ? 16 : (arrived ? 0 : -10), y: leaving ? -12 : (arrived ? 0 : 6))
-                    .opacity(leaving ? 0 : 1)
-                    .transition(.blurReplace)
-            }
-        }
-        .onAppear {
-            withAnimation(Anim.spring(0.35 * motion, bounce: 0.3)) { arrived = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                withAnimation(Anim.spring(0.3 * motion)) { slow = true }
-            }
-        }
     }
 }
 

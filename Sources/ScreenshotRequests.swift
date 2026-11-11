@@ -696,7 +696,7 @@ final class ScreenshotRequests {
         publishedAt[reply.id] = ProcessInfo.processInfo.systemUptime
         if let client = requests[reply.requestID]?.address.client { Agent.record(agent: client.rawValue, origin: nil, on: url) }
         Agent.record(title: reply.title, on: url)
-        Agent.record(sentDrawing: Agent.fingerprint(of: callbacks.storedDrawing(shot(at: url).key)), on: url)
+        Agent.record(sentDrawing: callbacks.storedDrawing(shot(at: url).key), on: url)
         Log.write("[reply] published \(reply.fileName) marks=\(reply.cardMarks(on: nil).count)")
         callbacks.present(shot(at: url))
         done()

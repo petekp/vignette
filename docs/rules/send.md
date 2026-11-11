@@ -73,8 +73,11 @@
   agent session, with the drawing exactly as the agent sent it (`Agent.hasSentDrawing`), sends the
   person's words and no picture (`ScreenshotRequests.Picture.unchanged`). A PNG card needs no
   rendering, and its file is cloned as the request's `image.png`. With no words either there is
-  nothing new to send, so Reply copies and closes as Done does (`AppDelegate.emptyReply`, the one
-  place to change that). An undo back to the agent's drawing counts as unchanged. A file with no
+  nothing new to send: the bar's Reply is unavailable, and Return and Cmd+Return copy and close as
+  Done does, with no error (`docs/rules/annotator-toolbar.md`). An undo back to the agent's drawing
+  counts as unchanged. An edit to the picture in another app, a new text style or mark scale, and a
+  card path with a line break in it count as changed, so the picture goes
+  (`ScreenshotRequests.Carried`). A file with no
   recorded drawing always sends the picture. Send closes the editor
   without a Copied notice, and the queue carries on to the next card: a list of files to annotate is
   something the person asked for, and handing one of them to an agent does not withdraw the rest.
