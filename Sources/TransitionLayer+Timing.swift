@@ -43,9 +43,8 @@ enum FlightTiming: String, CaseIterable {
         return max(settled, covers(duration, distance: distance, within: within) + Self.landingAfterCover)
     }
 
-    /// When the flight first covers its target on every side, so a window put there is hidden behind
-    /// it: when it first passes the target, or for the spring with no bounce, once it is within
-    /// `within` points.
+    /// When the flight first covers its target, so a window put there is hidden behind it: the moment
+    /// it first passes the target, or the moment it is within `within` points of it, if that is earlier.
     func covers(_ duration: Double, distance: CGFloat, within: CGFloat) -> Double {
         guard duration > 0 else { return 0 }
         let settled = Anim.settle(springDuration(duration), bounce: bounce, distance: distance, within: within)

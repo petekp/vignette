@@ -38,8 +38,8 @@
   `docs/native-editor-2026-09-23.md` has the timings. The wait for presses keeps the flight over the
   window until the window takes presses itself, so a press there never falls through to the app
   behind. `fly` answers a second time, earlier, when the flight covers its target: at
-  `Anim.passesTarget` for the two springs that bounce, and within half a point of it for the spring
-  with no bounce. The landing comes at least three refreshes later, which the flight
+  `Anim.passesTarget`, or once it is within half a point of it if that comes first, as it does for
+  the spring with no bounce and for most flights on the quick spring (0.26 s on a 1,210 pt path). The landing comes at least three refreshes later, which the flight
   home needs to put the stack's panel on screen first (`docs/exit-panel-2026-11-01.md`). From the
   moment a bouncing spring first reaches its target the flight's rect contains the target on every
   side. A spring with no bounce is still up to half a point short then, which uncovers only the same
