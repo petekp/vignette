@@ -35,7 +35,7 @@ final class LiveInk {
     var pickerUp = false
     /// Asked when the chord goes down: false while the stack or the annotator holds the screen, which
     /// the raised overlays would cover and take presses from.
-    private let mayInk: () -> Bool
+    let mayInk: () -> Bool
 
     let responders = LiveResponders()
     /// The marks drawn on an app's window, which stay on it (docs/live-ink-step3-2026-10-05.md). The
@@ -308,28 +308,6 @@ final class LiveInk {
         closeEmpty(fade: LiveMarksLayer.removalFade)
         Log.write("[live-ink] cleared \(count)")
         return count
-    }
-
-    /// The stack or the annotator is coming up under the raised overlays: inking stops, the stroke
-    /// under way is dropped, and the chord must be pressed again to ink. The note hides, with its words,
-    /// until they are gone (`bringNoteBack`).
-    func standAside() {
-        if let note, !note.standsAside {
-            note.standAside(true)
-            Log.write("[live-ink] note hidden: the stack or the annotator is up")
-        }
-        stopListening()
-        guard isInking else { return }
-        stopInking(because: "the stack or the annotator is up")
-    }
-
-    /// The note hidden by `standAside` shows again, without the keys, once the stack and the annotator
-    /// are gone. The main run loop asks before each wait, as it does `holdEscape`, so the note follows
-    /// whatever closed them.
-    private func bringNoteBack() {
-        guard let note, note.standsAside, mayInk() else { return }
-        note.standAside(false)
-        Log.write("[live-ink] note back: the screen is free")
     }
 
     /// The marks and the pointer field drawn again in the current settings.
@@ -1659,7 +1637,7 @@ final class LiveInk {
 
     /// With `keepingInkAboveMenus`, ink drawn over a menu stays above it, on surfaces kept at the inking
     /// level, until `pinOverMenus`; else it goes onto its windows now.
-    private func stopInking(because reason: String, keepingInkAboveMenus: Bool = false) {
+    func stopInking(because reason: String, keepingInkAboveMenus: Bool = false) {
         hover(at: nil)
         isInking = false
         releaseWatch?.invalidate()

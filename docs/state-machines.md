@@ -2944,8 +2944,8 @@ Derived states:
 | Stroking | `.ended` or `.interrupted` | ReleasePending | `watchRelease` |
 | ReleasePending | tap `.released` | Settled or MenuWait | `strokeEnded` → `finishInking` (`:1921`) |
 | ReleasePending | 50 ms poll finds `!LiveInkTap.isButtonDown` | Settled or MenuWait | `endStroke` on each inking overlay, `finishInking` (`:1987`) |
-| any inking state | `spaceChanged`, `willSleep`, `sessionDidResignActive`, `screensChanged` with a changed inking frame, `takeChord()` | Settled | `cutInkingShort`: a note by the pointer closes, `stopListening`, `stopInking`. Stroke dropped (`cancelStroke`), no note ([hand-6](#hand-6)) |
-| any inking state | `standAside()` (from `ThumbnailController.onTakesScreen`) | Settled | note hidden, `stopListening`, `stopInking`. No note for ink drawn this hold ([hand-6](#hand-6)) |
+| any inking state | `spaceChanged`, `willSleep`, `sessionDidResignActive`, `screensChanged` with a changed inking frame, `takeChord()` | Settled | `cutInkingShort`: `closeNote` if by the pointer, `stopListening`, `stopInking`. Stroke dropped (`cancelStroke`), no note ([hand-6](#hand-6)) |
+| any inking state | `standAside()` (from `ThumbnailController.onTakesScreen`) | Settled | note hidden (closed if by the pointer), `stopListening`, `stopInking`. No note for ink drawn this hold ([hand-6](#hand-6)) |
 | any inking state | `setOn(false)` | Settled | `stopInking`, everything torn down (`:206`) |
 | Idle, Settled, MenuWait | `.ended` or `.interrupted` | — | ignored by `guard isInking` (`:1773`) |
 | `finishInking` | no open menus | Settled | `pinOverMenus`, `settleInking(opensNote)` |
@@ -3206,7 +3206,7 @@ An answer with steps is shown one step group at a time; clicking the target of t
 
 ### LiveListening and the transcriber chain (implicit)
 
-Owner: `LiveListening.swift:36`; `LiveInk+Listening.swift:6` (`listen`), `:45` (`doneListening`), `:66` (`stopListening`); `Microphone.swift:16`; `AppleTranscriber.swift:6`. Tests: two, below, cover `ListeningEnd` only.
+Owner: `LiveListening.swift:36`; `LiveInk+Listening.swift:6` (`listen`), `:45` (`doneListening`), `:66` (`stopListening`); `Microphone.swift:16`; `AppleTranscriber.swift:6`. Tests: `ListeningEnd` only.
 
 Captures speech while the chord is held and a short time after, and turns it into the note's words.
 
@@ -3220,7 +3220,7 @@ Captures speech while the chord is held and a short time after, and turns it int
 | none | `listen()`, speech off | none | `speechProblem = nil` |
 | none | `listen()`, no permission or no recognizer | none | `speechProblem` set |
 | starting, listening | `pressedAgain()` | same | `end.pressAgain()` |
-| listening | first words, chord held, no note or menu | same | note opens by the pointer, no keys (`showNoteOnTheVoice`) |
+| listening | first words, chord held, no note or menu | same | `showNoteOnTheVoice`: note by the pointer, no keys |
 | starting, listening | `released()` | same | `end.release(at:)`; ends 0.3 s later |
 | starting, listening | start fails and `!finishing` | none | `failed` → `LiveInk.listening = nil`, `speechProblem = reason` |
 | starting, listening | `finish()` (0.1 s timer says `ListeningEnd.isOver`, or `typedInNote`) | finishing | mic stop queued behind start, `transcriber.finish(timeout: 2)`, then `onFinished` |
@@ -3228,7 +3228,7 @@ Captures speech while the chord is held and a short time after, and turns it int
 | finishing | `finish()`, `cancel()` | — | ignored, `guard !finishing` (`:90`, `:107`) |
 | finishing | `pressedAgain()`, `released()` | finishing | only edit `end`; no new listening starts because `listen()` returns at `guard listening == nil` (`LiveInk+Listening.swift:7`) ([hand-5](#hand-5)) |
 | finishing | transcriber words | — | dropped, `LiveListening.swift:62` |
-| finishing (finish) | `onFinished`, `LiveInk.listening === listening` | none | `doneListening`: `listening = nil`; no note → `heardBeforeNote`; note and `!typedOver` → `spoken`, `note.hear`, and `note.send()` when `liveInkSendWhenQuiet` (default true) and the note has ink, which may send while the next stroke is under way ([hand-5](#hand-5)) |
+| finishing (finish) | `onFinished`, `LiveInk.listening === listening` | none | `doneListening`: `listening = nil`; no note → `heardBeforeNote`; note and `!typedOver` → `spoken`, `note.hear`, and `note.send()` with ink when `liveInkSendWhenQuiet` (default true), which may send while the next stroke is under way ([hand-5](#hand-5)) |
 | finishing | `onFinished` after `stopListening` or a new listening | — | dropped by identity, `LiveInk+Listening.swift:25`, `:30` |
 | starting | microphone start fails after `finish()` | finishing | the failure is dropped with no `speechProblem` ([hand-11](#hand-11)) |
 

@@ -35,7 +35,7 @@ Let go with words and no ink, and the note stays by the pointer with the keys an
 sends nothing on its own, and `liveInkSendWhenQuiet` waits for ink. An ask is about ink, so Return
 there beeps and keeps the note; a stroke drawn on a later hold moves the note to it. Esc closes it.
 With nothing heard and no ink, nothing opens. When inking is cut short, by sleep or a screen
-change, a note by the pointer closes.
+change, or the stack or the annotator comes up, a note by the pointer closes.
 
 ## The waveform
 

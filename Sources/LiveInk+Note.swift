@@ -21,9 +21,10 @@ extension LiveInk {
         let mark = newInk.last(where: { $0.shapeExtent != nil })
         guard let first = mark.map(firstPlace(beside:)) ?? pointerNotePlace() else { return false }
         if let note {
-            if notePlace?.anchor != mark?.id {
+            // With no new ink, a note on ink of its own stays where it hangs.
+            if let mark, notePlace?.anchor != mark.id {
                 hang(note, from: mark, at: first, takingKeys: takingKeys)
-                if let mark { prepare(beside: mark, panel: note) }
+                prepare(beside: mark, panel: note)
                 Log.write("[live-ink] note moved to the newest ink")
             }
             guard takingKeys else { return false }
@@ -44,12 +45,14 @@ extension LiveInk {
         panel.mayAsk = { [weak self] in self.map { !$0.asks.noteInk.isEmpty } ?? false }
         panel.onAsk = { [weak self, weak panel] words, target, title in
             guard let self else { return }
+            let byThePointer = self.noteHangsAtPointer
             self.stopListening()
             self.letGoOfNotePanel()
             self.lastTarget = target
             let session = target.session.map { (destination: $0, title: title) }
             let note = panel.flatMap { panel in panel.shownPlace.map { (panel: panel, place: $0, tag: panel.tagFrame) } }
             if case .failure = self.ask(words, to: target.agent, sendingTo: session, from: note) { panel?.fadeAway() }
+            if byThePointer { self.closeEmpty(fade: LiveMarksLayer.removalFade) }
         }
         panel.onKeysBack = { [weak self, weak panel] in
             guard let self, let panel else { return }
@@ -160,6 +163,30 @@ extension LiveInk {
         showMarks()
         closeEmpty(fade: LiveMarksLayer.removalFade)
         Log.write("[live-ink] note discarded marks=\(before - marks.count)")
+    }
+
+    /// The stack or the annotator is coming up under the raised overlays: inking stops, the stroke
+    /// under way is dropped, and the chord must be pressed again to ink. The note hides, with its words,
+    /// until they are gone (`bringNoteBack`); a note by the pointer closes.
+    func standAside() {
+        // A note by the pointer has no ink to come back with, and would come back without the keys.
+        if noteHangsAtPointer { closeNote() }
+        if let note, !note.standsAside {
+            note.standAside(true)
+            Log.write("[live-ink] note hidden: the stack or the annotator is up")
+        }
+        stopListening()
+        guard isInking else { return }
+        stopInking(because: "the stack or the annotator is up")
+    }
+
+    /// The note hidden by `standAside` shows again, without the keys, once the stack and the annotator
+    /// are gone. The main run loop asks before each wait, as it does `holdEscape`, so the note follows
+    /// whatever closed them.
+    func bringNoteBack() {
+        guard let note, note.standsAside, mayInk() else { return }
+        note.standAside(false)
+        Log.write("[live-ink] note back: the screen is free")
     }
 
     // MARK: By the pointer
