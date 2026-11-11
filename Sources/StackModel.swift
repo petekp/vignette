@@ -48,7 +48,13 @@ final class StackModel: ObservableObject {
     /// The recent stack, as against thumbnails in the corner. It stays through a slide-out, which
     /// the view draws as the column it was.
     @Published private(set) var isStack = false
-    @Published var scroll: CGFloat = 0         // how far the column is pulled down to show older cards
+    /// How far the column is pulled down to show older cards. Every change is reported to
+    /// `scrolled`, true toward older cards, whatever moved it: a wheel, a key, a capture's spring
+    /// back, a stitch, a drag-select's auto-scroll or the panel's clamp.
+    @Published var scroll: CGFloat = 0 {
+        didSet { if scroll != oldValue { scrolled(scroll > oldValue) } }
+    }
+    var scrolled: (_ towardOlder: Bool) -> Void = { _ in }
     /// How far a two-finger swipe moves the column toward the screen's edge (`StackSwipe`).
     @Published var swipe: CGFloat = 0
     /// The swipe carries the column off the screen, or back, as one piece; the cards' own slide-out is off.

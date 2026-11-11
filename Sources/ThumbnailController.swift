@@ -41,10 +41,12 @@ final class ThumbnailController {
     private let panel = ThumbnailPanel()
     /// Who has the keys, the backdrop, the watch for a click outside and the focus going back: only
     /// through events sent here (`CornerPresentation`).
-    private lazy var keys = CornerKeys(panel: panel, screen: { [unowned self] in self.screen })
+    lazy var keys = CornerKeys(panel: panel, screen: { [unowned self] in self.screen })
     private let dim = DimPanel()
     private let flights = TransitionLayer()
-    private let model = StackModel()
+    let model = StackModel()
+    let older = OlderShots()
+    let pictures = CardPictures()
     private var hosting: NSHostingView<StackView>!
     /// When a lone thumbnail leaves the corner (`leaveCorner(after:)`).
     private var leaveTimer: Timer?
@@ -54,7 +56,7 @@ final class ThumbnailController {
     /// opens. Asked only then, after the panel has taken the keys, so a key pressed while a large
     /// folder is listed reaches it.
     var recentListing: () -> (shots: [Screenshot], detail: String) = { ([], "") }
-    private var visible = false {
+    var visible = false {
         didSet {
             // Flight decodes are screen-sized; they are only worth keeping while the stack is up.
             if !visible { flightImages.removeAll() }
@@ -97,6 +99,7 @@ final class ThumbnailController {
         keys.changed = { [weak self] old, new in self?.presentationChanged(from: old, to: new) }
         flights.onPress = { [weak self] id, event in self?.flightPressed(id, event) }
         panel.onScroll = { [weak self] event in self?.scroll(event) }
+        model.scrolled = { [weak self] in self?.scrolled(towardOlder: $0) }
         model.onAction = { [weak self] action, cards in
             guard let self else { return }
             if cards.count == 1, let index = self.model.cards.firstIndex(where: { $0.id == cards[0].id }) { self.scrollToReveal(index) }
@@ -149,7 +152,7 @@ final class ThumbnailController {
         return NSScreen.main ?? NSScreen.screens[0]
     }
     /// What every card and flight image is decoded in, so no first commit has a colour conversion to do.
-    private var screenSpace: CGColorSpace? { screen.colorSpace?.cgColorSpace }
+    var screenSpace: CGColorSpace? { screen.colorSpace?.cgColorSpace }
     /// A display was added, removed, or rearranged. Whatever is showing moves to a screen that exists.
     func screensChanged() {
         guard visible else { return }
@@ -164,9 +167,9 @@ final class ThumbnailController {
     private var area: StackArea { areaReader.area }
 
     /// The cards as they are drawn now: at the stack's full width, or narrowed for the annotator.
-    private var cardSizes: [NSSize] { model.cards.map { layout.drawn($0.size) } }
+    var cardSizes: [NSSize] { model.cards.map { layout.drawn($0.size) } }
     var ui: UITweaks { Settings.shared.motionUI }
-    private var layout: StackLayout { StackLayout.current.at(widthScale: model.widthScale) }
+    var layout: StackLayout { StackLayout.current.at(widthScale: model.widthScale) }
     private var showsStrip: Bool { model.isStack && model.inSelectionMode }
 
     /// The selection strip's screen frame, or nil when nothing is selected or the annotator has an
@@ -207,7 +210,7 @@ final class ThumbnailController {
                 "hovered": model.cards.first { $0.id == model.hoveredCard }?.shot.key.path as Any,
                 "key": panel.isKeyWindow,
                 "scroll": Int(model.scroll), "viewport": Int(model.viewport), "safeBottom": Int(area.safeBottom),
-                "widthScale": model.widthScale, "swipe": Int(model.swipe),
+                "widthScale": model.widthScale, "swipe": Int(model.swipe), "older": older.state,
                 "panel": StateReport.topLeft(panel.frame, primaryHeight: h), "panelOnScreen": panel.isVisible,
                 "strip": stripFrame.map { StateReport.topLeft($0, primaryHeight: h) } as Any,
             ] as [String: Any],
@@ -263,7 +266,7 @@ final class ThumbnailController {
         let asked = CACurrentMediaTime()
         let (shots, detail) = recentListing()
         let started = CACurrentMediaTime()
-        let cards = shots.compactMap(makeCard)
+        let cards = shots.compactMap { makeCard($0) }
         if !cards.isEmpty {
             present(cards: cards)
             Log.write("[stack] shown cards=\(cards.count) \(detail)listed=\(Int((started - asked) * 1000))ms shown=\(Int((CACurrentMediaTime() - started) * 1000))ms decoding=\(cards.filter { $0.image == nil }.count)")
@@ -517,8 +520,8 @@ final class ThumbnailController {
         guard visible else { return }
         model.cards = model.cards.map { card in
             let size = layout.cardSize(for: card.pointSize)
-            // A file that is not downloaded keeps the picture it has: decoding it here would download it.
-            let image = Thumbnailer.isDataless(card.shot.url) ? card.image
+            // A file not downloaded keeps its picture, since a decode downloads it; a card far from view keeps none.
+            let image = card.image == nil || Thumbnailer.isDataless(card.shot.url) ? card.image
                 : Thumbnailer.image(at: card.shot.url, maxPixel: thumbnailPixels(size: size, pointSize: card.pointSize),
                                     space: screenSpace) ?? card.image
             if let marks = card.marks, let drawing = marks.drawing {
@@ -1139,8 +1142,8 @@ final class ThumbnailController {
 
     /// Down arrow moves toward the newest card (index 0), which sits at the bottom. Shift extends
     /// the selection in the direction of travel; turning back takes off the card added last.
-    private func moveFocus(toward delta: Int, extend: Bool) {
-        guard !model.cards.isEmpty else { return }
+    func moveFocus(toward delta: Int, extend: Bool) {
+        guard !model.cards.isEmpty, !waitsForOlder(toward: delta, extend: extend) else { return }
         let current = model.cards.firstIndex { $0.id == model.focused }
         let next: Int
         if let current { next = max(0, min(model.cards.count - 1, current + delta)) } else { next = delta < 0 ? model.cards.count - 1 : 0 }
@@ -1161,7 +1164,7 @@ final class ThumbnailController {
 
     /// The column's height as it is drawn now, at the stack's width scale. `layoutPanel` sizes the
     /// panel from the full-width height instead, so a narrowed stack keeps the panel it comes back to.
-    private var drawnContentHeight: CGFloat { layout.contentHeight(cards: cardSizes) }
+    var drawnContentHeight: CGFloat { layout.contentHeight(cards: cardSizes) }
 
     private var maxScroll: CGFloat { max(0, drawnContentHeight - model.viewport) }
 
@@ -1175,6 +1178,7 @@ final class ThumbnailController {
     }
 
     private func scrollColumn(by delta: CGFloat) {
+        defer { columnMoved(towardOlder: delta > 0) }
         guard maxScroll > 0 else { return }
         // Pulling the column down (fingers moving down) reveals older cards above.
         let next = min(maxScroll, max(0, model.scroll + delta))
@@ -1242,10 +1246,10 @@ final class ThumbnailController {
     /// that is not downloaded is never read here: its card takes the shape kept for it, or the
     /// screen's until iCloud's thumbnail arrives, and a screenshot is downloaded in the background
     /// for the editor. A recording is not downloaded, and its badge shows no length.
-    private func makeCard(_ shot: Screenshot) -> Card? {
+    func makeCard(_ shot: Screenshot, lookup: Thumbnailer.Lookup? = nil) -> Card? {
         let header: Thumbnailer.Header
         var notDownloaded = false
-        switch Thumbnailer.lookUp(shot.url) {
+        switch lookup ?? Thumbnailer.lookUp(shot.url) {
         case .read(let read): header = read
         case .notDownloaded(let kept):
             notDownloaded = true
@@ -1292,12 +1296,12 @@ final class ThumbnailController {
 
     /// Pixels on the longest side for iCloud's thumbnail of a file that is not downloaded: enough for a
     /// card of any shape, since the shape is not known until the thumbnail arrives.
-    private var cloudThumbnailPixels: Int {
+    var cloudThumbnailPixels: Int {
         Int(ceil(max(layout.maxCardWidth, layout.maxCardHeight) * screen.backingScaleFactor * 1.5))
     }
 
     /// Pixels on the longest side for a decode that covers the card at this screen's scale, with margin.
-    private func thumbnailPixels(size: NSSize, pointSize: NSSize) -> Int {
+    func thumbnailPixels(size: NSSize, pointSize: NSSize) -> Int {
         let cover = max(size.width / max(pointSize.width, 1), size.height / max(pointSize.height, 1))
         return Int(ceil(max(pointSize.width, pointSize.height) * cover * screen.backingScaleFactor * 1.5))
     }
@@ -1315,6 +1319,7 @@ final class ThumbnailController {
         }
         leaveTimer?.invalidate()
         dismissGeneration += 1
+        newColumn()
         // A column on screen becomes part of the new one: every card in it that the new one shows
         // stays where it is drawn, a flight home included, and only the others enter, above it.
         let entranceOver = visible ? StackEntrance(onScreen: model.cards.map { ($0.shot.key, $0.id) },
@@ -1471,7 +1476,7 @@ final class ThumbnailController {
     }
 
     @discardableResult
-    private func removeOverflow() -> Bool { model.removeOverflow(over: Settings.shared.data.recentCount) }
+    private func removeOverflow() -> Bool { model.removeOverflow(over: older.columnLimit) }
 
     private func relayout() {
         guard visible else { return }
@@ -1483,7 +1488,7 @@ final class ThumbnailController {
     /// A fresh presentation applies the viewport at once: animated, its change overlaps the cards'
     /// entrance and bends their path, since the column frame's height and the slide land in the
     /// same transaction.
-    private func layoutPanel(shrinkLater: Bool, animated: Bool, duration: Double? = nil, _ changes: () -> Void = {}) {
+    func layoutPanel(shrinkLater: Bool, animated: Bool, duration: Double? = nil, _ changes: () -> Void = {}) {
         var transaction = Transaction(animation: animated ? Anim.spring(duration ?? ui.relayoutDuration) : nil)
         transaction.disablesAnimations = !animated
         var viewport: CGFloat = 0

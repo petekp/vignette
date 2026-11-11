@@ -15,6 +15,13 @@
   the visible screen in device pixels, which is the same decode a flight asks for and is counted in
   the thumbnail cache's budget (both ask `Thumbnailer.screenPixels(on:)` and the screen's colour
   space); `editor.clear()` lets it and the marks' layers go when the annotator hides, and
-  `removeCards` lets a card's marks go when it leaves the column. Text bitmaps are capped by their
+  `removeCards` lets a card's marks go when it leaves the column. A card holds its own picture, out
+  of the cache's reach, so a column longer than 100 cards and `recentCount` lets the pictures of
+  cards more than four viewports from the view go, 30 at a time. It takes them back within two
+  viewports, whatever moved the column: from the cache, or decoded on the thumbnail queue, and the
+  pictures that arrive within 50 ms go to the cards in one change (`CardPictures`). A picture that
+  does not decode is not asked for again in that column. The newest `recentCount` cards keep their
+  pictures, and so does a card in the annotator, in a stitch, selected, pressed, dragged, hovered
+  or focused. Text bitmaps are capped by their
   owner's plan (the `MarkLayers` rule in `docs/rules/editor-and-drawings.md`), and renderings run one at a time (`RenderingQueue`). A
   stitch decodes one piece at a time and draws at the capped output size.
