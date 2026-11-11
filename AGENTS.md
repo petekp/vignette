@@ -1101,9 +1101,9 @@ scratch home, so the end-to-end runner clears both before each scenario (`App.re
   has not started, because Done's clipboard is a promise. `Clipboard.copyRendering` puts the path on as text at once and promises
   the PNG, the TIFF and the file URL; a paste that comes first waits for the rendering on the main
   thread for up to 5 s, then gets nothing and logs `[clipboard] error`. The card goes home at once.
-  A dragged card with a drawing carries the same item (`Clipboard.renderingItem`), rendered in turn
-  from the moment the drag begins and written as `<name>-<result-id>-annotated.png`; a card without one drops
-  its file.
+  A dragged card with a drawing carries the same item, its PNG rendered from the hover or press
+  (`DragItems`), written as `<name>-<result-id>-annotated.png` as the drag begins; a card without
+  one drops its file.
   A rendering that fails clears the clipboard, unless something else was copied since, and the card
   says "Not copied" and why in place of its Copied notice (`ThumbnailController.showNotCopied`,
   `Rendering.Failure.reason`). `[annotate] done files=["<absolute path>"] <n> bytes, copied` is

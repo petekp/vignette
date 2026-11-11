@@ -75,8 +75,9 @@ struct CardView: View, Equatable {
                     .shadow(color: .black.opacity(ui.cardShadowOpacity), radius: ui.cardShadowRadius, y: ui.cardShadowY)
                     .overlay(
                         // Drag out as files or drawings; a plain click goes to the model (annotate, or toggle in selection mode).
-                        DragSource(items: { model.dragItems(dragCards()) }, image: card.image ?? NSImage(size: size),
+                        DragSource(items: { model.dragItems(model.dragCards(from: card.id)) }, image: card.image ?? NSImage(size: size),
                                    onPress: { down in model.pressedCard = down ? card.id : (model.pressedCard == card.id ? nil : model.pressedCard) },
+                                   onDrag: { model.drag(card.id, $0) },
                                    onClick: { model.onClickImage(card) },
                                    marks: card.marks, picture: card.image?.size, corner: ui.cardCornerRadius, restSize: card.size)
                     )
@@ -192,8 +193,10 @@ struct CardView: View, Equatable {
         .landing(inSlot, landing, leaving: leaving)
         .animation(Anim.spring((notice == nil ? 0.4 : 0.15) * motion), value: notice?.kind)
         .zIndex(showsHover ? 1 : 0)   // the hover scale may hang over the card below
-        .scaleEffect(pressed ? ui.pressScale : (showsHover ? ui.hoverScale : 1))
+        .scaleEffect(pressed || state.dragged ? ui.pressScale : (showsHover ? ui.hoverScale : 1))
         .animation(Anim.spring(0.25 * motion, bounce: 0.3), value: pressed)
+        // A card coming back from a drag settles without the press's bounce.
+        .animation(Anim.spring(0.25 * motion), value: state.dragged)
         .animation(Anim.spring(ui.hoverRevealDuration), value: showsHover)
         .animation(Anim.spring(ui.hoverRevealDuration), value: showsButtons)
         // Past the panel's right edge, which sits just beyond the screen edge, so the card slides off screen.
@@ -236,11 +239,6 @@ struct CardView: View, Equatable {
         let travel = layout.offscreenDistance(cardWidth: card.width)
         let arrives = Anim.reaches(Double(1 - card.width / travel), curve: ui.slideInCurve, duration: ui.slideInDuration)
         return max(0, clears - arrives)
-    }
-
-    /// Dragging a selected card carries the whole selection, in the order it was selected.
-    private func dragCards() -> [Card] {
-        model.isSelected(card.id) ? model.selectedCards() : [card]
     }
 }
 

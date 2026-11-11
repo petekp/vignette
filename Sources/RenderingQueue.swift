@@ -13,11 +13,19 @@ final class RenderingQueue: @unchecked Sendable {
     enum Output: Equatable { case bytes, file }
 
     private let queue = DispatchQueue(label: "vignette.rendering", qos: .userInitiated)
+    /// Writes a PNG already rendered, so a write never waits behind a rendering.
+    private let writes = DispatchQueue(label: "vignette.rendering.writes", qos: .userInitiated)
     // Guarded by `lock`. Every `render` adds one job and one block on `queue`, and a block runs
     // whichever job is next when it starts, so a `first` job overtakes the ones already waiting.
     private let lock = NSLock()
     private var firstJobs: [@Sendable () -> Void] = []
     private var jobs: [@Sendable () -> Void] = []
+
+    /// Rendered files' paths as a JSON array, for the log lines that name them.
+    static func paths(_ urls: [URL]) -> String {
+        let data = try? JSONEncoder().encode(urls.map(\.path))
+        return data.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+    }
 
     /// File results have distinct paths beside their source and remain until the person deletes them.
     /// `style` must have been made on the main thread. Results of the same order run in request order.
@@ -34,6 +42,28 @@ final class RenderingQueue: @unchecked Sendable {
         queue.async { [self] in
             let next = lock.withLock { firstJobs.isEmpty ? jobs.removeFirst() : firstJobs.removeFirst() }
             next()
+        }
+        return pending
+    }
+
+    /// The PNG `bytes` gives, written to a new result beside `url` once it exists, off the main
+    /// thread. A drag renders a drawing ahead of the drag (`DragItems`), and its file is still made
+    /// only when the drag begins. A failure of `bytes` is this rendering's failure.
+    func file(from bytes: PendingRendering, beside url: URL) -> PendingRendering {
+        let file = Self.resultURL(beside: url)
+        let pending = PendingRendering(file: file)
+        guard let file else {
+            pending.finish(png: nil, failure: .writeFailed("could not name a rendering beside \(url.lastPathComponent)"))
+            return pending
+        }
+        bytes.whenDone(on: writes) { output in
+            guard let png = output.png, output.failure == nil else { return pending.finish(png: nil, failure: output.failure) }
+            do {
+                try png.write(to: file, options: .atomic)
+                pending.finish(png: png, failure: nil)
+            } catch {
+                pending.finish(png: png, failure: .writeFailed("could not write \(file.lastPathComponent): \(error.localizedDescription)"))
+            }
         }
         return pending
     }
@@ -124,14 +154,22 @@ final class PendingRendering: @unchecked Sendable {
         return output
     }
 
+    /// Whether the rendering is done, without waiting.
+    var isDone: Bool { wait(timeout: 0) != nil }
+
     /// Calls `handler` on the main thread once the rendering is done.
     func whenDone(_ handler: @escaping @MainActor @Sendable (Output) -> Void) {
-        done.notify(queue: .main) { [self] in
+        whenDone(on: .main) { output in MainActor.assumeIsolated { handler(output) } }
+    }
+
+    /// Calls `handler` on `queue` once the rendering is done.
+    func whenDone(on queue: DispatchQueue, _ handler: @escaping @Sendable (Output) -> Void) {
+        done.notify(queue: queue) { [self] in
             lock.lock()
             let output = self.output
             lock.unlock()
             guard let output else { return }
-            MainActor.assumeIsolated { handler(output) }
+            handler(output)
         }
     }
 }

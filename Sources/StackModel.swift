@@ -17,11 +17,20 @@ final class StackModel: ObservableObject {
     var slidingOut = false                     // picks the exit stagger order and curve for `offscreen`
     @Published var outCards: Set<UUID> = []    // cards currently in the annotator; their slots stay empty
     @Published var forming: Set<UUID> = []     // cards whose image is in the transition layer, mid-stitch; drawn as nothing
-    @Published var hoveredCard: UUID? = nil { didSet { if hoveredCard != oldValue { onHover(hoveredCard) } } }
+    @Published var hoveredCard: UUID? = nil {
+        didSet {
+            guard hoveredCard != oldValue else { return }
+            onHover(hoveredCard)
+            prepareDrag(of: hoveredCard)
+        }
+    }
     /// The wheel is moving the column: the cards passing under the pointer do not take the hover.
     /// `ThumbnailController` clears it once the column stops, and tests the pointer itself then.
     var holdsHover = false
-    @Published var pressedCard: UUID? = nil
+    @Published var pressedCard: UUID? = nil { didSet { if pressedCard != oldValue, pressedCard != nil { prepareDrag(of: pressedCard) } } }
+    /// The card whose drag image is out. It stays as the press left it until the drag ends, so the
+    /// card and the drag image never change size against each other.
+    @Published var draggedCard: UUID? = nil
     @Published var overControl = false         // the mouse is on a card's button or circle, where a click does not draw
     /// A card is in the annotator. The strip stands aside for it: the strip hangs to the left of
     /// the column, which is further left than the room the annotator's frame is kept out of, so
@@ -73,9 +82,8 @@ final class StackModel: ObservableObject {
     var onSweep: (CGFloat) -> Void = { _ in }       // y from the column top, during a drag from a circle
     var onSweepEnd: () -> Void = {}
     var onClickImage: (Card) -> Void = { _ in }
-    /// What the cards a drag out of the stack carries drop, one item per card, asked for as the drag
-    /// begins. Each card's file unless the owner says otherwise.
-    var dragItems: ([Card]) -> [NSPasteboardWriting] = { cards in cards.map { $0.shot.url as NSURL } }
+    /// What the cards a drag out of the stack drop. Each card's file when there is none.
+    var drags: DragItems?
     var onHover: (UUID?) -> Void = { _ in }
     /// The selection changed: the cards that joined it, in the order they were picked, and the
     /// cards that left it.
@@ -98,6 +106,35 @@ final class StackModel: ObservableObject {
         removeCards { $0.id == oldest.id }
         deselect([oldest.id])
         return true
+    }
+
+    /// The cards a drag that starts on `id` carries: the whole selection, in the order it was
+    /// selected, when `id` is in it.
+    func dragCards(from id: UUID) -> [Card] {
+        isSelected(id) ? selectedCards() : cards.filter { $0.id == id }
+    }
+
+    /// The items the drag of `cards` carries, asked for as the drag begins.
+    func dragItems(_ cards: [Card]) -> [NSPasteboardWriting] {
+        drags?.items(for: cards) ?? cards.map { $0.shot.url as NSURL }
+    }
+
+    /// The drag that started on `id` began or ended. The press becomes the drag, so the card keeps
+    /// its size. The card may not have heard that the pointer left it during the drag, so at the end
+    /// it loses the hover unless the pointer is on it.
+    func drag(_ id: UUID, _ phase: DragSourceView.Phase) {
+        switch phase {
+        case .began:
+            draggedCard = id
+            if pressedCard == id { pressedCard = nil }
+        case .ended(let pointerOnCard):
+            if draggedCard == id { draggedCard = nil }
+            if !pointerOnCard, !holdsHover, hoveredCard == id { hoveredCard = nil }
+        }
+    }
+
+    private func prepareDrag(of id: UUID?) {
+        drags?.prepare(id.map(dragCards(from:)) ?? [])
     }
 
     /// Cards for a bulk action, in the order they were selected.

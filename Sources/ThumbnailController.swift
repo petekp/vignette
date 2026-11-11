@@ -32,10 +32,10 @@ final class ThumbnailController {
     var annotatorTitle: (ScreenshotKey) -> TransitionLayer.Caption? = { _ in nil }
     /// A press begun on the card flying into the editor, for the image with this key; see `FlightPress`.
     var onAnnotatorPress: ((FlightPress.Event, ScreenshotKey) -> Void)?
-    /// What the cards a drag out of the stack carries drop; see `StackModel.dragItems`.
-    var dragItems: ([Card]) -> [NSPasteboardWriting] {
-        get { model.dragItems }
-        set { model.dragItems = newValue }
+    /// What the cards a drag out of the stack drop; see `StackModel.drags`.
+    var drags: DragItems? {
+        get { model.drags }
+        set { model.drags = newValue }
     }
 
     private let panel = ThumbnailPanel()
