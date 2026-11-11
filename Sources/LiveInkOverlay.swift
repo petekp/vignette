@@ -39,15 +39,6 @@ final class LiveInkOverlay: NSPanel {
         set { canvas.onHover = newValue }
     }
 
-    /// What the pointer did while inking, in global top-left points: from the overlay's own events, or
-    /// from `LiveInkTap`, which takes them before the window server delivers them.
-    enum Input {
-        case pressed(CGPoint)
-        case dragged(CGPoint)
-        case released(CGPoint)
-        case moved(CGPoint)
-    }
-
     /// Takes `input` as the canvas takes its own events: a press starts a stroke here, which its drags
     /// and its release go on and end.
     func take(_ input: Input) { canvas.take(input) }
@@ -148,6 +139,9 @@ final class LiveInkOverlay: NSPanel {
         view.show(beside: CGPoint(x: point.x - canvas.origin.x, y: point.y - canvas.origin.y), within: canvas.bounds)
         notice = view
     }
+
+    /// The input's levels while live ink listens, which the pointer field shows.
+    func hearVoice(_ levels: [Float]) { canvas.field.hear(levels) }
 
     /// Holds the pointer field up in `ui`'s settings, or lets it go. Held, it raises the overlay to the
     /// inking level without taking presses.
@@ -325,25 +319,6 @@ final class LiveMarksLayer: CALayer {
         var finished = false
     }
 
-    /// What a tap where the pointer is would do, shown while the chord is held: a mark it would erase
-    /// fades back, and an answer's loop or arrow it would pick takes the person's colour.
-    enum Preview: Equatable {
-        case erase(Mark.ID)
-        case pick(Mark.ID)
-
-        var id: Mark.ID {
-            switch self {
-            case .erase(let id), .pick(let id): id
-            }
-        }
-    }
-
-    /// How marks leave: done, when the session's turn ended, which turns them green with a check; or
-    /// dismissed, which undraws them.
-    enum Finish {
-        case done, dismissed
-    }
-
     private var drawn: [Mark.ID: Drawn] = [:]
     private var previewing: Preview?
     private var markStyle: MarkStyle?
@@ -353,9 +328,10 @@ final class LiveMarksLayer: CALayer {
     weak var host: NSView?
     var sharing: NSWindow.SharingType = .none
     private var popovers: [Mark.ID: ReplyPopover] = [:]
-    /// The person's note, hung from one of these marks as a reply is: `place` is in the marks'
-    /// coordinates, and its `anchor` is the mark.
+    /// The person's note, hung from one of these marks as a reply is, or from a point by the pointer
+    /// when its `anchor` is nil: `place` is in the marks' coordinates.
     private var note: (panel: LiveNotePopover, place: PopoverPlace, takingKeys: Bool)?
+    var holdsNote: Bool { note != nil }
 
     init(scale: CGFloat) {
         self.scale = scale
@@ -455,10 +431,11 @@ final class LiveMarksLayer: CALayer {
         placeNote()
     }
 
-    /// Hangs the person's note from `place`'s anchor when this layer draws that mark, and else lets go
-    /// of it. `place` is in the marks' coordinates. Without `takingKeys`, it opens without the keys.
+    /// Hangs the person's note from `place`'s anchor when this layer draws that mark, or from `place`
+    /// itself when it has none, and else lets go of it. `place` is in the marks' coordinates. Without
+    /// `takingKeys`, it opens without the keys.
     func hang(_ panel: LiveNotePopover?, place: PopoverPlace?, takingKeys: Bool = true) {
-        guard let panel, let place, let anchor = place.anchor, drawn[anchor] != nil else { note = nil; return }
+        guard let panel, let place, place.anchor.map({ drawn[$0] != nil }) ?? true else { note = nil; return }
         guard note?.panel !== panel || note?.place != place else { return }
         note = (panel, place, takingKeys)
         placeNote()
@@ -480,10 +457,12 @@ final class LiveMarksLayer: CALayer {
 
     /// Puts the note where the mark it hangs from is now, faded as that mark is, over `fade` seconds.
     private func placeNote(fade: CFTimeInterval = 0) {
-        guard let note, let anchor = note.place.anchor, let record = drawn[anchor], let host, let hostLayer = host.layer else { return }
-        note.panel.hang(from: host, at: record.holder.convert(note.place.at, to: hostLayer), place: note.place,
+        guard let note, let host, let hostLayer = host.layer else { return }
+        let record = note.place.anchor.flatMap { drawn[$0] }
+        guard note.place.anchor == nil || record != nil else { return }
+        note.panel.hang(from: host, at: (record?.holder ?? self).convert(note.place.at, to: hostLayer), place: note.place,
                         takingKeys: note.takingKeys)
-        note.panel.follow(Self.opacity(of: record), duration: fade)
+        note.panel.follow(record.map(Self.opacity) ?? 1, duration: fade)
     }
 
     /// How strongly a mark shows, and a popover hung from it with it.

@@ -41,6 +41,9 @@ final class LiveListening {
     private var finishing = false
     /// When listening began, the time the words' times count from.
     let began = Date()
+    /// When the chord went down for this listening, which the log counts the first sound from.
+    private let keysDown: Date
+    private var soundCame = false
     private(set) var words: [SpokenWord] = []
     var onWords: (([SpokenWord]) -> Void)?
     /// The input's level, 0 to 1, a slice at a time (`Microphone.start`).
@@ -52,8 +55,9 @@ final class LiveListening {
 
     static func text(of words: [SpokenWord]) -> String { words.map(\.text).joined(separator: " ") }
 
-    init(transcriber: Transcriber) {
+    init(transcriber: Transcriber, keysDown: Date) {
         self.transcriber = transcriber
+        self.keysDown = keysDown
         end = ListeningEnd(began: CACurrentMediaTime())
     }
 
@@ -67,6 +71,7 @@ final class LiveListening {
         }
         let onLevels: @MainActor @Sendable ([Float]) -> Void = { [weak self] levels in
             guard let self, !self.finishing else { return }
+            if !self.soundCame { self.firstSound() }
             self.onLevels?(levels)
         }
         microphone.start(into: transcriber, onLevels: onLevels) { [weak self] failure in
@@ -85,6 +90,14 @@ final class LiveListening {
                 self.finish()
             }
         }
+    }
+
+    /// The microphone's first buffer reached the main thread: what was said before it is lost. `ms`
+    /// counts from the chord going down, `listening-ms` from `began`.
+    private func firstSound() {
+        soundCame = true
+        let now = Date()
+        Log.write("[speech] first audio ms=\(Int(now.timeIntervalSince(keysDown) * 1000)) listening-ms=\(Int(now.timeIntervalSince(began) * 1000))")
     }
 
     func released() { end.release(at: CACurrentMediaTime()) }

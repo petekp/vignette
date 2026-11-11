@@ -88,12 +88,16 @@ extension TweakCatalog {
                 .number("liveInkLampBreathSeconds", "Breath length", \.liveInkLampBreathSeconds, 1...8, step: 0.1, unit: "s", safe: 0.5...30),
                 .number("liveInkLampEnergy", "Energy from speed", \.liveInkLampEnergy, 0...1.5, step: 0.05, safe: 0...3),
                 .number("liveInkLampDrift", "Drift", \.liveInkLampDrift, 0...1, step: 0.05, safe: 0...1),
-            ], caption: { _ in "The lamp takes your ink's colours: the ice over dark content and deep blue over light, which darkens what is under it. Breath makes its pool rise and fall over the breath length. Energy brightens and widens it while the pointer moves fast. Drift moves light slowly round inside it. Breath and drift stop with Reduce Motion." }),
+                .number("liveInkLampVoice", "Energy from voice", \.liveInkLampVoice, 0...1.5, step: 0.05, safe: 0...3),
+            ], caption: { _ in "The lamp takes your ink's colours: the ice over dark content and deep blue over light, which darkens what is under it. Breath makes its pool rise and fall over the breath length. Energy brightens and widens it while the pointer moves fast, and while you speak with speech on. Drift moves light slowly round inside it. Breath and drift stop with Reduce Motion." }),
             TweakGroup("Showing", [
                 .number("liveInkFieldDelay", "Delay", \.liveInkFieldDelay, 0...1, step: 0.05, unit: "s", safe: 0...60),
                 .number("liveInkFieldFade", "Fade", \.liveInkFieldFade, 0...1, step: 0.05, unit: "s", safe: 0...60),
                 .number("liveInkFieldOpacity", "Opacity", \.liveInkFieldOpacity, 0...1, step: 0.05, safe: 0...1),
             ], caption: { _ in "The field waits for the delay, or for a press, so the chord on its way to a shortcut does not flash it. It fades in and out, and the ring grows in, over the fade." }),
+            TweakGroup("Note before ink", [
+                .number("liveInkNoteClearance", "Distance", \.liveInkNoteClearance, 0...160, unit: "pt", safe: 0...1000),
+            ], caption: { _ in "With speech on, the note opens on the first word you say, before you draw, this far from the pointer. It moves away when the pointer comes near, and moves to your ink once you draw." }),
         ]),
     ]
 }

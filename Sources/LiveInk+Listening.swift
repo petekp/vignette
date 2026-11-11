@@ -19,9 +19,9 @@ extension LiveInk {
             return
         }
         speechProblem = nil
-        let listening = LiveListening(transcriber: transcriber)
+        let listening = LiveListening(transcriber: transcriber, keysDown: keysDown)
         listening.onWords = { [weak self] words in self?.heard(words) }
-        listening.onLevels = { [weak self] levels in self?.note?.hearLevels(levels) }
+        listening.onLevels = { [weak self] levels in self?.hearLevels(levels) }
         listening.onFinished = { [weak self, weak listening] words in
             guard let self, let listening, self.listening === listening else { return }
             self.doneListening(words, began: listening.began)
@@ -60,13 +60,26 @@ extension LiveInk {
         if note != nil, let heard = heardBeforeNote { doneListening(heard.words, began: heard.began) }
     }
 
+    /// Words heard: the first opens the note by the pointer while the chord is held and no note is up.
     func heard(_ words: [SpokenWord]) {
         guard !typedOver else { return }
+        if note == nil, !words.isEmpty { showNoteOnTheVoice() }
         note?.hear(LiveListening.text(of: words))
     }
 
+    /// The input's level, for the note's waveform and for the pointer field, which shows the voice
+    /// from the moment listening starts.
+    func hearLevels(_ levels: [Float]) {
+        note?.hearLevels(levels)
+        surfaces.forEach { $0.overlay.hearVoice(levels) }
+    }
+
+    /// Words were heard since listening began: in the listening under way, or in one that ended
+    /// before the note opened.
+    var heardWords: Bool { !(listening?.words.isEmpty ?? true) || !(heardBeforeNote?.words.isEmpty ?? true) }
+
     /// Listening ended: the final words replace the partial ones, and with `liveInkSendWhenQuiet` the
-    /// ask goes. Words heard before the note opened wait for it.
+    /// ask goes, when the note has ink to ask about. Words heard before the note opened wait for it.
     func doneListening(_ words: [SpokenWord], began: Date) {
         listening = nil
         heardBeforeNote = nil
@@ -76,7 +89,7 @@ extension LiveInk {
         guard !typedOver, !text.isEmpty else { return }
         spoken = (words, began)
         note.hear(text)
-        if Settings.shared.data.liveInkSendWhenQuiet { note.send() }
+        if Settings.shared.data.liveInkSendWhenQuiet, !asks.noteInk.isEmpty { note.send() }
     }
 
     /// A key typed in the note takes over from speech: listening ends, and the words stay the

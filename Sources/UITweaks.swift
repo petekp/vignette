@@ -178,6 +178,10 @@ struct UITweaks: Codable, Equatable {
     var liveInkLampBreathSeconds = 3.5 // how long one breath takes
     var liveInkLampEnergy = 0.6      // 0 to 1.5: how much brighter and wider it grows while the pointer moves fast
     var liveInkLampDrift = 0.3       // 0 to 1: light drifting slowly round inside the pool
+    var liveInkLampVoice = 0.8       // 0 to 1.5: how much brighter and wider it grows with the voice while live ink listens
+    // The note that opens on the first word heard, before any ink: how far it keeps from the pointer,
+    // in points from the middle of the pointer's ring to the note's arrow
+    var liveInkNoteClearance = 40.0
     // Live ink's answers
     var liveInkDrawOn = 0.5          // how long an answer's mark takes to draw itself on
     var liveInkHideFade = 0.12       // a mark fading out as its window minimises or shrinks past it, or as it is set aside
