@@ -114,4 +114,18 @@ extension AgentPluginTests {
         _ = install(plugins, into: [home.appendingPathComponent(".codex")])
         XCTAssertEqual(AgentPlugin.legacySkill(at: agentsSkill), .none)
     }
+
+    func testATestLaunchOnAScratchHomeNeverRemovesThroughALinkIntoThePersonsFolders() throws {
+        let person = dir.appendingPathComponent("person"), scratch = dir.appendingPathComponent("scratch")
+        let personsSkill = AgentPlugin.agentsLegacyEntry(home: person)
+        try write("old", to: personsSkill.appendingPathComponent("SKILL.md"))
+        try write("old", to: AgentPlugin.legacyEntry(in: scratch.appendingPathComponent(".codex")).appendingPathComponent("SKILL.md"))
+        try FileManager.default.createDirectory(at: scratch.appendingPathComponent(".agents"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: scratch.appendingPathComponent(".agents/skills"),
+                                                   withDestinationURL: personsSkill.deletingLastPathComponent())
+        let calls = Calls()
+        launch(launcher(home: scratch, environment: ["VIGNETTE_SETTINGS": "/tmp/x/settings.json"], personHome: person, calls: { _ in calls }))
+        XCTAssertEqual(calls.made.last, ["plugin", "add", "vignette@vignette"])
+        XCTAssertEqual(AgentPlugin.legacySkill(at: personsSkill), .folder)
+    }
 }

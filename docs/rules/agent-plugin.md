@@ -12,9 +12,11 @@
   plugin add` again. A root is `~/.claude` or `~/.codex`, or where `CLAUDE_CONFIG_DIR` and
   `CODEX_HOME` point, and only one that exists. A launch with `VIGNETTE_SETTINGS` never gets the
   person's own two, whatever the environment names (`AgentPlugin.guarded`, found from the user
-  database, which `CFFIXED_USER_HOME` does not move). It never reads or removes the person's
+  database, which `CFFIXED_USER_HOME` does not move). Vignette never reads or removes the person's
   `~/.agents` either, and `install(into:)` and `remove(from:)` refuse the person's own folders, which
-  `install-skill?root=` can name. `AgentPlugins` takes the home folder, the environment and the
+  `install-skill?root=` can name. A folder inside one, one reached through a link, or one spelled in
+  another case counts as theirs (`AgentPlugin.isPersons`). The agent's tool still runs with the app's
+  `HOME`, so without `CFFIXED_USER_HOME` a codex it runs may read the person's `~/.agents/skills`. `AgentPlugins` takes the home folder, the environment and the
   person's home as parameters, and only its `init()`, the app's, reads the process's, so a unit test
   never reaches the real folders, whatever its environment holds. The live check is
   `install-skill?root=<dir>` (debug only, a folder named `.claude` or `.codex`). The tools get the
@@ -30,8 +32,9 @@
   the bundle's, or whose marketplace copy changed. It installs the plugin only where the skill from
   before the plugin is (`<root>/skills/vignette`, and `~/.agents/skills/vignette` for Codex), since
   that person chose the skill. Codex reads `~/.agents/skills` whatever `CODEX_HOME` says (codex
-  0.164.0, 2026-11-11), so that skill goes with the Codex folder the environment names, the one
-  `roots` lists: an install into another Codex folder leaves it for the person's own Codex. Once
+  0.164.0, 2026-11-11), so that skill goes with the Codex folder the app's environment names, the one
+  `roots` lists: an install into another Codex folder leaves it for the Codex that uses that one.
+  An app opened from Finder has no shell `CODEX_HOME`, so there it is `~/.codex`. Once
   the plugin is in, a folder there is removed; a link is the person's own and stays,
   with a `[plugin] kept` line. It does this once per agent folder: whenever
   the plugin is in beside that skill, from a launch or a switch, the folder is recorded in

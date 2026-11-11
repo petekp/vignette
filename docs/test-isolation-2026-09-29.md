@@ -114,12 +114,18 @@ What was built:
   `init()` gives the app's, and the tests pass their own.
 - A test launch leaves the person's `~/.agents` alone and logs
   `[plugin] test launch: left /Users/<you>/.agents alone; …`.
-- `<home>/.agents/skills/vignette` goes only with the Codex folder the environment names, which is the
-  one `roots` lists and the person's own Codex.
+- `<home>/.agents/skills/vignette` goes only with the Codex folder the app's environment names, which
+  is the one `roots` lists. An app opened from Finder has no shell `CODEX_HOME`, so that is `~/.codex`.
+- The guard counts a folder inside one of the person's, one reached through a link, and one spelled in
+  another case as theirs (`AgentPlugin.isPersons`). A scratch home whose `.agents/skills` links to the
+  real one is caught.
+- Still open: the agent's tool runs with the app's `HOME`, so in a test launch without
+  `CFFIXED_USER_HOME` a codex it runs may read the person's `~/.agents/skills`. Not checked.
 - In a test launch, `install(into:)` and `remove(from:)` answer `failed` for the person's own folders
   without running a tool.
 
-Three launch tests cover these: `testATestLaunchLeavesThePersonsAgentsSkillAloneWhenCodexHomeNamesAScratchFolder`,
-`testATestLaunchRefusesToInstallIntoOrRemoveFromThePersonsOwnFolders` and
-`testAnInstallRemovesTheAgentsSkillOnlyForTheCodexFolderTheEnvironmentNames`. Each failed with its
-guard taken out.
+Four launch tests cover these: `testATestLaunchLeavesThePersonsAgentsSkillAloneWhenCodexHomeNamesAScratchFolder`,
+`testATestLaunchRefusesToInstallIntoOrRemoveFromThePersonsOwnFolders`,
+`testAnInstallRemovesTheAgentsSkillOnlyForTheCodexFolderTheEnvironmentNames` and
+`testATestLaunchOnAScratchHomeNeverRemovesThroughALinkIntoThePersonsFolders`.
+`testATestLaunchNeverGetsThePersonsOwnAgentFolders` also covers a nested folder and another case.

@@ -29,12 +29,20 @@ extension AgentPlugin {
         legacyEntry(in: home.appendingPathComponent(".agents"))
     }
 
-    /// Whether `home`'s `.agents` is the person's own and this is a test launch, which leaves it alone
-    /// as it leaves the person's `.claude` and `.codex` (`isGuarded`).
-    static func isGuardedAgentsFolder(home: URL, environment: [String: String], personHome: URL) -> Bool {
+    /// Whether this is a test launch and `folder` is one of the person's own agent folders (`.claude`,
+    /// `.codex` and `.agents` of `personHome`) or inside one. Both sides are compared by their paths
+    /// with every link resolved, and without case, as APFS compares names by default.
+    static func isPersons(_ folder: URL, environment: [String: String], personHome: URL) -> Bool {
         guard Launch.isTest(in: environment) else { return false }
-        return home.appendingPathComponent(".agents").resolvingSymlinksInPath().path
-            == personHome.appendingPathComponent(".agents").resolvingSymlinksInPath().path
+        let path = realPath(folder)
+        return [".claude", ".codex", ".agents"].contains { name in
+            let own = realPath(personHome.appendingPathComponent(name))
+            return path == own || path.hasPrefix(own + "/")
+        }
+    }
+
+    private static func realPath(_ url: URL) -> String {
+        url.standardizedFileURL.resolvingSymlinksInPath().path.lowercased()
     }
 
     /// Removes an old skill folder. A link stays. `root` is the agent the result is reported for.

@@ -134,13 +134,11 @@ enum AgentPlugin {
         }
     }
 
-    /// Whether `folder` is one of the person's own agent folders and this is a test launch, which
+    /// Whether `folder` is in one of the person's own agent folders and this is a test launch, which
     /// `VIGNETTE_SETTINGS` marks. A test copy that must install the plugin moves the home folder
     /// with `CFFIXED_USER_HOME`, or names scratch folders with `CLAUDE_CONFIG_DIR` and `CODEX_HOME`.
     static func isGuarded(_ folder: URL, environment: [String: String], personHome: URL) -> Bool {
-        guard Launch.isTest(in: environment) else { return false }
-        let own = AgentClient.allCases.map { root(of: $0, home: personHome, environment: [:]).resolvingSymlinksInPath().path }
-        return own.contains(folder.resolvingSymlinksInPath().path)
+        isPersons(folder, environment: environment, personHome: personHome)
     }
 
     /// `~/.claude`, or where `CLAUDE_CONFIG_DIR` points.

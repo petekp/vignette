@@ -63,7 +63,9 @@ final class AgentPlugins: @unchecked Sendable {
                 Log.write("[plugin] error \(error.localizedDescription)")
                 return
             }
-            let guardedAgents = agentsFolderIsGuarded ? [home.appendingPathComponent(".agents")] : []
+            let agents = home.appendingPathComponent(".agents")
+            let guardedAgents = AgentPlugin.isPersons(agents, environment: environment, personHome: personHome)
+                && FileManager.default.fileExists(atPath: agents.path) ? [agents] : []
             for folder in AgentPlugin.guarded(home: home, environment: environment, personHome: personHome) + guardedAgents {
                 Log.write("[plugin] test launch: left \(folder.path) alone; launch with CFFIXED_USER_HOME to test the plugin")
             }
@@ -136,19 +138,17 @@ final class AgentPlugins: @unchecked Sendable {
 
     /// Where the skill from before the plugin may be for an agent: `<root>/skills/vignette`, and for
     /// the Codex folder this launch's environment names, `<home>/.agents/skills/vignette` too. Every
-    /// Codex folder of this home reads that one, and the person's Codex is the one their environment
-    /// names, so an install into another folder leaves it in place for theirs. A test launch never
-    /// gets the person's own.
+    /// Codex folder of this home reads that one, so an install into another folder leaves it for the
+    /// Codex that uses the folder `roots` lists. A test launch never gets an entry whose folder is in
+    /// the person's own, through a link included; the entry itself may be the person's link.
     func legacyEntries(for client: AgentClient, root: URL) -> [URL] {
         var entries = [AgentPlugin.legacyEntry(in: root)]
         let ownsAgentsSkill = client == .codex && root.resolvingSymlinksInPath().path
             == AgentPlugin.root(of: .codex, home: home, environment: environment).resolvingSymlinksInPath().path
-        if ownsAgentsSkill && !agentsFolderIsGuarded { entries.append(AgentPlugin.agentsLegacyEntry(home: home)) }
-        return entries
-    }
-
-    private var agentsFolderIsGuarded: Bool {
-        AgentPlugin.isGuardedAgentsFolder(home: home, environment: environment, personHome: personHome)
+        if ownsAgentsSkill { entries.append(AgentPlugin.agentsLegacyEntry(home: home)) }
+        return entries.filter {
+            !AgentPlugin.isPersons($0.deletingLastPathComponent(), environment: environment, personHome: personHome)
+        }
     }
 
     private func hasLegacySkill(_ client: AgentClient, _ root: URL) -> Bool {
