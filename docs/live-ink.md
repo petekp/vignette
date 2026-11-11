@@ -90,7 +90,7 @@ The names in brackets are `// MARK:` sections.
   so do menus, the Dock and other apps' floating windows. It passes every press then
   (`ignoresMouseEvents`). While the chord is held it is inking: it rises to `.screenSaver` with the
   flag off. The pointer's events then come from an event tap (the next rule). The overlay takes
-  presses itself, over clear pixels too, as the matte rule in `AGENTS.md` says, only when macOS
+  presses itself, over clear pixels too, as the matte rule says, only when macOS
   refuses the tap.
 - While inking, an active event tap takes the pointer's presses, drags, releases and moves before
   any app hears them (`LiveInkTap`). It drops each one, and hands the left button's events and the
