@@ -5,7 +5,10 @@
   frame, one level above the flight layer, so a flight into or out of the editor passes under it as
   the editor does. It is not the annotator window's child, since AppKit keeps a child window at its
   parent's level. It shows `EditorCore.Tool.allCases`, the editor reports the active tool through `onTool`,
-  and the bar calls `setTool`, `send` and `done` on the editor. The bar is tools, one divider, then
+  and the bar calls `setTool`, `send(to:)` and `done` on the editor. The destination Send was pressed
+  for travels in the editor's send effect (`EditorCore.Effect.send(_:to:)`), so a press the editor
+  ignores, as while it closes, leaves nothing for the next image. A key's send carries no
+  destination and goes where the bar's filled button sends. The bar is tools, one divider, then
   what `ToolbarOffer` says the image offers: Copy alone when there is no session to send to; Copy,
   the target, a message field and Send; or the message field and Reply on a card that names the
   session it came from (an agent's reply, or a push with `session=`). Copy is Done under a label

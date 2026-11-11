@@ -46,7 +46,7 @@ changed, and the finding that changed it.
 | [Flights and zoom](#flights-and-zoom) | TransitionLayer flights, TransitionLayer panel and press, FlightPress, Tween, AnnotatorZoom, Zoom glue: `fitBeforeHide` and `hideWindows`, DimPanel, BackdropPanel |
 | [The corner and the stack](#the-corner-and-the-stack) | CornerPresentation, CornerKeys window side, Panel visibility and dismissal in ThumbnailController, Lone thumbnail timer, `leaveTimer`, CardNotices and its posting timers (explicit value, implicit timers), Stack selection, focus and hover, Stitch converge, shiftUp and card entrance, StackSweep, HotKey, ModifierTap and KeyMonitors, StackAreaReader |
 | [The editor and drawings](#the-editor-and-drawings) | EditorCore, HeldKey, HeldToolLetter, EditorView session, MarkLayers text bitmap (implicit, one per text mark), TypingField, Drawings (implicit, per screenshot key), Rendering and clipboard promise, DragSourceView press |
-| [The toolbar and destinations](#the-toolbar-and-destinations) | AnnotatorToolbar.Model: target and offer, ToolbarOffer (explicit, derived), Send progress: sending, failure, sendingTo, Bar presence: shown, hideGeneration, sliding, Keyboard focus: focus, keyed, tookKeysOnOpen, toolLetter, heldLetter, HeldToolLetter, Target menu pick, SessionListing, AppDelegate.refreshDestinations and listDestinations, DestinationChoice (pure functions, no state), ClaudeCodeConnection: submit, preflight, start, HerdrLauncher.start, CodexConnection: discover and submit, AppServer.converse, AppServerSession (implicit; live ink's), SendOverlay notice animation |
+| [The toolbar and destinations](#the-toolbar-and-destinations) | AnnotatorToolbar.Model: target and offer, ToolbarOffer (explicit, derived), Send progress: sending, failure, Bar presence: shown, hideGeneration, sliding, Keyboard focus: focus, keyed, tookKeysOnOpen, toolLetter, heldLetter, HeldToolLetter, Target menu pick, SessionListing, AppDelegate.refreshDestinations and listDestinations, DestinationChoice (pure functions, no state), ClaudeCodeConnection: submit, preflight, start, HerdrLauncher.start, CodexConnection: discover and submit, AppServer.converse, AppServerSession (implicit; live ink's), SendOverlay notice animation |
 | [Requests, replies and the screenshots folder](#requests-replies-and-the-screenshots-folder) | Record.Status, SendGrace, Send bookkeeping, Reply.Stage, Reply import pipeline, Clearing and cleanup, Admission limit, FolderWrites pending adds, FolderWrites held-back reports, ScreenshotWatcher (implicit, with explicit pieces), Thumbnailer, CaptureOrigin, ReplyCommand and ReplyProtocol (explicit by order) |
 | [Setup, settings and launch](#setup-settings-and-launch) | SetupWindowController, SetupModel, SetupBanter, SetupInkPlayer and SetupInkGuide, MenuBarIntro, Accessibility.request, ShortcutRecorderView, SettingsSync and Settings (shell), Apple screencapture reconcile, AgentPlugins, AgentTools, LoginItem, Updater and the update dot, AppLocation (explicit, linear), Launch sequence (implicit, ordered), Hotkey press and hold pair, Stitch action, Setup Lab and Intro Lab (debug) |
 | [Live ink: the hand](#live-ink-the-hand) | HeldChord, ModifierChord, LiveInk inking lifecycle, LiveInk stroke, LiveInkTap, Overlay surfaces, Window picker watch, Menu hand-off: overMenus and LiveMenus, LiveEscape and the Esc hotkey, FocusRun, the focus tour, Steps tour, LiveListening and the transcriber chain, LiveWindows Tracked, LiveInk.setOn and the chord object |
@@ -270,7 +270,7 @@ The annotator window and editor for the image the run opened. It is reused; the 
 **States**: the properties together.
 
 - `current: Screenshot?` `:48`: set in `prepare` (`:163`), nil in `hide` and `abandon` (`:476`, `:462`). `opened: Opening?` `:56`. `opening` `:594` is `current == nil ? nil : opened`.
-- `windowUp` `:64` (true after `show`, false at `prepare`), `editorUntouched` `:62`, `sendingTo` `:59`.
+- `windowUp` `:64` (true after `show`, false at `prepare`), `editorUntouched` `:62`.
 - `eventProbe: Timer?` `:51`, `outsideClick` `:49`, `removal` `:53` (`WindowRemoval`), `titleReveal` `:90`, `inkMeasurement` `:86`. The zoom properties belong to the flights area.
 
 Phases, derived:
@@ -1464,29 +1464,28 @@ The offer is recomputed whenever an input (`replyTo`, destinations, `listed`, `t
 
 - None of its own. It follows `Model`.
 
-### Send progress: sending, failure, sendingTo (implicit)
+### Send progress: sending, failure (implicit)
 
-Owner: `Model.sending` (`AnnotatorToolbar.swift:47`), `failure` (`:51`), `failures` (`:54`); `AnnotationController.sendingTo` (`AnnotationController.swift:59`). Tests: none.
+Owner: `Model.sending` (`AnnotatorToolbar.swift:47`), `failure` (`:51`), `failures` (`:54`). Tests: `EditorCoreSendTests`.
 
 Tracks one Send press from the bar to the stored request. `AppDelegate.sendDrawing` (`:1387`) renders and submits.
 
-**States**: idle (`sending == false`, `failure == nil`); sending; notSent (`failure != nil`). `sendingTo` is a second flag: the destination of a press waiting for the editor's hand-over.
+**States**: idle (`sending == false`, `failure == nil`); sending; notSent (`failure != nil`). A press's destination travels with it, in `EditorCore.Input.send` and `Effect.send(_:to:)`.
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| idle or notSent | press (button, Cmd+Return, Space on the action, field Return: `AnnotatorToolbar.swift:283,335,795,799,955`) | — | `onSend` sets `sendingTo = destination` and calls `editor.send()` (`AnnotationController.swift:97-100`). The core emits `.send` only while open (`EditorCore.swift:481`). `editor.onSend` (`:137`) uses `sendingTo ?? offer.destination`, clears `sendingTo`, then `sendDrawing` sets `sending = true`, which clears `failure` (`:47`) ([toolbar-1](#toolbar-1)) |
+| idle or notSent | press (button, Cmd+Return, Space on the action, field Return: `AnnotatorToolbar.swift:283,335,795,799,955`) | — | `onSend` calls `editor.send(to:)` (`AnnotationController.swift:99`). The core emits `.send(drawing, to: destination)` only while open, and a key's send with `to: nil`. `editor.onSend` (`:135`) uses that destination, else `offer.destination`, then `sendDrawing` sets `sending = true`, which clears `failure` (`:47`) ([toolbar-1](#toolbar-1)) |
 | sending | press | refused at every entry (`!model.sending`, `AppDelegate.swift:1388`) | — |
 | sending | render fails, or `requests.send` throws | notSent: `sending = false`, `failure = reason`, `failures += 1` (`sendFailed`, `:56`) | — |
 | sending | render answers for an ended opening | dropped (`AppDelegate.swift:1397`); `sending` untouched | next `prepare` resets |
 | sending | request stored | stays sending until the bar leaves | next `prepare` calls `resetSend` (`:63`, from `AnnotationController.swift:166`) |
-| any | `park()` (`AnnotationController.swift:498`) | `sendingTo = nil` | — |
 
 **Invariants**
 
 - `sending` stays on from the press until the bar has left, and `prepare` resets it. Checked by: `prepare` at `AnnotationController.swift:166`.
-- `sendingTo` is nil after a press the editor ignored. Checked by: nothing ([toolbar-1](#toolbar-1)).
+- A press the editor ignored leaves nothing for the next image. Checked by: `EditorCoreSendTests.testASendPressedAfterTheEditorClosedIsDroppedAndTheNextImagesKeySendsWhereItsOwnBarDoes` ([toolbar-1](#toolbar-1)).
 
 **Late and concurrent answers**
 
@@ -4026,7 +4025,7 @@ Grouped by area. An entry with no review verdict was skimmed by the reviewer and
 
 #### The toolbar and destinations
 
-- <a id="toolbar-1"></a>**toolbar-1**: A Send press the editor ignores leaves `sendingTo` set, and a later Return sends to the old session. Sequence: editor zoomed in, target D1 listed. Esc or Done closes it. Within the zoom's fit-back spring (up to a few hundred ms) or the bar's 0.2 s fade, the person clicks Send (or presses Cmd+Return in the field). Next image opens (swap or reopen) with a different target D2, or as a Reply to R. Where: `AnnotationController.swift:472-477`, `AnnotatorToolbar.swift:532-552`, `AnnotationController.swift:97-100`. Mapper: high on the code path (every step traced, no guard); medium on how often the window is hit (zoomed close is the wide window). **Status**: Review: stands. Rare to reach (a Send press during the 0.2 s fit-out or the bar's fade), but it sends to the wrong session. Not confirmed: the flag lives in `AnnotationController`, which no unit test can build. Two fixes, for Pete: a guard in `toolbar.onSend` that ignores a press once `current` is nil, which only the running app can check; or carrying the destination through the editor's send effect, which removes the second flag but changes `EditorCore`'s send contract. Open.
+- <a id="toolbar-1"></a>**toolbar-1**: A Send press the editor ignores leaves `sendingTo` set, and a later Return sends to the old session. Sequence: editor zoomed in, target D1 listed. Esc or Done closes it. Within the zoom's fit-back spring (up to a few hundred ms) or the bar's 0.2 s fade, the person clicks Send (or presses Cmd+Return in the field). Next image opens (swap or reopen) with a different target D2, or as a Reply to R. Where: `AnnotationController.swift:472-477`, `AnnotatorToolbar.swift:532-552`, `AnnotationController.swift:97-100`. Mapper: high on the code path (every step traced, no guard); medium on how often the window is hit (zoomed close is the wide window). **Status**: fixed in `5000257`. The destination travels through the editor's send effect (`EditorCore.Input.send`, `Effect.send(_:to:)`), so an ignored press leaves no flag. Test: `EditorCoreSendTests.testASendPressedAfterTheEditorClosedIsDroppedAndTheNextImagesKeySendsWhereItsOwnBarDoes`.
 - <a id="toolbar-2"></a>**toolbar-2**: A failed Codex listing replaces the kept list with an empty one, and the target can change or vanish. Sequence: (a) previous listing left `kept[codex]` = threads incl. T. Open editor; kept list answers at once and T (session used last) becomes the target. The fresh Codex job fails (codex not found at that moment, `process.run()` throws, or 8 s timeout with no listing line). The job returns `[]`. (b) Or: the next opening starts from `kept = []`. Where: `AppServer.swift:150`, `SessionListing.swift:149`, `AnnotatorToolbar.swift:181`. Mapper: medium. Traced every step; not checked whether a hung/failed app-server happens in practice, and an empty store would legitimately empty ….
 - <a id="toolbar-4"></a>**toolbar-4**: A menu pick applied a turn later lands on a different opening or a hidden bar. Sequence: target menu open (modal). A queued main-queue block runs `prepare` for another image (an agent `vignette://annotate`, or a card click already queued), which calls `model.begin`. The pick's deferred block then runs. Where: `AnnotatorToolbar.swift:260-266`. Mapper: low. The window is the gap between a menu action and the next main-queue turn; no input reaches it, only a block already queued.
 - <a id="toolbar-5"></a>**toolbar-5**: `SendOverlay` step closures from an earlier state change can fire after a later change's and overwrite `shown`. Sequence: notice goes `inGrace -> sent` (steps `[sending, sent]`, `sent` scheduled at about `glide + 0.45 s`). Before that fires, the notice changes again, e.g. `sent -> replyFailed`. Where: `SendOverlay.swift:81`. Mapper: low. A reply failing within a second of a send is not reachable in practice.
@@ -4245,4 +4244,5 @@ at 358d988 with the new tests. It read the code and did not run it.
 
 After the review, four of the upgraded findings were confirmed by a failing test: corner-9,
 corner-4, requests-2 and setup-1. toolbar-1 was not, because no unit test can build
-`AnnotationController`, which holds its flag.
+`AnnotationController`, which held its flag. Its fix moved the destination into `EditorCore`'s
+send, which `EditorCoreSendTests` covers.
