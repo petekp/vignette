@@ -2651,19 +2651,19 @@ Installs, updates and removes the Vignette plugin in Claude Code and Codex, one 
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| plugin not on, legacy skill folder present | `launch` (`startAgentPlugin`, `AppDelegate.swift:282`, only when setup is not unasked) | on | installs the plugin (`:74-75`); the folder is recorded in `LegacySkillMigrations`, then removed |
+| plugin not on, legacy skill folder present | `launch` (`startAgentPlugin`, `AppDelegate.swift:283`, once setup is asked) | on | installs the plugin; the folder is recorded in `LegacySkillMigrations`, then removed |
 | plugin not on, legacy skill is a link, folder not recorded | `launch` | on | installs the plugin and records the folder; the link stays ([setup-1](#setup-1), [issue 12](#issue-12)) |
 | plugin not on, legacy skill is a link, folder recorded | `launch` | — | — (the switch's off holds) |
 | plugin on, legacy skill present | `launch`, or `install(into:)` succeeding | on | records the folder (`retireLegacySkill`) |
 | plugin not on, no legacy skill | `launch` | — | — |
-| plugin on, marketplace changed or version differs | `launch` | on | `plugin update` (`:79`) |
+| plugin on, marketplace changed or version differs | `launch` | on | `plugin update` |
 | any | `install(into:)` (Settings switch, setup `record`, `install-skill`) | on | stage the marketplace, run the tool's install steps, remove the legacy folder |
 | any | `remove(from:)` (Settings switch) | off | the tool's uninstall steps; "not found" counts as done |
-| a person's own folder, test launch | `install(into:)`, `remove(from:)` | — | `.failed`, no tool runs (`refusal`) |
+| test launch, the person's own folder or home | `install(into:)`, `remove(from:)`, or `launch` | — | no tool runs: `.failed` (`refusal`); `launch` only stages |
 
 **Invariants**
 
-- A launch never removes the plugin, and installs only where the skill from before the plugin is. Checked by: `testLaunchInstallsNothingWhereNothingWas`, `testLaunchMigratesTheOldSkillAndUpdatesOlderPlugins`. The guard at `:74` counts a link as that skill.
+- A launch never removes the plugin, and installs only where the skill from before the plugin is. Checked by: `testLaunchInstallsNothingWhereNothingWas`, `testLaunchMigratesTheOldSkillAndUpdatesOlderPlugins`. A link counts as that skill.
 - A test launch never reads or changes the person's `.claude`, `.codex` or `.agents`, and the `.agents` skill goes only with the Codex folder the environment names. Checked by: `testATestLaunch…` and `testAnInstall…`.
 - A launch installs for the old skill at most once per agent folder, so the switch's off holds. Checked by: `testALaunchLeavesThePluginOffAfterTheSwitchTurnedItOffWhereTheOldSkillIsALink`, `testALaunchThatFindsThePluginBesideALinkedSkillLeavesItOffOnceTheSwitchTurnsItOff` ([setup-1](#setup-1)).
 - An install started by setup finishes before the app quits. Checked by: nothing; `applicationWillTerminate` (`AppDelegate.swift:210`) waits for `requests.releaseHeld()` and not for this queue ([setup-4](#setup-4)).
@@ -2695,7 +2695,7 @@ Finds the `claude`, `codex` and `herdr` programs. `start()` runs once per launch
 
 **Invariants**
 
-- A tool the login shell finds late is not reported missing. Checked by: nothing; a timeout signals the baton with `fromShell` empty, so a waiter returns nothing and `PluginHost.steps` returns `.noTool` (`AgentPlugin.swift:313`) ([setup-12](#setup-12)).
+- A tool the login shell finds late is not reported missing. Checked by: nothing; a timeout signals the baton with `fromShell` empty, so a waiter returns nothing and `PluginHost.steps` returns `.noTool` (`AgentPlugin.swift:329`) ([setup-12](#setup-12)).
 
 **Late and concurrent answers**
 

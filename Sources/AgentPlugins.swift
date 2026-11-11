@@ -22,13 +22,15 @@ final class AgentPlugins: @unchecked Sendable {
     private let migrations: LegacySkillMigrations
     /// Makes the host for an agent; tests give one whose tool is a script.
     private let host: (AgentClient, URL) -> PluginHost
+    /// A test launch on the person's own home folder: it runs no agent tool (`isPersonsHome`).
+    private let runsNoTool: Bool
 
     init(home: URL, environment: [String: String], personHome: URL,
          template: URL? = AgentPlugin.bundled, skill: URL? = AgentPlugin.bundledSkill,
          marketplaceFolder: URL = AgentPlugin.marketplaceFolder, inboxRoot: URL = AgentPlugin.inboxRoot,
          marketplace: String = AgentPlugin.marketplace, appName: String = Identity.name,
          migrations: LegacySkillMigrations = LegacySkillMigrations(file: LegacySkillMigrations.standard),
-         host: @escaping (AgentClient, URL) -> PluginHost = { PluginHost(client: $0, root: $1) }) {
+         host: ((AgentClient, URL) -> PluginHost)? = nil) {
         self.home = home
         self.environment = environment
         self.personHome = personHome
@@ -39,13 +41,13 @@ final class AgentPlugins: @unchecked Sendable {
         self.marketplace = marketplace
         self.appName = appName
         self.migrations = migrations
-        self.host = host
+        self.host = host ?? { PluginHost(client: $0, root: $1, home: home) }
+        runsNoTool = AgentPlugin.isPersonsHome(home, environment: environment, personHome: personHome)
     }
 
     /// The app's: its home folder, which `CFFIXED_USER_HOME` moves, and its own environment.
     convenience init() {
-        self.init(home: FileManager.default.homeDirectoryForCurrentUser, environment: ProcessInfo.processInfo.environment,
-                  personHome: AgentPlugin.personHome)
+        self.init(home: AgentPlugin.appHome, environment: AgentPlugin.appEnvironment, personHome: AgentPlugin.personHome)
     }
 
     /// The version this copy of the app carries.
@@ -54,7 +56,8 @@ final class AgentPlugins: @unchecked Sendable {
     /// Launch. Writes the marketplace, then for each agent on this Mac: installs the plugin where the
     /// skill from before the plugin is (that person chose the skill, and the plugin is what carries it
     /// now), once per agent folder, takes that skill's folders away once the plugin is in, and updates
-    /// a plugin older than this app's. Nothing is installed where neither is.
+    /// a plugin older than this app's. Nothing is installed where neither is. A test launch on the
+    /// person's own home folder stops after the marketplace.
     func launch(completion: @escaping @MainActor @Sendable ([AgentPlugin.Result]) -> Void = { _ in }) {
         queue.async { [self] in
             var results: [AgentPlugin.Result] = []
@@ -63,11 +66,16 @@ final class AgentPlugins: @unchecked Sendable {
                 Log.write("[plugin] error \(error.localizedDescription)")
                 return
             }
+            if runsNoTool {
+                Log.write("[plugin] test launch: \(home.path) is the person's own home folder, so no install or update runs; \(Self.moveHome)")
+                DispatchQueue.main.async { MainActor.assumeIsolated { completion([]) } }
+                return
+            }
             let agents = home.appendingPathComponent(".agents")
             let guardedAgents = AgentPlugin.isPersons(agents, environment: environment, personHome: personHome)
                 && FileManager.default.fileExists(atPath: agents.path) ? [agents] : []
             for folder in AgentPlugin.guarded(home: home, environment: environment, personHome: personHome) + guardedAgents {
-                Log.write("[plugin] test launch: left \(folder.path) alone; launch with CFFIXED_USER_HOME to test the plugin")
+                Log.write("[plugin] test launch: left \(folder.path) alone; \(Self.moveHome)")
             }
             for root in AgentPlugin.roots(home: home, environment: environment, personHome: personHome) {
                 guard let client = AgentPlugin.client(of: root, environment: environment) else { continue }
@@ -129,11 +137,16 @@ final class AgentPlugins: @unchecked Sendable {
         }
     }
 
-    /// A test launch's answer for one of the person's own agent folders, which `install-skill?root=`
-    /// can name: the Agents tab and setup only list the folders `roots` gives.
+    private static let moveHome = "launch with CFFIXED_USER_HOME to test the plugin"
+
+    /// A test launch's answer on the person's own home folder, or for one of the person's own agent
+    /// folders, which `install-skill?root=` can name: the Agents tab and setup only list `roots`.
     private func refusal(_ root: URL) -> AgentPlugin.Result? {
+        if runsNoTool {
+            return AgentPlugin.Result(root: root, outcome: .failed, detail: "a test launch on the person's own home folder runs no agent tool; \(Self.moveHome)")
+        }
         guard AgentPlugin.isGuarded(root, environment: environment, personHome: personHome) else { return nil }
-        return AgentPlugin.Result(root: root, outcome: .failed, detail: "a test launch leaves this folder alone; launch with CFFIXED_USER_HOME to test the plugin")
+        return AgentPlugin.Result(root: root, outcome: .failed, detail: "a test launch leaves this folder alone; \(Self.moveHome)")
     }
 
     /// Where the skill from before the plugin may be for an agent: `<root>/skills/vignette`, and for

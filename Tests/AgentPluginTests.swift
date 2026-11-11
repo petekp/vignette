@@ -140,7 +140,7 @@ final class AgentPluginTests: XCTestCase {
 
     func host(_ client: AgentClient, root: URL, calls: Calls, tool: String? = "/bin/tool",
                       answer: @escaping ([String]) -> (Int32, String) = { _ in (0, "") }) -> PluginHost {
-        var host = PluginHost(client: client, root: root, binary: { tool })
+        var host = PluginHost(client: client, root: root, home: dir, binary: { tool })
         host.run = { _, arguments, _, environment in
             calls.made.append(arguments)
             calls.environments.append(environment)
@@ -166,7 +166,7 @@ final class AgentPluginTests: XCTestCase {
         let root = dir.appendingPathComponent("elsewhere/.claude")
         _ = host(.claude, root: root, calls: calls).update()
         XCTAssertEqual(calls.environments.first?["CLAUDE_CONFIG_DIR"], root.path)
-        XCTAssertEqual(calls.environments.first?["HOME"], NSHomeDirectory())
+        XCTAssertEqual(calls.environments.first?["HOME"], dir.path)
     }
 
     /// A failure stops at that step and carries the tool's own words.
@@ -253,6 +253,10 @@ final class AgentPluginTests: XCTestCase {
         try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
         XCTAssertEqual(AgentPlugin.roots(home: scratch, environment: test.merging(["CODEX_HOME": nested.path, "CLAUDE_CONFIG_DIR": otherCase.path]) { $1 },
                                          personHome: person), [])
+        XCTAssertEqual(AgentPlugin.claudeRoot(home: person, environment: [:], personHome: person), own[0])
+        XCTAssertNil(AgentPlugin.claudeRoot(home: person, environment: test, personHome: person))
+        XCTAssertNil(AgentPlugin.claudeRoot(home: scratch, environment: test.merging(["CLAUDE_CONFIG_DIR": own[0].path]) { $1 }, personHome: person))
+        XCTAssertEqual(AgentPlugin.claudeRoot(home: scratch, environment: test, personHome: person), scratch.appendingPathComponent(".claude"))
     }
 
     func testATestLaunchNeverGetsThePersonsOwnCodexHomeForLiveInk() {

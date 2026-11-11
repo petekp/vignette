@@ -427,7 +427,6 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertEqual(inWorktree.place, .repository(name: "evercars", root: canonical(main), worktree: "live-ink", subfolder: nil))
         XCTAssertEqual(inWorktree.branch, "live-ink")
 
-        // A worktree Codex made is "Codex worktree", whatever its folder is called, and a detached HEAD has no branch.
         // A worktree that is gone inside its repository is that worktree, not a subfolder of the checkout.
         let goneInside = SessionPlaces.resolve(folder: main.appendingPathComponent(".claude/worktrees/agent-1").path, home: home.path)
         XCTAssertEqual(goneInside.place, .repository(name: "evercars", root: canonical(main), worktree: "agent-1", subfolder: nil))
@@ -437,7 +436,7 @@ final class AgentConnectionTests: XCTestCase {
         try write("gitdir: \(codexGitdir.path)\n", to: codex.appendingPathComponent(".git"))
         try write("../..\n", to: codexGitdir.appendingPathComponent("commondir"))
         try write("0123456789abcdef\n", to: codexGitdir.appendingPathComponent("HEAD"))
-        let inCodex = SessionPlaces.resolve(folder: codex.path, home: home.path)
+        let inCodex = SessionPlaces.resolve(folder: codex.path, home: home.path, environment: [:])
         XCTAssertEqual(inCodex.place, .repository(name: "evercars", root: canonical(main), worktree: SessionPlaces.codexWorktree, subfolder: nil))
         XCTAssertNil(inCodex.branch)
     }

@@ -182,7 +182,7 @@ struct SettingsView: View {
     @ObservedObject private var settings = Settings.shared
     @ObservedObject private var responders = ResponderStatus.shared
     /// What is on disk for each agent, read on show and after every switch.
-    @State private var agentRows = AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser)
+    @State private var agentRows = AgentPlugin.appStatuses()
     /// Why the last install or removal failed, by agent directory. The switch shows what the agent's
     /// settings say, so after a failure it is back where it was, and this says why.
     @State private var agentFailures: [URL: String] = [:]
@@ -457,7 +457,7 @@ struct SettingsView: View {
     }
 
     private func refreshAgents() {
-        agentRows = AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser)
+        agentRows = AgentPlugin.appStatuses()
         claudeReads = claudeRow.map { ClaudeReadRule.isSet(in: $0.root) } ?? false
     }
 

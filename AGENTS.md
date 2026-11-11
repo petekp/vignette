@@ -145,8 +145,8 @@ Before you drive the app:
 - Delete test files from the watch folder afterwards. It is the user's real screenshot folder.
 - A test copy never touches the person's own `~/.claude`, `~/.codex` and `~/.agents`: with
   `VIGNETTE_SETTINGS` set, `AgentPlugin.roots` leaves out the first two, `AgentPlugins` leaves out
-  the third and refuses an install into the person's own folders, and the launch logs
-  `[plugin] test launch: left <folder> alone`. It neither registers nor removes a login item. It runs no updater, and logs
+  the third, refuses an install into the person's own folders and runs no agent tool on the
+  person's own home, and the launch logs a `[plugin] test launch:` line for each. It neither registers nor removes a login item. It runs no updater, and logs
   `[update] test launch: no updater`, unless `VIGNETTE_FEED` names a feed. With one, it checks that
   feed in place of the release feed. Each of these gates reads `Launch.isTest`. To test the plugin, also launch with
   `CFFIXED_USER_HOME=<scratch home>` (`docs/test-isolation-2026-09-29.md`). It runs no codex, herdr

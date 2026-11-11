@@ -206,9 +206,8 @@ struct ClaudeCodeConnection: AgentConnection {
     let reportsTurns = true
     /// The inboxes, one folder per Claude Code process. Injected so a test never reads the real ones.
     var inboxes = AgentPlugin.inboxRoot
-    /// Where Claude Code keeps its transcripts, one folder per project, for a session whose inbox
-    /// does not name its transcript yet.
-    var transcripts = AgentPlugin.claudeRoot.appendingPathComponent("projects")
+    /// Claude Code's transcripts, one folder per project, for a session whose inbox names none yet.
+    var transcripts = AgentPlugin.claudeRoot?.appendingPathComponent("projects")
     /// What the inbox mod knows about each session, by session id. Injected so a test never reads the
     /// person's own store.
     var modStore: @Sendable () -> [String: InboxModStore.Entry] = { InboxModStore.read() }
@@ -308,7 +307,7 @@ struct ClaudeCodeConnection: AgentConnection {
     /// One session can run in two processes at once, as when it is resumed in a second terminal; it
     /// is listed once, from the first inbox holding it, and a send writes to that inbox.
     func destinations(of inboxes: [Inbox], withMenuFields: Bool) -> [AgentDestination] {
-        let folders = (try? FileManager.default.contentsOfDirectory(at: transcripts, includingPropertiesForKeys: nil)) ?? []
+        let folders = transcripts.flatMap { try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil) } ?? []
         let mod = withMenuFields ? modStore() : [:]
         var places: [String: SessionPlaces.Found] = [:]
         var listed: Set<String> = []

@@ -61,8 +61,9 @@ extension AgentDestination {
 /// candidate session's facts then come from its own transcript, by the rule a running session's do
 /// (`ClaudeCodeConnection.transcript(tail:)`): its title and when it was last used.
 struct StartableSessions: Sendable {
-    var history = AgentPlugin.claudeRoot.appendingPathComponent("history.jsonl")
-    var transcripts = AgentPlugin.claudeRoot.appendingPathComponent("projects")
+    /// None in a test launch on the person's own Claude Code folder (`AgentPlugin.claudeRoot`).
+    var history = AgentPlugin.claudeRoot?.appendingPathComponent("history.jsonl")
+    var transcripts = AgentPlugin.claudeRoot?.appendingPathComponent("projects")
     /// Whether Vignette can start a session at all. Without a launcher no row is offered.
     var canStart: @Sendable () -> Bool = { HerdrFocus.binaryToRun() != nil }
     var now: @Sendable () -> Date = { Date() }
@@ -80,7 +81,7 @@ struct StartableSessions: Sendable {
     private static let readTranscripts = FileMemo<ClaudeCodeConnection.Transcript>()
 
     func destinations() -> [AgentDestination] {
-        guard canStart() else { return [] }
+        guard canStart(), let history, let transcripts else { return [] }
         let entries = Self.readHistory.value(of: history) { file in
             ClaudeCodeConnection.tail(of: file, bytes: Self.historyBytes).map(Self.entries(in:)) ?? []
         }

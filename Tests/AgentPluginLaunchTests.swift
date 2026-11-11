@@ -78,16 +78,19 @@ extension AgentPluginTests {
         XCTAssertEqual(calls.made, [])
     }
 
-    func testATestLaunchLeavesThePersonsAgentsSkillAloneWhenCodexHomeNamesAScratchFolder() throws {
+    func testATestLaunchOnThePersonsHomeRunsNoAgentToolEvenForScratchAgentFolders() throws {
         let person = dir.appendingPathComponent("person"), scratchCodex = dir.appendingPathComponent("scratch/codex")
         let personsSkill = AgentPlugin.agentsLegacyEntry(home: person)
         try write("old", to: personsSkill.appendingPathComponent("SKILL.md"))
         try write("old", to: AgentPlugin.legacyEntry(in: scratchCodex).appendingPathComponent("SKILL.md"))
         let test = ["VIGNETTE_SETTINGS": "/tmp/x/settings.json", "CODEX_HOME": scratchCodex.path]
         let calls = Calls()
-        launch(launcher(home: person, environment: test, personHome: person, calls: { _ in calls }))
-        XCTAssertEqual(calls.made.last, ["plugin", "add", "vignette@vignette"])
-        XCTAssertEqual(AgentPlugin.legacySkill(at: AgentPlugin.legacyEntry(in: scratchCodex)), .none)
+        let plugins = launcher(home: person, environment: test, personHome: person, calls: { _ in calls })
+        launch(plugins)
+        XCTAssertNotNil(AgentPlugin.version(inMarketplace: staged))
+        XCTAssertEqual(install(plugins, into: [scratchCodex]).map(\.outcome), [.failed])
+        XCTAssertEqual(calls.made, [])
+        XCTAssertEqual(AgentPlugin.legacySkill(at: AgentPlugin.legacyEntry(in: scratchCodex)), .folder)
         XCTAssertEqual(AgentPlugin.legacySkill(at: personsSkill), .folder)
     }
 
@@ -95,7 +98,8 @@ extension AgentPluginTests {
         let person = dir.appendingPathComponent("person"), claude = person.appendingPathComponent(".claude")
         try write("old", to: AgentPlugin.legacyEntry(in: claude).appendingPathComponent("SKILL.md"))
         let calls = Calls()
-        let plugins = launcher(home: person, environment: ["VIGNETTE_SETTINGS": "/tmp/x/settings.json"], personHome: person, calls: { _ in calls })
+        let plugins = launcher(home: dir.appendingPathComponent("scratch"), environment: ["VIGNETTE_SETTINGS": "/tmp/x/settings.json"],
+                               personHome: person, calls: { _ in calls })
         XCTAssertEqual(install(plugins, into: [claude]).map(\.outcome), [.failed])
         let done = expectation(description: "remove")
         plugins.remove(from: claude) { XCTAssertEqual($0.outcome, .failed); done.fulfill() }

@@ -109,14 +109,12 @@ enum AgentPlugin {
     /// The agents' config folders on this Mac that exist, Claude Code's then Codex's: `~/.claude`
     /// and `~/.codex`, or where `CLAUDE_CONFIG_DIR` and `CODEX_HOME` point. A test launch never gets
     /// the person's own (`guarded`), so the launch, setup and the Agents tab cannot reach them.
-    static func roots(home: URL, environment: [String: String] = ProcessInfo.processInfo.environment,
-                      personHome: URL = AgentPlugin.personHome) -> [URL] {
+    static func roots(home: URL, environment: [String: String], personHome: URL = AgentPlugin.personHome) -> [URL] {
         existingRoots(home: home, environment: environment).filter { !isGuarded($0, environment: environment, personHome: personHome) }
     }
 
     /// The folders `roots` leaves out: the person's own agent folders, in a test launch.
-    static func guarded(home: URL, environment: [String: String] = ProcessInfo.processInfo.environment,
-                        personHome: URL = AgentPlugin.personHome) -> [URL] {
+    static func guarded(home: URL, environment: [String: String], personHome: URL = AgentPlugin.personHome) -> [URL] {
         existingRoots(home: home, environment: environment).filter { isGuarded($0, environment: environment, personHome: personHome) }
     }
 
@@ -136,13 +134,10 @@ enum AgentPlugin {
 
     /// Whether `folder` is in one of the person's own agent folders and this is a test launch, which
     /// `VIGNETTE_SETTINGS` marks. A test copy that must install the plugin moves the home folder
-    /// with `CFFIXED_USER_HOME`, or names scratch folders with `CLAUDE_CONFIG_DIR` and `CODEX_HOME`.
+    /// with `CFFIXED_USER_HOME`.
     static func isGuarded(_ folder: URL, environment: [String: String], personHome: URL) -> Bool {
         isPersons(folder, environment: environment, personHome: personHome)
     }
-
-    /// `~/.claude`, or where `CLAUDE_CONFIG_DIR` points.
-    static var claudeRoot: URL { root(of: .claude, home: URL(fileURLWithPath: NSHomeDirectory())) }
 
     static func root(of client: AgentClient, home: URL, environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
         switch client {
@@ -153,7 +148,7 @@ enum AgentPlugin {
 
     /// Which agent a config folder belongs to: `.claude` and `.codex` by name, and a folder
     /// `CLAUDE_CONFIG_DIR` or `CODEX_HOME` names by that.
-    static func client(of root: URL, environment: [String: String] = ProcessInfo.processInfo.environment) -> AgentClient? {
+    static func client(of root: URL, environment: [String: String]) -> AgentClient? {
         let path = root.standardizedFileURL.path
         if environment["CLAUDE_CONFIG_DIR"].map({ URL(fileURLWithPath: $0).standardizedFileURL.path }) == path { return .claude }
         if environment["CODEX_HOME"].map({ URL(fileURLWithPath: $0).standardizedFileURL.path }) == path { return .codex }
@@ -198,12 +193,14 @@ enum AgentPlugin {
 
     static func status(of root: URL, client: AgentClient) -> AgentPluginStatus {
         AgentPluginStatus(root: root, client: client, installed: isInstalled(in: root, client: client),
-                          hasTool: PluginHost(client: client, root: root).binary() != nil)
+                          hasTool: PluginHost.binary(for: client) != nil)
     }
 
     /// One row per agent on this Mac, in the order `roots` lists them.
-    static func statuses(home: URL) -> [AgentPluginStatus] {
-        roots(home: home).compactMap { root in client(of: root).map { status(of: root, client: $0) } }
+    static func statuses(home: URL, environment: [String: String], personHome: URL) -> [AgentPluginStatus] {
+        roots(home: home, environment: environment, personHome: personHome).compactMap { root in
+            client(of: root, environment: environment).map { status(of: root, client: $0) }
+        }
     }
 
     // MARK: Outcomes
@@ -229,6 +226,8 @@ struct PluginHost {
     let client: AgentClient
     /// The agent's config folder.
     let root: URL
+    /// The tool's `HOME`: the home folder of the `AgentPlugins` that runs it.
+    let home: URL
     var binary: () -> String?
     var run: (String, [String], TimeInterval, [String: String]) -> (status: Int32, output: String, timedOut: Bool)? = {
         Subprocess.run($0, $1, timeout: $2, environment: $3)
@@ -238,9 +237,10 @@ struct PluginHost {
 
     static let timeout: TimeInterval = 60
 
-    init(client: AgentClient, root: URL, binary: (() -> String?)? = nil) {
+    init(client: AgentClient, root: URL, home: URL, binary: (() -> String?)? = nil) {
         self.client = client
         self.root = root
+        self.home = home
         self.binary = binary ?? { PluginHost.binary(for: client) }
     }
 
@@ -257,14 +257,13 @@ struct PluginHost {
         }
     }
 
-    /// `HOME` is the app's, which `CFFIXED_USER_HOME` moves for a test copy; the tool would read
-    /// the real one from the environment. The config folder is passed only when it is not the
-    /// default in that home: `CLAUDE_CONFIG_DIR` also moves Claude Code's `.claude.json` into it.
+    /// `HOME` is `home`, which `CFFIXED_USER_HOME` moves for a test copy; the tool would read the
+    /// real one from the environment. The config folder is passed only when it is not the default
+    /// in that home: `CLAUDE_CONFIG_DIR` also moves Claude Code's `.claude.json` into it.
     var environment: [String: String] {
-        let home = NSHomeDirectory()
-        let defaultRoot = AgentPlugin.root(of: client, home: URL(fileURLWithPath: home), environment: [:])
-        guard root.standardizedFileURL.path != defaultRoot.standardizedFileURL.path else { return ["HOME": home] }
-        return ["HOME": home, client == .claude ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME": root.path]
+        let defaultRoot = AgentPlugin.root(of: client, home: home, environment: [:])
+        guard root.standardizedFileURL.path != defaultRoot.standardizedFileURL.path else { return ["HOME": home.path] }
+        return ["HOME": home.path, client == .claude ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME": root.path]
     }
 
     func installArguments(marketplaceFolder: URL) -> [[String]] {
