@@ -42,8 +42,8 @@
   the spring with no bounce and for most flights on the quick spring (0.26 s on a 1,210 pt path). The landing comes at least three refreshes later, which the flight
   home needs to put the stack's panel on screen first (`docs/exit-panel-2026-11-01.md`). From the
   moment a bouncing spring first reaches its target the flight's rect contains the target on every
-  side. A spring with no bounce is still up to half a point short then, which uncovers only the same
-  picture underneath. So the
+  side. A flight that covers within half a point is still up to half a point short then, which
+  uncovers only the same picture underneath. So the
   annotator's window comes up there, with its own shadow off (`AnnotationController.show`), hidden
   behind the flight image until `arrived`. That is what makes the editor take the pointer the moment
   the card looks still: the toolbar and the outside-click monitor start with the window, and a
