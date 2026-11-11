@@ -2,7 +2,9 @@ import SwiftUI
 
 struct CardView: View, Equatable {
     let card: Card
-    let index: Int      // 0 = newest, at the bottom
+    /// Where the card waits in the slide's stagger: its index from the newest, at the bottom, or
+    /// from the lowest card in view while the column slides out.
+    let place: Int
     let state: CardState
     let ui: UITweaks
     /// How wide the stack is drawn; see `StackLayout.widthScale`.
@@ -12,7 +14,7 @@ struct CardView: View, Equatable {
     let model: StackModel
 
     nonisolated static func == (a: CardView, b: CardView) -> Bool {
-        a.card == b.card && a.index == b.index && a.state == b.state && a.ui == b.ui
+        a.card == b.card && a.place == b.place && a.state == b.state && a.ui == b.ui
             && a.widthScale == b.widthScale && a.motion == b.motion && a.model === b.model
     }
 
@@ -156,8 +158,14 @@ struct CardView: View, Equatable {
                     // A press toggles; dragging from here sweeps selection down or up the column.
                     .gesture(
                         DragGesture(minimumDistance: 0, coordinateSpace: .named("stack"))
-                            .onChanged { value in model.onSweep(value.location.y) }
-                            .onEnded { _ in model.onSweepEnd() }
+                            .onChanged { value in
+                                if model.sweepCard != card.id { model.sweepCard = card.id }
+                                model.onSweep(value.location.y)
+                            }
+                            .onEnded { _ in
+                                model.sweepCard = nil
+                                model.onSweepEnd()
+                            }
                     )
                     .padding(CardView.hitSlop(.topLeading).negated)
                     .padding(CardView.buttonPad)
@@ -192,7 +200,6 @@ struct CardView: View, Equatable {
         // carries only the image and its border.
         .landing(inSlot, landing, leaving: leaving)
         .animation(Anim.spring((notice == nil ? 0.4 : 0.15) * motion), value: notice?.kind)
-        .zIndex(showsHover ? 1 : 0)   // the hover scale may hang over the card below
         .scaleEffect(pressed || state.dragged ? ui.pressScale : (showsHover ? ui.hoverScale : 1))
         .animation(Anim.spring(0.25 * motion, bounce: 0.3), value: pressed)
         // A card coming back from a drag settles without the press's bounce.
@@ -219,7 +226,7 @@ struct CardView: View, Equatable {
     /// delay shrinks for tall stacks so the whole column is never slower than `staggerTotalMax`.
     private var slideDelay: Double {
         if state.entering { return insertLead }
-        let place = state.slidingOut ? index : state.entranceRank ?? index
+        let place = state.slidingOut ? self.place : state.entranceRank ?? self.place
         return Double(max(0, place)) * StackView.staggerStep(count: state.cardCount)
     }
 

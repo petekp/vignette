@@ -58,7 +58,7 @@ extension ThumbnailController {
     private func addOlder(_ looked: [(Screenshot, Thumbnailer.Lookup)]) {
         guard isRecentStack else { return }
         let have = Set(model.cards.map(\.shot.key))
-        let cards = looked.filter { !have.contains($0.0.key) }.compactMap { makeCard($0.0, lookup: $0.1) }
+        let cards = looked.filter { !have.contains($0.0.key) }.compactMap { makeCard($0.0, lookup: $0.1, caches: false) }
         older.took(cards.count)
         Log.write("[stack] older cards=\(cards.count) column=\(model.cards.count + cards.count)\(older.reachedOldest ? " reached-oldest" : "")")
         guard !cards.isEmpty else { return }
@@ -103,7 +103,7 @@ extension ThumbnailController {
         let maxPixel = Thumbnailer.isDataless(url) ? cloudThumbnailPixels : thumbnailPixels(size: card.size, pointSize: card.pointSize)
         if let image = Thumbnailer.cached(at: url, maxPixel: maxPixel, space: screenSpace) { return arrive(image, for: card.id) }
         pictures.asked.insert(card.id)
-        Thumbnailer.loadCard(at: url, maxPixel: maxPixel, space: screenSpace) { [weak self] image, _ in
+        Thumbnailer.loadCard(at: url, maxPixel: maxPixel, space: screenSpace, caches: false) { [weak self] image, _ in
             guard let self, self.pictures.asked.contains(card.id), let image else { return }
             self.pictures.asked.remove(card.id)
             self.arrive(image, for: card.id)

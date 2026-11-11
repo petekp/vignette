@@ -164,32 +164,10 @@
   stack showing gets the whole visible frame.
   `docs/stack-room-2026-09-17.md` has the numbers, and `docs/stack-narrowing-2026-09-23.md` what a
   frame of the narrowing costs and the options for making it cheaper.
-- The recent stack reaches back past its first `recentCount` cards, to the oldest file in the
-  folder. A scroll toward older cards that brings the view within 1.5 viewports of the column's top
-  asks for the next `recentCount` screenshots older than the oldest card (`OlderShots`,
-  `ThumbnailController+Older.swift`). Up arrow on the top card asks too, and the focus moves on to
-  the first new card once the chunk is in. The order is the index's, read by
-  `ScreenshotWatcher.older(after:top:shown:limit:)` on a background queue, which also looks up each
-  file's header. The main thread never lists the folder: it runs the person's filter
-  (`AppDelegate.isShown`), then makes the chunk's cards and lays out the column. The first chunk
-  starts after the top card, so a card that joined the bottom with an old date moves nothing. Each
-  later chunk starts after the last file the one before took (`ScreenshotWatcher.Place`, a date and
-  a name), so a file removed meanwhile does not move it. Every change to `StackModel.scroll` is
-  checked on the next turn (`StackModel.scrolled`), so a drag-select's auto-scroll loads chunks too.
-- A chunk joins the column in one update with animations off, as `present` changes it. The scroll
-  counts from the newest card, so the cards in view do not move while the column grows at its top.
-  The new cards slide in from the screen's edge, staggered from the lowest, as cards entering above
-  a column do. `[stack] older cards=<n> column=<n>` logs each chunk, with `reached-oldest` on the one
-  that reached the oldest file. After it nothing more loads, and nothing on screen says there is
-  more. Only the stack the shortcut opened loads older cards; the corner's own cards made into the
-  stack by a selection are the latest captures and nothing more. Showing a new column starts over
-  (`newColumn`): the next shortcut opens the newest `recentCount`, and a chunk still being read is
-  dropped. Once a chunk is asked for, a new capture no longer drops the oldest card
-  (`OlderShots.columnLimit`), since the oldest are the cards the person scrolled to. Cmd+A selects
-  every card in the column, chunks included, and nothing that is not loaded. A column longer than
-  100 cards and `recentCount` lets pictures go far from the view (`CardPictures`, the memory rule). `[state]
-  stack.older` gives `loading`, `reachedOldest` and `added`. The column still lays out every card
-  it holds, so each frame of a long column's scroll and narrowing costs more with every card.
+- The column reaching back past its first `recentCount` to older screenshots, and building only
+  the cards near the view, have their own rules in `docs/rules/stack-column.md`. Read it before
+  changing `StackView.swift`, `OlderShots.swift`, `CardPictures.swift`,
+  `ScreenshotWatcher+Older.swift`, `StackLayout+Slots.swift` or `ThumbnailController+Older.swift`.
 - A card joining the open stack is not animated as a layout change. `ThumbnailController.shiftUp`
   changes the layout and grows the panel with animations off, lifts every card that was there back
   to where it was drawn (`StackModel.lift`), and springs the lifts to 0 on the next turn. The panel
@@ -201,4 +179,4 @@
 - A card's thumbnail fills the card, so a screenshot whose shape differs from the card's box hangs
   outside the card's frame, and the clip that hides it does not shrink the hit area. The
   `contentShape` in `CardView` holds each card's hover and clicks to its own frame; without it a
-  hovered card, which `zIndex` raises for its hover scale, takes them from the card below.
+  hovered card, whose slot `zIndex` raises for its hover scale, takes them from the card below.

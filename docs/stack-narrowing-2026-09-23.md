@@ -142,3 +142,14 @@ summed them only read traces, and they were not committed.
 ## Decision
 
 Pete, 2026-09-23: left for now, to take up later. Nothing was built. `docs/TODOS.md` lists it.
+
+Pete, 2026-11-11: build B, so that a stack reaching back through older screenshots stays smooth.
+It is built on `older-shots` as `CardColumn` (`docs/rules/stack.md`). Measured by the column cost
+probe (an off-screen `NSHostingView` of `StackView`, each update timed through layout, display and
+`CATransaction.flush`, median of 30), in main-thread milliseconds before and after:
+
+| Cards | Scroll frame | Narrowing frame | Hover | Open |
+|---|---|---|---|---|
+| 30 | 0.73 → 0.65 | 3.43 → 2.51 | 2.37 → 2.09 | 17.5 → 12.0 |
+| 100 | 2.60 → 0.98 | 11.26 → 2.90 | 3.66 → 2.57 | 35.6 → 8.6 |
+| 300 | 10.44 → 2.39 | 33.29 → 5.57 | 8.47 → 4.35 | 106.1 → 14.0 |

@@ -90,15 +90,8 @@ struct StackView: View {
         let inset = layout.inset
         let shadowRoom = layout.cardShadowRoom
         let safeBottom = model.safeBottom
-        return VStack(alignment: .trailing, spacing: layout.spacing) {
-            ForEach(Array(model.cards.enumerated().reversed()), id: \.element.id) { index, card in
-                CardView(card: card, index: index, state: CardState(of: card, in: model), ui: layout.ui,
-                         widthScale: model.widthScale, motion: settings.motionScale, model: model)
-                    .equatable()
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-            }
-        }
-        .coordinateSpace(name: "stack")
+        return CardColumn(model: model, layout: layout, motion: settings.motionScale, scroll: model.scroll,
+                          lift: model.lift.values.max() ?? 0, widthScale: model.widthScale)
         .offset(y: model.scroll)
         .padding(inset)
         // The Dock's room, so the newest card rests above the Dock rather than on it.
@@ -302,3 +295,62 @@ extension EdgeInsets {
     /// its hit area without moving anything around it.
     var negated: EdgeInsets { EdgeInsets(top: -top, leading: -leading, bottom: -bottom, trailing: -trailing) }
 }
+
+/// The column's cards. A card is built only while its slot is within `reach` of the view, or while
+/// the model keeps it built (`StackModel.keptBuilt`). Every other slot is an empty frame of the
+/// card's size, so each card sits where a column of built cards puts it, and the controller's
+/// frames (`StackLayout.cardFrame`) hold for every card. The view is read at the scroll, lift and
+/// width drawn in this frame: SwiftUI hands an `Animatable` view each frame's value while they
+/// animate, so a spring that carries the column far builds the cards it passes on the way, before
+/// they come into view.
+private struct CardColumn: View, Animatable {
+    @ObservedObject var model: StackModel
+    let layout: StackLayout
+    let motion: Double
+    var scroll: CGFloat
+    /// How far the lifted cards are drawn below their slots (`StackModel.lift`).
+    var lift: CGFloat
+    var widthScale: CGFloat
+
+    /// How far past the view, in viewports, cards are built.
+    static let reach: CGFloat = 1
+
+    nonisolated var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, CGFloat> {
+        get { AnimatablePair(AnimatablePair(scroll, lift), widthScale) }
+        set { (scroll, lift, widthScale) = (newValue.first.first, newValue.first.second, newValue.second) }
+    }
+
+    var body: some View {
+        let drawnNow = StackLayout(ui: layout.ui, widthScale: widthScale)
+        let sizes = model.cards.map { drawnNow.drawn($0.size) }
+        let viewBottom = scroll + lift, viewTop = viewBottom + model.viewport
+        let reach = model.viewport * Self.reach
+        let built = drawnNow.cards(meeting: (viewBottom - reach)...(viewTop + reach), sizes: sizes)
+        // The column slides out from the lowest card in view, so a column scrolled far up leaves at once.
+        let lowestInView = drawnNow.cards(meeting: viewBottom...viewTop, sizes: sizes).lowerBound
+        let kept = model.keptBuilt
+        return VStack(alignment: .trailing, spacing: layout.spacing) {
+            ForEach(Array(model.cards.enumerated().reversed()), id: \.element.id) { index, card in
+                let size = layout.drawn(card.size)
+                ZStack {
+                    if built.contains(index) || kept.contains(card.id) {
+                        CardView(card: card, place: model.slidingOut ? index - lowestInView : index,
+                                 state: CardState(of: card, in: model), ui: layout.ui,
+                                 widthScale: layout.widthScale, motion: motion, model: model)
+                            .equatable()
+                            // Built or let go out of view, at once: a fade would still be running
+                            // if a fling brought it in.
+                            .transition(.identity)
+                    }
+                }
+                // The slot's own frame, so a card built in mid-narrowing takes the size its
+                // neighbours are springing through.
+                .frame(width: size.width, height: size.height)
+                .zIndex(model.hoveredCard == card.id ? 1 : 0)   // the hover scale may hang over the card below
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .coordinateSpace(name: "stack")
+    }
+}
+

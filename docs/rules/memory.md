@@ -19,7 +19,9 @@
   of the cache's reach, so a column longer than 100 cards and `recentCount` lets the pictures of
   cards more than four viewports from the view go, 30 at a time. It takes them back within two
   viewports, whatever moved the column: from the cache, or decoded on the thumbnail queue, and the
-  pictures that arrive within 50 ms go to the cards in one change (`CardPictures`). A picture that
+  pictures that arrive within 50 ms go to the cards in one change (`CardPictures`). Those pictures,
+  and those of every card a chunk of older screenshots brings in, are decoded outside the cache
+  (`Thumbnailer.loadCard(caches: false)`), so they never push out the newest cards' pictures. A picture that
   does not decode is not asked for again in that column. The newest `recentCount` cards keep their
   pictures, and so does a card in the annotator, in a stitch, selected, pressed, dragged, hovered
   or focused. Text bitmaps are capped by their

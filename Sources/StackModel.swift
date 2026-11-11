@@ -55,6 +55,17 @@ final class StackModel: ObservableObject {
         didSet { if scroll != oldValue { scrolled(scroll > oldValue) } }
     }
     var scrolled: (_ towardOlder: Bool) -> Void = { _ in }
+    /// The card a drag-select began on. Its selection circle carries the sweep's gesture, which
+    /// ends if the card's view goes.
+    var sweepCard: UUID?
+    /// The cards the column builds wherever they are (`CardColumn`): one in the annotator or in a
+    /// stitch, whose slot a flight lands in; one pressed, dragged out, hovered or carrying a
+    /// drag-select, whose gesture or hover would end with its view; one showing a notice, whose
+    /// overlay keeps its own state; and the focused and entering card.
+    var keptBuilt: Set<UUID> {
+        outCards.union(forming).union([pressedCard, draggedCard, hoveredCard, focused, entering, sweepCard].compactMap { $0 })
+            .union(cards.lazy.filter { self.notices.notice(on: $0.shot.key) != nil }.map(\.id))
+    }
     /// How far a two-finger swipe moves the column toward the screen's edge (`StackSwipe`).
     @Published var swipe: CGFloat = 0
     /// The swipe carries the column off the screen, or back, as one piece; the cards' own slide-out is off.

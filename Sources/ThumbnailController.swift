@@ -1166,7 +1166,7 @@ final class ThumbnailController {
     /// panel from the full-width height instead, so a narrowed stack keeps the panel it comes back to.
     var drawnContentHeight: CGFloat { layout.contentHeight(cards: cardSizes) }
 
-    private var maxScroll: CGFloat { max(0, drawnContentHeight - model.viewport) }
+    var maxScroll: CGFloat { max(0, drawnContentHeight - model.viewport) }
 
     private func scroll(_ event: NSEvent) {
         guard visible else { return }
@@ -1218,16 +1218,6 @@ final class ThumbnailController {
         if model.hoveredCard != id { model.hoveredCard = id }
     }
 
-    private func scrollToReveal(_ index: Int) {
-        let span = layout.cardSpan(index: index, cards: cardSizes)
-        var target = model.scroll
-        if span.top - model.scroll > model.viewport { target = span.top - model.viewport }
-        if span.bottom - model.scroll < 0 { target = span.bottom }
-        target = min(maxScroll, max(0, target))
-        guard target != model.scroll else { return }
-        withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = target }
-    }
-
     // MARK: Internals
 
     private func card(for shot: Screenshot) -> Card? {
@@ -1246,7 +1236,7 @@ final class ThumbnailController {
     /// that is not downloaded is never read here: its card takes the shape kept for it, or the
     /// screen's until iCloud's thumbnail arrives, and a screenshot is downloaded in the background
     /// for the editor. A recording is not downloaded, and its badge shows no length.
-    func makeCard(_ shot: Screenshot, lookup: Thumbnailer.Lookup? = nil) -> Card? {
+    func makeCard(_ shot: Screenshot, lookup: Thumbnailer.Lookup? = nil, caches: Bool = true) -> Card? {
         let header: Thumbnailer.Header
         var notDownloaded = false
         switch lookup ?? Thumbnailer.lookUp(shot.url) {
@@ -1262,7 +1252,7 @@ final class ThumbnailController {
         let card = Card(id: UUID(), shot: shot, image: Thumbnailer.cached(at: shot.url, maxPixel: maxPixel, space: space),
                         pointSize: header.size, size: size, agent: Agent.of(shot.url), duration: header.duration)
         if card.image == nil {
-            Thumbnailer.loadCard(at: shot.url, maxPixel: maxPixel, space: space) { [weak self] image, kept in
+            Thumbnailer.loadCard(at: shot.url, maxPixel: maxPixel, space: space, caches: caches) { [weak self] image, kept in
                 guard let self, self.model.cards.contains(where: { $0.id == card.id }) else { return }
                 if let image { self.replaceImage(of: card, with: image) }
                 if notDownloaded, let kept { self.reshape(card.id, to: kept) }
