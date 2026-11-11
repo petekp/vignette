@@ -34,7 +34,8 @@ struct CardState: Equatable {
         focused = model.focused == card.id
         isOut = model.outCards.contains(card.id)
         isForming = model.forming.contains(card.id)
-        offscreen = model.offscreen.contains(card.id)
+        // A swipe carries the column off as one piece, so the card does not slide on its own.
+        offscreen = model.offscreen.contains(card.id) && !model.swipeExit
         lift = model.lift[card.id] ?? 0
         notice = model.notices.notice(on: card.shot.key)
         entering = model.entering == card.id
