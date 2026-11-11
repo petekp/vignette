@@ -249,6 +249,10 @@ final class AgentPluginTests: XCTestCase {
                        [scratch.appendingPathComponent(".claude"), scratch.appendingPathComponent(".codex")], "with CFFIXED_USER_HOME")
         XCTAssertEqual(AgentPlugin.roots(home: scratch, environment: test.merging(["CLAUDE_CONFIG_DIR": own[0].path]) { $1 }, personHome: person),
                        [scratch.appendingPathComponent(".codex")], "a config folder named in the environment is still the person's")
+        let nested = own[1].appendingPathComponent("sub"), otherCase = URL(fileURLWithPath: own[0].path.uppercased())
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        XCTAssertEqual(AgentPlugin.roots(home: scratch, environment: test.merging(["CODEX_HOME": nested.path, "CLAUDE_CONFIG_DIR": otherCase.path]) { $1 },
+                                         personHome: person), [])
     }
 
     func testATestLaunchNeverGetsThePersonsOwnCodexHomeForLiveInk() {

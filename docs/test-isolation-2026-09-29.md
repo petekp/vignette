@@ -88,3 +88,44 @@ under the copy's own Application Support folder. The plugin's skill now names th
 scheme and log (`AgentPlugin.stage`), so a test copy's agent cannot drive the real Vignette either.
 `testATestLaunchUsesOnlyTheSessionToolItIsGiven` and `testStageNamesThisCopyOfTheAppInTheSkill`
 cover the two.
+
+## `~/.agents`, `install-skill` and the unit tests (added 2026-11-11)
+
+The guard above covered the person's `.claude` and `.codex`, not `~/.agents`. Codex reads
+`<home>/.agents/skills` whatever `CODEX_HOME` says: codex 0.164.0 listed a skill there with
+`CODEX_HOME` pointing elsewhere, on scratch folders. A launch treated `<home>/.agents/skills/vignette`
+as the skill from before the plugin for any Codex folder. Three paths reached the person's own copy:
+
+- A test launch with `CODEX_HOME` naming a scratch folder and no `CFFIXED_USER_HOME` kept that folder,
+  read the person's `~/.agents`, installed into the scratch folder and removed the person's skill.
+- Any install, test launch or not, removed it for any Codex folder, `install-skill?root=<scratch>`
+  included, and the person's own Codex then lost the skill without having the plugin.
+- `install(into:)` and `remove(from:)` did not check the guard, so `install-skill?root=~/.claude` in a
+  test copy with `"debug": true` installed into the person's folder.
+
+Unit tests could reach them too. `AgentPlugins` read the process's environment, and the test scheme sets
+`VIGNETTE_SETTINGS`, so tests run as a test launch. xcodebuild does not pass its own environment to the
+test process, but a `TEST_RUNNER_` variable or the scheme's `environmentVariables` does: with
+`TEST_RUNNER_CODEX_HOME` set, a launch test acted on that folder.
+
+What was built:
+
+- `AgentPlugins` takes the home folder, the environment and the person's home with no defaults. Its
+  `init()` gives the app's, and the tests pass their own.
+- A test launch leaves the person's `~/.agents` alone and logs
+  `[plugin] test launch: left /Users/<you>/.agents alone; …`.
+- `<home>/.agents/skills/vignette` goes only with the Codex folder the app's environment names, which
+  is the one `roots` lists. An app opened from Finder has no shell `CODEX_HOME`, so that is `~/.codex`.
+- The guard counts a folder inside one of the person's, one reached through a link, and one spelled in
+  another case as theirs (`AgentPlugin.isPersons`). A scratch home whose `.agents/skills` links to the
+  real one is caught.
+- Still open: the agent's tool runs with the app's `HOME`, so in a test launch without
+  `CFFIXED_USER_HOME` a codex it runs may read the person's `~/.agents/skills`. Not checked.
+- In a test launch, `install(into:)` and `remove(from:)` answer `failed` for the person's own folders
+  without running a tool.
+
+Four launch tests cover these: `testATestLaunchLeavesThePersonsAgentsSkillAloneWhenCodexHomeNamesAScratchFolder`,
+`testATestLaunchRefusesToInstallIntoOrRemoveFromThePersonsOwnFolders`,
+`testAnInstallRemovesTheAgentsSkillOnlyForTheCodexFolderTheEnvironmentNames` and
+`testATestLaunchOnAScratchHomeNeverRemovesThroughALinkIntoThePersonsFolders`.
+`testATestLaunchNeverGetsThePersonsOwnAgentFolders` also covers a nested folder and another case.
