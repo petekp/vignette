@@ -33,10 +33,11 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   `AppLocation.swift`, `LoginItem.swift`, `Updater.swift`, `BuildInfo.swift`,
   `ProblemReport.swift`), read `docs/rules/setup-and-updates.md`. The status item's place is in
   `docs/rules/capture.md`.
-- Before changing the stack or the corner (`Stack*.swift`, `CornerPresentation.swift`,
-  `CornerKeys.swift`, `CardView.swift`, `CardState.swift`, `SelectionStrip.swift`, `Stitch.swift`,
-  `Dock.swift`, `BackdropPanel.swift`, `FocusReturn.swift`, `DragSourceView.swift`, `CheckCoin.*`,
-  `CheckLab.swift`), read `docs/rules/stack.md`, and `docs/rules/flights-and-presses.md` for the
+- Before changing the stack or the corner (`Stack*.swift`, `OlderShots.swift`, `CardPictures.swift`,
+  `CornerPresentation.swift`, `CornerKeys.swift`, `CardView.swift`, `CardState.swift`,
+  `SelectionStrip.swift`, `Stitch.swift`, `Dock.swift`, `BackdropPanel.swift`, `FocusReturn.swift`,
+  `DragSourceView.swift`, `CheckCoin.*`, `CheckLab.swift`), read `docs/rules/stack.md`,
+  `docs/rules/stack-column.md` for the long column, and `docs/rules/flights-and-presses.md` for the
   matte and the flights in and out of the column.
 - Before changing a flight, a press or an animation (`TransitionLayer.swift`, `Flight*.swift`,
   `OutsideClick.swift`, `Anim.swift`, `Tween.swift`, `Motion.swift`, `WindowRemoval.swift`,
