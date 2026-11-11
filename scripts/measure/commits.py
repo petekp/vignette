@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Core Animation commits from an Instruments trace recorded with the Core Animation Commits
-instrument (AGENTS.md, "Measuring a stutter"). Standard library only.
+instrument (docs/rules/testing.md, "Measuring a stutter"). Standard library only.
 
 usage: commits.py <trace> [--bin 0.25] [--at T ...] [--window 1.0]
   With no --at, prints every quarter second that had work: how many commits, their total and
