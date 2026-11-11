@@ -31,7 +31,7 @@ enum Clipboard {
     /// never appears.
     static func copyRendering(_ rendering: PendingRendering, to pasteboard: NSPasteboard = .general) {
         pasteboard.clearContents()
-        pasteboard.writeObjects([renderingItem(rendering)])
+        pasteboard.writeObjects([renderingItem(rendering, loggedAs: "clipboard")])
         let written = pasteboard.changeCount
         rendering.whenDone { output in
             guard output.failure != nil, pasteboard.changeCount == written else { return }
@@ -43,11 +43,11 @@ enum Clipboard {
     /// a drawing dragged out of the stack: the same kinds of data `copyFiles` puts on for the rendered
     /// file. The path goes on as text at once; the PNG, the TIFF and the file's URL are promised, so a
     /// paste or a drop that comes before the rendering finishes waits for it, and one after a
-    /// rendering that failed gets none of the three.
-    static func renderingItem(_ rendering: PendingRendering) -> NSPasteboardItem {
+    /// rendering that failed gets none of the three. Each answer logs one `[<tag>] gave` line.
+    static func renderingItem(_ rendering: PendingRendering, loggedAs tag: String) -> NSPasteboardItem {
         let item = NSPasteboardItem()
         if let file = rendering.file { item.setString(pathsText([file]), forType: .string) }
-        item.setDataProvider(RenderingProvider(rendering: rendering), forTypes: [.png, .tiff, .fileURL])
+        item.setDataProvider(RenderingProvider(rendering: rendering, tag: tag), forTypes: [.png, .tiff, .fileURL])
         return item
     }
 
@@ -98,19 +98,28 @@ private final class ConversionProvider: NSObject, NSPasteboardItemDataProvider, 
 /// Answers a paste or a drop of a rendering that may still be running: it waits for it, then gives
 /// the PNG, its TIFF, or the written file's URL. A rendering that failed gives nothing. The callback
 /// runs on the main thread, which the rendering never needs, so waiting there cannot deadlock, but
-/// the app stands still for as long as it waits.
+/// the app stands still for as long as it waits. `[<tag>] gave type=… after=… waited=…` says when
+/// each type was asked for, counted from the item's making, and how long the app stood still for it.
 private final class RenderingProvider: NSObject, NSPasteboardItemDataProvider, @unchecked Sendable {
     private let rendering: PendingRendering
+    private let tag: String
+    private let made = CACurrentMediaTime()
     /// How long a paste waits before it gives up and gets nothing. Done's rendering goes ahead of
     /// any that has not started, so it waits for at most two: one of a 3102 by 6780 image took
     /// 0.6 s, and 1.2 s behind one already running (measured 2026-09-23). This leaves room for a
     /// Mac about four times slower.
     private static let patience: TimeInterval = 5
 
-    init(rendering: PendingRendering) { self.rendering = rendering }
+    init(rendering: PendingRendering, tag: String) {
+        self.rendering = rendering
+        self.tag = tag
+    }
 
     func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
-        guard let output = rendering.wait(timeout: Self.patience) else {
+        let asked = CACurrentMediaTime()
+        let output = rendering.wait(timeout: Self.patience)
+        Log.write("[\(tag)] gave type=\(type.rawValue) after=\(Int((asked - made) * 1000))ms waited=\(Int((CACurrentMediaTime() - asked) * 1000))ms")
+        guard let output else {
             Log.write("[clipboard] error the rendering took longer than \(Int(Self.patience)) s; the paste or drop got nothing")
             return
         }

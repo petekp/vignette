@@ -1104,12 +1104,8 @@ final class LiveInk {
         guard !isInking else { return hideDismissButton() }
         let mouse = NSEvent.mouseLocation
         let point = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
-        // The newest reply on top wins where two overlap.
-        let under = asks.asks.reversed().lazy.compactMap { ask -> (id: LiveAsks.Ask.ID, reply: ShownReply)? in
-            guard self.asks.offersDismiss(ask.id), let reply = replies[ask.id] else { return nil }
-            let onButton = self.dismissing == ask.id && self.dismissButton?.globalFrame.insetBy(dx: -6, dy: -6).contains(point) == true
-            return reply.note.insetBy(dx: -10, dy: -10).contains(point) || onButton ? (ask.id, reply) : nil
-        }.first
+        let under = Self.dismissTarget(at: point, in: asks, replies: replies, dismissing: dismissing,
+                                       buttonFrame: dismissButton?.globalFrame)
         guard let under else { return hideDismissButton() }
         let note = under.reply.note
         if let dismissButton, dismissing == under.id {

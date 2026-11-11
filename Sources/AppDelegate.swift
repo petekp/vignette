@@ -149,7 +149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             self?.sendDrawing(drawing, of: shot, to: destination, titled: title, message: message)
         }
         annotator.onCopyDrawing = { [weak self] shot, drawing in self?.copyDrawing(drawing, of: shot) }
-        thumbnail.dragItems = { [weak self] cards in self?.dragItems(cards) ?? [] }
+        thumbnail.drags = DragItems(drawings: drawings)
         settingsWindow.callbacks = SettingsWindowController.Callbacks(
             openTweaks: { [weak self] in self?.debugPanel.toggle() },
             installAgentPlugin: { [weak self] root, done in self?.turnOnAgents([root]) { done($0) } },
@@ -594,7 +594,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         Clipboard.copyFiles(urls)
         let drawn = renderings.filter { $0.rendering != nil }.count
-        Commands.ok("copy-annotated", "files=\(Self.renderingPaths(urls)); \(drawn) with annotations")
+        Commands.ok("copy-annotated", "files=\(RenderingQueue.paths(urls)); \(drawn) with annotations")
         thumbnail.showCopied(renderings.map(\.shot))
     }
 
@@ -634,39 +634,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 // The clipboard took its promise back; the card must not say otherwise.
                 thumbnail.showNotCopied(shot, reason: failure.reason, in: opening)
             } else if let file = output.file, let png = output.png {
-                Log.write("[annotate] \(verb) files=\(Self.renderingPaths([file])) \(png.count) bytes, copied")
+                Log.write("[annotate] \(verb) files=\(RenderingQueue.paths([file])) \(png.count) bytes, copied")
             }
         }
-    }
-
-    /// A drag out of the stack drops each card as it shows it: a card with a drawing drops the
-    /// drawing, rendered from the moment the drag begins and written beside its screenshot, through
-    /// the item Done's clipboard uses, and a card without one drops its file. The drawing is the one
-    /// now, with the card's own as the stored one, since every write and removal reaches it at once
-    /// (`onChange`) and the drag needs no read from disk.
-    /// In turn on the queue, so Done's promise keeps its bound: a drop comes after the pointer has
-    /// travelled, which is time a paste does not have.
-    private func dragItems(_ cards: [Card]) -> [NSPasteboardWriting] {
-        let ui = settings.data.ui
-        var drawn = 0
-        let items = cards.map { card -> NSPasteboardWriting in
-            let shot = card.shot, name = shot.url.lastPathComponent
-            guard let drawing = drawings.current(of: shot.key, stored: { card.marks?.drawing }), !drawing.marks.isEmpty else {
-                return shot.url as NSURL
-            }
-            drawn += 1
-            let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, output: .file, style: ui.textStyle, markStyle: ui.markStyle)
-            rendering.whenDone { output in
-                if let failure = output.failure {
-                    Log.write("[drag] error \(failure.code.rawValue) \(name): \(failure); the drop gets no image for it")
-                } else if let file = output.file, let png = output.png {
-                    Log.write("[drag] rendered files=\(Self.renderingPaths([file])) \(png.count) bytes")
-                }
-            }
-            return Clipboard.renderingItem(rendering)
-        }
-        Log.write("[drag] cards=\(cards.count) drawings=\(drawn)")
-        return items
     }
 
     // MARK: URL commands: vignette://<command>[?file=/path&file=/other]. See Commands.swift.

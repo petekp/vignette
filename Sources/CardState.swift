@@ -6,6 +6,8 @@ import Foundation
 struct CardState: Equatable {
     var hovered: Bool
     var pressed: Bool
+    /// The card's drag image is out.
+    var dragged: Bool
     /// The card's place in the selection, counting from 1, or nil when it is not selected.
     var selectionNumber: Int?
     var focused: Bool
@@ -27,6 +29,7 @@ struct CardState: Equatable {
     @MainActor init(of card: Card, in model: StackModel) {
         hovered = model.hoveredCard == card.id
         pressed = model.pressedCard == card.id
+        dragged = model.draggedCard == card.id
         selectionNumber = model.selectionNumber(of: card.id)
         focused = model.focused == card.id
         isOut = model.outCards.contains(card.id)

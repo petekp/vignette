@@ -3,14 +3,16 @@ import SwiftUI
 
 /// The AppKit overlay on a card's image. It draws the drawing's marks, `picture` being the shape of
 /// the image under them. A click runs `onClick`; dragging past a few points starts a real drag of
-/// `items`, asked for then, so cards can be dropped on chat apps, Finder, or a terminal. The marks
-/// are drawn here rather than in an AppKit view of their own because SwiftUI updates every AppKit
-/// view in the stack on every frame of its animations: a second view per card would add its update
-/// to every frame of a slide-in or a narrowing.
+/// `items`, asked for then, so cards can be dropped on chat apps, Finder, or a terminal. The press
+/// becomes the drag (`onDrag`), so the card stays as the press left it while its drag image is out.
+/// The marks are drawn here rather than in an AppKit view of their own because SwiftUI updates
+/// every AppKit view in the stack on every frame of its animations: a second view per card would
+/// add its update to every frame of a slide-in or a narrowing.
 struct DragSource: NSViewRepresentable {
     let items: () -> [NSPasteboardWriting]
     let image: NSImage
     let onPress: (Bool) -> Void
+    let onDrag: (DragSourceView.Phase) -> Void
     let onClick: () -> Void
     var marks: MarkLayers? = nil
     var picture: CGSize? = nil
@@ -23,6 +25,7 @@ struct DragSource: NSViewRepresentable {
         view.items = items
         view.image = image
         view.onPress = onPress
+        view.onDrag = onDrag
         view.onClick = onClick
         view.show(marks, picture: picture, corner: corner, restSize: restSize)
     }
@@ -30,9 +33,16 @@ struct DragSource: NSViewRepresentable {
 
 @MainActor
 final class DragSourceView: NSView, NSDraggingSource {
+    enum Phase: Equatable {
+        case began
+        /// Whether the pointer is on the card when the drag ends.
+        case ended(pointerOnCard: Bool)
+    }
+
     var items: () -> [NSPasteboardWriting] = { [] }
     var image: NSImage?
     var onPress: (Bool) -> Void = { _ in }
+    var onDrag: (Phase) -> Void = { _ in }
     var onClick: () -> Void = {}
     private var downPoint: NSPoint?
     private var dragging = false
@@ -73,9 +83,10 @@ final class DragSourceView: NSView, NSDraggingSource {
         guard let start = downPoint, !dragging else { return }
         guard hypot(event.locationInWindow.x - start.x, event.locationInWindow.y - start.y) > 5 else { return }
         dragging = true
-        onPress(false)
+        let began = CACurrentMediaTime()
         let writers = items()
-        guard !writers.isEmpty else { return }
+        guard !writers.isEmpty else { return onPress(false) }
+        onDrag(.began)
         // One bitmap is both the drag image and the picture that pours at the drop, so the two match.
         let picture = image.flatMap { bitmap(of: dragImage($0)) }
         let dragged = writers.map { writer -> NSDraggingItem in
@@ -87,6 +98,7 @@ final class DragSourceView: NSView, NSDraggingSource {
             drag = (picture, window.convertToScreen(convert(bounds, to: nil)), NSEvent.mouseLocation)
         }
         beginDraggingSession(with: dragged, event: event, source: self)
+        Log.write("[drag] began took=\(Int((CACurrentMediaTime() - began) * 1000))ms")
     }
 
     /// `image` drawn at the backing scale of the screen the card is on, in that screen's colour space.
@@ -145,6 +157,11 @@ final class DragSourceView: NSView, NSDraggingSource {
     /// that failed or was cancelled leaves it to macOS, which slides the drag image home.
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         defer { drag = nil }
+        let onCard = window.map { window in
+            window.convertToScreen(convert(bounds, to: nil)).contains(screenPoint)
+                && NSWindow.windowNumber(at: screenPoint, belowWindowWithWindowNumber: 0) == window.windowNumber
+        } ?? false
+        onDrag(.ended(pointerOnCard: onCard))
         let point = "\(Int(screenPoint.x)),\(Int(screenPoint.y))"
         guard !operation.isEmpty else { return Log.write("[drag] ended at=\(point) not dropped; slides home") }
         guard let drag else { return Log.write("[drag] ended at=\(point) dropped; no picture to pour") }

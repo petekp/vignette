@@ -1326,27 +1326,32 @@ Owner: `Drawings.swift:21`; files in `DrawingStore.swift:8`. Tests: `DrawingStor
 
 ### Rendering and clipboard promise (implicit)
 
-Owner: `RenderingQueue.swift:7`, `PendingRendering` (`:92`), `Clipboard.swift:32-53`, `RenderingProvider` (`Clipboard.swift:102`). Tests: none for the queue's ordering or the clipboard promise.
+Owner: `RenderingQueue.swift:7`, `PendingRendering` (`:122`), `Clipboard.swift:32-52`, `RenderingProvider` (`Clipboard.swift:103`), `DragItems.swift:14`. Tests: `RenderingPromiseTests`, for the promised item and a drag's file made from kept bytes; none for the queue's ordering.
 
-Done, Cmd+C, Copy Drawing and a card drag render a drawing to a PNG on one serial queue. The clipboard holds a promise of the PNG until the rendering finishes.
+Done, Cmd+C, Copy Drawing and a card drag render a drawing to a PNG on one serial queue. The clipboard holds a promise of the PNG until the rendering finishes. A card drag renders its PNG before the drag, from the hover or the press, and writes only the file when the drag begins.
 
 **States**
 
-- `PendingRendering`: pending, then finished(output) once. `finish` is idempotent (`RenderingQueue.swift:114`). `wait(timeout:)` and `whenDone` read it.
-- Queue: each `render` adds one job to `firstJobs` or `jobs` under `lock` and enqueues one block. A block runs whichever job is next, `firstJobs` first (`:36-38`). The block count always equals the job count.
+- `PendingRendering`: pending, then finished(output) once. `finish` is idempotent (`RenderingQueue.swift:142`). `wait(timeout:)`, `isDone` and `whenDone` read it.
+- Queue: each `render` adds one job to `firstJobs` or `jobs` under `lock` and enqueues one block. A block runs whichever job is next, `firstJobs` first (`:42-44`). The block count always equals the job count.
 - Clipboard: `copyRendering` clears the pasteboard, writes one item (the path as text now; PNG, TIFF and file URL promised), and records `changeCount`.
+- `DragItems`: `kept`, the PNGs rendered for drags, newest last, finished or not, each under its key (screenshot, drawing, text style, mark style); `ahead`, the one rendering `prepare` started that has not finished; `wanted`, the cards `prepare` named last.
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | any | `render(.first)` | queued ahead | Overtakes jobs not yet started. Senders: Done (`finishAnnotation`, AppDelegate `:603`), Cmd+C with nothing selected (`copyDrawing` `:611`). |
-| any | `render(.inTurn)` | queued behind | Jobs of one order run in request order. Senders: Copy Drawing (`copyAnnotated` `:567`, completing through `finishCopyAnnotated` `:582`), drag (`dragItems` `:649`). |
-| any | `resultURL` fails | finished (failed) | Finishes at once without queuing (`RenderingQueue.swift:32-35`). |
+| any | `render(.inTurn)` | queued behind | Jobs of one order run in request order. Senders: Copy Drawing (`copyAnnotated` `:567`, completing through `finishCopyAnnotated` `:582`), drag (`DragItems.rendering(for:)` `DragItems.swift:83`, as bytes). |
+| any | `resultURL` fails | finished (failed) | Finishes at once without queuing (`RenderingQueue.swift:36-38`, `:55-57`). |
+| no `ahead`, or `ahead` finished | `prepare(cards)` (hover or press on a card) | `ahead` = the first wanted key not kept | Renders that key's PNG in turn and keeps it. Nothing when every wanted key is kept. |
+| `ahead` pending | `prepare(cards)` | `ahead` unchanged | Only `wanted` changes. When `ahead` finishes, `trim` runs and the next wanted key starts. |
+| any | drag begins (`items(for:)`) | file pending | Takes the kept PNG for each card's key, or renders one in turn, and calls `file(from:beside:)`, which names the file now and writes it on its own queue once the PNG exists (`RenderingQueue.swift:52`). A kept PNG that failed is rendered again. |
+| kept over 32 MB | `trim` (after `prepare` and each rendering) | oldest finished entries dropped | Pending entries and the wanted keys' entries stay, so a wanted PNG is never dropped and rendered again. |
 | pending | job runs | finished | Reads the screenshot file now, so a trash or rename before this fails as `unreadableImage`; the card says Not copied. |
 | clipboard promised | paste before finish | waits | `RenderingProvider` waits up to 5 s on the main thread (`Clipboard.swift:108`); gives nothing if the rendering failed (`:113-117`). |
 | clipboard promised | rendering fails | clipboard cleared, or kept | Cleared only if `changeCount` is unchanged (`Clipboard.swift:35-39`). |
-| dragged item | rendering fails | path text stays | Only logged ("the drop gets no image for it", `AppDelegate.swift:658-662`). The string set at `Clipboard.swift:49` stays on the item. ([editor-6](#editor-6)) |
+| dragged item | rendering fails | path text stays | Only logged ("the drop gets no image for it", `DragItems.swift:53-55`). The string set at `Clipboard.swift:49` stays on the item. ([editor-6](#editor-6)) |
 | Copy Drawing | last rendering done | files on clipboard | `finishCopyAnnotated` calls `Clipboard.copyFiles(urls)` (`:595`) with no `changeCount` check. ([editor-7](#editor-7)) |
 
 **Invariants**
@@ -1357,23 +1362,26 @@ Done, Cmd+C, Copy Drawing and a card drag render a drawing to a PNG on one seria
 **Late and concurrent answers**
 
 - A late failure against a newer clipboard: guard at `Clipboard.swift:37`.
-- A paste before the rendering finishes: waits, `Clipboard.swift:113`.
+- A paste before the rendering finishes: waits, `Clipboard.swift:119`. Each answer logs `[clipboard] gave` or `[drag] gave` with how long the main thread waited.
+- A drop target that asks during the drag: answers from the kept PNG when it was ready (`[drag] cards=… ready=…`), else waits as a paste does.
 - Copy Drawing finishing after the person copied something else: overwrites it. ([editor-7](#editor-7))
 
 ### DragSourceView press (implicit)
 
-Owner: `DragSourceView.swift:32`. Tests: none.
+Owner: `DragSourceView.swift:34`, with `StackModel.drag(_:_:)` (`StackModel.swift:125`). Tests: none.
 
-**States**: `downPoint`, `dragging`.
+**States**: `downPoint`, `dragging`; in the model, `pressedCard` and `draggedCard`.
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | any | mouse down | `downPoint` set, `dragging = false` | `onPress(true)`. |
-| pressed | drag past 5 pt | `dragging = true` | `onPress(false)`, `items()` (starts the renderings), begins a drag session. |
+| pressed | drag past 5 pt, no items | `dragging = true` | `onPress(false)`. |
+| pressed | drag past 5 pt | `dragging = true`, `draggedCard` set, `pressedCard` cleared | `items()` (writes the files from kept PNGs), `onDrag(.began)`, begins a drag session. The card keeps the press scale while it is dragged. |
 | pressed, not dragging | mouse up | idle | `onPress(false)`, `onClick()`. |
-| dragging | mouse up | `dragging` stays true | Swallowed by the session. No end-of-session callback. |
+| dragging | mouse up | `dragging` stays true | Swallowed by the session. |
+| dragging | session ends | `draggedCard` cleared | `onDrag(.ended(pointerOnCard:))`: the card springs back from the press scale. The hover is cleared when the pointer is off the card and the hover is not held. |
 
 **Invariants**
 
@@ -4005,7 +4013,7 @@ Grouped by area. An entry with no review verdict was skimmed by the reviewer and
 - <a id="editor-3"></a>**editor-3**: A tweak or mark-scale change during an input-method composition restyles the text and ends it. Sequence: a text is being typed with marked text; the tweak panel or a mark-scale rule change calls `AnnotationController.applyTweaks`. Where: `EditorView.swift:231-234`, `EditorTextView.swift:94`. Mapper: low-medium; the `setStyle` effect on marked text is inferred from the existing comment, not measured.
 - <a id="editor-4"></a>**editor-4**: Cmd+Z during a composition undoes the session instead of leaving the composition alone. Sequence: typing, an input method has marked text, person presses Cmd+Z. Where: `EditorView.swift:591-594`. Mapper: low.
 - <a id="editor-5"></a>**editor-5**: A late change from an ended session's text view is applied to the new session's text. Sequence: person is typing in note 1 with a pending composition, clicks note 2. Where: `EditorCore.swift:750-754`, `EditorView.swift:471`, `EditorCore.swift:1243`. Mapper: low (the guard is missing; the trigger is unverified).
-- <a id="editor-6"></a>**editor-6**: A dragged card whose rendering fails still drops its path as text. Sequence: person drags a card with a drawing; `dragItems` starts the rendering; the rendering fails (screenshot renamed, trashed, unreadable, disk full); the drop completes onto a terminal or editor. Where: `Clipboard.swift:49`, `AppDelegate.swift:658-662`. Mapper: medium. The drop target's behavior when the provider returns nothing is not checked; the string is certain.
+- <a id="editor-6"></a>**editor-6**: A dragged card whose rendering fails still drops its path as text. Sequence: person drags a card with a drawing; `DragItems` renders it ahead or at drag start; the rendering fails (screenshot renamed, trashed, unreadable, disk full); the drop completes onto a terminal or editor. Where: `Clipboard.swift:49`, `DragItems.swift:53-55`. Mapper: medium. The drop target's behavior when the provider returns nothing is not checked; the string is certain.
 - <a id="editor-7"></a>**editor-7**: Copy Drawing's late completion overwrites a newer clipboard. Sequence: Copy Drawing on a card with a large drawing (0.6 to 1.2 s render); person copies something else in another app before it finishes. Where: `Clipboard.swift:35-39`. Mapper: medium on the trace; it may be the intended meaning of "copy lands when ready".
 - <a id="editor-8"></a>**editor-8**: A text bitmap that failed to allocate is recorded as drawn. Sequence: a text's draw returns `nil` (`IOSurface` or `CGContext` could not be made under memory pressure, or a huge scale). Where: `MarkLayers.swift:477-482`, `EditorView.swift:518`. Mapper: low (needs an allocation failure; resolution caps keep normal sizes small).
 - <a id="editor-9"></a>**editor-9**: `Drawings.rename` resets the old key's revision to 0, so a load that began before it is not dropped. Sequence: a card's load starts for key A with no write for A this launch (`started == 0`); A is renamed to B before the load answers. Where: `Drawings.swift:136-137`, `ThumbnailController.swift:438`, `EditorCore.swift:574-579`. Mapper: low (no consumer is hurt).
