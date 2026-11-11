@@ -106,10 +106,9 @@ final class DragSourceView: NSView, NSDraggingSource {
 
     /// The card as the stack draws it, so the drag image takes its place without a step: its image
     /// filling it over the matte, its continuous corners, its shadow, the marks in the live style and
-    /// its resting border, at the scale and on the pixels the card has on screen. What is drawn over a
-    /// hovered card, the dim and the buttons, stays with the card, as it does when a flight carries
-    /// the card off. Answers the picture and its frame in this view's coordinates, which reaches past
-    /// the card far enough to hold the shadow.
+    /// its resting border, at the scale and on the pixels the card has on screen. The hover dim and
+    /// the buttons are not drawn: the press fades them off the card. Answers the picture and its
+    /// frame in this view's coordinates, which reaches past the card far enough to hold the shadow.
     private func lift(_ picture: NSImage) -> (picture: CGImage, frame: NSRect)? {
         guard let window, bounds.width > 0, bounds.height > 0 else { return nil }
         let ui = Settings.shared.data.ui, size = bounds.size, backing = window.backingScaleFactor

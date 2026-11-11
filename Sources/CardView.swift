@@ -36,7 +36,9 @@ struct CardView: View, Equatable {
     private var showsHover: Bool { hovered && inSlot }
     private var showsCircle: Bool { state.offersSelection && inSlot && (hovered || state.inSelectionMode || focused) }
     private var notice: CardNotices.Notice? { state.notice }
-    private var showsButtons: Bool { showsHover && !state.inSelectionMode && notice == nil }
+    /// The dim and the buttons go as the card is pressed, so a drag that follows lifts a picture of
+    /// the card as it then looks: the drag image carries neither.
+    private var showsButtons: Bool { showsHover && !pressed && !state.dragged && !state.inSelectionMode && notice == nil }
     /// The padding every corner control is given.
     static let buttonPad: CGFloat = 6
     /// How far a corner control's hit area reaches past it into the card.
