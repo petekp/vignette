@@ -44,6 +44,9 @@ final class ScreenshotRequests {
         /// A send that was waiting ended without reaching its client: Don't send, or a clear took
         /// its request.
         var cancelled: (Record) -> Void = { _ in }
+        /// A screenshot's drawing as the editor would open it, so a published reply records what
+        /// the agent sent (`Agent.record(sentDrawing:on:)`).
+        var storedDrawing: (ScreenshotKey) -> Drawing? = { _ in nil }
     }
 
     var callbacks = Callbacks()
@@ -252,7 +255,7 @@ final class ScreenshotRequests {
     /// and `callbacks.delivered`. Throws a `Refusal` when no live request was admitted. `watchingTurn`
     /// says a live ink note will read the session's turn once the line is in.
     @discardableResult
-    func send(png: Data, source: ScreenshotKey, to destination: AgentDestination, message: String? = nil,
+    func send(_ picture: Picture, source: ScreenshotKey, to destination: AgentDestination, message: String? = nil,
               instructions: String = SettingsData.defaultSendInstructions, grace: TimeInterval = 0,
               watchingTurn: Bool = false) throws -> Record {
         let open = requests.values.filter { $0.status != .cleared }.sorted { $0.created < $1.created }
@@ -272,12 +275,13 @@ final class ScreenshotRequests {
         let record = Record(id: id, created: Date(), destinationID: destinationID,
                             destinationName: destination.name, address: address,
                             addressGuard: address.guardTier, source: source.url.lastPathComponent,
-                            sourceKey: source.path, status: .prepared, detail: "", start: destination.start)
+                            sourceKey: source.path, status: .prepared, detail: "", start: destination.start,
+                            unchanged: picture.isUnchanged ? true : nil)
         let ticket = ReplyProtocol.Ticket(requestID: id, secret: ReplyProtocol.newSecret(),
                                           requestDirectory: directory.path, app: Bundle.main.bundlePath)
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try png.write(to: directory.appendingPathComponent("image.png"), options: .atomic)
+            try picture.store(at: directory.appendingPathComponent("image.png"))
             try encode(ticket, to: directory.appendingPathComponent("ticket.json"))
             try write(record)
         } catch {
@@ -310,11 +314,13 @@ final class ScreenshotRequests {
             }
         }
         prune()
-        Log.write("[send] prepared \(id) to \(destination.name) (\(address.description)) \(png.count) bytes")
+        Log.write("[send] prepared \(id) to \(destination.name) (\(address.description)) \(picture.logged)")
         if grace > 0 { Log.write("[send] waiting \(Int(grace * 1000))ms request=\(id)") }
         // The message travels in the line only: it is the person's words, so neither the record
         // nor the log keeps it.
-        let line = Self.requestLine(record: record, root: root, message: message, instructions: instructions)
+        var title: String?
+        if case .unchanged(_, let given, _) = picture { title = given }
+        let line = Self.requestLine(record: record, root: root, message: message, instructions: instructions, title: title)
         if watchingTurn { watchedTurns.insert(id) }
         run(sendGrace.handle(.sent(request: id, line: line, grace: grace, at: now())))
         return record
@@ -470,20 +476,6 @@ final class ScreenshotRequests {
         private var answers: [String: SubmissionOutcome] = [:]
         func set(_ id: String, _ outcome: SubmissionOutcome) { lock.lock(); answers[id] = outcome; lock.unlock() }
         var all: [String: SubmissionOutcome] { lock.lock(); defer { lock.unlock() }; return answers }
-    }
-
-    /// The one line the agent receives, which arrives in the person's session as their own message.
-    /// It names only the image, then says `instructions` (`sendInstructions` in settings.json, one
-    /// line); the skill says how to answer with a drawing, using the `ticket.json` beside it. "From Vignette:" and the
-    /// image are fixed, because the skill loads on the one and the drawing is the other. The person's
-    /// message, already one line (`AnnotatorToolbar.Model.sentMessage`), leads, as the request, and
-    /// the Vignette part follows in brackets, as a note on what came with it. One line, because
-    /// the plugin's monitor makes each line it prints one message. The ticket's secret never travels.
-    static func requestLine(record: Record, root: URL, message: String? = nil,
-                            instructions: String = SettingsData.defaultSendInstructions) -> String {
-        let image = ReplyProtocol.requestDirectory(root: root, requestID: record.id).appendingPathComponent("image.png").path
-        let note = "From Vignette: \"\(image)\"." + (instructions.isEmpty ? "" : " \(instructions)")
-        return message.map { "\($0) [\(note)]" } ?? note
     }
 
     // MARK: Accepting a reply
@@ -704,6 +696,7 @@ final class ScreenshotRequests {
         publishedAt[reply.id] = ProcessInfo.processInfo.systemUptime
         if let client = requests[reply.requestID]?.address.client { Agent.record(agent: client.rawValue, origin: nil, on: url) }
         Agent.record(title: reply.title, on: url)
+        Agent.record(sentDrawing: Agent.fingerprint(of: callbacks.storedDrawing(shot(at: url).key)), on: url)
         Log.write("[reply] published \(reply.fileName) marks=\(reply.cardMarks(on: nil).count)")
         callbacks.present(shot(at: url))
         done()
@@ -869,6 +862,7 @@ final class ScreenshotRequests {
             "requests": requests.values.sorted { $0.created < $1.created }.map { record -> [String: Any] in
                 var json: [String: Any] = ["id": record.id, "status": record.status.rawValue, "destination": record.destinationName,
                                            "address": record.address.description, "guard": record.addressGuard.rawValue, "source": record.source]
+                if record.unchanged == true { json["unchanged"] = true }
                 if let grace = self.grace(of: record.id) { json["graceMs"] = Int(max(0, grace.deadline - self.now()) * 1000) }
                 return json
             },

@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 
 /// Which agent added a screenshot. `add?file=…&agent=<name>` records the name on the copied file
 /// as an extended attribute: it travels with the file through a rename or a move on the same
@@ -80,6 +81,33 @@ enum Agent {
     static func title(of url: URL) -> AgentTitle? {
         AgentTitle.validated(title: read(attribute(for: .title), of: url, upTo: titleBytes),
                              description: read(attribute(for: .description), of: url, upTo: titleBytes)).value
+    }
+
+    /// Where the fingerprint of the drawing the agent sent with the file is stored.
+    private static let sentDrawingAttribute = Identity.bundleID + ".sentDrawing"
+    private static let noMarks = "none"
+
+    /// What `record(sentDrawing:on:)` stores for a drawing: SHA-256 over the drawing as its file holds
+    /// it, without the screenshot's path, so a rename keeps it; one fixed value for no marks. A mark
+    /// read back gets a new id and the file has none, so two reads of one drawing match.
+    static func fingerprint(of drawing: Drawing?) -> String {
+        guard var drawing, !drawing.marks.isEmpty else { return noMarks }
+        drawing.key = ""
+        guard let data = try? drawing.encoded() else { return UUID().uuidString }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Records the drawing an agent sent with the file, a push's or a reply's, so Reply can tell the
+    /// person changed nothing (`hasSentDrawing`). Nil removes it: a push that names no session.
+    static func record(sentDrawing fingerprint: String?, on url: URL) {
+        if let fingerprint { write(fingerprint, sentDrawingAttribute, "its drawing", on: url) }
+        else { removexattr(url.path, sentDrawingAttribute, 0) }
+    }
+
+    /// True when `drawing` is exactly the drawing the agent sent with the file at `url`. False for a
+    /// file no agent recorded one on: a person's screenshot, a live ink card, a push from an older build.
+    static func hasSentDrawing(_ drawing: Drawing, at url: URL) -> Bool {
+        read(sentDrawingAttribute, of: url) == fingerprint(of: drawing)
     }
 
     /// The most bytes a title's part is read with. A character's bytes have no fixed bound, since

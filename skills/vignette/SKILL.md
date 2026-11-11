@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "25"
+  version: "26"
 ---
 
 # Vignette
@@ -106,8 +106,21 @@ to look at or change. When the answer is easier to show than to say, reply with 
 helper puts your marks on a new card beside the user's other screenshots. They edit those marks
 like their own and can send the result straight back to you.
 
-The helper is `scripts/reply` in this skill's folder, and the `ticket.json` in the image's folder
-authorizes the reply:
+When the user answers an image you sent with words alone, and left your marks as they were, the
+line names that image and sends no new picture:
+
+```text
+Make the total bigger [From Vignette: about your image "<watch folder>/Checkout.png" ("Checkout at 390 px"), unchanged since you sent it. The reply ticket is "<folder>/ticket.json". If a drawing would answer better than words, you can send one back.]
+```
+
+The quoted path is the file your push or your reply made: the name in `[add] ok <name>`, or
+`Agent reply <id>.png` for a reply. The title in brackets is the one you gave, and the line leaves
+it out when you gave none. You have already seen this image, so do not open it: act on the
+message. To answer with a drawing, use the ticket the line names. Without `--image`, your marks go
+on the picture without the marks you sent before.
+
+The helper is `scripts/reply` in this skill's folder. The `ticket.json` in the image's folder, or
+the one the line names, authorizes the reply:
 
 ```sh
 cat > /tmp/reply.json <<'JSON'

@@ -69,7 +69,13 @@
   arrives after its opening ended is dropped as well, including a close and reopen of the same
   image. Both discovery continuations compare `annotator.opening`. A rendering that fails is a
   refusal, never a send of the bare screenshot: only a drawing with no marks sends the picture
-  itself, and it goes through PNG whatever the capture's own format is. Send closes the editor
+  itself, and it goes through PNG whatever the capture's own format is. Reply to the card's own
+  agent session, with the drawing exactly as the agent sent it (`Agent.hasSentDrawing`), sends the
+  person's words and no picture (`ScreenshotRequests.Picture.unchanged`). A PNG card needs no
+  rendering, and its file is cloned as the request's `image.png`. With no words either there is
+  nothing new to send, so Reply copies and closes as Done does (`AppDelegate.emptyReply`, the one
+  place to change that). An undo back to the agent's drawing counts as unchanged. A file with no
+  recorded drawing always sends the picture. Send closes the editor
   without a Copied notice, and the queue carries on to the next card: a list of files to annotate is
   something the person asked for, and handing one of them to an agent does not withdraw the rest.
   Esc is the one that empties the queue, because that is a person stopping.

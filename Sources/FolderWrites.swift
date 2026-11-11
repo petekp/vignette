@@ -19,6 +19,8 @@ final class FolderWrites {
         var joinMarks: ([AgentMark], _ agent: String?, ScreenshotKey, @escaping (Result<Int, Drawings.Failure>) -> Void) -> Void = { _, _, _, done in
             done(.failure(Drawings.Failure(code: .writeFailed, description: "nothing stores drawings")))
         }
+        /// A screenshot's drawing as the editor would open it.
+        var storedDrawing: (ScreenshotKey) -> Drawing? = { _ in nil }
         var removeCards: ([Screenshot]) -> Void = { _ in }
         var removeDrawings: ([ScreenshotKey], _ observedAt: TimeInterval) -> Void = { _, _ in }
         var fileRemoved: (Screenshot) -> Void = { _ in }
@@ -127,6 +129,7 @@ final class FolderWrites {
             Log.write("[add] warning \(name): its \(part.rawValue) is longer than \(part.limit) characters and was cut")
         }
         guard !marks.isEmpty else {
+            recordSentDrawing(of: key, at: destination, origin: origin)
             presentAdd(key)
             Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request, origin, titled: title.value != nil))")
             return
@@ -135,13 +138,24 @@ final class FolderWrites {
             guard let self else { return }
             switch result {
             case .success(let joined):
+                recordSentDrawing(of: key, at: destination, origin: origin)
                 Commands.ok("add", "\(name)\(detail(request, origin, titled: title.value != nil)) marks=\(joined)")
             case .failure(let failure):
+                Agent.record(sentDrawing: nil, on: destination)
                 Commands.error("add", failure.code, "\(name): the image is in the folder, its marks are not: \(failure)")
             }
             pendingAdds[key]?.addingMarks = false
             presentAdd(key)
         }
+    }
+
+    /// Records the drawing a push that names its session sent, so Reply can tell the person changed
+    /// nothing. Only when every mark is the agent's: a file already in the folder may hold the
+    /// person's own marks, which the agent has not seen.
+    private func recordSentDrawing(of key: ScreenshotKey, at url: URL, origin: AgentAddress?) {
+        let drawing = callbacks.storedDrawing(key)
+        let agentsAlone = drawing?.marks.allSatisfy(\.agent) ?? true
+        Agent.record(sentDrawing: origin != nil && agentsAlone ? Agent.fingerprint(of: drawing) : nil, on: url)
     }
 
     /// The watcher reported `key`. True when it is a file `add` is waiting for, so it is not a capture.

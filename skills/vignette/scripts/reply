@@ -13,8 +13,8 @@ usage: reply --ticket <ticket.json> --marks <marks.json> [--image <your image>] 
        reply --ticket <ticket.json> --answer <answer.json>
        reply --ticket <ticket.json> --retry <bundle folder>
 
-The ticket is the ticket.json beside the image Vignette sent you. Given one, --help also
-describes the marks and the exit codes.
+The ticket is the ticket.json beside the image Vignette sent you, or the one its message names.
+Given one, --help also describes the marks and the exit codes.
 USAGE
   exit 0
 }

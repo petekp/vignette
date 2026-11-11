@@ -77,6 +77,17 @@ it, and "Not sent" is the headline for a failure, not for a choice.
 | The request could not be written | Vignette couldn't save the request. *the system's words* |
 | Anything else | Vignette couldn't send the drawing. The log has details. |
 | The screenshot is gone | Vignette can't read *name*. It may have been moved or deleted. |
+| Reply with nothing new, only when `AppDelegate.emptyReply` is `.refuse` (by default Reply copies and closes instead) | There's nothing new to send yet. You can draw on it or add a message. |
+
+### The line an agent receives (`ScreenshotRequests.requestLine`)
+
+The person's message leads, and the Vignette part follows in brackets. "From Vignette:" is fixed,
+because the skill loads on it. The sentence after it is `sendInstructions` from settings.json.
+
+| When | Vignette part |
+| --- | --- |
+| A drawing | From Vignette: "*folder*/image.png". If a drawing would answer better than words, you can send one back. |
+| Words alone on the agent's own image | From Vignette: about your image "*card*" ("*its title*"), unchanged since you sent it. The reply ticket is "*folder*/ticket.json". If a drawing would answer better than words, you can send one back. |
 
 ### Settings switches
 

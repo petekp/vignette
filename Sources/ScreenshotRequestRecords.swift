@@ -26,6 +26,9 @@ extension ScreenshotRequests {
         var handedOver: Date? = nil
         /// How the session is started before the line goes in, when it was not running at Send.
         var start: SessionStart? = nil
+        /// True when the person answered the agent's own image with words alone, so the line named
+        /// that image and sent no picture (`ScreenshotRequests.Picture.unchanged`).
+        var unchanged: Bool? = nil
 
         enum Status: String, Codable {
             /// Stored and not yet handed to the client: in its grace, or about to be.
