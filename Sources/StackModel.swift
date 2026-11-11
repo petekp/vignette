@@ -49,6 +49,10 @@ final class StackModel: ObservableObject {
     /// the view draws as the column it was.
     @Published private(set) var isStack = false
     @Published var scroll: CGFloat = 0         // how far the column is pulled down to show older cards
+    /// How far a two-finger swipe moves the column toward the screen's edge (`StackSwipe`).
+    @Published var swipe: CGFloat = 0
+    /// The swipe carries the column off the screen, or back, as one piece; the cards' own slide-out is off.
+    @Published var swipeExit = false
     @Published var viewport: CGFloat = 0       // visible height of the column, at the stack's full width
     /// The room the Dock keeps at the bottom of the panel when the column is over it. The column
     /// sits this far above the panel's bottom edge, and its mask ends there. See `StackArea`.

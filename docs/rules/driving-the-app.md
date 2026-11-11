@@ -64,7 +64,8 @@
    `notCopied`, the reason a copy failed or null; `selected`,
    `focused`, `hovered`, `queue`, the files waiting for the annotator, `visible`, `key`, `isStack`,
    `scroll`, `viewport`, `safeBottom`, the room the Dock keeps under the column, panel,
-   `panelOnScreen`, `widthScale`, how wide the stack is drawn, and `strip`, the selection strip's
+   `panelOnScreen`, `widthScale`, how wide the stack is drawn, `swipe`, how far a swipe has moved the
+   column toward the edge, and `strip`, the selection strip's
    frame or null),
    `transition` (phase), `annotator` (`current`, `frame`, `toolbar`, `windowVisible`, `key`, `tool`,
    and the zoom's own keys, which `docs/rules/zoom.md` names), `editor` (`open`, `tool`, `marks`

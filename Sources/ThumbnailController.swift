@@ -71,6 +71,7 @@ final class ThumbnailController {
         },
         isVisible: { [unowned self] in self.visible }, selected: { [unowned self] in self.keys.send(.selected) },
         relayout: { [unowned self] in self.relayout() })
+    private lazy var swipe = StackSwipeDriver(model: model, screen: { [unowned self] in self.screen }) { [unowned self] in self.dismiss(by: .swipe) }
     /// The one owner of the annotation run, its queue included. Only `handle` writes it; see AnnotationRun.
     private var run = AnnotationRun()
     /// The card the run has open, kept here because a lone thumbnail leaves the model once the annotator shows.
@@ -206,7 +207,7 @@ final class ThumbnailController {
                 "hovered": model.cards.first { $0.id == model.hoveredCard }?.shot.key.path as Any,
                 "key": panel.isKeyWindow,
                 "scroll": Int(model.scroll), "viewport": Int(model.viewport), "safeBottom": Int(area.safeBottom),
-                "widthScale": model.widthScale,
+                "widthScale": model.widthScale, "swipe": Int(model.swipe),
                 "panel": StateReport.topLeft(panel.frame, primaryHeight: h), "panelOnScreen": panel.isVisible,
                 "strip": stripFrame.map { StateReport.topLeft($0, primaryHeight: h) } as Any,
             ] as [String: Any],
@@ -702,6 +703,7 @@ final class ThumbnailController {
         if run.isActive { send(.dismiss(reason == .quickDone ? .finished : nil)) }
         // Cards leave the way they came, newest first (see CardView). The selection stays in the
         // layout and slides out with them; the block below clears it once gone.
+        if reason == .swipe { swipe.leave() }
         model.offscreen = Set(model.cards.map(\.id))
         let total = ui.slideOutDuration + Double(max(0, model.cards.count - 1)) * StackView.staggerStep(count: model.cards.count) + 0.05
         DispatchQueue.main.asyncAfter(deadline: .now() + (model.cards.isEmpty ? ui.slideOutDuration : total)) { [weak self] in
@@ -714,6 +716,7 @@ final class ThumbnailController {
             self.model.forming = []
             self.model.slidingOut = false
             self.model.scroll = 0
+            self.swipe.reset()
             self.pinnedScreen = nil
             self.keys.send(.slidOut)
         }
@@ -1163,8 +1166,16 @@ final class ThumbnailController {
     private var maxScroll: CGFloat { max(0, drawnContentHeight - model.viewport) }
 
     private func scroll(_ event: NSEvent) {
-        guard visible, maxScroll > 0 else { return }
-        let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 10
+        guard visible else { return }
+        switch swipe.scroll(event) {
+        case .scrollColumn(let delta): scrollColumn(by: delta)
+        case .moved: holdHover()
+        case .none, .close: break
+        }
+    }
+
+    private func scrollColumn(by delta: CGFloat) {
+        guard maxScroll > 0 else { return }
         // Pulling the column down (fingers moving down) reveals older cards above.
         let next = min(maxScroll, max(0, model.scroll + delta))
         guard next != model.scroll else { return }
@@ -1329,6 +1340,7 @@ final class ThumbnailController {
             model.widthScale = 1
         }
         keys.send(.cardsShown)
+        swipe.presented()
         // A dismissal in progress is simply reversed: the same cards turn around. `visible` is
         // already false then; the panel stays up until the slide-out ends.
         let reusing = panel.isVisible && !model.cards.isEmpty && Set(cards.map(\.shot.url)) == Set(model.cards.map(\.shot.url))

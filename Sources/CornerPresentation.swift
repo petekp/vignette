@@ -161,7 +161,7 @@ enum StackRequest: String { case shortcut, menu, url }
 
 /// What closed the corner, for the `[stack] dismissed` line.
 enum DismissReason: String {
-    case esc, shortcut, menu, url, timeout, removed
+    case esc, shortcut, menu, url, timeout, removed, swipe
     case clickOutside = "click-outside", quickDone = "quick-done"
     init(_ request: StackRequest) {
         switch request {

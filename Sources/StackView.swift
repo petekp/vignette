@@ -21,12 +21,15 @@ struct StackView: View {
             // clear layer fills the panel, which is wider than the column while the strip is out,
             // so the column stays against its right edge; the strip's side catches nothing.
             Color.clear
-            Color.black.opacity(model.isStack ? 0.01 : 0)
+            // Lone thumbnails catch nothing between the cards, except while a swipe has moved
+            // them: the fingers' next events must still reach the panel where the cards were.
+            Color.black.opacity(model.isStack || model.swipe != 0 ? 0.01 : 0)
                 .frame(width: layout.columnWidth + layout.inset * 2)
                 // The panel runs down to the screen's edge; the Dock's room at the bottom of it
                 // stays clear, so a click on a Dock icon under the column still reaches the Dock.
                 .padding(.bottom, model.safeBottom)
-            column
+            // The swipe moves the column with the fingers, outside every animation.
+            column.offset(x: model.swipe)
             if let strip = stripPlacement {
                 let reveal = layout.stripReveal(rows: StackLayout.stripRows)
                 // The strip's box is always the grown width, with the strip against its
@@ -41,6 +44,7 @@ struct StackView: View {
                     // new card; the slide-out carries it off screen.
                     .offset(x: stripSlide, y: model.scroll + stripLift)
                     .animation(Anim.spring(settings.motionUI.slideOutDuration), value: model.slidingOut)
+                    .offset(x: model.swipe)
                     .transition(.opacity)
             }
         }
@@ -74,13 +78,10 @@ struct StackView: View {
         model.selectedCards().first.flatMap { model.lift[$0.id] } ?? 0
     }
 
-    /// The strip starts a column's width further left, and its labels reach further still, so it
-    /// needs that much more to clear the screen.
+    /// The strip slides out on its own spring, unless the swipe carries it with the column.
     private var stripSlide: CGFloat {
-        guard model.slidingOut else { return 0 }
-        let reach = layout.columnWidth + layout.stripGap + layout.stripWidth
-            + layout.stripReveal(rows: StackLayout.stripRows)
-        return layout.offscreenDistance(cardWidth: reach)
+        guard model.slidingOut, !model.swipeExit else { return 0 }
+        return layout.stripExitDistance
     }
 
     /// The cards, newest at the bottom, pulled down by `scroll`. What leaves the viewport fades

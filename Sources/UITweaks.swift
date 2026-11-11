@@ -28,6 +28,10 @@ struct UITweaks: Codable, Equatable {
     var selectionStripGap = 16.0     // the widest selected card to the control strip beside it
     var autoScrollZone = 44.0        // band at each end of the column where a drag-select scrolls it
     var autoScrollSpeed = 600.0      // points a second at the very edge of that band
+    // A two-finger swipe toward the screen's edge closes the corner (StackSwipe)
+    var swipeDistance = 70.0         // points toward the edge past which a release closes it
+    var swipeSpeed = 500.0           // points a second toward the edge at which a release closes it wherever it is
+    var swipeStretch = 10.0          // the farthest a pull away from the edge moves the column, within the panel's room
     // Timings
     var thumbnailSeconds = 5.0       // how long a fresh thumbnail stays
     var markSeconds = 1.7            // how long a card's notice stays; the stored key keeps its older name
