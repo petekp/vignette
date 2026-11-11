@@ -54,7 +54,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// Out of sight until `reveal`.
     private let hanging = HangingPopover(reshow: .fadingThrough, alpha: 0)
     private var popover: NSPopover { hanging.popover }
-    private let content = NoteContent()
+    let content = NoteContent()
+    /// The words heard and the waveform, while live ink listens into the note.
+    var voice: NoteVoice?
     private var place: PopoverPlace
     /// How strongly its ink shows: 0 while the ink is hidden with its window.
     private var inkOpacity: CGFloat = 1
@@ -66,12 +68,12 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private var sessions: [AgentDestination] = []
     /// The last session list, which a change in whether Claude can answer resolves again.
     private var candidates: DestinationChoice.Candidates?
-    private var closing = false
+    private(set) var closing = false
     /// Waiting to look as the conversation does before handing over to it, which `fadeAway` can stop.
     private var handingOver = false
     private var revealed = false
     /// Sent: the words stay, the keys are let go, and only the handover or `fadeAway` closes it.
-    private var sent = false
+    private(set) var sent = false
     /// The target's menu is up. It takes the keys while it is, and `popUp` returns when it closes.
     private(set) var menuOpen = false
     private var watching: [NSObjectProtocol] = []
@@ -243,7 +245,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     }
 
     /// Grows or shrinks to fit the words, on a spring once it shows.
-    private func refit() {
+    func refit() {
         content.fit(popover, over: revealed ? NoteContent.resize * Settings.shared.motionScale : 0)
     }
 
@@ -268,9 +270,10 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     }
 
     /// What the empty note says: what Return does with its target.
-    private func showPlaceholder() {
-        content.showPrompt(NoteContent.prompt(to: responder, problem: Self.problem(of: responder, among: responders),
-                                              speechProblem: speechProblem), fading: revealed)
+    func showPlaceholder() {
+        let prompt = voice != nil ? "" : NoteContent.prompt(to: responder, problem: Self.problem(of: responder, among: responders),
+                                                            speechProblem: speechProblem)
+        content.showPrompt(prompt, fading: revealed)
         refit()
     }
 
@@ -345,20 +348,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     // MARK: Keys
 
     func controlTextDidChange(_ notification: Notification) {
+        voice?.yield()
         refit()
         onTyped?()
-    }
-
-    /// Shows what the person is saying, until they type: a word typed is theirs to keep.
-    func hear(_ words: String) { put(words) }
-
-    /// Puts `words` in the field, the caret after them.
-    func put(_ words: String) {
-        guard !sent, !closing else { return }
-        content.field.stringValue = words
-        // The caret follows the words, so typing after them adds to the end.
-        (content.field.currentEditor() as? NSTextView)?.setSelectedRange(NSRange(location: (words as NSString).length, length: 0))
-        refit()
     }
 
     /// Asks as Return does.
@@ -375,6 +367,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// go back to the app the person was in. Only `handOver` or `fadeAway` closes it.
     private func showSent() {
         sent = true
+        voice?.yield()
         content.field.isEditable = false
         content.field.isSelectable = false
         letGoOfKeys()
@@ -403,6 +396,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         guard !closing else { return ready() }
         closing = true
         handingOver = true
+        dropVoice()
         stopWatching()
         hanging.stop()
         let wait = max(settledAt - CACurrentMediaTime(), 0)
@@ -430,6 +424,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         }
         closing = true
         handingOver = false
+        dropVoice()
         stopWatching()
         hanging.stop()
         let popover = popover
@@ -532,7 +527,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     }
 
     /// How long the words and the ↩ take to dim or come back as the note loses or takes the keys.
-    private static let focusFade: TimeInterval = 0.18
+    static let focusFade: TimeInterval = 0.18
     /// How long the target takes to settle into a name once sent, at full motion.
     private static let settleDuration: TimeInterval = 0.18
     private let removal = WindowRemoval()

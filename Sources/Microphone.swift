@@ -4,8 +4,8 @@ import AVFoundation
 import CoreAudio
 import Speech
 
-/// The microphone, while speech input listens: it starts the transcriber and hands it each buffer in
-/// the transcriber's format.
+/// The microphone, while speech input listens: it starts the transcriber, hands it each buffer in
+/// the transcriber's format, and reports how loud the input is, which the note's waveform shows.
 /// macOS shows its microphone dot in the menu bar for exactly as long as this runs.
 ///
 /// Starting the transcriber and the engine took 80 to 165 ms on an M4 Max (2026-10-08), and on the
@@ -20,21 +20,26 @@ final class Microphone: @unchecked Sendable {
     private var running = false
 
     /// Starts the transcriber and the microphone into it, and answers on the main thread: nil once
-    /// both run, or why they could not.
-    func start(into transcriber: Transcriber, answer: @escaping @MainActor @Sendable (TranscriberFailure?) -> Void) {
+    /// both run, or why they could not. `onLevels` gets the input's level, 0 to 1, one for each
+    /// `VoiceLevels.step` of input, a buffer's worth at a time on the main thread.
+    func start(into transcriber: Transcriber, onLevels: @escaping @MainActor @Sendable ([Float]) -> Void,
+               answer: @escaping @MainActor @Sendable (TranscriberFailure?) -> Void) {
+        let report: @Sendable ([Float]) -> Void = { levels in
+            DispatchQueue.main.async { MainActor.assumeIsolated { onLevels(levels) } }
+        }
         Self.queue.async { [self] in
-            let failure = begin(transcriber)
+            let failure = begin(transcriber, report: report)
             DispatchQueue.main.async { MainActor.assumeIsolated { answer(failure) } }
         }
     }
 
-    private func begin(_ transcriber: Transcriber) -> TranscriberFailure? {
+    private func begin(_ transcriber: Transcriber, report: @escaping @Sendable ([Float]) -> Void) -> TranscriberFailure? {
         do {
             try transcriber.begin()
         } catch {
             return error as? TranscriberFailure ?? TranscriberFailure(reason: "Vignette couldn't start listening.", detail: "\(error)")
         }
-        let (failure, pointed) = run(transcriber, choosing: true)
+        let (failure, pointed) = run(transcriber, report: report, choosing: true)
         guard let failure else { return nil }
         guard pointed else {
             transcriber.cancel()
@@ -42,14 +47,15 @@ final class Microphone: @unchecked Sendable {
         }
         Log.write("[speech] microphone default: the chosen device did not start, retrying on the default input: \(failure.detail)")
         engine = AVAudioEngine()
-        let retry = run(transcriber, choosing: false).failure
+        let retry = run(transcriber, report: report, choosing: false).failure
         if retry != nil { transcriber.cancel() }
         return retry
     }
 
     /// Taps the engine's input into the transcriber and starts the engine. `pointed` says the input was
     /// pointed at a device other than the default, which a retry on a fresh engine undoes.
-    private func run(_ transcriber: Transcriber, choosing: Bool) -> (failure: TranscriberFailure?, pointed: Bool) {
+    private func run(_ transcriber: Transcriber, report: @escaping @Sendable ([Float]) -> Void,
+                     choosing: Bool) -> (failure: TranscriberFailure?, pointed: Bool) {
         let input = engine.inputNode
         let pointed = choosing && pointInput(at: MicrophoneChoice.current())
         let format = input.outputFormat(forBus: 0)
@@ -60,6 +66,7 @@ final class Microphone: @unchecked Sendable {
         let converter = AVAudioConverter(from: format, to: target)
         input.installTap(onBus: 0, bufferSize: AVAudioFrameCount(format.sampleRate / 10), format: format) { buffer, _ in
             if let converted = AudioFeed.convert(buffer, with: converter, to: target) { transcriber.append(converted) }
+            report(Self.levels(of: buffer))
         }
         engine.prepare()
         do {
@@ -109,6 +116,19 @@ final class Microphone: @unchecked Sendable {
                 running = false
             }
             DispatchQueue.main.async { MainActor.assumeIsolated { then() } }
+        }
+    }
+
+    /// The buffer's loudness in slices of `VoiceLevels.step`, each from its RMS.
+    static func levels(of buffer: AVAudioPCMBuffer) -> [Float] {
+        guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return [] }
+        let count = Int(buffer.frameLength)
+        let slice = max(1, Int(buffer.format.sampleRate * VoiceLevels.step))
+        return stride(from: 0, to: count, by: slice).map { start in
+            let end = min(start + slice, count)
+            var sum: Float = 0
+            for i in start..<end { sum += samples[i] * samples[i] }
+            return VoiceLevels.level(rms: (sum / Float(end - start)).squareRoot())
         }
     }
 }
