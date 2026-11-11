@@ -208,43 +208,6 @@ enum AgentPlugin {
         roots(home: home).compactMap { root in client(of: root).map { status(of: root, client: $0) } }
     }
 
-    // MARK: The skill before the plugin
-
-    /// The skill Vignette installed before the plugin, at `<root>/skills/vignette`. With the plugin
-    /// there too, the agent would see the skill twice.
-    enum LegacySkill: Equatable {
-        case none
-        /// A folder, which is what Vignette wrote.
-        case folder
-        /// A link, which the person made. It is theirs to remove.
-        case link
-    }
-
-    static func legacySkill(at entry: URL) -> LegacySkill {
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: entry.path) else { return .none }
-        return attributes[.type] as? FileAttributeType == .typeSymbolicLink ? .link : .folder
-    }
-
-    /// `<root>/skills/vignette`.
-    static func legacyEntry(in root: URL) -> URL {
-        root.appendingPathComponent("skills").appendingPathComponent(name)
-    }
-
-    /// Removes an old skill folder. A link stays. `root` is the agent the result is reported for.
-    static func removeLegacySkill(at entry: URL, root: URL) -> Result {
-        switch legacySkill(at: entry) {
-        case .none: return Result(root: root, outcome: .absent)
-        case .link: return Result(root: root, outcome: .kept, detail: "\(entry.path) is a link, so it stays")
-        case .folder:
-            do {
-                try FileManager.default.removeItem(at: entry)
-                return Result(root: root, outcome: .removed, detail: "old skill \(entry.path)")
-            } catch {
-                return Result(root: root, outcome: .failed, detail: "old skill \(entry.path): \(error.localizedDescription)")
-            }
-        }
-    }
-
     // MARK: Outcomes
 
     enum Outcome: String {
@@ -444,6 +407,7 @@ final class AgentPlugins: @unchecked Sendable {
     private let inboxRoot: URL
     private let marketplace: String
     private let appName: String
+    private let migrations: LegacySkillMigrations
     /// Makes the host for an agent; tests give one whose tool is a script.
     private let host: (AgentClient, URL) -> PluginHost
 
@@ -451,6 +415,7 @@ final class AgentPlugins: @unchecked Sendable {
          template: URL? = AgentPlugin.bundled, skill: URL? = AgentPlugin.bundledSkill,
          marketplaceFolder: URL = AgentPlugin.marketplaceFolder, inboxRoot: URL = AgentPlugin.inboxRoot,
          marketplace: String = AgentPlugin.marketplace, appName: String = Identity.name,
+         migrations: LegacySkillMigrations = LegacySkillMigrations(file: LegacySkillMigrations.standard),
          host: @escaping (AgentClient, URL) -> PluginHost = { PluginHost(client: $0, root: $1) }) {
         self.home = home
         self.template = template
@@ -459,6 +424,7 @@ final class AgentPlugins: @unchecked Sendable {
         self.inboxRoot = inboxRoot
         self.marketplace = marketplace
         self.appName = appName
+        self.migrations = migrations
         self.host = host
     }
 
@@ -467,8 +433,8 @@ final class AgentPlugins: @unchecked Sendable {
 
     /// Launch. Writes the marketplace, then for each agent on this Mac: installs the plugin where the
     /// skill from before the plugin is (that person chose the skill, and the plugin is what carries it
-    /// now), takes that skill's folders away once the plugin is in, and updates a plugin older than
-    /// this app's. Nothing is installed where neither is.
+    /// now), once per agent folder, takes that skill's folders away once the plugin is in, and updates
+    /// a plugin older than this app's. Nothing is installed where neither is.
     func launch(completion: @escaping @MainActor @Sendable ([AgentPlugin.Result]) -> Void = { _ in }) {
         queue.async { [self] in
             var results: [AgentPlugin.Result] = []
@@ -483,16 +449,15 @@ final class AgentPlugins: @unchecked Sendable {
             for root in AgentPlugin.roots(home: home) {
                 guard let client = AgentPlugin.client(of: root) else { continue }
                 let host = host(client, root)
-                let legacy = legacyEntries(for: client, root: root)
                 if !AgentPlugin.isInstalled(in: root, client: client, id: host.id) {
-                    guard legacy.contains(where: { AgentPlugin.legacySkill(at: $0) != .none }) else { continue }
+                    guard hasLegacySkill(client, root), !migrations.contains(root) else { continue }
                     let installed = host.install(from: marketplaceFolder)
                     results.append(log(installed, "for the skill already there"))
                     guard installed.outcome == .installed else { continue }
                 } else if changed || host.installedVersion() != bundledVersion {
                     results.append(log(host.update()))
                 }
-                results += legacy.map { log(AgentPlugin.removeLegacySkill(at: $0, root: root)) }
+                results += retireLegacySkill(client, root)
             }
             let found = results
             DispatchQueue.main.async { MainActor.assumeIsolated { completion(found) } }
@@ -514,9 +479,7 @@ final class AgentPlugins: @unchecked Sendable {
                     }
                     let result = log(host(client, root).install(from: marketplaceFolder))
                     results.append(result)
-                    if result.outcome == .installed {
-                        results += legacyEntries(for: client, root: root).map { log(AgentPlugin.removeLegacySkill(at: $0, root: root)) }
-                    }
+                    if result.outcome == .installed { results += retireLegacySkill(client, root) }
                 }
             }
             let found = results
@@ -542,6 +505,16 @@ final class AgentPlugins: @unchecked Sendable {
         var entries = [AgentPlugin.legacyEntry(in: root)]
         if client == .codex { entries.append(AgentPlugin.legacyEntry(in: home.appendingPathComponent(".agents"))) }
         return entries
+    }
+
+    private func hasLegacySkill(_ client: AgentClient, _ root: URL) -> Bool {
+        legacyEntries(for: client, root: root).contains { AgentPlugin.legacySkill(at: $0) != .none }
+    }
+
+    /// With the plugin in: records the move, then removes the old skill's folders.
+    private func retireLegacySkill(_ client: AgentClient, _ root: URL) -> [AgentPlugin.Result] {
+        if hasLegacySkill(client, root) { migrations.record(root) }
+        return legacyEntries(for: client, root: root).map { log(AgentPlugin.removeLegacySkill(at: $0, root: root)) }
     }
 
     @discardableResult
