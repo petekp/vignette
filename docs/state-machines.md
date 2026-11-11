@@ -2641,7 +2641,7 @@ Keeps Apple's `com.apple.screencapture` defaults the way Vignette needs them: it
 
 ### AgentPlugins (implicit)
 
-Owner: `AgentPlugin.swift:401` (class), `AppDelegate.swift:276-350` (callers). Tests: `AgentPluginTests.testLaunchMigratesTheOldSkillAndUpdatesOlderPlugins`, `testLaunchInstallsNothingWhereNothingWas`, `testOldSkillFolderGoesAndALinkStays`, `testALaunchLeavesThePluginOffAfterTheSwitchTurnedItOffWhereTheOldSkillIsALink`, `testALaunchThatFindsThePluginBesideALinkedSkillLeavesItOffOnceTheSwitchTurnsItOff`.
+Owner: `AgentPlugins.swift:9` (class), `AppDelegate.swift:276-350` (callers). Tests: `AgentPluginTests`, `AgentPluginLaunchTests.swift`.
 
 Installs, updates and removes the Vignette plugin in Claude Code and Codex, one run at a time on a serial `DispatchQueue("vignette.agent-plugin")`.
 
@@ -2651,18 +2651,20 @@ Installs, updates and removes the Vignette plugin in Claude Code and Codex, one 
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| plugin not on, legacy skill folder present | `launch` (`startAgentPlugin`, `AppDelegate.swift:282`, only when setup is not unasked) | on | installs the plugin (`AgentPlugin.swift:453-456`); the folder is recorded in `LegacySkillMigrations`, then removed |
+| plugin not on, legacy skill folder present | `launch` (`startAgentPlugin`, `AppDelegate.swift:282`, only when setup is not unasked) | on | installs the plugin (`:74-75`); the folder is recorded in `LegacySkillMigrations`, then removed |
 | plugin not on, legacy skill is a link, folder not recorded | `launch` | on | installs the plugin and records the folder; the link stays ([setup-1](#setup-1), [issue 12](#issue-12)) |
 | plugin not on, legacy skill is a link, folder recorded | `launch` | — | — (the switch's off holds) |
-| plugin on, legacy skill present | `launch`, or `install(into:)` succeeding | on | records the folder (`retireLegacySkill`, `AgentPlugin.swift:515`) |
+| plugin on, legacy skill present | `launch`, or `install(into:)` succeeding | on | records the folder (`retireLegacySkill`) |
 | plugin not on, no legacy skill | `launch` | — | — |
-| plugin on, marketplace changed or version differs | `launch` | on | `plugin update` (`:458`) |
+| plugin on, marketplace changed or version differs | `launch` | on | `plugin update` (`:79`) |
 | any | `install(into:)` (Settings switch, setup `record`, `install-skill`) | on | stage the marketplace, run the tool's install steps, remove the legacy folder |
 | any | `remove(from:)` (Settings switch) | off | the tool's uninstall steps; "not found" counts as done |
+| a person's own folder, test launch | `install(into:)`, `remove(from:)` | — | `.failed`, no tool runs (`refusal`) |
 
 **Invariants**
 
-- A launch never removes the plugin, and installs only where the skill from before the plugin is. Checked by: `AgentPluginTests.testLaunchInstallsNothingWhereNothingWas`, `testLaunchMigratesTheOldSkillAndUpdatesOlderPlugins`. The guard at `AgentPlugin.swift:453` counts a link as that skill.
+- A launch never removes the plugin, and installs only where the skill from before the plugin is. Checked by: `testLaunchInstallsNothingWhereNothingWas`, `testLaunchMigratesTheOldSkillAndUpdatesOlderPlugins`. The guard at `:74` counts a link as that skill.
+- A test launch never reads or changes the person's `.claude`, `.codex` or `.agents`, and the `.agents` skill goes only with the Codex folder the environment names. Checked by: `testATestLaunch…` and `testAnInstall…`.
 - A launch installs for the old skill at most once per agent folder, so the switch's off holds. Checked by: `testALaunchLeavesThePluginOffAfterTheSwitchTurnedItOffWhereTheOldSkillIsALink`, `testALaunchThatFindsThePluginBesideALinkedSkillLeavesItOffOnceTheSwitchTurnsItOff` ([setup-1](#setup-1)).
 - An install started by setup finishes before the app quits. Checked by: nothing; `applicationWillTerminate` (`AppDelegate.swift:210`) waits for `requests.releaseHeld()` and not for this queue ([setup-4](#setup-4)).
 - `ClaudeReadRule.set` does not lose a concurrent write to Claude's `settings.json`. Checked by: nothing; it reads and rewrites without a lock.

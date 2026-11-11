@@ -23,6 +23,20 @@ extension AgentPlugin {
         root.appendingPathComponent("skills").appendingPathComponent(name)
     }
 
+    /// `<home>/.agents/skills/vignette`. Codex reads `<home>/.agents/skills` whatever `CODEX_HOME`
+    /// says, so an old skill there reaches every Codex folder of that home.
+    static func agentsLegacyEntry(home: URL) -> URL {
+        legacyEntry(in: home.appendingPathComponent(".agents"))
+    }
+
+    /// Whether `home`'s `.agents` is the person's own and this is a test launch, which leaves it alone
+    /// as it leaves the person's `.claude` and `.codex` (`isGuarded`).
+    static func isGuardedAgentsFolder(home: URL, environment: [String: String], personHome: URL) -> Bool {
+        guard Launch.isTest(in: environment) else { return false }
+        return home.appendingPathComponent(".agents").resolvingSymlinksInPath().path
+            == personHome.appendingPathComponent(".agents").resolvingSymlinksInPath().path
+    }
+
     /// Removes an old skill folder. A link stays. `root` is the agent the result is reported for.
     static func removeLegacySkill(at entry: URL, root: URL) -> Result {
         switch legacySkill(at: entry) {
