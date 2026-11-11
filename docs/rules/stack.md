@@ -25,7 +25,8 @@
   one shadow from its image and matte together, and `ImageRenderer` casts one from each, so `lift`
   composites them first (`compositingGroup`). Compared through the window server, with the card
   pressed and a drawing on it, the two differ by 0.2 to 0.6 levels of 255 on average. The rest is
-  one-pixel edge rows and a shadow up to 7 levels lighter beside the card.
+  one-pixel edge rows and a shadow up to 7 levels lighter beside the card. The drag image carries no
+  hover dim and no buttons, so a press fades both off the card (`CardView.showsButtons`).
 - The backdrop's progressive blur is a stack of masked NSVisualEffectViews with different radii.
   The private CAFilter variableBlur ignores its mask when the backdrop renders in the window
   server on macOS 15, and a bare CABackdropLayer renders black. Do not retry. The band masks are
