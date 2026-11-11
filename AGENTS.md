@@ -192,7 +192,7 @@ The steps below have the details.
    characters. A cut logs an `[add] warning` line, and `[add]` still answers `ok`.
    `Agent.record(title:on:)` writes the two parts as extended attributes beside the agent's name,
    and `Agent.title(of:)` reads them back through the same `AgentTitle` check. Only the editor shows
-   them, above the frame (`AgentTitleView`, fileprivate to `AnnotationController.swift`). The text
+   them, above the frame (`AgentTitleView`, which only `AnnotationController` makes). The text
    sits on the editor's blur with no background. Its left edge sits `ui.annotationCornerRadius` in
    from the frame's, where the frame's top edge comes out of its rounded corner. It wraps at the
    frame's right edge, or `ui.agentTitleMinWidth` wide when that is wider, never past the room's

@@ -9,23 +9,31 @@ extension AnnotationController {
         zoomScreen = screen
         zoom.pixelScale = screen.backingScaleFactor
         if win.frame != screen.visibleFrame { win.setFrame(screen.visibleFrame, display: false) }
+        dropLayerStep()
         moveFrame(to: frame, picture: zoom.picture)
+        ring?.reset(size: frame.size)
     }
 
     /// Hands `input` to the zoom and does what it answers. A spring that lands at once, at motion 0,
-    /// ticks and arrives inside `animate`, after the zoom has answered.
-    func run(_ input: AnnotatorZoom.Input) {
+    /// ticks and arrives inside `animate`, after the zoom has answered. `isStep` marks a zoom key or a
+    /// double-click, whose spring Core Animation may play (`playStepOnLayers`).
+    func run(_ input: AnnotatorZoom.Input, isStep: Bool = false) {
         switch zoom.reduce(input) {
         case .spring(let level, let seconds)?:
             // The title sits over another part of the screen once a step has moved the frame.
             zoomTween.animate(to: level, duration: motionScaled(seconds)) { [weak self] in
+                self?.stopPlayingOnLayers()
                 self?.run(.arrived)
                 self?.measureTitleInk()
             }
+            if isStep, Settings.shared.data.ui.coreAnimationPlaysZoomSteps { playStepOnLayers() } else { stopPlayingOnLayers() }
         case .place(let frame, let picture)?:
             guard window != nil else { return }
-            moveFrame(to: frame, picture: picture)
+            if zoom.phase == .landed { ring?.zoomTicked(size: frame.size) }
+            // A step on layers laid the frame out at its end when it began; the stack still follows the ticks.
+            if layerStep == nil { moveFrame(to: frame, picture: picture) } else { onFrame?(frame) }
         case .movePicture(let picture)?:
+            stopPlayingOnLayers()
             editor.pictureRect = picture
         case nil:
             break
@@ -35,11 +43,11 @@ extension AnnotationController {
     /// The editor's zoom keys and its double-click on empty space.
     func zoomRequested(_ request: EditorCore.ZoomRequest) {
         switch request {
-        case .zoomIn: run(.zoomIn)
-        case .zoomOut: run(.zoomOut)
-        case .fit: run(.fit)
+        case .zoomIn: run(.zoomIn, isStep: true)
+        case .zoomOut: run(.zoomOut, isStep: true)
+        case .fit: run(.fit, isStep: true)
         case .smart(let point):
-            run(.smart(at: cursorFraction(editor.convert(editor.viewPoint(forImagePoint: point), to: nil))))
+            run(.smart(at: cursorFraction(editor.convert(editor.viewPoint(forImagePoint: point), to: nil))), isStep: true)
         }
     }
 
@@ -54,7 +62,7 @@ extension AnnotationController {
             if event.phase == .ended || event.phase == .cancelled { run(.lift); return }
             run(.pinch(by: event.magnification, at: cursorFraction(event.locationInWindow)))
         case .smartMagnify:
-            run(.smart(at: cursorFraction(event.locationInWindow)))
+            run(.smart(at: cursorFraction(event.locationInWindow)), isStep: true)
         case .scrollWheel:
             let line: CGFloat = event.hasPreciseScrollingDeltas ? 1 : Self.wheelLinePoints
             if event.modifierFlags.intersection([.command, .control]).isEmpty {

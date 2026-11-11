@@ -80,15 +80,15 @@ final class EditorView: NSView {
 
     private let pasteboard: NSPasteboard
     private let canvas = CanvasView()
-    private let picture = EditorPicture()
-    private let overlay = EditorOverlayLayers()
+    let picture = EditorPicture()
+    let overlay = EditorOverlayLayers()
     private var placedPicture = CGRect.zero
     private var screenshotName = ""
-    private var typingField: TypingField?
+    private(set) var typingField: TypingField?
     private var revealPending = false
     /// The text view of a typing session that ended, kept over its text until the text's bitmap is
     /// on its layer, so the words are on screen in every frame.
-    private var lingering: TypingField?
+    private(set) var lingering: TypingField?
     /// Moves the lingering text view from the lines as typed to the balanced ones (`TypingField.settle`).
     private var settling: Tween?
     /// How long that takes, in seconds, with the motion scale applied; 0 goes straight to the new lines.

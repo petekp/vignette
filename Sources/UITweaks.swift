@@ -110,6 +110,10 @@ struct UITweaks: Codable, Equatable {
     var agentTitleFade = 0.15        // in after the flight lands, out as it flies home
     var zoomEdgeBandPoints = 250.0   // how far from each edge of the picture a zoom holds that edge
     var zoomEdgePull = 0.6           // the part of that band in which the edge is held exactly
+    // The frame's ring while a zoom resizes the frame (`FrameRing`, `ZoomKeyframes`)
+    var ringFadesWhileZooming = false
+    var ringOutsideImage = false     // cards and flights draw theirs outside too, so each handover matches
+    var coreAnimationPlaysZoomSteps = false   // the zoom keys and the double-click; a pinch or a scroll keeps the tween
     // The editor (`EditorMetrics`): screen pt, the same size at any zoom, unless it says otherwise
     var dragDistance = 4.0           // how far a press travels before it is a drag
     var hitMargin = 4.0              // added to a stroke's half-width to make its hit band

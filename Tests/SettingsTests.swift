@@ -256,8 +256,8 @@ final class SettingsTests: XCTestCase {
     }
 
     func testEveryTweakHasABound() {
-        let encoded = try! JSONSerialization.jsonObject(with: JSONEncoder().encode(UITweaks())) as! [String: Any]
-        let doubles = Set(encoded.filter { $0.value is Double || $0.value is Int }.keys).subtracting(["backdropBands"])
+        let numbers = Mirror(reflecting: UITweaks()).children.filter { $0.value is Double || $0.value is Int }.compactMap(\.label)
+        let doubles = Set(numbers).subtracting(["backdropBands"])
         XCTAssertEqual(Set(UITweaks.bounds.map(\.name)), Set(doubles))
     }
 

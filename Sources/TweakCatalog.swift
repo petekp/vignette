@@ -14,6 +14,7 @@ struct TweakSpec: @unchecked Sendable, Identifiable {
         /// A system design's name or an installed family's.
         case font(WritableKeyPath<UITweaks, String>)
         case choice(WritableKeyPath<UITweaks, String>, [String])
+        case toggle(WritableKeyPath<UITweaks, Bool>)
     }
 
     /// The setting's name in settings.json.
@@ -47,6 +48,10 @@ struct TweakSpec: @unchecked Sendable, Identifiable {
         TweakSpec(key: key, label: label, control: .choice(path, options), applies: { _ in true })
     }
 
+    static func toggle(_ key: String, _ label: String, _ path: WritableKeyPath<UITweaks, Bool>) -> TweakSpec {
+        TweakSpec(key: key, label: label, control: .toggle(path), applies: { _ in true })
+    }
+
     /// Whether `ui` holds this setting's default, counting floating-point noise as equal.
     func isDefault(in ui: UITweaks) -> Bool {
         let defaults = UITweaks()
@@ -54,6 +59,7 @@ struct TweakSpec: @unchecked Sendable, Identifiable {
         case .number(let path, _, _, _, _): return UITweaks.same(ui[keyPath: path], defaults[keyPath: path])
         case .integer(let path, _): return ui[keyPath: path] == defaults[keyPath: path]
         case .colour(let path), .font(let path), .choice(let path, _): return ui[keyPath: path] == defaults[keyPath: path]
+        case .toggle(let path): return ui[keyPath: path] == defaults[keyPath: path]
         }
     }
 
@@ -64,6 +70,7 @@ struct TweakSpec: @unchecked Sendable, Identifiable {
         case .number(let path, _, _, _, _): ui[keyPath: path] = defaults[keyPath: path]
         case .integer(let path, _): ui[keyPath: path] = defaults[keyPath: path]
         case .colour(let path), .font(let path), .choice(let path, _): ui[keyPath: path] = defaults[keyPath: path]
+        case .toggle(let path): ui[keyPath: path] = defaults[keyPath: path]
         }
     }
 }

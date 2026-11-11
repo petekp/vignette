@@ -477,7 +477,7 @@ private struct FlightsView: View {
                     .shadow(color: .black.opacity(f.look.shadowOpacity), radius: f.look.shadowRadius, y: f.look.shadowY)
                     .marks(f.marks, picture: f.image.size, corner: f.look.corner)
                     // The card's ring travels with the image, and the annotator window carries it on.
-                    .overlay(RoundedRectangle(cornerRadius: f.look.corner, style: .continuous).stroke(.white.opacity(ui.cardBorderOpacity * f.look.ring), lineWidth: ui.cardBorderWidth))
+                    .overlay(ui.ring(cornerRadius: f.look.corner).stroke(.white.opacity(ui.cardBorderOpacity * f.look.ring), lineWidth: ui.cardBorderWidth))
                     // Before the bow, so the spot is where the picture is on screen, swell and all.
                     .overlay(FlightSpot(id: f.id, picture: f.image.size))
                     // The agent's title, pinned to the picture's top-left corner, so it bows and swells with it.
