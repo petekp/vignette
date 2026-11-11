@@ -71,7 +71,7 @@ final class ThumbnailController {
         },
         isVisible: { [unowned self] in self.visible }, selected: { [unowned self] in self.keys.send(.selected) },
         relayout: { [unowned self] in self.relayout() })
-    private lazy var swipe = StackSwipeDriver(model: model) { [unowned self] in self.dismiss(by: .swipe) }
+    private lazy var swipe = StackSwipeDriver(model: model, screen: { [unowned self] in self.screen }) { [unowned self] in self.dismiss(by: .swipe) }
     /// The one owner of the annotation run, its queue included. Only `handle` writes it; see AnnotationRun.
     private var run = AnnotationRun()
     /// The card the run has open, kept here because a lone thumbnail leaves the model once the annotator shows.

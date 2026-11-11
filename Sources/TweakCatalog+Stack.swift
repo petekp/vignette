@@ -40,8 +40,8 @@ extension TweakCatalog {
             TweakGroup(nil, [
                 .number("swipeDistance", "Distance", \.swipeDistance, 10...300, step: 5, unit: "pt", safe: 0...10_000),
                 .number("swipeSpeed", "Speed", \.swipeSpeed, 50...3000, step: 50, unit: "pt/s", safe: 0...100_000),
-                .number("swipeStretch", "Stretch away", \.swipeStretch, 0...150, step: 5, unit: "pt", safe: 0...10_000),
-            ], caption: { _ in "A sideways two-finger swipe moves the corner's cards with the fingers. Released past the distance toward the screen's edge, or faster than the speed, they leave; otherwise they spring back. A pull away from the edge goes no further than the stretch." }),
+                .number("swipeStretch", "Stretch away", \.swipeStretch, 0...40, step: 1, unit: "pt", safe: 0...10_000),
+            ], caption: { _ in "A sideways two-finger swipe moves the corner's cards with the fingers. Released past the distance toward the screen's edge, or faster than the speed, they leave; otherwise they spring back. A pull away from the edge goes no further than the stretch, nor past the room the panel keeps for the shadows." }),
         ]),
         TweakSection("Timings", [
             TweakGroup(nil, [

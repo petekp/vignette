@@ -6,20 +6,24 @@ import AppKit
 final class StackSwipeDriver: NSObject {
     private var swipe = StackSwipe()
     private let model: StackModel
+    /// The screen the corner is on, whose display link ticks the springs.
+    private let screen: () -> NSScreen
     /// Closes the corner by the swipe; the slide-out answers with `leave()`.
     private let close: () -> Void
     private var link: CADisplayLink?
 
-    init(model: StackModel, close: @escaping () -> Void) {
+    init(model: StackModel, screen: @escaping () -> NSScreen, close: @escaping () -> Void) {
         self.model = model
+        self.screen = screen
         self.close = close
     }
 
     /// The fingers move the column as they are, whatever the motion setting; the springs after
-    /// the release are motion, so they are scaled.
+    /// the release are motion, so they are scaled. A pull away from the edge stays inside the panel.
     private var rules: StackSwipe.Rules {
         let ui = Settings.shared.data.ui, scaled = Settings.shared.motionUI
-        return StackSwipe.Rules(distance: ui.swipeDistance, speed: ui.swipeSpeed, stretch: ui.swipeStretch,
+        let room = StackLayout.current.at(widthScale: model.widthScale).pullRoom
+        return StackSwipe.Rules(distance: ui.swipeDistance, speed: ui.swipeSpeed, stretch: min(ui.swipeStretch, room),
                                 returnDuration: scaled.relayoutDuration, exitDuration: scaled.slideOutDuration)
     }
 
@@ -64,8 +68,8 @@ final class StackSwipeDriver: NSObject {
     }
 
     private func startTicking() {
-        guard link == nil, let screen = NSScreen.main else { return }
-        let link = screen.displayLink(target: self, selector: #selector(tick))
+        guard link == nil else { return }
+        let link = screen().displayLink(target: self, selector: #selector(tick))
         link.add(to: .main, forMode: .common)
         self.link = link
     }

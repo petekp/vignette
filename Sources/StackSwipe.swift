@@ -208,9 +208,12 @@ struct StackSwipe: Equatable {
         springBack(rules: rules, now: now)
     }
 
-    /// The corner has gone: everything back at rest, for the next time it comes up.
+    /// The corner has gone: everything back at rest, for the next time it comes up. The last
+    /// gesture's axis stays, since its momentum can still be coming in.
     mutating func reset() {
+        let axis = lastAxisVertical
         self = StackSwipe()
+        lastAxisVertical = axis
     }
 
     mutating func tick(at now: TimeInterval) {

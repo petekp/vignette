@@ -45,7 +45,8 @@
   toward the screen's edge closes it (`StackSwipe`, a pure value, tested in
   `Tests/StackSwipeTests.swift`; `StackSwipeDriver` runs it). Each gesture locks to one axis once it
   has moved 3 pt, so a vertical scroll stays the column's scroll as it was. The column follows the
-  fingers one to one toward the edge and resists away from it, never past `ui.swipeStretch`. A
+  fingers one to one toward the edge and resists away from it, never past `ui.swipeStretch` nor past
+  the panel's room for the shadows (`StackLayout.pullRoom`). A
   release closes when it moves toward the edge at `ui.swipeSpeed` or more, or when the column is past
   `ui.swipeDistance` and is not moving back at that speed; any other release, and a cancelled
   gesture, springs back. The release speed is the fingers' movement over the last 80 ms, and it
@@ -55,7 +56,8 @@
   springs use `relayoutDuration` and `slideOutDuration` from `Settings.motionUI`. The close is
   `dismiss(by: .swipe)`, which `[stack] dismissed by=swipe` logs and which gives the focus back as a
   click outside does. A selection does not stop it: the strip leaves with the column, as it does on a
-  click outside. Nothing swipes while the annotator has a card or a card is being dragged out. On the
+  click outside. Nothing swipes while the annotator has a card or a card is being dragged out: a sideways
+  gesture then scrolls by its small vertical part. On the
   close, `StackModel.swipeExit` carries the whole column, strip included, on one spring
   (`model.swipe`) in place of the slide-out's staggered one per card, and stays on until the column
   is back at 0, so a corner that comes up mid-exit springs back from where it is. While `model.swipe`

@@ -131,6 +131,12 @@ final class StackSwipeTests: XCTestCase {
         g.send(.ended)
         XCTAssertEqual(g.send(.none, dx: 30, dy: 12, momentum: true), .scrollColumn(12))
         XCTAssertEqual(g.swipe.offset, 0)
+
+        var h = fingers()
+        h.drag(dx: 10, steps: 3)
+        XCTAssertEqual(h.send(.ended, after: 0.005), .close)
+        h.swipe.reset()
+        XCTAssertEqual(h.send(.none, dy: 12, momentum: true), StackSwipe.Answer.none)
     }
 
     func testAMouseWheelOnlyScrolls() {

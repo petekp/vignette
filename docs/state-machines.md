@@ -1063,13 +1063,14 @@ A sideways two-finger swipe moves the column toward the edge and closes the corn
 | not `closing`, `leaving` | `mayBegin` | `touching`; a spring stops | — |
 | not `closing`, `leaving` | `began` | `deciding`; a spring stops | — |
 | `deciding` | `changed` under 3 pt | unchanged | — |
-| `deciding` | `changed` | `vertical` or `horizontal` | `scrollColumn` or `moved` |
+| `deciding` | `changed` | `horizontal` if sideways and swipes are on, else `vertical` | `moved` or `scrollColumn` |
 | `horizontal` | `ended` toward the edge fast enough, or past the distance | `closing` | `close`: `dismiss(by: .swipe)` |
-| `horizontal` | other `ended`, `cancelled`, swipes turn off | `idle`, springing to 0 | — |
+| `horizontal` | other `ended`, `cancelled` | `idle`, springing to 0 | — |
+| `horizontal` | swipes turn off | `vertical`, springing to 0 | — |
 | `closing` | `leave` from `slideOut` (`:706`) | `leaving`, springing past the edge | `carriesColumn` |
 | `closing` | the dismissal did not happen | `idle`, springing to 0 | `cancelClose` |
 | `closing`, `leaving` | `presented` from `present` (`:1343`) | `idle`, springing to 0 | `carriesColumn` until it lands |
-| any | `reset` from the removal (`:719`) | `idle`, offset 0 | — |
+| any | `reset` from the removal (`:719`) | `idle`, offset 0; the last axis stays | — |
 | `vertical` | `ended` | `idle` | `scrollColumn` |
 | not `closing`, `leaving` | momentum | unchanged | `scrollColumn` after a vertical gesture |
 | not `closing`, `leaving` | no phase (a wheel) | unchanged | `scrollColumn` |

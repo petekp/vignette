@@ -31,7 +31,7 @@ struct UITweaks: Codable, Equatable {
     // A two-finger swipe toward the screen's edge closes the corner (StackSwipe)
     var swipeDistance = 70.0         // points toward the edge past which a release closes it
     var swipeSpeed = 500.0           // points a second toward the edge at which a release closes it wherever it is
-    var swipeStretch = 40.0          // the farthest a pull away from the edge moves the column
+    var swipeStretch = 10.0          // the farthest a pull away from the edge moves the column, within the panel's room
     // Timings
     var thumbnailSeconds = 5.0       // how long a fresh thumbnail stays
     var markSeconds = 1.7            // how long a card's notice stays; the stored key keeps its older name
