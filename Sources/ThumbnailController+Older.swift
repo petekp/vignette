@@ -75,6 +75,10 @@ extension ThumbnailController {
         keepPictures()
     }
 
+    /// Whether the picture of the card at `index` is decoded into `Thumbnailer`'s cache: only for the
+    /// newest `recentCount`, so the cards of older chunks never push their pictures out.
+    func cachesPicture(at index: Int) -> Bool { index < Settings.shared.data.recentCount }
+
     /// Lets the pictures of cards far from the view go and asks for the ones coming near
     /// (`CardPictures.plan`). A card in the annotator, in a stitch, selected, pressed, dragged,
     /// hovered or focused keeps its own, since a flight out of the column carries the card's picture.

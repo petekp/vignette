@@ -26,19 +26,24 @@ The rest of the stack's rules are in `docs/rules/stack.md`.
   (`OlderShots.columnLimit`), since the oldest are the cards the person scrolled to. Cmd+A selects
   every card in the column, chunks included, and nothing that is not loaded. A column longer than
   100 cards and `recentCount` lets pictures go far from the view (`CardPictures`, the memory rule). `[state]
-  stack.older` gives `loading`, `reachedOldest` and `added`. A chunk's cards decode their pictures
-  outside `Thumbnailer`'s cache (`caches: false`), so scrolling back through the folder does not
-  push the newest cards' pictures out of it before the next open.
+  stack.older` gives `loading`, `reachedOldest` and `added`. Only the newest `recentCount` cards
+  decode their pictures into `Thumbnailer`'s cache (`ThumbnailController.cachesPicture`): a chunk's
+  cards, a restored picture and a settings change's decode past them go outside it, so scrolling
+  back through the folder does not push the newest cards' pictures out before the next open.
 - The column builds a card only while its slot is within one viewport of the view (`CardColumn` in
-  `StackView.swift`, `StackLayout.cards(meeting:sizes:)`). Every other card keeps its slot in the
-  `VStack` as an empty frame of its size, so each card sits where a column of built cards puts it
-  and `StackLayout.cardFrame` holds for every card, built or not. The view is read at the scroll,
-  the lift and the width drawn in each frame, which SwiftUI hands the column while they animate
-  (`Animatable`), so a spring that carries the column far, a stitch's or a capture's, builds the
-  cards on its way before they come into view. `StackModel.keptBuilt` keeps a card built wherever
-  it is: in the annotator or a stitch, pressed, dragged out, hovered, focused, entering, showing a
-  notice, or carrying a drag-select's gesture (`sweepCard`). A card is built and let go with no
-  transition, out of view. The slot carries the hover's `zIndex` and the insert and remove
+  `StackView.swift`, `StackLayout.cards(meeting:sizes:lifts:)`). Every other card keeps its slot in
+  the `VStack` as an empty frame of its size, so each card sits where a column of built cards puts
+  it and `StackLayout.cardFrame` holds for every card, built or not. The view is read at the
+  scroll, the lift and the width drawn in each frame, which SwiftUI hands the column while they
+  animate (`Animatable`), so a spring that carries the column far, a stitch's or a capture's,
+  builds the cards on its way before they come into view. A capture's lifts are one fraction that
+  springs (`StackModel.liftFraction`), and the column draws each card its lift times that fraction
+  below its slot, so a card built in mid-spring starts where the others are. A removal's relayout
+  is a layout animation the column cannot read, so `ThumbnailController.removeCards(where:)` keeps
+  built every card whose slot passes through the view while it runs (`StackModel.carried`).
+  `StackModel.keptBuilt` keeps a card built wherever it is: in the annotator or a stitch, pressed,
+  dragged out, hovered, focused, entering, showing a notice, carried by a removal, or carrying a
+  drag-select's gesture (`sweepCard`). A card is built and let go with no transition, out of view. The slot carries the hover's `zIndex` and the insert and remove
   transitions. A slide-out staggers from the lowest card in view (`CardView.place`), so a column
   scrolled far up leaves at once. A frame of the scroll or the narrowing costs the cards built,
   about twenty, and an empty slot per card beyond: 2.4 ms and 6.1 ms at 300 cards

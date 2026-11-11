@@ -485,7 +485,7 @@ final class ThumbnailController {
         // When no card would be left, they slide out with the panel rather than vanish, and the
         // slide-out's end takes them out. A panel already sliding out is left to that end too.
         if !visible || model.cards.allSatisfy({ urls.contains($0.shot.url) }) { dismiss(by: .removed); return }
-        model.removeCards { urls.contains($0.shot.url) }
+        removeCards { urls.contains($0.shot.url) }
         model.setSelection(model.selection.filter { id in model.cards.contains { $0.id == id } })
         relayout()
     }
@@ -518,12 +518,12 @@ final class ThumbnailController {
         flights.restyle(style, markStyle: markStyle)
         sessionCard?.marks?.restyle(style, markStyle: markStyle)
         guard visible else { return }
-        model.cards = model.cards.map { card in
+        model.cards = model.cards.enumerated().map { index, card in
             let size = layout.cardSize(for: card.pointSize)
             // A file not downloaded keeps its picture, since a decode downloads it; a card far from view keeps none.
             let image = card.image == nil || Thumbnailer.isDataless(card.shot.url) ? card.image
                 : Thumbnailer.image(at: card.shot.url, maxPixel: thumbnailPixels(size: size, pointSize: card.pointSize),
-                                    space: screenSpace) ?? card.image
+                                    space: screenSpace, caches: cachesPicture(at: index)) ?? card.image
             if let marks = card.marks, let drawing = marks.drawing {
                 marks.show(drawing, filling: size, backingScale: screen.backingScaleFactor, style: style, markStyle: markStyle)
             }
@@ -558,7 +558,7 @@ final class ThumbnailController {
         model.forming.formUnion(ids)
         model.forming.insert(result.id)
         if let focused = model.focused, ids.contains(focused) { model.focused = nil }
-        model.removeCards { ids.contains($0.id) }
+        removeCards { ids.contains($0.id) }
         model.clearSelection()
         sweep.end()
         model.cards.insert(result, at: 0)
@@ -1328,8 +1328,9 @@ final class ThumbnailController {
             model.forming = []
             model.focused = nil
             model.entranceRanks = [:]
-            model.lift = [:]
+            model.setLifts([:])
             sweep.end()
+            model.sweepCard = nil
             model.slidingOut = false
             model.scroll = 0
             model.widthScale = 1
@@ -1351,7 +1352,7 @@ final class ThumbnailController {
                 if let entranceOver {
                     for (card, rank) in zip(next, entranceOver.ranks) { model.entranceRanks[card.id] = rank }
                 }
-                model.lift = lift
+                model.setLifts(lift)
             }
             if !lift.isEmpty { springLifts(lift, from: now) }
         }
@@ -1415,7 +1416,7 @@ final class ThumbnailController {
             guard let self else { return }
             first()
             withAnimation(Anim.spring(self.ui.shiftUpDuration)) {
-                self.model.lift = [:]
+                self.model.liftFraction = 0
                 alongside()
             }
         }
@@ -1441,7 +1442,7 @@ final class ThumbnailController {
         layoutPanel(shrinkLater: false, animated: false) {
             model.entering = card.id
             model.cards.insert(card, at: 0)
-            model.lift = lift
+            model.setLifts(lift)
             model.scroll = 0
         }
         orderPanelIn()

@@ -209,8 +209,6 @@ struct CardView: View, Equatable {
         // Past the panel's right edge, which sits just beyond the screen edge, so the card slides off screen.
         .offset(x: offscreen ? layout.offscreenDistance(cardWidth: size.width) : 0)
         .animation(slideAnimation.delay(slideDelay), value: offscreen)
-        // Outside the slide's animation, which would otherwise take over the lift's spring.
-        .offset(y: state.lift)
         .onHover { inside in
             guard !model.holdsHover else { return }
             model.hoveredCard = inside ? card.id : (model.hoveredCard == card.id ? nil : model.hoveredCard)

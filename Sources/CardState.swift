@@ -16,7 +16,6 @@ struct CardState: Equatable {
     /// its place in the column and draws nothing, so the image is never on screen twice.
     var isForming: Bool
     var offscreen: Bool
-    var lift: CGFloat
     var notice: CardNotices.Notice?
     var entering: Bool
     var entranceRank: Int?
@@ -36,7 +35,6 @@ struct CardState: Equatable {
         isForming = model.forming.contains(card.id)
         // A swipe carries the column off as one piece, so the card does not slide on its own.
         offscreen = model.offscreen.contains(card.id) && !model.swipeExit
-        lift = model.lift[card.id] ?? 0
         notice = model.notices.notice(on: card.shot.key)
         entering = model.entering == card.id
         entranceRank = model.entranceRanks[card.id]

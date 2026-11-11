@@ -170,7 +170,8 @@
   `ScreenshotWatcher+Older.swift`, `StackLayout+Slots.swift` or `ThumbnailController+Older.swift`.
 - A card joining the open stack is not animated as a layout change. `ThumbnailController.shiftUp`
   changes the layout and grows the panel with animations off, lifts every card that was there back
-  to where it was drawn (`StackModel.lift`), and springs the lifts to 0 on the next turn. The panel
+  to where it was drawn (`StackModel.lift`), and springs the part of each lift still drawn
+  (`StackModel.liftFraction`) to 0 on the next turn. The panel
   grows at its top edge at once, and SwiftUI animates in coordinates whose origin is that edge, so
   an animated insert moved the cards half a slot in one frame and carried the new card along with
   the column. The new card slides on the lone thumbnail's spring, after `CardView.insertLead`, so it

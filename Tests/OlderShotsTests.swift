@@ -109,7 +109,7 @@ final class ColumnSlotsTests: XCTestCase {
 
     func testTheCardsMeetingABandAreEveryCardWithAnyPartInIt() {
         let band = (slotBottom(3) + 99)...(slotBottom(6) + 1)
-        XCTAssertEqual(layout.cards(meeting: band, sizes: sizes), 3..<7)
+        XCTAssertEqual(layout.cards(meeting: band, sizes: sizes), IndexSet(3..<7))
     }
 
     func testABandInTheGapBetweenTwoCardsMeetsNeither() {
@@ -118,8 +118,15 @@ final class ColumnSlotsTests: XCTestCase {
     }
 
     func testABandPastEitherEndMeetsOnlyTheCardsThere() {
-        XCTAssertEqual(layout.cards(meeting: -500...50, sizes: sizes), 0..<1)
-        XCTAssertEqual(layout.cards(meeting: (slotBottom(9) + 50)...5000, sizes: sizes), 9..<10)
+        XCTAssertEqual(layout.cards(meeting: -500...50, sizes: sizes), IndexSet(0..<1))
+        XCTAssertEqual(layout.cards(meeting: (slotBottom(9) + 50)...5000, sizes: sizes), IndexSet(9..<10))
         XCTAssertTrue(layout.cards(meeting: 5000...6000, sizes: sizes).isEmpty)
+    }
+
+    func testALiftedCardMeetsTheBandWhereItIsDrawn() {
+        var lifts = Array(repeating: CGFloat(0), count: 10)
+        lifts[5] = slotBottom(5) - slotBottom(2)
+        let band = (slotBottom(2) + 10)...(slotBottom(2) + 50)
+        XCTAssertEqual(layout.cards(meeting: band, sizes: sizes, lifts: lifts), IndexSet([2, 5]))
     }
 }

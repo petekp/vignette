@@ -75,7 +75,7 @@ struct StackView: View {
 
     /// The selected cards' lift while they shift up for a new card; they share one.
     private var stripLift: CGFloat {
-        model.selectedCards().first.flatMap { model.lift[$0.id] } ?? 0
+        (model.selectedCards().first.flatMap { model.lift[$0.id] } ?? 0) * model.liftFraction
     }
 
     /// The strip slides out on its own spring, unless the swipe carries it with the column.
@@ -91,7 +91,7 @@ struct StackView: View {
         let shadowRoom = layout.cardShadowRoom
         let safeBottom = model.safeBottom
         return CardColumn(model: model, layout: layout, motion: settings.motionScale, scroll: model.scroll,
-                          lift: model.lift.values.max() ?? 0, widthScale: model.widthScale)
+                          liftFraction: model.liftFraction, widthScale: model.widthScale)
         .offset(y: model.scroll)
         .padding(inset)
         // The Dock's room, so the newest card rests above the Dock rather than on it.
@@ -302,32 +302,31 @@ extension EdgeInsets {
 /// frames (`StackLayout.cardFrame`) hold for every card. The view is read at the scroll, lift and
 /// width drawn in this frame: SwiftUI hands an `Animatable` view each frame's value while they
 /// animate, so a spring that carries the column far builds the cards it passes on the way, before
-/// they come into view.
+/// they come into view. Each card is drawn its lift below its slot here, not in `CardView`, so a
+/// card built while the lifts spring starts where the spring is.
 private struct CardColumn: View, Animatable {
     @ObservedObject var model: StackModel
     let layout: StackLayout
     let motion: Double
     var scroll: CGFloat
-    /// How far the lifted cards are drawn below their slots (`StackModel.lift`).
-    var lift: CGFloat
+    var liftFraction: CGFloat
     var widthScale: CGFloat
 
-    /// How far past the view, in viewports, cards are built.
-    static let reach: CGFloat = 1
-
     nonisolated var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, CGFloat> {
-        get { AnimatablePair(AnimatablePair(scroll, lift), widthScale) }
-        set { (scroll, lift, widthScale) = (newValue.first.first, newValue.first.second, newValue.second) }
+        get { AnimatablePair(AnimatablePair(scroll, liftFraction), widthScale) }
+        set { (scroll, liftFraction, widthScale) = (newValue.first.first, newValue.first.second, newValue.second) }
     }
 
     var body: some View {
         let drawnNow = StackLayout(ui: layout.ui, widthScale: widthScale)
         let sizes = model.cards.map { drawnNow.drawn($0.size) }
-        let viewBottom = scroll + lift, viewTop = viewBottom + model.viewport
-        let reach = model.viewport * Self.reach
-        let built = drawnNow.cards(meeting: (viewBottom - reach)...(viewTop + reach), sizes: sizes)
+        let lifts = liftFraction == 0 || model.lift.isEmpty ? []
+            : model.cards.map { (model.lift[$0.id] ?? 0) * liftFraction }
+        let viewTop = scroll + model.viewport
+        let reach = model.viewport * StackLayout.reach
+        let built = drawnNow.cards(meeting: (scroll - reach)...(viewTop + reach), sizes: sizes, lifts: lifts)
         // The column slides out from the lowest card in view, so a column scrolled far up leaves at once.
-        let lowestInView = drawnNow.cards(meeting: viewBottom...viewTop, sizes: sizes).lowerBound
+        let lowestInView = drawnNow.cards(meeting: scroll...viewTop, sizes: sizes, lifts: lifts).first ?? 0
         let kept = model.keptBuilt
         return VStack(alignment: .trailing, spacing: layout.spacing) {
             ForEach(Array(model.cards.enumerated().reversed()), id: \.element.id) { index, card in
@@ -338,13 +337,12 @@ private struct CardColumn: View, Animatable {
                                  state: CardState(of: card, in: model), ui: layout.ui,
                                  widthScale: layout.widthScale, motion: motion, model: model)
                             .equatable()
+                            .offset(y: index < lifts.count ? lifts[index] : 0)
                             // Built or let go out of view, at once: a fade would still be running
                             // if a fling brought it in.
                             .transition(.identity)
                     }
                 }
-                // The slot's own frame, so a card built in mid-narrowing takes the size its
-                // neighbours are springing through.
                 .frame(width: size.width, height: size.height)
                 .zIndex(model.hoveredCard == card.id ? 1 : 0)   // the hover scale may hang over the card below
                 .transition(.move(edge: .trailing).combined(with: .opacity))
