@@ -74,7 +74,7 @@ final class TransitionLayer {
     private var pendingLift: Set<UUID> = []
     /// How close a flight has to be to its target before something else may take its place:
     /// one pixel on a Retina display.
-    private static let arrivalTolerance: CGFloat = 0.5
+    static let arrivalTolerance: CGFloat = 0.5
     /// Counts every flight this layer has started, so no two ever share a generation.
     private var nextGeneration = 0
 

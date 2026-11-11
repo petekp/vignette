@@ -66,7 +66,8 @@
   place, and keeps the image before's target until the next image's settles (`Model.begin`'s
   `carryingTarget`), since emptying it took Send off the bar for the listing's 60 to 90 ms and the
   bar jumped narrower and back: `place(below:gap:)` slides the panel when it is already up, one `Tween` per direction, over
-  `Anim.passesTarget(ui.expandDuration)`, which is when the next image's window comes up. The
+  `FlightTiming.covers` for a flight as long as the next image's frame is wide, which is when the
+  next image's window comes up. The
   springs move the panel's centre and top edge, so a change of size never moves the bar. When the
   offer changes, the bar springs to its new width inside the panel, which never narrows while the
   bar is up and is clear around it. The controls two offers share (Copy, the message field, the

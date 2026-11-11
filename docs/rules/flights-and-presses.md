@@ -2,8 +2,7 @@
 
 - A flight does not run down a straight line. `FlightCurve` bows it to one side and swells the card,
   both peaking in the middle and nothing at the ends, so the card still leaves and lands exactly
-  where the layout puts it. Both are also still at the ends, `(4t(1 - t))²`, so a flight that lands
-  at speed does not shrink at full rate up to its last frame and then stop in one. The amounts are `ui.flightArc` (a fraction of the path's length),
+  where the layout puts it, `4t(1 - t)`. The amounts are `ui.flightArc` (a fraction of the path's length),
   `ui.flightArcMax` (the bow's cap in points), and `ui.flightDepth`; the motion scale multiplies the
   first and the third, so `motion: 0` and Reduce Motion give a straight line. The side of the bow
   belongs to the line rather than the direction of travel, so a flight that turns around mid-air
@@ -13,22 +12,23 @@
   the picture fills the frame as a card's does or spans its width as the editor's does) animated
   from `.annotator(ui)` to `.card(ui)`; `AnnotationController` reads the annotator window's frame
   shadow from the same `Look.annotator`, so the two ends cannot drift apart. The fitted frame is
-  rounded out to whole points, so a picture filling it would be cut at the sides, most for a wide
-  strip, and step outward as the editor takes over. The editor pins its picture to the frame's top
-  and the flight centres it, so a picture taller than the frame still steps down by half the
-  difference: under a point for a landscape screenshot, about two for a portrait one twice as tall
-  as it is wide. `dropShadow(id:)` zeroes a flight's shadow
+  on whole points with the image's shape (`StackLayout.annotationFrame`), and the editor spans its
+  width with the picture pinned to the top, so the picture the flight centres there is less than
+  half a point taller or shorter than the frame, and moves under a quarter of a point as the editor
+  takes over. `dropShadow(id:)` zeroes a flight's shadow
   in the same run-loop turn the card appears or the annotator turns its own shadow on, so the
   shadow is never drawn twice and never missing for a frame.
 - Nothing takes a flight's place until it has arrived; the annotator hides behind it before then. A
   spring's tail runs well past its nominal duration, so anything put at the exact target on a timer
-  steps by what the spring still had to go. Every flight moves by `ui.flightTiming` (`FlightTiming`):
-  the spring with `Anim.flightBounce`, the same spring with no bounce, an ease-out or linear. The
-  bouncing spring overshoots by 0.6% of the path, which on a flight across a laptop's screen is
-  about 7 points that shrink back over its last 0.2 s. `fly` answers on `arrived`, at `Anim.settle`
-  for the bouncing spring (within half a point of the target, with the flight put exactly on it in
-  that turn), and for the other timings 50 ms, three refreshes at 60 Hz, after they cover the
-  target:
+  steps by what the spring still had to go. Every flight moves by `ui.flightTiming` (`FlightTiming`),
+  and each choice is a SwiftUI spring, so a flight re-aimed in mid-air keeps its velocity. The
+  default, `quickSpring`, has a bounce of 0.07 over 0.65 of `ui.expandDuration`, tuned to first
+  reach its target when `spring` does (0.27 s at the default 0.35 s). It passes the target by 0.04%
+  of the path, under half a point across a laptop's screen. `spring` has `Anim.flightBounce` over
+  the whole duration and passes by 0.6%, about 7 points that shrink back over its last 0.2 s.
+  `springNoBounce` never passes it and covers it only at 0.57 s. `fly` answers on `arrived` once
+  the flight is within half a point of the target (`Anim.settle`), and no sooner than 50 ms, three
+  refreshes at 60 Hz, after it covers the target, with the flight put exactly on it in that turn:
   the card retakes its slot, and the annotator takes the shadow back
   (`AnnotationController.landed`). The flight into the editor lifts at the last of three moments,
   which reach `AnnotationRun` as events for the opening and come back as `liftFlight`: `arrived`,
@@ -38,9 +38,8 @@
   `docs/native-editor-2026-09-23.md` has the timings. The wait for presses keeps the flight over the
   window until the window takes presses itself, so a press there never falls through to the app
   behind. `fly` answers a second time, earlier, when the flight covers its target: at
-  `Anim.passesTarget` for the bouncing spring, within half a point of it for the spring with no
-  bounce, and 50 ms after a curve's end, once its last frame is on screen. A curve still moves fast
-  at its end, and the flight home's panel has to come up while the card is still or slow. The landing comes at least three refreshes later, which the flight
+  `Anim.passesTarget` for the two springs that bounce, and within half a point of it for the spring
+  with no bounce. The landing comes at least three refreshes later, which the flight
   home needs to put the stack's panel on screen first (`docs/exit-panel-2026-11-01.md`). From the
   moment a bouncing spring first reaches its target the flight's rect contains the target on every
   side. A spring with no bounce is still up to half a point short then, which uncovers only the same

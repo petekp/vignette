@@ -39,11 +39,7 @@ struct FlightCurve: Equatable {
         // How far along the path the card is: 0 at `from`, 1 at `to`. A spring overshoots its
         // target, and past either end the card is simply on the line.
         let t = min(1, max(0, ((point.x - from.x) * dx + (point.y - from.y) * dy) / (length * length)))
-        // 0 at both ends and 1 in the middle, and still at both ends: a card that lands at speed
-        // stops bowing and shrinking with it, instead of changing size at full rate up to the last
-        // frame and then stopping in one.
-        let hump = 4 * t * (1 - t)
-        let peak = hump * hump
+        let peak = 4 * t * (1 - t)      // 0 at both ends, 1 in the middle
         guard peak > 0 else { return flat }
         // Perpendicular to the path: up from one that runs mostly sideways, left from one that runs
         // mostly up or down, so the bow swings into the screen instead of off its right edge. The
