@@ -41,7 +41,8 @@ enum FlightTiming: String, CaseIterable {
 
     /// When the flight first covers its target on every side, so a window put there is hidden behind
     /// it. The bouncing spring covers it when it first passes it. The spring with no bounce covers it
-    /// once it is within `within` points, and a curve at the end of its duration.
+    /// once it is within `within` points, moving slowly. A curve still moves fast at its end, so it
+    /// covers once its last frame is on screen, with the flight standing still on the target.
     func covers(_ duration: Double, distance: CGFloat, within: CGFloat) -> Double {
         guard duration > 0 else { return 0 }
         switch self {
@@ -51,7 +52,7 @@ enum FlightTiming: String, CaseIterable {
         case .springNoBounce:
             return Anim.settle(duration, bounce: 0, distance: distance, within: within)
         case .easeOut, .linear:
-            return duration
+            return duration + Self.lastFrameShown
         }
     }
 
@@ -59,4 +60,9 @@ enum FlightTiming: String, CaseIterable {
     /// three refreshes at 60 Hz. The stack's panel is ordered in when the flight home covers its
     /// slot, and it has to be on screen before the card lands in it (docs/exit-panel-2026-11-01.md).
     private static let landingAfterCover = 0.05
+
+    /// A flight's frames reach the screen after the moment they are computed for
+    /// (docs/handover-2026-09-18.md), and a linear flight's last frame on a 1,200-point path still
+    /// moves about 29 points at 120 Hz. Three refreshes at 60 Hz.
+    private static let lastFrameShown = 0.05
 }

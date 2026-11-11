@@ -15,8 +15,9 @@
   shadow from the same `Look.annotator`, so the two ends cannot drift apart. The fitted frame is
   rounded out to whole points, so a picture filling it would be cut at the sides, most for a wide
   strip, and step outward as the editor takes over. The editor pins its picture to the frame's top
-  and the flight centres it, so a picture taller than the frame still steps up by half the
-  difference, under a point for a landscape screenshot. `dropShadow(id:)` zeroes a flight's shadow
+  and the flight centres it, so a picture taller than the frame still steps down by half the
+  difference: under a point for a landscape screenshot, about two for a portrait one twice as tall
+  as it is wide. `dropShadow(id:)` zeroes a flight's shadow
   in the same run-loop turn the card appears or the annotator turns its own shadow on, so the
   shadow is never drawn twice and never missing for a frame.
 - Nothing takes a flight's place until it has arrived; the annotator hides behind it before then. A
@@ -38,7 +39,8 @@
   window until the window takes presses itself, so a press there never falls through to the app
   behind. `fly` answers a second time, earlier, when the flight covers its target: at
   `Anim.passesTarget` for the bouncing spring, within half a point of it for the spring with no
-  bounce, and at a curve's end. The landing comes at least three refreshes later, which the flight
+  bounce, and 50 ms after a curve's end, once its last frame is on screen. A curve still moves fast
+  at its end, and the flight home's panel has to come up while the card is still or slow. The landing comes at least three refreshes later, which the flight
   home needs to put the stack's panel on screen first (`docs/exit-panel-2026-11-01.md`). From the
   moment a bouncing spring first reaches its target the flight's rect contains the target on every
   side. A spring with no bounce is still up to half a point short then, which uncovers only the same

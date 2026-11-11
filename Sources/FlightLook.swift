@@ -24,9 +24,10 @@ extension TransitionLayer {
         var ringInset: CGFloat = 0
         /// The picture spans the frame's width and is never cut at the sides, as the editor draws it,
         /// rather than filling the frame and cutting off the excess, as a card does. The fitted frame
-        /// is rounded out to whole points, so its shape and the image's differ by up to two points.
-        /// The editor's picture is pinned to the frame's top and the flight's is centred, so a picture
-        /// taller than the frame sits up to half the difference lower in the flight.
+        /// is rounded out to whole points, so its shape and the image's differ. The editor's picture
+        /// is pinned to the frame's top and the flight's is centred, so a picture taller than the
+        /// frame sits half the difference higher in the flight: under a point for a landscape
+        /// screenshot, about two for a portrait one twice as tall as it is wide.
         var fillsWidth = false
 
         static func card(_ ui: UITweaks) -> Look {

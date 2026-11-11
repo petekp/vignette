@@ -440,7 +440,7 @@ Events and senders:
 - `ignoresMouseEvents` is never set on the panel (comment `:8-9`). Checked by: nothing.
 - A flight's `dropped` runs only if the flight did not arrive, and at most once. Checked by: the filter at `:389` and `dropped = nil` at `:236`; no test.
 - `arrived` runs once the bouncing spring is within 0.5 pt of its target (`arrivalTolerance`, `:77`; `Anim.settle`), and for the other timings 50 ms after `covered` (`FlightTiming.settles`, `TransitionLayer+Timing.swift:34`). Checked by: `MotionTests.testAFlightHandsOverOnlyOnceItIsThere` (timing helper only).
-- `covered` runs before `arrived`, at least 50 ms before for every timing but motion 0 (comment `:219`); `FlightTiming.covers` is `min(settle, passesTarget)` for the bouncing spring, `Anim.settle` for the spring with no bounce, and the duration for a curve (`TransitionLayer+Timing.swift:45`). Checked by: `MotionTests.testAFlightCoversItsTargetFromTheMomentItReachesIt` (timing helpers only).
+- `covered` runs before `arrived`, at least 50 ms before for every timing but motion 0 (comment `:219`); `FlightTiming.covers` is `min(settle, passesTarget)` for the bouncing spring, `Anim.settle` for the spring with no bounce, and 50 ms past the duration for a curve (`TransitionLayer+Timing.swift:46`). Checked by: `MotionTests.testAFlightCoversItsTargetFromTheMomentItReachesIt` (timing helpers only).
 - No two live flights share a generation. Checked by: `nextGeneration` (`:79`, `:325`); no test.
 
 **Late and concurrent answers**
@@ -452,7 +452,7 @@ Events and senders:
 - A lift asked before arrival: held in `pendingLift` (`:372`), run at `:238`, cleared on re-aim (`:322`).
 - A `dropped` handler that re-enters the layer: `end(where:)` removes first and calls handlers after (`:390-394`); `converge`'s `land` defers a turn (`:281`).
 - Dismissing during a converge: dropped pieces still answer `land` (`:300`); the result flight is uncovered only if its generation is still the resting one (`:287-288`, `:292-293`).
-- Zero-duration motion: `FlightTiming.covers` and `FlightTiming.settles` return 0 (`TransitionLayer+Timing.swift:46`, `:35`), so both timers run next turn. Every `FlightTiming.animation(0)` is `.linear(duration: 0)` (`TransitionLayer+Timing.swift:27`, and `Anim.spring` at `Anim.swift:24` for a spring).
+- Zero-duration motion: `FlightTiming.covers` and `FlightTiming.settles` return 0 (`TransitionLayer+Timing.swift:47`, `:35`), so both timers run next turn. Every `FlightTiming.animation(0)` is `.linear(duration: 0)` (`TransitionLayer+Timing.swift:27`, and `Anim.spring` at `Anim.swift:24` for a spring).
 
 ### TransitionLayer panel and press (implicit)
 
@@ -463,7 +463,7 @@ The layer's one panel and the press it is holding. `PressCatcher` (`:468-470`) h
 **States**:
 
 - `panel.isVisible` (`:82`). Shown by `showPanel` (`:435`), taken down by `orderOutIfIdle` (`:419`). `orderIn` and `orderBelow` only order other windows relative to it.
-- `staysUp` (`:66`), set by `ThumbnailController.swift:758` (`flights.staysUp = run.isActive`).
+- `staysUp` (`:66`), set by `ThumbnailController.swift:756` (`flights.staysUp = run.isActive`).
 - `pressDown` (`:62`), `pressedFlight` (`:61`), `releaseWatch` (`:70`), `screen` (`:71`).
 
 **Transitions**

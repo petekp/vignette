@@ -71,8 +71,8 @@ final class MotionTests: XCTestCase {
                                     "a spring that does not overshoot never covers early")
         XCTAssertEqual(Anim.passesTarget(0, bounce: bounce), 0, "motion off covers and arrives in the same turn")
         for timing in [FlightTiming.easeOut, .linear] {
-            XCTAssertEqual(timing.covers(duration, distance: 1138, within: 0.5), duration,
-                           "\(timing) reaches the target only at its end, so it covers nothing before")
+            XCTAssertGreaterThan(timing.covers(duration, distance: 1138, within: 0.5), duration,
+                                 "\(timing) reaches the target only at its end, so it covers nothing before")
         }
         for timing in FlightTiming.allCases {
             let covered = timing.covers(duration, distance: 1138, within: 0.5)
