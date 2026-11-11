@@ -303,7 +303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// `install-skill` installs without it, since a script must not change a person's settings.
     func turnOnAgents(_ roots: [URL], completion: @escaping ([AgentPlugin.Result]) -> Void = { _ in }) {
         installAgentPlugin(into: roots) { results in
-            for result in results where ![.failed, .noTool].contains(result.outcome) && AgentPlugin.client(of: result.root) == .claude {
+            for result in results where ![.failed, .noTool].contains(result.outcome) && AgentPlugin.appClient(of: result.root) == .claude {
                 ClaudeReadRule.apply(true, in: result.root)
             }
             completion(results)
@@ -323,7 +323,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// its settings are left as they were before Vignette.
     func removeAgentPlugin(from root: URL, completion: @escaping (AgentPlugin.Result) -> Void) {
         agentPlugins.remove(from: root) { result in
-            if ![.failed, .noTool].contains(result.outcome), AgentPlugin.client(of: root) == .claude {
+            if ![.failed, .noTool].contains(result.outcome), AgentPlugin.appClient(of: root) == .claude {
                 ClaudeReadRule.apply(false, in: root)
             }
             completion(result)
@@ -334,7 +334,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// the Settings window, and the answer is the buttons in it.
     /// Recorded as `off` as it is made, so the question is asked once whatever the user does.
     private func offerAgentPlugin() -> Bool {
-        let roots = AgentPlugin.roots(home: FileManager.default.homeDirectoryForCurrentUser)
+        let roots = AgentPlugin.appRoots()
         guard !roots.isEmpty else { return false }
         settings.update { $0.agentSkill = AgentSkill.off.rawValue }
         Log.write("[plugin] offered \(roots.map(\.lastPathComponent).joined(separator: " "))")
@@ -344,7 +344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// The agent folders whose settings have the plugin on, for the state report.
     private func installedPluginRoots() -> [String] {
-        AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser).filter(\.installed).map(\.root.path)
+        AgentPlugin.appStatuses().filter(\.installed).map(\.root.path)
     }
 
     /// `vignette://install-skill`, for a script: it installs the plugin for every agent on this Mac,
@@ -357,7 +357,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         guard AgentPlugin.bundled != nil, AgentPlugin.bundledSkill != nil else {
             Commands.error("install-skill", .missingFile, "the plugin is not in the bundle"); return
         }
-        let roots = request.root.map { [$0] } ?? AgentPlugin.roots(home: FileManager.default.homeDirectoryForCurrentUser)
+        let roots = request.root.map { [$0] } ?? AgentPlugin.appRoots()
         guard !roots.isEmpty else {
             Commands.error("install-skill", .noAgent, "no .claude or .codex in this home folder"); return
         }
@@ -844,7 +844,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private func setupCallbacks(protectedArea: String?) -> SetupWindowController.Callbacks {
         SetupWindowController.Callbacks(
             conditions: { [unowned self] in setupConditions(protectedArea: protectedArea) },
-            agents: { AgentPlugin.statuses(home: FileManager.default.homeDirectoryForCurrentUser) },
+            agents: { AgentPlugin.appStatuses() },
             responders: .shared,
             // `@Published` sends before the change lands, so the window looks a turn later.
             changes: settings.$appleTarget.dropFirst().map { _ in }

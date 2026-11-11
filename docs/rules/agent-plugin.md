@@ -15,12 +15,21 @@
   database, which `CFFIXED_USER_HOME` does not move). Vignette never reads or removes the person's
   `~/.agents` either, and `install(into:)` and `remove(from:)` refuse the person's own folders, which
   `install-skill?root=` can name. A folder inside one, one reached through a link, or one spelled in
-  another case counts as theirs (`AgentPlugin.isPersons`). The agent's tool still runs with the app's
-  `HOME`, so without `CFFIXED_USER_HOME` a codex it runs may read the person's `~/.agents/skills`. `AgentPlugins` takes the home folder, the environment and the
-  person's home as parameters, and only its `init()`, the app's, reads the process's, so a unit test
-  never reaches the real folders, whatever its environment holds. The live check is
-  `install-skill?root=<dir>` (debug only, a folder named `.claude` or `.codex`). The tools get the
-  app's `HOME`, so a test copy launched with `CFFIXED_USER_HOME` installs into its scratch home.
+  another case counts as theirs (`AgentPlugin.isPersons`). A test launch on the person's own home
+  folder, one without `CFFIXED_USER_HOME`, runs no agent tool (`AgentPlugin.isPersonsHome`): a tool
+  run there gets the person's `HOME`, and codex reads `$HOME/.agents/skills` whatever `CODEX_HOME`
+  says. Its launch writes the marketplace and logs `[plugin] test launch: <home> is the person's own
+  home folder, so no install or update runs; …`, and `install(into:)` and `remove(from:)` answer
+  `failed`. Send lists and reads no Claude Code session in a test launch whose Claude Code folder is
+  the person's: `StartableSessions` and `ClaudeCodeConnection.transcripts` read
+  `AgentPlugin.claudeRoot`, which is nil there. `AgentPlugins` takes the home folder, the
+  environment and the person's home as parameters, and gives each tool that home as `HOME`. Its
+  `init()` and the `AgentPlugin.app…` entry points (`AgentPluginFolders.swift`) read the app's own.
+  `scripts/check-agent-folders.py`, which `scripts/build.sh --test` runs, fails a default of the
+  process's home or environment in `Sources/AgentPlugin*.swift`, and `AgentPlugins()` in a test.
+  `root(of:)` keeps its default until `CodexConnection.isLoaded` passes an environment. The live
+  check is `install-skill?root=<dir>` (debug only, a folder named `.claude` or `.codex`). A test copy
+  launched with `CFFIXED_USER_HOME` installs into its scratch home, as the end-to-end copies do.
   The Codex app's own codex needs nothing from `HOME`. A vite-plus shim does: it finds its package
   through `HOME`, so a test that runs one links
   the scratch home's `.vite-plus` to the real one, and unlinks it before anything lists Codex

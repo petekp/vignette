@@ -119,13 +119,27 @@ What was built:
 - The guard counts a folder inside one of the person's, one reached through a link, and one spelled in
   another case as theirs (`AgentPlugin.isPersons`). A scratch home whose `.agents/skills` links to the
   real one is caught.
-- Still open: the agent's tool runs with the app's `HOME`, so in a test launch without
-  `CFFIXED_USER_HOME` a codex it runs may read the person's `~/.agents/skills`. Not checked.
 - In a test launch, `install(into:)` and `remove(from:)` answer `failed` for the person's own folders
   without running a tool.
+- A test launch on the person's own home folder, one without `CFFIXED_USER_HOME`, runs no agent tool
+  at all, even for a scratch folder `CODEX_HOME` names: a tool gets the launch's home as `HOME`, and
+  codex reads `$HOME/.agents/skills`. Its launch still writes the marketplace, which the trailer's
+  own install reads, and logs `[plugin] test launch: <home> is the person's own home folder, so no
+  install or update runs; …`. The end-to-end copies set a scratch `CFFIXED_USER_HOME` under
+  `LSEnvironment`, so they still install.
+- Send lists and reads no Claude Code session in a test launch whose Claude Code folder is the
+  person's (`AgentPlugin.claudeRoot` is nil there).
+- `scripts/check-agent-folders.py`, which `scripts/build.sh --test` and so CI run, fails a default of
+  `ProcessInfo.processInfo.environment`, `NSHomeDirectory()` or `homeDirectoryForCurrentUser` in
+  `Sources/AgentPlugin*.swift`, and `AgentPlugins()` in a test. The app reads its own through
+  `AgentPlugin.appHome`, `appEnvironment` and the `app…` entry points. `root(of:)` keeps its default,
+  which `CodexConnection.isLoaded` relies on. The same defaults remain outside that code, in
+  `AgentApp`, `AgentConnection`, `AgentTools`, `ClaudeReadRule`, `CodexConnection`, `CodexSignIn`,
+  `InboxModStore`, `ScreenshotWatcher`, `SessionPlaces` and `SessionStarts`.
 
-Four launch tests cover these: `testATestLaunchLeavesThePersonsAgentsSkillAloneWhenCodexHomeNamesAScratchFolder`,
+Four launch tests cover these: `testATestLaunchOnThePersonsHomeRunsNoAgentToolEvenForScratchAgentFolders`,
 `testATestLaunchRefusesToInstallIntoOrRemoveFromThePersonsOwnFolders`,
 `testAnInstallRemovesTheAgentsSkillOnlyForTheCodexFolderTheEnvironmentNames` and
 `testATestLaunchOnAScratchHomeNeverRemovesThroughALinkIntoThePersonsFolders`.
-`testATestLaunchNeverGetsThePersonsOwnAgentFolders` also covers a nested folder and another case.
+`testATestLaunchNeverGetsThePersonsOwnAgentFolders` also covers a nested folder, another case and
+`claudeRoot`.

@@ -28,7 +28,9 @@ enum SessionPlaces {
     static let codexWorktree = "Codex worktree"
 
     /// `folder`'s place. `originURL` is a Codex thread's remote, used last for a folder that is gone.
-    static func resolve(folder: String?, originURL: String? = nil, home: String = NSHomeDirectory()) -> Found {
+    /// `environment` says where Codex's folder is (`CODEX_HOME`), whose worktrees are named for Codex.
+    static func resolve(folder: String?, originURL: String? = nil, home: String = NSHomeDirectory(),
+                        environment: [String: String] = ProcessInfo.processInfo.environment) -> Found {
         guard let folder, !folder.isEmpty else { return Found(place: .none, branch: nil) }
         let fileManager = FileManager.default
         let canonicalHome = canonical(home) ?? home
@@ -44,7 +46,7 @@ enum SessionPlaces {
 
         var directory = URL(fileURLWithPath: start)
         while directory.path != "/", directory.path != canonicalHome {
-            if let checkout = checkout(at: directory, home: canonicalHome) {
+            if let checkout = checkout(at: directory, home: canonicalHome, environment: environment) {
                 let below = relative(from: directory.path, to: start, gone: gone)
                 var place = Place.repository(name: checkout.mainFolder.lastPathComponent, root: checkout.mainFolder.path,
                                              worktree: checkout.worktree, subfolder: subfolder(below))
@@ -95,7 +97,7 @@ enum SessionPlaces {
         let worktree: String?
     }
 
-    private static func checkout(at folder: URL, home: String) -> Checkout? {
+    private static func checkout(at folder: URL, home: String, environment: [String: String]) -> Checkout? {
         let dot = folder.appendingPathComponent(".git")
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: dot.path, isDirectory: &isDirectory) else { return nil }
@@ -116,7 +118,7 @@ enum SessionPlaces {
             ? commonDirectory.deletingLastPathComponent()
             : commonDirectory.deletingLastPathComponent().appendingPathComponent(
                 commonDirectory.lastPathComponent.hasSuffix(".git") ? String(commonDirectory.lastPathComponent.dropLast(4)) : commonDirectory.lastPathComponent)
-        let codexRoot = AgentPlugin.root(of: .codex, home: URL(fileURLWithPath: home)).path + "/worktrees/"
+        let codexRoot = AgentPlugin.root(of: .codex, home: URL(fileURLWithPath: home), environment: environment).path + "/worktrees/"
         let worktree = folder.path.hasPrefix(codexRoot) ? codexWorktree : folder.lastPathComponent
         return Checkout(gitDirectory: gitDirectory, commonDirectory: commonDirectory,
                         mainFolder: URL(fileURLWithPath: canonical(mainFolder.path) ?? mainFolder.path), worktree: worktree)
