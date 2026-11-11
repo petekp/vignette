@@ -21,7 +21,7 @@ final class EditorView: NSView {
     /// Return or Done: render this drawing and finish.
     var onDone: ((Drawing) -> Void)?
     /// Send: render this drawing and send it. The editor stays open.
-    var onSend: ((Drawing) -> Void)?
+    var onSend: ((Drawing, AgentDestination?) -> Void)?
     /// Cmd+C with nothing selected: this drawing's rendering goes on the clipboard.
     var onCopyDrawing: ((Drawing) -> Void)?
     /// A zoom key, or a double-click asking for smart zoom. The point of `.smart` is in image px;
@@ -202,11 +202,9 @@ final class EditorView: NSView {
         return true
     }
 
-    /// Done in the toolbar; the drawing comes back through `onDone`.
+    /// Done and Send in the toolbar; the drawing comes back through `onDone` or `onSend`.
     func done() { handle(.done) }
-
-    /// Send in the toolbar, once a destination is chosen; the drawing comes back through `onSend`.
-    func send() { handle(.send) }
+    func send(to destination: AgentDestination) { handle(.send(destination)) }
 
     /// What Return and Cmd+Return do, from what the toolbar offers.
     var finishes: EditorCore.Finishes {
@@ -304,7 +302,7 @@ final class EditorView: NSView {
         case .page(let page, let isRepeat): onPage?(page, isRepeat)
         case .close: onClose?()
         case .done(let drawing): onDone?(drawing)
-        case .send(let drawing): onSend?(drawing)
+        case .send(let drawing, let to): onSend?(drawing, to)
         }
     }
 

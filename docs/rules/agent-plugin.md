@@ -26,8 +26,15 @@
   the bundle's, or whose marketplace copy changed. It installs the plugin only where the skill from
   before the plugin is (`<root>/skills/vignette`, and `~/.agents/skills/vignette` for Codex), since
   that person chose the skill. Once the plugin is in, a folder there is removed; a link is the
-  person's own and stays, with a `[plugin] kept` line. A launch never removes the plugin, and never
-  installs it anywhere else. Raise the version in both of the plugin's manifests with every change
+  person's own and stays, with a `[plugin] kept` line. It does this once per agent folder: whenever
+  the plugin is in beside that skill, from a launch or a switch, the folder is recorded in
+  `agent-plugin-migrated.json` in Application Support (`LegacySkillMigrations`), and a launch never
+  installs for the skill in a recorded folder. So a linked skill gets the plugin once, and the
+  switch's off holds after that. The record lives there rather than in settings.json because it is
+  about this Mac's agent folders, and a settings.json synced by dotfiles reaches other Macs. A build
+  from before the record ignores the file and installs again at each launch, as it always did. A
+  test launch records only the scratch folders it iterates, since `roots` leaves out the person's
+  own. A launch never removes the plugin, and never installs it anywhere else. Raise the version in both of the plugin's manifests with every change
   to the plugin or the skill, and the skill's own `metadata.version` with every change to the skill.
   `agentSkill` in settings.json records only that the offer was made. Setup's last page makes it
   and records `off`. A file that finished setup before that page existed, or a setup closed before

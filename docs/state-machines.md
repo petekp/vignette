@@ -46,7 +46,7 @@ changed, and the finding that changed it.
 | [Flights and zoom](#flights-and-zoom) | TransitionLayer flights, TransitionLayer panel and press, FlightPress, Tween, AnnotatorZoom, Zoom glue: `fitBeforeHide` and `hideWindows`, DimPanel, BackdropPanel |
 | [The corner and the stack](#the-corner-and-the-stack) | CornerPresentation, CornerKeys window side, Panel visibility and dismissal in ThumbnailController, Lone thumbnail timer, `leaveTimer`, CardNotices and its posting timers (explicit value, implicit timers), Stack selection, focus and hover, Stitch converge, shiftUp and card entrance, StackSweep, StackSwipe, HotKey, ModifierTap and KeyMonitors, StackAreaReader |
 | [The editor and drawings](#the-editor-and-drawings) | EditorCore, HeldKey, HeldToolLetter, EditorView session, MarkLayers text bitmap (implicit, one per text mark), TypingField, Drawings (implicit, per screenshot key), Rendering and clipboard promise, DragSourceView press |
-| [The toolbar and destinations](#the-toolbar-and-destinations) | AnnotatorToolbar.Model: target and offer, ToolbarOffer (explicit, derived), Send progress: sending, failure, sendingTo, Bar presence: shown, hideGeneration, sliding, Keyboard focus: focus, keyed, tookKeysOnOpen, toolLetter, heldLetter, HeldToolLetter, Target menu pick, SessionListing, AppDelegate.refreshDestinations and listDestinations, DestinationChoice (pure functions, no state), ClaudeCodeConnection: submit, preflight, start, HerdrLauncher.start, CodexConnection: discover and submit, AppServer.converse, AppServerSession (implicit; live ink's), SendOverlay notice animation |
+| [The toolbar and destinations](#the-toolbar-and-destinations) | AnnotatorToolbar.Model: target and offer, ToolbarOffer (explicit, derived), Send progress: sending, failure, Bar presence: shown, hideGeneration, sliding, Keyboard focus: focus, keyed, tookKeysOnOpen, toolLetter, heldLetter, HeldToolLetter, Target menu pick, SessionListing, AppDelegate.refreshDestinations and listDestinations, DestinationChoice (pure functions, no state), ClaudeCodeConnection: submit, preflight, start, HerdrLauncher.start, CodexConnection: discover and submit, AppServer.converse, AppServerSession (implicit; live ink's), SendOverlay notice animation |
 | [Requests, replies and the screenshots folder](#requests-replies-and-the-screenshots-folder) | Record.Status, SendGrace, Send bookkeeping, Reply.Stage, Reply import pipeline, Clearing and cleanup, Admission limit, FolderWrites pending adds, FolderWrites held-back reports, ScreenshotWatcher (implicit, with explicit pieces), Thumbnailer, CaptureOrigin, ReplyCommand and ReplyProtocol (explicit by order) |
 | [Setup, settings and launch](#setup-settings-and-launch) | SetupWindowController, SetupModel, SetupBanter, SetupInkPlayer and SetupInkGuide, MenuBarIntro, Accessibility.request, ShortcutRecorderView, SettingsSync and Settings (shell), Apple screencapture reconcile, AgentPlugins, AgentTools, LoginItem, Updater and the update dot, AppLocation (explicit, linear), Launch sequence (implicit, ordered), Hotkey press and hold pair, Stitch action, Setup Lab and Intro Lab (debug) |
 | [Live ink: the hand](#live-ink-the-hand) | HeldChord, ModifierChord, LiveInk inking lifecycle, LiveInk stroke, LiveInkTap, Overlay surfaces, Window picker watch, Menu hand-off: overMenus and LiveMenus, LiveEscape and the Esc hotkey, FocusRun, the focus tour, Steps tour, LiveListening and the transcriber chain, LiveWindows Tracked, LiveInk.setOn and the chord object |
@@ -270,7 +270,7 @@ The annotator window and editor for the image the run opened. It is reused; the 
 **States**: the properties together.
 
 - `current: Screenshot?` `:48`: set in `prepare` (`:163`), nil in `hide` and `abandon` (`:476`, `:462`). `opened: Opening?` `:56`. `opening` `:594` is `current == nil ? nil : opened`.
-- `windowUp` `:64` (true after `show`, false at `prepare`), `editorUntouched` `:62`, `sendingTo` `:59`.
+- `windowUp` `:64` (true after `show`, false at `prepare`), `editorUntouched` `:62`.
 - `eventProbe: Timer?` `:51`, `outsideClick` `:49`, `removal` `:53` (`WindowRemoval`), `titleReveal` `:90`, `inkMeasurement` `:86`. The zoom properties belong to the flights area.
 
 Phases, derived:
@@ -1492,29 +1492,28 @@ The offer is recomputed whenever an input (`replyTo`, destinations, `listed`, `t
 
 - None of its own. It follows `Model`.
 
-### Send progress: sending, failure, sendingTo (implicit)
+### Send progress: sending, failure (implicit)
 
-Owner: `Model.sending` (`AnnotatorToolbar.swift:47`), `failure` (`:51`), `failures` (`:54`); `AnnotationController.sendingTo` (`AnnotationController.swift:59`). Tests: none.
+Owner: `Model.sending` (`AnnotatorToolbar.swift:47`), `failure` (`:51`), `failures` (`:54`). Tests: `EditorCoreSendTests`.
 
 Tracks one Send press from the bar to the stored request. `AppDelegate.sendDrawing` (`:1387`) renders and submits.
 
-**States**: idle (`sending == false`, `failure == nil`); sending; notSent (`failure != nil`). `sendingTo` is a second flag: the destination of a press waiting for the editor's hand-over.
+**States**: idle (`sending == false`, `failure == nil`); sending; notSent (`failure != nil`). A press's destination travels with it, in `EditorCore.Input.send` and `Effect.send(_:to:)`.
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| idle or notSent | press (button, Cmd+Return, Space on the action, field Return: `AnnotatorToolbar.swift:283,335,795,799,955`) | — | `onSend` sets `sendingTo = destination` and calls `editor.send()` (`AnnotationController.swift:97-100`). The core emits `.send` only while open (`EditorCore.swift:481`). `editor.onSend` (`:137`) uses `sendingTo ?? offer.destination`, clears `sendingTo`, then `sendDrawing` sets `sending = true`, which clears `failure` (`:47`) ([toolbar-1](#toolbar-1)) |
+| idle or notSent | press (button, Cmd+Return, Space on the action, field Return: `AnnotatorToolbar.swift:283,335,795,799,955`) | — | `onSend` calls `editor.send(to:)` (`AnnotationController.swift:99`). The core emits `.send(drawing, to: destination)` only while open, and a key's send with `to: nil`. `editor.onSend` (`:135`) uses that destination, else `offer.destination`, then `sendDrawing` sets `sending = true`, which clears `failure` (`:47`) ([toolbar-1](#toolbar-1)) |
 | sending | press | refused at every entry (`!model.sending`, `AppDelegate.swift:1388`) | — |
 | sending | render fails, or `requests.send` throws | notSent: `sending = false`, `failure = reason`, `failures += 1` (`sendFailed`, `:56`) | — |
 | sending | render answers for an ended opening | dropped (`AppDelegate.swift:1397`); `sending` untouched | next `prepare` resets |
 | sending | request stored | stays sending until the bar leaves | next `prepare` calls `resetSend` (`:63`, from `AnnotationController.swift:166`) |
-| any | `park()` (`AnnotationController.swift:498`) | `sendingTo = nil` | — |
 
 **Invariants**
 
 - `sending` stays on from the press until the bar has left, and `prepare` resets it. Checked by: `prepare` at `AnnotationController.swift:166`.
-- `sendingTo` is nil after a press the editor ignored. Checked by: nothing ([toolbar-1](#toolbar-1)).
+- A press the editor ignored leaves nothing for the next image. Held by the destination travelling in the input, with no flag outside the core; `EditorCoreSendTests` checks the core's side only ([toolbar-1](#toolbar-1)).
 
 **Late and concurrent answers**
 
@@ -2642,7 +2641,7 @@ Keeps Apple's `com.apple.screencapture` defaults the way Vignette needs them: it
 
 ### AgentPlugins (implicit)
 
-Owner: `AgentPlugin.swift:438` (class), `AppDelegate.swift:276-350` (callers). Tests: `AgentPluginTests.testLaunchMigratesTheOldSkillAndUpdatesOlderPlugins`, `testLaunchInstallsNothingWhereNothingWas`, `testOldSkillFolderGoesAndALinkStays`.
+Owner: `AgentPlugin.swift:401` (class), `AppDelegate.swift:276-350` (callers). Tests: `AgentPluginTests.testLaunchMigratesTheOldSkillAndUpdatesOlderPlugins`, `testLaunchInstallsNothingWhereNothingWas`, `testOldSkillFolderGoesAndALinkStays`, `testALaunchLeavesThePluginOffAfterTheSwitchTurnedItOffWhereTheOldSkillIsALink`, `testALaunchThatFindsThePluginBesideALinkedSkillLeavesItOffOnceTheSwitchTurnsItOff`.
 
 Installs, updates and removes the Vignette plugin in Claude Code and Codex, one run at a time on a serial `DispatchQueue("vignette.agent-plugin")`.
 
@@ -2652,16 +2651,19 @@ Installs, updates and removes the Vignette plugin in Claude Code and Codex, one 
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| plugin not on, legacy skill folder present | `launch` (`startAgentPlugin`, `AppDelegate.swift:282`, only when setup is not unasked) | on | installs the plugin (`AgentPlugin.swift:488-489`); the folder is removed afterwards |
-| plugin not on, legacy skill is a link | `launch` | on | installs the plugin; the link stays, so a removal by the person is undone at the next launch ([setup-1](#setup-1), [issue 12](#issue-12)) |
+| plugin not on, legacy skill folder present | `launch` (`startAgentPlugin`, `AppDelegate.swift:282`, only when setup is not unasked) | on | installs the plugin (`AgentPlugin.swift:453-456`); the folder is recorded in `LegacySkillMigrations`, then removed |
+| plugin not on, legacy skill is a link, folder not recorded | `launch` | on | installs the plugin and records the folder; the link stays ([setup-1](#setup-1), [issue 12](#issue-12)) |
+| plugin not on, legacy skill is a link, folder recorded | `launch` | — | — (the switch's off holds) |
+| plugin on, legacy skill present | `launch`, or `install(into:)` succeeding | on | records the folder (`retireLegacySkill`, `AgentPlugin.swift:515`) |
 | plugin not on, no legacy skill | `launch` | — | — |
-| plugin on, marketplace changed or version differs | `launch` | on | `plugin update` (`:492`) |
+| plugin on, marketplace changed or version differs | `launch` | on | `plugin update` (`:458`) |
 | any | `install(into:)` (Settings switch, setup `record`, `install-skill`) | on | stage the marketplace, run the tool's install steps, remove the legacy folder |
 | any | `remove(from:)` (Settings switch) | off | the tool's uninstall steps; "not found" counts as done |
 
 **Invariants**
 
-- A launch never removes the plugin, and installs only where the skill from before the plugin is. Checked by: `AgentPluginTests.testLaunchInstallsNothingWhereNothingWas`, `testLaunchMigratesTheOldSkillAndUpdatesOlderPlugins`. The guard at `AgentPlugin.swift:488` counts a link as that skill ([setup-1](#setup-1)).
+- A launch never removes the plugin, and installs only where the skill from before the plugin is. Checked by: `AgentPluginTests.testLaunchInstallsNothingWhereNothingWas`, `testLaunchMigratesTheOldSkillAndUpdatesOlderPlugins`. The guard at `AgentPlugin.swift:453` counts a link as that skill.
+- A launch installs for the old skill at most once per agent folder, so the switch's off holds. Checked by: `testALaunchLeavesThePluginOffAfterTheSwitchTurnedItOffWhereTheOldSkillIsALink`, `testALaunchThatFindsThePluginBesideALinkedSkillLeavesItOffOnceTheSwitchTurnsItOff` ([setup-1](#setup-1)).
 - An install started by setup finishes before the app quits. Checked by: nothing; `applicationWillTerminate` (`AppDelegate.swift:210`) waits for `requests.releaseHeld()` and not for this queue ([setup-4](#setup-4)).
 - `ClaudeReadRule.set` does not lose a concurrent write to Claude's `settings.json`. Checked by: nothing; it reads and rewrites without a lock.
 
@@ -3993,16 +3995,19 @@ Line references are to commit 358d988 unless a finding says otherwise. Those in 
   (`docs/claude-code-without-herdr-2026-09-27.md:415-416`). They turn the plugin off with the Agents
   tab's switch, then Vignette launches again.
 - **Trace**: the switch runs `plugin remove`, so `isInstalled` reads false at launch. The launch
-  installs wherever an old skill is, folder or link (`AgentPlugin.swift:487-489`). A link is never
+  installed wherever an old skill was, folder or link. A link is never
   removed (`removeLegacySkill`, `testOldSkillFolderGoesAndALinkStays`), so every launch installs
   again.
 - **Breaks**: the switch's off does not hold. `docs/rules/agent-plugin.md` says the switch is
   the only thing that removes the plugin, and the person's choice is undone at each launch.
 - **Test**: `AgentPluginTests.testALaunchLeavesThePluginOffAfterTheSwitchTurnedItOffWhereTheOldSkillIsALink`,
-  which launches twice and expects the second launch to install nothing. It passes under either fix
-  below. It fails today and is committed with the fix.
-- **Fix**: waits on Pete ([issue 12](#issue-12)).
-- **Status**: waits for Pete, [issue 12](#issue-12): one fix changes a stored file.
+  which launches twice and expects the second launch to install nothing, and
+  `testALaunchThatFindsThePluginBesideALinkedSkillLeavesItOffOnceTheSwitchTurnsItOff`, for a plugin
+  already in beside a link when the fix arrives. Both failed before the fix.
+- **Fix**: the plugin being in beside the old skill, from a launch or a switch, records the agent
+  folder in `agent-plugin-migrated.json` in Application Support (`LegacySkillMigrations`), and a
+  launch installs for the old skill only in a folder not recorded.
+- **Status**: fixed, [issue 12](#issue-12), in `d0fb7c7`.
 
 ### Plausible findings
 
@@ -4048,7 +4053,7 @@ Grouped by area. An entry with no review verdict was skimmed by the reviewer and
 
 #### The toolbar and destinations
 
-- <a id="toolbar-1"></a>**toolbar-1**: A Send press the editor ignores leaves `sendingTo` set, and a later Return sends to the old session. Sequence: editor zoomed in, target D1 listed. Esc or Done closes it. Within the zoom's fit-back spring (up to a few hundred ms) or the bar's 0.2 s fade, the person clicks Send (or presses Cmd+Return in the field). Next image opens (swap or reopen) with a different target D2, or as a Reply to R. Where: `AnnotationController.swift:472-477`, `AnnotatorToolbar.swift:532-552`, `AnnotationController.swift:97-100`. Mapper: high on the code path (every step traced, no guard); medium on how often the window is hit (zoomed close is the wide window). **Status**: Review: stands. Rare to reach (a Send press during the 0.2 s fit-out or the bar's fade), but it sends to the wrong session. Not confirmed: the flag lives in `AnnotationController`, which no unit test can build. Two fixes, for Pete: a guard in `toolbar.onSend` that ignores a press once `current` is nil, which only the running app can check; or carrying the destination through the editor's send effect, which removes the second flag but changes `EditorCore`'s send contract. Open.
+- <a id="toolbar-1"></a>**toolbar-1**: A Send press the editor ignores leaves `sendingTo` set, and a later Return sends to the old session. Sequence: editor zoomed in, target D1 listed. Esc or Done closes it. Within the zoom's fit-back spring (up to a few hundred ms) or the bar's 0.2 s fade, the person clicks Send (or presses Cmd+Return in the field). Next image opens (swap or reopen) with a different target D2, or as a Reply to R. Where: `AnnotationController.swift:472-477`, `AnnotatorToolbar.swift:532-552`, `AnnotationController.swift:97-100`. Mapper: high on the code path (every step traced, no guard); medium on how often the window is hit (zoomed close is the wide window). **Status**: fixed in `5000257`. The destination travels through the editor's send effect (`EditorCore.Input.send`, `Effect.send(_:to:)`), so an ignored press leaves no flag. Test: `EditorCoreSendTests.testASendPressedAfterTheEditorClosedIsDroppedAndTheNextImagesKeySendsWhereItsOwnBarDoes`.
 - <a id="toolbar-2"></a>**toolbar-2**: A failed Codex listing replaces the kept list with an empty one, and the target can change or vanish. Sequence: (a) previous listing left `kept[codex]` = threads incl. T. Open editor; kept list answers at once and T (session used last) becomes the target. The fresh Codex job fails (codex not found at that moment, `process.run()` throws, or 8 s timeout with no listing line). The job returns `[]`. (b) Or: the next opening starts from `kept = []`. Where: `AppServer.swift:150`, `SessionListing.swift:149`, `AnnotatorToolbar.swift:181`. Mapper: medium. Traced every step; not checked whether a hung/failed app-server happens in practice, and an empty store would legitimately empty ….
 - <a id="toolbar-4"></a>**toolbar-4**: A menu pick applied a turn later lands on a different opening or a hidden bar. Sequence: target menu open (modal). A queued main-queue block runs `prepare` for another image (an agent `vignette://annotate`, or a card click already queued), which calls `model.begin`. The pick's deferred block then runs. Where: `AnnotatorToolbar.swift:260-266`. Mapper: low. The window is the gap between a menu action and the next main-queue turn; no input reaches it, only a block already queued.
 - <a id="toolbar-5"></a>**toolbar-5**: `SendOverlay` step closures from an earlier state change can fire after a later change's and overwrite `shown`. Sequence: notice goes `inGrace -> sent` (steps `[sending, sent]`, `sent` scheduled at about `glide + 0.45 s`). Before that fires, the notice changes again, e.g. `sent -> replyFailed`. Where: `SendOverlay.swift:81`. Mapper: low. A reply failing within a second of a send is not reachable in practice.
@@ -4112,7 +4117,7 @@ The confirmed findings, grouped by the change that fixes them. An issue keeps it
 commit messages cite; the table is in rank order. Rank is impact: how much a person loses, weighed
 by how often the sequence comes up. The review moved several of them, and
 [What the review changed](#what-the-review-changed) says how. Each issue is fixed in its own commit
-with its regression tests, except issue 12, which waits for Pete.
+with its regression tests.
 
 | Rank | Issue | Findings | What a person hits | Status |
 |---|---|---|---|---|
@@ -4121,7 +4126,7 @@ with its regression tests, except issue 12, which waits for Pete.
 | 3 | [2. The focus stays on a card the column dropped](#issue-2) | [corner-3](#corner-3) | with a full column, a capture takes the focus ring away, and Return, Copy and Trash act on the newest card | Fixed in `fc3077b` |
 | 4 | [3. A session that is still starting is started again](#issue-3) | [toolbar-3](#toolbar-3) | two sends to a session that is starting run two Claude Code processes on it, which forks its transcript | Fixed in `f1ea7c3` |
 | 5 | [11. A cleared request whose answer live ink drew is never pruned](#issue-11) | [requests-2](#requests-2) | a request folder left behind for every such answer, forever | Fixed in `72f89df`1 |
-| 6 | [12. A plugin switched off comes back at the next launch when the old skill is a link](#issue-12) | [setup-1](#setup-1) | the Agents tab's off does not hold, at every launch | Waits for Pete: one fix changes a stored file |
+| 6 | [12. A plugin switched off comes back at the next launch when the old skill is a link](#issue-12) | [setup-1](#setup-1) | the Agents tab's off does not hold, at every launch | Fixed in `d0fb7c7` |
 | 7 | [9. A drag over the oldest card when a capture fills the column crashes the app](#issue-9) | [corner-9](#corner-9) | the app quits; rare | Fixed in `8451a9c` |
 | 8 | [4. A Codex sign-out leaves its ask waiting forever](#issue-4) | [asks-1](#asks-1) | live ink answers nothing more, from Claude too, until Esc is pressed on the stuck ask | Fixed in `95c1a56` |
 | 9 | [5. A notice on a renamed file never goes](#issue-5) | [corner-1](#corner-1) | a stale Copied or failure notice, a send's countdown that never comes back, and a lone thumbnail that stays | Fixed in `4e16467` |
@@ -4230,21 +4235,14 @@ so the request has nothing left to clean up and is pruned after a week. Test:
 <a id="issue-12"></a>
 ### Issue 12: A plugin switched off comes back at the next launch when the old skill is a link
 
-**Not fixed: the choice is Pete's, and one option changes a stored file.** Two fixes would hold the
-switch's off:
-
-- **Only a skill folder triggers the launch install.** A link never installs the plugin at launch;
-  a person who keeps one installs it from the Agents tab or setup. Nothing new is stored. A person
-  upgrading from a build before the plugin, with a linked skill, does not get the plugin on their
-  own.
-- **The launch records, once per agent folder, that it migrated the old skill.** A link then gets
-  the plugin at the first launch, as a folder does, and the switch's off holds after that. The
-  record is new persisted state, in settings.json or Application Support, so it changes a file
-  format.
-
-Recommendation: record the migration. The launch install exists so that someone who chose the old
-skill keeps it, and a link is that choice too. Test, which passes under either fix:
-`AgentPluginTests.testALaunchLeavesThePluginOffAfterTheSwitchTurnedItOffWhereTheOldSkillIsALink`.
+The launch records, once per agent folder, that the plugin is in beside the skill from before the
+plugin, and installs for that skill only in a folder it has not recorded. A link then gets the
+plugin at the first launch, as a folder does, and the switch's off holds after that. The record is
+`agent-plugin-migrated.json` in Application Support, a list of folder paths
+(`LegacySkillMigrations`). An install from the switch or setup beside the skill records it too.
+Tests: `AgentPluginTests.testALaunchLeavesThePluginOffAfterTheSwitchTurnedItOffWhereTheOldSkillIsALink`,
+`testALaunchThatFindsThePluginBesideALinkedSkillLeavesItOffOnceTheSwitchTurnsItOff`.
+**Status**: fixed in `d0fb7c7`.
 
 ## What the review changed
 
@@ -4274,4 +4272,5 @@ at 358d988 with the new tests. It read the code and did not run it.
 
 After the review, four of the upgraded findings were confirmed by a failing test: corner-9,
 corner-4, requests-2 and setup-1. toolbar-1 was not, because no unit test can build
-`AnnotationController`, which holds its flag.
+`AnnotationController`, which held its flag. Its fix moved the destination into `EditorCore`'s
+send, which `EditorCoreSendTests` covers.

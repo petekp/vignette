@@ -38,16 +38,6 @@ struct EditorCore {
 
     // MARK: Inputs
 
-    /// What finishing the drawing does: copy it and close (Done), or hand it to an agent session (Send).
-    enum Finish: Equatable { case done, send }
-
-    /// What Return and Cmd+Return finish with. The host sets them from what its bar offers: Send
-    /// needs a session to go to, and Return sends only to a session the image itself names.
-    struct Finishes: Equatable {
-        var returnKey = Finish.done
-        var commandReturn = Finish.done
-    }
-
     enum Input {
         /// A screenshot opens with its drawing, or an empty one whose point scale is the display's.
         /// `markStyle` is the renderer's, which the selection frame goes around. `selectsNewest` is
@@ -91,8 +81,8 @@ struct EditorCore {
         case agentMarks([Mark])
         /// Done in the toolbar.
         case done
-        /// Send in the toolbar, once a destination is chosen.
-        case send
+        /// Send in the toolbar, to the destination it chose.
+        case send(AgentDestination)
         /// The host parks the drawing: for Esc, a swap, or a click outside.
         case park
     }
@@ -247,8 +237,9 @@ struct EditorCore {
         case close
         /// Render this drawing and finish.
         case done(Drawing)
-        /// Render this drawing and send it; the editor stays open.
-        case send(Drawing)
+        /// Render this drawing and send it; the editor stays open. A key's send has no destination:
+        /// it goes where the toolbar's filled button sends.
+        case send(Drawing, to: AgentDestination?)
     }
 
     enum Page: Equatable {
@@ -534,12 +525,8 @@ struct EditorCore {
         case .timerFired: timerFired()
         case .paste(let content): paste(content)
         case .agentMarks(let marks): join(marks)
-        case .done:
-            finishForHost()
-            emit(.done(drawingForHost))
-        case .send:
-            finishForHost()
-            emit(.send(drawingForHost))
+        case .done: finish(.done)
+        case .send(let destination): finish(.send, to: destination)
         case .park: park()
         }
     }
@@ -598,9 +585,9 @@ struct EditorCore {
         if typing != nil { endTyping() }
     }
 
-    private mutating func finish(_ finish: Finish) {
+    private mutating func finish(_ finish: Finish, to destination: AgentDestination? = nil) {
         finishForHost()
-        emit(finish == .done ? .done(drawingForHost) : .send(drawingForHost))
+        emit(finish == .done ? .done(drawingForHost) : .send(drawingForHost, to: destination))
     }
 
     private mutating func park() {

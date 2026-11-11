@@ -4,11 +4,11 @@ import XCTest
 /// command and answers as the tool would. The installer takes its folders as parameters so a test
 /// never reaches ~/.claude or ~/.codex.
 final class AgentPluginTests: XCTestCase {
-    private var dir: URL!
-    private var template: URL!
-    private var skill: URL!
-    private var staged: URL!
-    private var inboxes: URL!
+    var dir: URL!
+    var template: URL!
+    var skill: URL!
+    var staged: URL!
+    var inboxes: URL!
 
     override func setUpWithError() throws {
         dir = FileManager.default.temporaryDirectory.appendingPathComponent("vignette-plugin-\(UUID().uuidString)")
@@ -28,7 +28,7 @@ final class AgentPluginTests: XCTestCase {
         try FileManager.default.removeItem(at: dir)
     }
 
-    private func write(_ text: String, to url: URL) throws {
+    func write(_ text: String, to url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try text.write(to: url, atomically: true, encoding: .utf8)
     }
@@ -133,12 +133,12 @@ final class AgentPluginTests: XCTestCase {
 
     // MARK: The agents' tools
 
-    private final class Calls: @unchecked Sendable {
+    final class Calls: @unchecked Sendable {
         var made: [[String]] = []
         var environments: [[String: String]] = []
     }
 
-    private func host(_ client: AgentClient, root: URL, calls: Calls, tool: String? = "/bin/tool",
+    func host(_ client: AgentClient, root: URL, calls: Calls, tool: String? = "/bin/tool",
                       answer: @escaping ([String]) -> (Int32, String) = { _ in (0, "") }) -> PluginHost {
         var host = PluginHost(client: client, root: root, binary: { tool })
         host.run = { _, arguments, _, environment in
@@ -202,28 +202,6 @@ final class AgentPluginTests: XCTestCase {
 
     // MARK: Launch
 
-    /// Launch installs where the old skill is and nowhere else, takes the old folder away once the
-    /// plugin is in, and updates an installed plugin older than the app's.
-    func testLaunchMigratesTheOldSkillAndUpdatesOlderPlugins() throws {
-        let home = dir.appendingPathComponent("home")
-        let claude = home.appendingPathComponent(".claude"), codex = home.appendingPathComponent(".codex")
-        try write("{\"enabledPlugins\": {\"vignette@vignette\": true}}", to: claude.appendingPathComponent("settings.json"))
-        try write("old", to: AgentPlugin.legacyEntry(in: codex).appendingPathComponent("SKILL.md"))
-        let calls: [AgentClient: Calls] = [.claude: Calls(), .codex: Calls()]
-        let plugins = AgentPlugins(home: home, template: template, skill: skill, marketplaceFolder: staged, inboxRoot: inboxes,
-                                   marketplace: "vignette", host: { client, root in
-            self.host(client, root: root, calls: calls[client]!) { arguments in
-                arguments == ["plugin", "list", "--json"] ? (0, "[{\"id\":\"vignette@vignette\",\"version\":\"5.0.0\"}]") : (0, "")
-            }
-        })
-        let done = expectation(description: "launch")
-        plugins.launch { _ in done.fulfill() }
-        wait(for: [done], timeout: 5)
-        XCTAssertEqual(calls[.claude]!.made, [["plugin", "update", "vignette@vignette"]])
-        XCTAssertEqual(calls[.codex]!.made.last, ["plugin", "add", "vignette@vignette"])
-        XCTAssertEqual(AgentPlugin.legacySkill(at: AgentPlugin.legacyEntry(in: codex)), .none)
-    }
-
     func testAToolIsFoundUnderTheNewestNodeAndInTheShellsAnswer() throws {
         let home = dir.appendingPathComponent("home")
         for version in ["v9.11.2", "v22.1.0", "v18.20.4"] {
@@ -283,17 +261,5 @@ final class AgentPluginTests: XCTestCase {
         XCTAssertNil(CodexSignIn.home(in: own, environment: test, personHome: person))
         XCTAssertEqual(CodexSignIn.home(in: moved, environment: test, personHome: person)?.path, moved.appendingPathComponent("live-ink/codex-home").path,
                        "with CFFIXED_USER_HOME")
-    }
-
-    func testLaunchInstallsNothingWhereNothingWas() throws {
-        let home = dir.appendingPathComponent("home")
-        try FileManager.default.createDirectory(at: home.appendingPathComponent(".codex"), withIntermediateDirectories: true)
-        let calls = Calls()
-        let plugins = AgentPlugins(home: home, template: template, skill: skill, marketplaceFolder: staged, inboxRoot: inboxes,
-                                   marketplace: "vignette", host: { client, root in self.host(client, root: root, calls: calls) })
-        let done = expectation(description: "launch")
-        plugins.launch { _ in done.fulfill() }
-        wait(for: [done], timeout: 5)
-        XCTAssertEqual(calls.made, [])
     }
 }

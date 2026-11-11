@@ -77,7 +77,7 @@ private struct SequenceRun {
     /// Opens `drawing` outside the sequence, as the host does after a park.
     mutating func reopen(_ drawing: Drawing) {
         let effects = core.reduce(Self.open(drawing))
-        trace.append("open \(drawing.pixels.width)x\(drawing.pixels.height)@\(drawing.pointScale) marks=\(drawing.marks.count) -> \(Self.describe(effects))")
+        trace.append("open \(drawing.pixels.width)x\(drawing.pixels.height)@\(drawing.pointScale) marks=\(drawing.marks.count) -> \(EditorCoreTrace.describe(effects))")
         opened()
     }
 
@@ -99,7 +99,7 @@ private struct SequenceRun {
             switch Int.random(in: 0..<10, using: &rng) {
             case 0, 1: return .agentMarks((0..<Int.random(in: 1...3, using: &rng)).map { _ in randomMark(in: core.drawing.pixels, agent: true) })
             case 2, 3: return .paste(pasteContent())
-            case 4: return [Core.Input.done, .send, .park].randomElement(using: &rng)!
+            case 4: return [Core.Input.done, .send(EditorCoreTrace.session), .park].randomElement(using: &rng)!
             case 5: return Self.open(randomDrawing())
             case 6: return .pointerDragged(Core.Pointer(location: point(), modifiers: modifiers, time: clock))
             case 7: return .pointerReleased(Core.Pointer(location: point(), modifiers: modifiers, time: clock))
@@ -144,7 +144,7 @@ private struct SequenceRun {
         case 33: return .paste([Core.PasteContent.image, .other].randomElement(using: &rng)!)
         case 34: return .pointerExited
         case 35: return .done
-        case 36: return .send
+        case 36: return .send(EditorCoreTrace.session)
         case 37: return .park
         case 38: return .enterCanvas(backward: Bool.random(using: &rng))
         default: return .modifiersChanged(modifiers)
@@ -248,7 +248,7 @@ private struct SequenceRun {
     mutating func apply(_ input: Core.Input) -> String? {
         let before = core
         let effects = core.reduce(input)
-        trace.append("\(Self.describe(input)) -> \(Self.describe(effects))")
+        trace.append("\(EditorCoreTrace.describe(input)) -> \(EditorCoreTrace.describe(effects))")
         if case .pointerPressed(let pointer, _) = input, !pointer.modifiers.contains(.control), core.gesture != nil { buttonDown = true }
         if case .pointerReleased = input { buttonDown = false }
         if core.gesture == nil { buttonDown = false }
@@ -265,7 +265,7 @@ private struct SequenceRun {
                 case 3: queued = .paste(.text(words()))
                 default: queued = .paste(.image)
                 }
-            case .handOver(let drawing), .done(let drawing), .send(let drawing), .copyDrawing(let drawing):
+            case .handOver(let drawing), .done(let drawing), .send(let drawing, _), .copyDrawing(let drawing):
                 if let problem = Self.invalid(drawing) { return "the host was handed a drawing it cannot read back: \(problem)" }
             default:
                 break
@@ -440,53 +440,5 @@ private struct SequenceRun {
         default:
             return false
         }
-    }
-
-    static func describe(_ input: Core.Input) -> String {
-        func at(_ p: Core.Pointer) -> String { String(format: "(%.1f, %.1f)%@", p.location.x, p.location.y, p.modifiers.isEmpty ? "" : " \(p.modifiers.rawValue)") }
-        switch input {
-        case .open: return "open"
-        case .pointerMoved(let p): return "move \(at(p))"
-        case .pointerExited: return "exit"
-        case .pointerPressed(let p, let count): return "press \(at(p)) count=\(count)"
-        case .pointerDragged(let p): return "drag \(at(p))"
-        case .pointerReleased(let p): return "release \(at(p))"
-        case .modifiersChanged(let m): return "modifiers \(m.rawValue)"
-        case .keyDown(let key, let m, let isRepeat): return "key \(key) \(m.rawValue)\(isRepeat ? " repeat" : "")"
-        case .keyUp(let key): return "keyUp \(key)"
-        case .setTool(let tool): return "tool \(tool)"
-        case .enterCanvas(let backward): return "enterCanvas\(backward ? " backward" : "")"
-        case .zoomChanged(let zoom): return "zoom \(zoom)"
-        case .tweaksChanged: return "tweaks"
-        case .rescaled(let pointScale, let markScale): return "rescaled \(pointScale) \(markScale)"
-        case .typingChanged(let text): return "type \(text.count) characters"
-        case .typingEnded: return "typingEnded"
-        case .timerFired: return "timer"
-        case .paste(let content):
-            switch content {
-            case .marks(let copied): return "paste \(copied.marks.count) marks @\(copied.pointScale)"
-            case .text(let text): return "paste text of \(text.count)"
-            case .image: return "paste image"
-            case .other: return "paste other"
-            }
-        case .agentMarks(let marks): return "agent marks \(marks.count)"
-        case .done: return "done"
-        case .send: return "send"
-        case .park: return "park"
-        }
-    }
-
-    static func describe(_ effects: [Core.Effect]) -> String {
-        effects.map { effect -> String in
-            switch effect {
-            case .handOver(let drawing): return "handOver(\(drawing.marks.count))"
-            case .done(let drawing): return "done(\(drawing.marks.count))"
-            case .send(let drawing): return "send(\(drawing.marks.count))"
-            case .copyDrawing(let drawing): return "copyDrawing(\(drawing.marks.count))"
-            case .copyMarks(let marks, _): return "copyMarks(\(marks.marks.count))"
-            case .announce: return "announce"
-            default: return "\(effect)"
-            }
-        }.joined(separator: ", ")
     }
 }
