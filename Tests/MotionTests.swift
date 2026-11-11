@@ -70,6 +70,17 @@ final class MotionTests: XCTestCase {
                                     Anim.settle(duration, bounce: 0, distance: 1138, within: 0.5),
                                     "a spring that does not overshoot never covers early")
         XCTAssertEqual(Anim.passesTarget(0, bounce: bounce), 0, "motion off covers and arrives in the same turn")
+        for timing in [FlightTiming.easeOut, .linear] {
+            XCTAssertGreaterThan(timing.covers(duration, distance: 1138, within: 0.5), duration,
+                                 "\(timing) reaches the target only at its end, so it covers nothing before")
+        }
+        for timing in FlightTiming.allCases {
+            let covered = timing.covers(duration, distance: 1138, within: 0.5)
+            XCTAssertGreaterThanOrEqual(timing.settles(duration, distance: 1138, within: 0.5), covered + 0.05 - 1e-9,
+                                        "\(timing) lands at least three refreshes after it covers, so the stack's panel is up")
+            XCTAssertEqual(timing.covers(0, distance: 1138, within: 0.5), 0)
+            XCTAssertEqual(timing.settles(0, distance: 1138, within: 0.5), 0)
+        }
     }
 
     // MARK: The flight curve
@@ -92,8 +103,13 @@ final class MotionTests: XCTestCase {
         XCTAssertEqual(mid.offset.height, -80, accuracy: 0.001, "0.2 of 400 points, upward")
         XCTAssertEqual(mid.scale, 1.5, accuracy: 0.001)
         let quarter = leg.placement(at: CGPoint(x: 100, y: 0), from: from, to: to)
-        XCTAssertEqual(quarter.offset.height, -60, accuracy: 0.001, "three quarters of the bow")
+        XCTAssertEqual(quarter.offset.height, -45, accuracy: 0.001, "nine sixteenths of the bow")
         XCTAssertLessThan(quarter.scale, mid.scale)
+        for t: CGFloat in [0.01, 0.99] {
+            let near = leg.placement(at: CGPoint(x: 400 * t, y: 0), from: from, to: to)
+            XCTAssertEqual(near.scale, 1, accuracy: 0.001, "the swell is still at the ends")
+            XCTAssertEqual(near.offset.height, 0, accuracy: 0.2, "the bow is still at the ends")
+        }
     }
 
     func testFlightBowIsCappedAndPerpendicular() {
