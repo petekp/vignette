@@ -24,13 +24,13 @@ struct FlightsView: View {
 
 /// One flight's picture, with its shadow, marks, ring and caption. Animatable in the shape the
 /// picture is drawn in, so the marks and a press's place on the picture follow that shape in every
-/// frame as it moves between a card's aspect fill and the editor's stretch.
+/// frame as it moves between a card's aspect fill and the editor's picture.
 private struct FlightPicture: View, Animatable {
     let flight: TransitionLayer.Flight
     let ui: UITweaks
     var aspect: CGFloat
 
-    var animatableData: CGFloat {
+    nonisolated var animatableData: CGFloat {
         get { aspect }
         set { aspect = newValue }
     }

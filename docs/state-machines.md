@@ -407,15 +407,15 @@ Flight states these make: `absent` (not in `model.flights`), `flying` (in it, no
 
 Events and senders:
 
-- `fly(id:…)` (`:190`): `ThumbnailController.swift:695` (`slideOut`), `:798` (card to annotator), `:877` (`returnCard`), `:911` (`flyAway`), and `converge` (`:299`).
-- `converge(…)` (`:259`): `ThumbnailController.swift:567` (stitch).
-- `lift(id:)` (`:376`): `ThumbnailController.swift:884` (`.liftFlight`), `:885`.
-- `end(id:)` (`:382`): `ThumbnailController.swift:479, 688, 698, 860, 902, 943`, and `:283`, `:294` here.
-- `endAll(except:)` (`:387`): `ThumbnailController.swift:1319` (`present`).
-- `dropShadow(id:)` (`:369`): `ThumbnailController.swift:878, 913`, and `:288` here.
-- `setImage(id:)` (`:361`): `FlightImages.swift:60`.
-- `swallowPresses(in:for:on:)` (`:412`): `ThumbnailController.swift:961`.
-- Timers: the three `DispatchQueue.main` hops in `fly` (`:208`, `:220`, `:227`) and the swallow rect expiry (`:416`).
+- `fly(id:…)` (`:190`): `ThumbnailController.swift:693` (`slideOut`), `:826` (card to annotator), `:905` (`returnCard`), `:939` (`flyAway`), and `converge` (`:299`).
+- `converge(…)` (`:259`): `ThumbnailController.swift:565` (stitch).
+- `lift(id:)` (`:370`): `ThumbnailController.swift:882` (`.liftFlight`), `:913`.
+- `end(id:)` (`:376`): `ThumbnailController.swift:479, 686, 696, 858, 900, 941`, and `:283`, `:294` here.
+- `endAll(except:)` (`:381`): `ThumbnailController.swift:1317` (`present`).
+- `dropShadow(id:)` (`:363`): `ThumbnailController.swift:876, 911`, and `:288` here.
+- `setImage(id:)` (`:355`): `FlightImages.swift:60`.
+- `swallowPresses(in:for:on:)` (`:406`): `ThumbnailController.swift:959`.
+- Timers: the three `DispatchQueue.main` hops in `fly` (`:208`, `:220`, `:227`) and the swallow rect expiry (`:410`).
 
 **Transitions**
 
@@ -436,11 +436,11 @@ Events and senders:
 
 **Invariants**
 
-- The panel is up whenever a flight, a swallow rect, `staysUp` or a held press exists (comments `:423-424`, `:443-445`). Checked by: nothing.
+- The panel is up whenever a flight, a swallow rect, `staysUp` or a held press exists (comments `:417-418`, `:437-439`). Checked by: nothing.
 - `ignoresMouseEvents` is never set on the panel (comment `:8-9`). Checked by: nothing.
-- A flight's `dropped` runs only if the flight did not arrive, and at most once. Checked by: the filter at `:395` and `dropped = nil` at `:236`; no test.
-- `arrived` runs once a spring is within 0.5 pt of its target (`arrivalTolerance`, `:77`; `Anim.settle`), or 50 ms after an ease-out's or linear's end (`FlightTiming.settles`, `TransitionLayer+Timing.swift:33`). Checked by: `MotionTests.testAFlightHandsOverOnlyOnceItIsThere` (timing helper only).
-- `covered` runs no later than `arrived` (comment `:219`); `FlightTiming.covers` is `min(settles, passesTarget)` for a spring and `settles` otherwise (`:203`). Checked by: `MotionTests.testAFlightCoversItsTargetFromTheMomentItReachesIt` (timing helpers only).
+- A flight's `dropped` runs only if the flight did not arrive, and at most once. Checked by: the filter at `:389` and `dropped = nil` at `:236`; no test.
+- `arrived` runs once the bouncing spring is within 0.5 pt of its target (`arrivalTolerance`, `:77`; `Anim.settle`), and for the other timings 50 ms after `covered` (`FlightTiming.settles`, `TransitionLayer+Timing.swift:34`). Checked by: `MotionTests.testAFlightHandsOverOnlyOnceItIsThere` (timing helper only).
+- `covered` runs before `arrived`, at least 50 ms before for every timing but motion 0 (comment `:219`); `FlightTiming.covers` is `min(settle, passesTarget)` for the bouncing spring, `Anim.settle` for the spring with no bounce, and the duration for a curve (`TransitionLayer+Timing.swift:45`). Checked by: `MotionTests.testAFlightCoversItsTargetFromTheMomentItReachesIt` (timing helpers only).
 - No two live flights share a generation. Checked by: `nextGeneration` (`:79`, `:325`); no test.
 
 **Late and concurrent answers**
@@ -449,20 +449,20 @@ Events and senders:
 - Two `fly` calls in one turn: the second `start` bumps `generation` (`:325`), so the first hop returns at `:209`.
 - A reused id: generations never repeat (comment `:323-326`).
 - `covered` and `arrived` due at the same instant (motion 0): `covered` is scheduled first (`:219`) and the deadlines come from two successive `.now()` calls, so the order holds.
-- A lift asked before arrival: held in `pendingLift` (`:378`), run at `:238`, cleared on re-aim (`:322`).
-- A `dropped` handler that re-enters the layer: `end(where:)` removes first and calls handlers after (`:396-400`); `converge`'s `land` defers a turn (`:281`).
+- A lift asked before arrival: held in `pendingLift` (`:372`), run at `:238`, cleared on re-aim (`:322`).
+- A `dropped` handler that re-enters the layer: `end(where:)` removes first and calls handlers after (`:390-394`); `converge`'s `land` defers a turn (`:281`).
 - Dismissing during a converge: dropped pieces still answer `land` (`:300`); the result flight is uncovered only if its generation is still the resting one (`:287-288`, `:292-293`).
-- Zero-duration motion: `Anim.settle`, `Anim.passesTarget` and `FlightTiming.settles` return 0 (`Anim.swift:72`, `:32`), so both timers run next turn. Every `FlightTiming.animation(0)` is `.linear(duration: 0)` (`Anim.swift:23`).
+- Zero-duration motion: `FlightTiming.covers` and `FlightTiming.settles` return 0 (`TransitionLayer+Timing.swift:46`, `:35`), so both timers run next turn. Every `FlightTiming.animation(0)` is `.linear(duration: 0)` (`TransitionLayer+Timing.swift:27`, and `Anim.spring` at `Anim.swift:24` for a spring).
 
 ### TransitionLayer panel and press (implicit)
 
 Owner: `TransitionLayer.swift:11`. Tests: none.
 
-The layer's one panel and the press it is holding. `PressCatcher` (`:473-475`) hands each mouse event to `pressed` (`:97`); `FlightPress` decides where the press goes.
+The layer's one panel and the press it is holding. `PressCatcher` (`:468-470`) hands each mouse event to `pressed` (`:97`); `FlightPress` decides where the press goes.
 
 **States**:
 
-- `panel.isVisible` (`:82`). Shown by `showPanel` (`:441`), taken down by `orderOutIfIdle` (`:425`). `orderIn` and `orderBelow` only order other windows relative to it.
+- `panel.isVisible` (`:82`). Shown by `showPanel` (`:435`), taken down by `orderOutIfIdle` (`:419`). `orderIn` and `orderBelow` only order other windows relative to it.
 - `staysUp` (`:66`), set by `ThumbnailController.swift:758` (`flights.staysUp = run.isActive`).
 - `pressDown` (`:62`), `pressedFlight` (`:61`), `releaseWatch` (`:70`), `screen` (`:71`).
 
@@ -472,9 +472,9 @@ Panel:
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| hidden | `fly`, `converge`, `swallowPresses` | visible | `showPanel` sets the frame to `screen.frame` and calls `orderFrontRegardless` (`:446-449`) |
-| visible | `end`, `endAll`, rect expiry, `released`, `staysUp = false` | hidden if `!staysUp && flights.isEmpty && swallowRects.isEmpty && !pressDown` (`:426`) | otherwise stays up |
-| visible | `showPanel` for another screen | visible, frame moves to that screen (`:446-448`) | existing flights and swallow rects keep frames local to the earlier screen ([flights-2](#flights-2)) |
+| hidden | `fly`, `converge`, `swallowPresses` | visible | `showPanel` sets the frame to `screen.frame` and calls `orderFrontRegardless` (`:440-443`) |
+| visible | `end`, `endAll`, rect expiry, `released`, `staysUp = false` | hidden if `!staysUp && flights.isEmpty && swallowRects.isEmpty && !pressDown` (`:420`) | otherwise stays up |
+| visible | `showPanel` for another screen | visible, frame moves to that screen (`:440-442`) | existing flights and swallow rects keep frames local to the earlier screen ([flights-2](#flights-2)) |
 
 Press:
 
@@ -490,8 +490,8 @@ Press:
 
 **Invariants**
 
-- A swallow rect always clears: expiry is an unconditional `asyncAfter` (`:416`) and `endAll` empties them (`:388`). Checked by: nothing.
-- The panel stays up while a press is down, even after its swallow rect expired. Checked by: the `!pressDown` term at `:426`.
+- A swallow rect always clears: expiry is an unconditional `asyncAfter` (`:410`) and `endAll` empties them (`:382`). Checked by: nothing.
+- The panel stays up while a press is down, even after its swallow rect expired. Checked by: the `!pressDown` term at `:420`.
 
 **Late and concurrent answers**
 

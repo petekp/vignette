@@ -17,7 +17,7 @@ final class TransitionLayer {
         var frame: CGRect      // top-left origin, in the layer's own coordinates
         var look: Look
         /// The shape the picture is drawn in, width over height, filling the frame: the image's own,
-        /// or the frame's where the look stretches the picture. Animated with the frame.
+        /// or no wider than the frame where the look fills its width. Animated with the frame.
         var aspect: CGFloat
         var opacity: Double = 1
         var caption: Caption?
@@ -201,7 +201,7 @@ final class TransitionLayer {
         let timing = FlightTiming(ui)
         let settleTime = timing.settles(ui.expandDuration, distance: travel, within: Self.arrivalTolerance)
         let coverTime = timing.covers(ui.expandDuration, distance: travel, within: Self.arrivalTolerance)
-        let aspect = Self.aspect(of: image, in: to, look: lookTo)
+        let aspect = lookTo.aspect(of: image, in: to)
         // The starting state has to be committed before the animated change, or it starts at `to`.
         // The annotator's `Removal` hides its frame and the title on this same turn, so the flight
         // home takes over from it in one commit, caption and all.
@@ -267,7 +267,7 @@ final class TransitionLayer {
         arrivedFlights.remove(result.id)
         pendingLift.remove(result.id)
         let resting = Flight(id: result.id, image: result.image, frame: local(result.frame), look: look,
-                             aspect: Self.aspect(of: result.image, in: result.frame, look: look), opacity: 0)
+                             aspect: look.aspect(of: result.image, in: result.frame), opacity: 0)
         model.flights.append(resting)
         // Every piece answers exactly once: `arrived` when its spring settles, `dropped` when its
         // flight is ended before that (the stack dismissed mid-converge). The last answer finishes
@@ -337,15 +337,9 @@ final class TransitionLayer {
             return gen
         }
         model.flights.append(Flight(id: id, image: image, marks: marks, frame: local(from), look: look,
-                                    aspect: Self.aspect(of: image, in: from, look: look), caption: caption,
+                                    aspect: look.aspect(of: image, in: from), caption: caption,
                                     leavingAnnotator: leavingAnnotator, path: path, previousPath: path, generation: gen, dropped: dropped))
         return gen
-    }
-
-    /// The shape `image` is drawn in, filling `frame`, at an end that looks like `look`.
-    private static func aspect(of image: NSImage, in frame: NSRect, look: Look) -> CGFloat {
-        let shape = look.stretchesPicture || image.size.width <= 0 || image.size.height <= 0 ? frame.size : image.size
-        return shape.height > 0 ? shape.width / shape.height : 1
     }
 
     /// The marks the flight `id` shows, while it is in the air.
