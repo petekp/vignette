@@ -56,18 +56,21 @@ extension StackLayout {
         var v = visibleFrame.insetBy(dx: ui.annotationScreenInset, dy: ui.annotationScreenInset)
         v.origin.y += below
         v.size.height -= below + above
+        // The frame goes on whole points, so the room it fits in is on whole points too.
+        let left = v.minX.rounded(.up), bottom = v.minY.rounded(.up)
+        v = NSRect(x: left, y: bottom, width: v.maxX.rounded(.down) - left, height: v.maxY.rounded(.down) - bottom)
         let w0 = max(image.width, 1), h0 = max(image.height, 1)
         let fit = min(v.width / w0, v.height / h0)
         let floor = max(1, ui.annotationMinWidth / w0, ui.annotationMinHeight / h0)
         let scale = min(fit, floor)
-        let w = w0 * scale, h = h0 * scale
+        let w = w0 * scale
         // On whole points, so the frame is on every display's pixel grid, with the image's shape: the
         // editor draws the picture across the frame's width, so the height follows the rounded width
         // and the picture's bottom edge is under half a point from the frame's. Where the height fills
-        // the room, the width is rounded down so the height still fits.
-        let heightFills = h0 * v.width > w0 * v.height
-        let width = min(heightFills ? w.rounded(.down) : w.rounded(), v.width.rounded(.down))
-        let size = NSSize(width: width, height: min((width * h0 / w0).rounded(), v.height.rounded(.down)))
+        // the room, a width rounded up past it is rounded down instead.
+        var width = w.rounded()
+        if (width * h0 / w0).rounded() > v.height { width = w.rounded(.down) }
+        let size = NSSize(width: width, height: (width * h0 / w0).rounded())
         return NSRect(x: (v.midX - size.width / 2).rounded(), y: (v.midY - size.height / 2).rounded(),
                       width: size.width, height: size.height)
     }
