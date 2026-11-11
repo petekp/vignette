@@ -16,6 +16,6 @@ final class EditorCoreOpeningTests: XCTestCase {
         _ = core.reduce(.park)
         open(&core, "/tmp/b.png")
         XCTAssertEqual(core.finishes, .init(returnKey: .send, commandReturn: .send))
-        XCTAssertTrue(core.key(.returnKey, .command).contains(.send(core.drawing)))
+        XCTAssertTrue(core.key(.returnKey, .command).contains(.send(core.drawing, to: nil)))
     }
 }

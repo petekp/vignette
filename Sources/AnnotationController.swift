@@ -59,9 +59,6 @@ final class AnnotationController {
     /// The opening `prepare` was given, so a decode or a send's rendering only lands on the open
     /// that asked for it: the same file can be closed and opened again while the first is on its way.
     var opened: Opening?
-    /// Where the toolbar's Send or Reply goes once the editor hands over the drawing. A key that
-    /// sends goes where the bar's filled button would.
-    var sendingTo: AgentDestination?
     /// No key and no press has reached the editor since `prepare`, and the message field has not
     /// taken the keys on its own yet (`offerTyping`).
     var editorUntouched = false
@@ -99,11 +96,7 @@ final class AnnotationController {
         toolbar.onDone = { [weak self] in self?.editor.done() }
         toolbar.onMessageEnd = { [weak self] in self?.window?.makeKey() }
         toolbar.model.onOfferChanged = { [weak self] offer in self?.offerChanged(offer) }
-        toolbar.onSend = { [weak self] destination in
-            guard let self else { return }
-            sendingTo = destination
-            editor.send()
-        }
+        toolbar.onSend = { [weak self] destination in self?.editor.send(to: destination) }
         editor.onTool = { [weak self] tool in self?.toolbar.model.tool = tool }
         editor.onHandOver = { [weak self] drawing in self?.onDrawing?(drawing, "saved") }
         editor.onClose = { [weak self] in self?.cancel() }
@@ -139,9 +132,8 @@ final class AnnotationController {
             guard let self, let shot = current else { return }
             onFinished?(shot, drawing)
         }
-        editor.onSend = { [weak self] drawing in
-            guard let self, let shot = current, let destination = sendingTo ?? toolbar.model.offer.destination else { return }
-            sendingTo = nil
+        editor.onSend = { [weak self] drawing, chosen in
+            guard let self, let shot = current, let destination = chosen ?? toolbar.model.offer.destination else { return }
             let title = SessionMenu.cardTitle(of: toolbar.model.targetRow(for: destination))
             onSend?(shot, drawing, destination, title, toolbar.model.sentMessage)
         }

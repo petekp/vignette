@@ -144,7 +144,6 @@ extension AnnotationController {
     }
 
     private func park() {
-        sendingTo = nil
         if let drawing = editor.park() { onDrawing?(drawing, "parked") }
     }
 
