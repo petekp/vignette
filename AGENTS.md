@@ -47,8 +47,7 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
 - Before changing `AnnotatorToolbar.swift`, `SessionMenu*.swift`, `DestinationChoice.swift`,
   `AgentApp.swift`, `InboxModStore.swift` or `HeldToolLetter.swift`, read
   `docs/rules/annotator-toolbar.md`, and `docs/rules/send.md` for what Send does.
-- Before changing `Zoom.swift`, `AnnotatorZoom.swift`, `ZoomKeyframes.swift` or `FrameRing.swift`,
-  read `docs/rules/zoom.md`.
+- Before changing `Zoom.swift` or `AnnotatorZoom.swift`, read `docs/rules/zoom.md`.
 - Before changing the editor, a mark or a drawing (`Editor*.swift`, `Drawing.swift`,
   `Drawings.swift`, `DrawingStore.swift`, `Mark*.swift`, `MarksView.swift`, `Card.swift`,
   `AgentMarks.swift`, `RenderingQueue.swift`, `Clipboard.swift`, `DragItems.swift`,

@@ -14,11 +14,6 @@ extension TweakCatalog {
                 .number("zoomEdgeBandPoints", "Zoom edge band", \.zoomEdgeBandPoints, 0...400, step: 5, unit: "pt", safe: 0...2000),
                 .number("zoomEdgePull", "Zoom edge pull", \.zoomEdgePull, 0...1, step: 0.05, safe: 0...1),
             ]),
-            TweakGroup("Ring while zooming", [
-                .toggle("ringFadesWhileZooming", "Fade while resizing", \.ringFadesWhileZooming),
-                .toggle("ringOutsideImage", "Outside the image", \.ringOutsideImage),
-                .toggle("coreAnimationPlaysZoomSteps", "Core Animation steps", \.coreAnimationPlaysZoomSteps),
-            ], caption: { _ in "Fade: the ring fades out while the frame resizes, and comes back once the frame holds still. Outside: the ring sits just outside the image, on cards and flights too. Core Animation: the window server plays the steps of the zoom keys and the double-click. A pinch or a scroll zooms as before." }),
             TweakGroup("Agent title", [
                 .number("agentTitleSize", "Title size", \.agentTitleSize, 11...32, step: 0.5, unit: "pt", safe: 1...200),
                 .number("agentDescriptionSize", "Description size", \.agentDescriptionSize, 9...24, step: 0.5, unit: "pt", safe: 1...200),

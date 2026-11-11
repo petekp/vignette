@@ -486,8 +486,10 @@ final class AnnotatorToolbar {
         if abs(panel.frame.width - size.width) >= 1 || abs(panel.frame.height - size.height) >= 1 {
             panel.setFrame(Self.rect(center: slideX.value, top: slideY.value, size: size), display: true)
         }
-        slideX.animate(to: center, duration: slideSeconds)
-        slideY.animate(to: top, duration: slideSeconds)
+        // As long as the incoming card's flight takes to cover `frame`, when that window comes up.
+        let seconds = FlightTiming.covers(frame)
+        slideX.animate(to: center, duration: seconds)
+        slideY.animate(to: top, duration: seconds)
     }
 
     /// The panel's frame from its centre and top edge, which is what the springs move, so a change of
@@ -509,13 +511,6 @@ final class AnnotatorToolbar {
         let origin = Self.rect(center: slideX.value, top: slideY.value, size: panel.frame.size).origin
         guard origin != panel.frame.origin else { return }
         panel.setFrameOrigin(origin)
-    }
-
-    /// How long that move takes: the moment the incoming card's flight first covers the annotator's
-    /// frame, which is when that window comes up (`TransitionLayer.fly`). The motion scale is in
-    /// `motionUI`, so `ui.motion: 0` puts the bar at the next place at once.
-    private var slideSeconds: Double {
-        Anim.passesTarget(Settings.shared.motionUI.expandDuration, bounce: Anim.flightBounce)
     }
 
     /// Orders the panel in hidden and lets the bar rise into place a turn later, so the

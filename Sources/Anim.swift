@@ -3,9 +3,7 @@ import SwiftUI
 /// Animation helper honoring the tweakable curves.
 @MainActor
 enum Anim {
-    /// The bounce every card flight and the annotator's toolbar are carried by. One number: the
-    /// toolbar slides to the next image's place over `passesTarget` of the flight's own spring, and
-    /// the two are only in step while they agree.
+    /// The bounce of a card's slide-in spring and of the `spring` flight timing (`FlightTiming`).
     static let flightBounce = 0.15
 
     static func swiftUI(_ curve: String, duration: Double) -> Animation {

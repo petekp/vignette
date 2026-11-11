@@ -19,6 +19,14 @@ extension TransitionLayer {
         /// How much of the card's border ring and of the matte behind transparent pixels show, 0 to 1.
         var ring: Double = 1
         var matte: Double = 1
+        /// How far inside `ui.ring`'s line the ring is stroked. A card strokes it centred on the line;
+        /// the annotator's ring is its clip's border, which lies wholly inside the frame.
+        var ringInset: CGFloat = 0
+        /// The picture spans the frame's width and is never cut at the sides, as the editor draws it,
+        /// rather than filling the frame and cutting off the excess, as a card does. The fitted frame
+        /// is on whole points, so its height differs from the picture's by under half a point; the
+        /// editor pins its picture to the frame's top and the flight centres it.
+        var fillsWidth = false
 
         static func card(_ ui: UITweaks) -> Look {
             Look(corner: ui.cardCornerRadius, shadowOpacity: ui.cardShadowOpacity,
@@ -26,7 +34,15 @@ extension TransitionLayer {
         }
         /// The annotator window's frame view carries exactly this shadow; see `AnnotationController`.
         static func annotator(_ ui: UITweaks) -> Look {
-            Look(corner: ui.annotationCornerRadius, shadowOpacity: 0.45, shadowRadius: 24, shadowY: 10)
+            Look(corner: ui.annotationCornerRadius, shadowOpacity: 0.45, shadowRadius: 24, shadowY: 10,
+                 ringInset: ui.cardBorderWidth / 2, fillsWidth: true)
+        }
+        /// The shape `image` is drawn in, width over height, filling `frame` at an end with this look.
+        func aspect(of image: NSImage, in frame: NSRect) -> CGFloat {
+            let frameAspect = frame.height > 0 ? frame.width / frame.height : 1
+            guard image.size.width > 0, image.size.height > 0 else { return frameAspect }
+            let imageAspect = image.size.width / image.size.height
+            return fillsWidth ? min(imageAspect, frameAspect) : imageAspect
         }
         /// A capture where it was taken: the screen's own pixels, with no corners, shadow, ring or
         /// matte, so the flight's first frame shows nothing the screen did not.
