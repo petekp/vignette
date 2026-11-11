@@ -23,6 +23,28 @@ extension AgentPlugin {
         root.appendingPathComponent("skills").appendingPathComponent(name)
     }
 
+    /// `<home>/.agents/skills/vignette`. Codex reads `<home>/.agents/skills` whatever `CODEX_HOME`
+    /// says, so an old skill there reaches every Codex folder of that home.
+    static func agentsLegacyEntry(home: URL) -> URL {
+        legacyEntry(in: home.appendingPathComponent(".agents"))
+    }
+
+    /// Whether this is a test launch and `folder` is one of the person's own agent folders (`.claude`,
+    /// `.codex` and `.agents` of `personHome`) or inside one. Both sides are compared by their paths
+    /// with every link resolved, and without case, as APFS compares names by default.
+    static func isPersons(_ folder: URL, environment: [String: String], personHome: URL) -> Bool {
+        guard Launch.isTest(in: environment) else { return false }
+        let path = realPath(folder)
+        return [".claude", ".codex", ".agents"].contains { name in
+            let own = realPath(personHome.appendingPathComponent(name))
+            return path == own || path.hasPrefix(own + "/")
+        }
+    }
+
+    private static func realPath(_ url: URL) -> String {
+        url.standardizedFileURL.resolvingSymlinksInPath().path.lowercased()
+    }
+
     /// Removes an old skill folder. A link stays. `root` is the agent the result is reported for.
     static func removeLegacySkill(at entry: URL, root: URL) -> Result {
         switch legacySkill(at: entry) {

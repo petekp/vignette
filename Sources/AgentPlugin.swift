@@ -134,13 +134,11 @@ enum AgentPlugin {
         }
     }
 
-    /// Whether `folder` is one of the person's own agent folders and this is a test launch, which
+    /// Whether `folder` is in one of the person's own agent folders and this is a test launch, which
     /// `VIGNETTE_SETTINGS` marks. A test copy that must install the plugin moves the home folder
     /// with `CFFIXED_USER_HOME`, or names scratch folders with `CLAUDE_CONFIG_DIR` and `CODEX_HOME`.
-    private static func isGuarded(_ folder: URL, environment: [String: String], personHome: URL) -> Bool {
-        guard Launch.isTest(in: environment) else { return false }
-        let own = AgentClient.allCases.map { root(of: $0, home: personHome, environment: [:]).resolvingSymlinksInPath().path }
-        return own.contains(folder.resolvingSymlinksInPath().path)
+    static func isGuarded(_ folder: URL, environment: [String: String], personHome: URL) -> Bool {
+        isPersons(folder, environment: environment, personHome: personHome)
     }
 
     /// `~/.claude`, or where `CLAUDE_CONFIG_DIR` points.
@@ -392,147 +390,5 @@ enum SkillFiles {
             out.updateValue(try? Data(contentsOf: folder.appendingPathComponent(path)), forKey: path)
         }
         return out
-    }
-}
-
-/// Runs the plugin's installs, updates and removals, one at a time on a queue of their own: each is
-/// one or two runs of an agent's command line tool, which take a second or more. Answers come back
-/// on the main thread, and every change logs one `[plugin]` line.
-final class AgentPlugins: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "vignette.agent-plugin")
-    private let home: URL
-    private let template: URL?
-    private let skill: URL?
-    private let marketplaceFolder: URL
-    private let inboxRoot: URL
-    private let marketplace: String
-    private let appName: String
-    private let migrations: LegacySkillMigrations
-    /// Makes the host for an agent; tests give one whose tool is a script.
-    private let host: (AgentClient, URL) -> PluginHost
-
-    init(home: URL = FileManager.default.homeDirectoryForCurrentUser,
-         template: URL? = AgentPlugin.bundled, skill: URL? = AgentPlugin.bundledSkill,
-         marketplaceFolder: URL = AgentPlugin.marketplaceFolder, inboxRoot: URL = AgentPlugin.inboxRoot,
-         marketplace: String = AgentPlugin.marketplace, appName: String = Identity.name,
-         migrations: LegacySkillMigrations = LegacySkillMigrations(file: LegacySkillMigrations.standard),
-         host: @escaping (AgentClient, URL) -> PluginHost = { PluginHost(client: $0, root: $1) }) {
-        self.home = home
-        self.template = template
-        self.skill = skill
-        self.marketplaceFolder = marketplaceFolder
-        self.inboxRoot = inboxRoot
-        self.marketplace = marketplace
-        self.appName = appName
-        self.migrations = migrations
-        self.host = host
-    }
-
-    /// The version this copy of the app carries.
-    var bundledVersion: String? { template.flatMap { AgentPlugin.version(inMarketplace: $0) } }
-
-    /// Launch. Writes the marketplace, then for each agent on this Mac: installs the plugin where the
-    /// skill from before the plugin is (that person chose the skill, and the plugin is what carries it
-    /// now), once per agent folder, takes that skill's folders away once the plugin is in, and updates
-    /// a plugin older than this app's. Nothing is installed where neither is.
-    func launch(completion: @escaping @MainActor @Sendable ([AgentPlugin.Result]) -> Void = { _ in }) {
-        queue.async { [self] in
-            var results: [AgentPlugin.Result] = []
-            let changed: Bool
-            do { changed = try stageNow() } catch {
-                Log.write("[plugin] error \(error.localizedDescription)")
-                return
-            }
-            for root in AgentPlugin.guarded(home: home) {
-                Log.write("[plugin] test launch: left \(root.path) alone; launch with CFFIXED_USER_HOME to test the plugin")
-            }
-            for root in AgentPlugin.roots(home: home) {
-                guard let client = AgentPlugin.client(of: root) else { continue }
-                let host = host(client, root)
-                if !AgentPlugin.isInstalled(in: root, client: client, id: host.id) {
-                    guard hasLegacySkill(client, root), !migrations.contains(root) else { continue }
-                    let installed = host.install(from: marketplaceFolder)
-                    results.append(log(installed, "for the skill already there"))
-                    guard installed.outcome == .installed else { continue }
-                } else if changed || host.installedVersion() != bundledVersion {
-                    results.append(log(host.update()))
-                }
-                results += retireLegacySkill(client, root)
-            }
-            let found = results
-            DispatchQueue.main.async { MainActor.assumeIsolated { completion(found) } }
-        }
-    }
-
-    /// The Agents tab's switch, setup's last page and `install-skill`.
-    func install(into roots: [URL], completion: @escaping @MainActor @Sendable ([AgentPlugin.Result]) -> Void) {
-        queue.async { [self] in
-            var results: [AgentPlugin.Result] = []
-            do { try stageNow() } catch {
-                results = roots.map { AgentPlugin.Result(root: $0, outcome: .failed, detail: error.localizedDescription) }
-            }
-            if results.isEmpty {
-                for root in roots {
-                    guard let client = AgentPlugin.client(of: root) else {
-                        results.append(log(AgentPlugin.Result(root: root, outcome: .failed, detail: "not a Claude Code or Codex folder")))
-                        continue
-                    }
-                    let result = log(host(client, root).install(from: marketplaceFolder))
-                    results.append(result)
-                    if result.outcome == .installed { results += retireLegacySkill(client, root) }
-                }
-            }
-            let found = results
-            DispatchQueue.main.async { MainActor.assumeIsolated { completion(found) } }
-        }
-    }
-
-    /// The Agents tab's switch, turned off.
-    func remove(from root: URL, completion: @escaping @MainActor @Sendable (AgentPlugin.Result) -> Void) {
-        queue.async { [self] in
-            let result: AgentPlugin.Result
-            if let client = AgentPlugin.client(of: root) {
-                result = log(host(client, root).remove())
-            } else {
-                result = AgentPlugin.Result(root: root, outcome: .failed, detail: "not a Claude Code or Codex folder")
-            }
-            DispatchQueue.main.async { MainActor.assumeIsolated { completion(result) } }
-        }
-    }
-
-    /// Where the skill from before the plugin may be for an agent. Codex also reads `~/.agents/skills`.
-    func legacyEntries(for client: AgentClient, root: URL) -> [URL] {
-        var entries = [AgentPlugin.legacyEntry(in: root)]
-        if client == .codex { entries.append(AgentPlugin.legacyEntry(in: home.appendingPathComponent(".agents"))) }
-        return entries
-    }
-
-    private func hasLegacySkill(_ client: AgentClient, _ root: URL) -> Bool {
-        legacyEntries(for: client, root: root).contains { AgentPlugin.legacySkill(at: $0) != .none }
-    }
-
-    /// With the plugin in: records the move, then removes the old skill's folders.
-    private func retireLegacySkill(_ client: AgentClient, _ root: URL) -> [AgentPlugin.Result] {
-        if hasLegacySkill(client, root) { migrations.record(root) }
-        return legacyEntries(for: client, root: root).map { log(AgentPlugin.removeLegacySkill(at: $0, root: root)) }
-    }
-
-    @discardableResult
-    private func stageNow() throws -> Bool {
-        guard let template, let skill else {
-            throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "the plugin is missing from this copy of \(Identity.name)"])
-        }
-        let changed = try AgentPlugin.stage(template: template, skill: skill, into: marketplaceFolder,
-                                            inboxRoot: inboxRoot, marketplace: marketplace, appName: appName, app: Bundle.main.bundleURL)
-        if changed { Log.write("[plugin] staged \(marketplaceFolder.path) version=\(bundledVersion ?? "?")") }
-        return changed
-    }
-
-    private func log(_ result: AgentPlugin.Result, _ reason: String = "") -> AgentPlugin.Result {
-        if result.outcome != .absent {
-            let words = [result.outcome.rawValue, result.root.path, reason, result.detail].filter { !$0.isEmpty }
-            Log.write("[plugin] \(words.joined(separator: " "))")
-        }
-        return result
     }
 }

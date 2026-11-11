@@ -12,11 +12,17 @@
   plugin add` again. A root is `~/.claude` or `~/.codex`, or where `CLAUDE_CONFIG_DIR` and
   `CODEX_HOME` point, and only one that exists. A launch with `VIGNETTE_SETTINGS` never gets the
   person's own two, whatever the environment names (`AgentPlugin.guarded`, found from the user
-  database, which `CFFIXED_USER_HOME` does not move). Roots are parameters everywhere, so a test never
-  reaches the real ones, and the live check is `install-skill?root=<dir>` (debug only, a folder
-  named `.claude` or `.codex`). The tools get the app's `HOME`, so a test copy launched with
-  `CFFIXED_USER_HOME` installs into its scratch home. The Codex app's own codex needs nothing from
-  `HOME`. A vite-plus shim does: it finds its package through `HOME`, so a test that runs one links
+  database, which `CFFIXED_USER_HOME` does not move). Vignette never reads or removes the person's
+  `~/.agents` either, and `install(into:)` and `remove(from:)` refuse the person's own folders, which
+  `install-skill?root=` can name. A folder inside one, one reached through a link, or one spelled in
+  another case counts as theirs (`AgentPlugin.isPersons`). The agent's tool still runs with the app's
+  `HOME`, so without `CFFIXED_USER_HOME` a codex it runs may read the person's `~/.agents/skills`. `AgentPlugins` takes the home folder, the environment and the
+  person's home as parameters, and only its `init()`, the app's, reads the process's, so a unit test
+  never reaches the real folders, whatever its environment holds. The live check is
+  `install-skill?root=<dir>` (debug only, a folder named `.claude` or `.codex`). The tools get the
+  app's `HOME`, so a test copy launched with `CFFIXED_USER_HOME` installs into its scratch home.
+  The Codex app's own codex needs nothing from `HOME`. A vite-plus shim does: it finds its package
+  through `HOME`, so a test that runs one links
   the scratch home's `.vite-plus` to the real one, and unlinks it before anything lists Codex
   threads. Whether the plugin is on is read from
   the agent's own settings (`enabledPlugins` in Claude Code's settings.json, `[plugins."<id>"]` in
@@ -25,8 +31,12 @@
   A launch writes the marketplace and updates an installed plugin whose listed version differs from
   the bundle's, or whose marketplace copy changed. It installs the plugin only where the skill from
   before the plugin is (`<root>/skills/vignette`, and `~/.agents/skills/vignette` for Codex), since
-  that person chose the skill. Once the plugin is in, a folder there is removed; a link is the
-  person's own and stays, with a `[plugin] kept` line. It does this once per agent folder: whenever
+  that person chose the skill. Codex reads `~/.agents/skills` whatever `CODEX_HOME` says (codex
+  0.164.0, 2026-11-11), so that skill goes with the Codex folder the app's environment names, the one
+  `roots` lists: an install into another Codex folder leaves it for the Codex that uses that one.
+  An app opened from Finder has no shell `CODEX_HOME`, so there it is `~/.codex`. Once
+  the plugin is in, a folder there is removed; a link is the person's own and stays,
+  with a `[plugin] kept` line. It does this once per agent folder: whenever
   the plugin is in beside that skill, from a launch or a switch, the folder is recorded in
   `agent-plugin-migrated.json` in Application Support (`LegacySkillMigrations`), and a launch never
   installs for the skill in a recorded folder. So a linked skill gets the plugin once, and the
