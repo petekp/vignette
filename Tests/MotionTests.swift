@@ -70,6 +70,13 @@ final class MotionTests: XCTestCase {
                                     Anim.settle(duration, bounce: 0, distance: 1138, within: 0.5),
                                     "a spring that does not overshoot never covers early")
         XCTAssertEqual(Anim.passesTarget(0, bounce: bounce), 0, "motion off covers and arrives in the same turn")
+        for timing in [FlightTiming.easeOut, .linear] {
+            XCTAssertGreaterThan(timing.covers(duration, distance: 1138, within: 0.5), duration,
+                                 "\(timing) reaches the target only at its end, so it covers nothing before")
+            XCTAssertEqual(timing.covers(0, distance: 1138, within: 0.5), 0)
+        }
+        XCTAssertEqual(FlightTiming.springNoBounce.covers(duration, distance: 1138, within: 0.5),
+                       FlightTiming.springNoBounce.settles(duration, distance: 1138, within: 0.5))
     }
 
     // MARK: The flight curve

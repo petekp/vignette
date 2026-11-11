@@ -394,77 +394,77 @@ The layer holds a set of flights. `ThumbnailController` starts, re-aims, lifts a
 
 **States**: a flight has no state enum. These properties together make it:
 
-- `model.flights: [Flight]` (`:45`). A flight is in the array or not.
-- `Flight.generation` (`:30`), taken from `nextGeneration` (`:76`) in `start` (`:319`). Never reused. `converge`'s resting result flight keeps generation 0 (`:264`).
-- `Flight.dropped: (() -> Void)?` (`:34`). Set by `start` (`:330`, `:333`), cleared on arrival (`:231`).
-- `Flight.path`, `previousPath`, `blend` (`:25-29`): the bow of the path. `start` sets `blend = 0`; the async block of `fly` animates it to 1 (`:212`).
-- `Flight.look`, `frame`, `opacity`, `caption`, `leavingAnnotator` (`:13-23`).
-- `arrivedFlights: Set<UUID>` (`:70`): the spring settled on its target.
-- `pendingLift: Set<UUID>` (`:71`): a lift was asked before arrival.
-- `model.swallowRects` (`:46`): each lives until its own `asyncAfter` removes it (`:403-407`) or `endAll` empties the array (`:375`).
+- `model.flights: [Flight]` (`:48`). A flight is in the array or not.
+- `Flight.generation` (`:33`), taken from `nextGeneration` (`:79`) in `start` (`:325`). Never reused. `converge`'s resting result flight keeps generation 0 (`:269`).
+- `Flight.dropped: (() -> Void)?` (`:37`). Set by `start` (`:336`, `:339`), cleared on arrival (`:236`).
+- `Flight.path`, `previousPath`, `blend` (`:28-32`): the bow of the path. `start` sets `blend = 0`; the async block of `fly` animates it to 1 (`:216`).
+- `Flight.look`, `frame`, `opacity`, `caption`, `leavingAnnotator` (`:13-26`).
+- `arrivedFlights: Set<UUID>` (`:73`): the spring settled on its target.
+- `pendingLift: Set<UUID>` (`:74`): a lift was asked before arrival.
+- `model.swallowRects` (`:49`): each lives until its own `asyncAfter` removes it (`:416-420`) or `endAll` empties the array (`:388`).
 
 Flight states these make: `absent` (not in `model.flights`), `flying` (in it, not in `arrivedFlights`), `flying+liftPending` (`flying` and in `pendingLift`), `arrived` (in `arrivedFlights`, `dropped` is nil).
 
 Events and senders:
 
-- `fly(id:…)` (`:187`): `ThumbnailController.swift:695` (`slideOut`), `:828` (card to annotator), `:907` (`returnCard`), `:941` (`flyAway`), and `converge` (`:293`).
-- `converge(…)` (`:254`): `ThumbnailController.swift:567` (stitch).
-- `lift(id:)` (`:363`): `ThumbnailController.swift:884` (`.liftFlight`), `:915`.
-- `end(id:)` (`:369`): `ThumbnailController.swift:479, 688, 698, 860, 902, 943`, and `:277`, `:288` here.
-- `endAll(except:)` (`:374`): `ThumbnailController.swift:1319` (`present`).
-- `dropShadow(id:)` (`:356`): `ThumbnailController.swift:878, 913`, and `:282` here.
-- `setImage(id:)` (`:348`): `FlightImages.swift:60`.
-- `swallowPresses(in:for:on:)` (`:399`): `ThumbnailController.swift:961`.
-- Timers: the three `DispatchQueue.main` hops in `fly` (`:203`, `:216`, `:223`) and the swallow rect expiry (`:403`).
+- `fly(id:…)` (`:190`): `ThumbnailController.swift:695` (`slideOut`), `:798` (card to annotator), `:877` (`returnCard`), `:911` (`flyAway`), and `converge` (`:299`).
+- `converge(…)` (`:259`): `ThumbnailController.swift:567` (stitch).
+- `lift(id:)` (`:376`): `ThumbnailController.swift:884` (`.liftFlight`), `:885`.
+- `end(id:)` (`:382`): `ThumbnailController.swift:479, 688, 698, 860, 902, 943`, and `:283`, `:294` here.
+- `endAll(except:)` (`:387`): `ThumbnailController.swift:1319` (`present`).
+- `dropShadow(id:)` (`:369`): `ThumbnailController.swift:878, 913`, and `:288` here.
+- `setImage(id:)` (`:361`): `FlightImages.swift:60`.
+- `swallowPresses(in:for:on:)` (`:412`): `ThumbnailController.swift:961`.
+- Timers: the three `DispatchQueue.main` hops in `fly` (`:208`, `:220`, `:227`) and the swallow rect expiry (`:416`).
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| absent | `fly` | flying | `start` appends the flight (`:333`) with a new `generation`; `showPanel`; an async hop commits the start, then animates to the target |
-| absent | `converge` | resting result flight (opacity 0, generation 0) plus flying pieces | the result id is removed first (`:261`); pieces fly with `arrived: land, dropped: land` |
-| flying, arrived | `fly` (same id) | flying (new generation) | new image and marks (old marks cleared if different, `:324`), `path`/`previousPath`, `blend = 0`, `dropped` replaced (may become nil); `arrivedFlights` and `pendingLift` cleared (`:315-316`). The old `covered`, `arrived` and `dropped` are never called |
-| any | second `fly` in the same turn as the first | second generation wins | the first hop sees a `generation` mismatch and returns (`:204`) |
-| flying | cover timer, `isCurrent` | flying | `covered()` (`:216-219`) |
-| flying | arrival timer, `isCurrent` | arrived | frame and look snapped without animation (`:225-229`); inserted in `arrivedFlights`; `dropped = nil`; `arrived()`; then `end` if in `pendingLift` (`:233`) |
-| flying | either timer fires and the flight is absent or has another generation | unchanged | ignored (`:217`, `:224`) |
-| flying | `lift` | flying+liftPending | `pendingLift.insert` (`:365`) |
-| arrived | `lift` | absent | `end` (`:365`) |
-| absent | `lift` | absent | ignored (`:364` guard) |
-| flying | `end`, `endAll` | absent | marks cleared, flight removed, `orderOutIfIdle`, then `dropped` called (`:382-387`) ([flights-1](#flights-1)) |
-| arrived | `end`, `endAll` | absent | no `dropped` (`:382` filter) |
+| absent | `fly` | flying | `start` appends the flight (`:339`) with a new `generation`; `showPanel`; an async hop commits the start, then animates to the target |
+| absent | `converge` | resting result flight (opacity 0, generation 0) plus flying pieces | the result id is removed first (`:266`); pieces fly with `arrived: land, dropped: land` |
+| flying, arrived | `fly` (same id) | flying (new generation) | new image and marks (old marks cleared if different, `:330`), `path`/`previousPath`, `blend = 0`, `dropped` replaced (may become nil); `arrivedFlights` and `pendingLift` cleared (`:321-322`). The old `covered`, `arrived` and `dropped` are never called |
+| any | second `fly` in the same turn as the first | second generation wins | the first hop sees a `generation` mismatch and returns (`:209`) |
+| flying | cover timer, `isCurrent` | flying | `covered()` (`:220-223`) |
+| flying | arrival timer, `isCurrent` | arrived | frame and look snapped without animation (`:229-234`); inserted in `arrivedFlights`; `dropped = nil`; `arrived()`; then `end` if in `pendingLift` (`:238`) |
+| flying | either timer fires and the flight is absent or has another generation | unchanged | ignored (`:221`, `:228`) |
+| flying | `lift` | flying+liftPending | `pendingLift.insert` (`:378`) |
+| arrived | `lift` | absent | `end` (`:378`) |
+| absent | `lift` | absent | ignored (`:377` guard) |
+| flying | `end`, `endAll` | absent | marks cleared, flight removed, `orderOutIfIdle`, then `dropped` called (`:395-400`) ([flights-1](#flights-1)) |
+| arrived | `end`, `endAll` | absent | no `dropped` (`:395` filter) |
 
 **Invariants**
 
-- The panel is up whenever a flight, a swallow rect, `staysUp` or a held press exists (comments `:410-411`, `:430-432`). Checked by: nothing.
+- The panel is up whenever a flight, a swallow rect, `staysUp` or a held press exists (comments `:423-424`, `:443-445`). Checked by: nothing.
 - `ignoresMouseEvents` is never set on the panel (comment `:8-9`). Checked by: nothing.
-- A flight's `dropped` runs only if the flight did not arrive, and at most once. Checked by: the filter at `:382` and `dropped = nil` at `:231`; no test.
-- `arrived` runs once the spring is within 0.5 pt of its target (`arrivalTolerance`, `:74`; `Anim.settle`). Checked by: `MotionTests.testAFlightHandsOverOnlyOnceItIsThere` (timing helper only).
-- `covered` runs before `arrived` (comment `:215`); `coverTime = min(settleTime, passesTarget)` (`:199`). Checked by: `MotionTests.testAFlightCoversItsTargetFromTheMomentItReachesIt` (`passesTarget < settle` only).
-- No two live flights share a generation. Checked by: `nextGeneration` (`:76`, `:319`); no test.
+- A flight's `dropped` runs only if the flight did not arrive, and at most once. Checked by: the filter at `:395` and `dropped = nil` at `:236`; no test.
+- `arrived` runs once a spring is within 0.5 pt of its target (`arrivalTolerance`, `:77`; `Anim.settle`), or 50 ms after an ease-out's or linear's end (`FlightTiming.settles`, `TransitionLayer+Timing.swift:33`). Checked by: `MotionTests.testAFlightHandsOverOnlyOnceItIsThere` (timing helper only).
+- `covered` runs no later than `arrived` (comment `:219`); `FlightTiming.covers` is `min(settles, passesTarget)` for a spring and `settles` otherwise (`:203`). Checked by: `MotionTests.testAFlightCoversItsTargetFromTheMomentItReachesIt` (timing helpers only).
+- No two live flights share a generation. Checked by: `nextGeneration` (`:79`, `:325`); no test.
 
 **Late and concurrent answers**
 
-- A timer for a flight that was re-aimed or removed: ignored by `isCurrent(id, gen)` (`:246`, used at `:217`, `:224`), by the `generation == gen` check in the first hop (`:204`) and by the index lookup (`:224`).
-- Two `fly` calls in one turn: the second `start` bumps `generation` (`:319`), so the first hop returns at `:204`.
-- A reused id: generations never repeat (comment `:317-320`).
-- `covered` and `arrived` due at the same instant (motion 0): `covered` is scheduled first (`:215`) and the deadlines come from two successive `.now()` calls, so the order holds.
-- A lift asked before arrival: held in `pendingLift` (`:365`), run at `:233`, cleared on re-aim (`:316`).
-- A `dropped` handler that re-enters the layer: `end(where:)` removes first and calls handlers after (`:383-387`); `converge`'s `land` defers a turn (`:275`).
-- Dismissing during a converge: dropped pieces still answer `land` (`:294`); the result flight is uncovered only if its generation is still the resting one (`:281-282`, `:286-287`).
-- Zero-duration motion: `Anim.settle` and `Anim.passesTarget` return 0 (`Settings.swift:1109`, `:1149`), so both timers run next turn. `Anim.spring(0)` is `.linear(duration: 0)` (`Settings.swift:1100`).
+- A timer for a flight that was re-aimed or removed: ignored by `isCurrent(id, gen)` (`:251`, used at `:221`, `:228`), by the `generation == gen` check in the first hop (`:209`) and by the index lookup (`:228`).
+- Two `fly` calls in one turn: the second `start` bumps `generation` (`:325`), so the first hop returns at `:209`.
+- A reused id: generations never repeat (comment `:323-326`).
+- `covered` and `arrived` due at the same instant (motion 0): `covered` is scheduled first (`:219`) and the deadlines come from two successive `.now()` calls, so the order holds.
+- A lift asked before arrival: held in `pendingLift` (`:378`), run at `:238`, cleared on re-aim (`:322`).
+- A `dropped` handler that re-enters the layer: `end(where:)` removes first and calls handlers after (`:396-400`); `converge`'s `land` defers a turn (`:281`).
+- Dismissing during a converge: dropped pieces still answer `land` (`:300`); the result flight is uncovered only if its generation is still the resting one (`:287-288`, `:292-293`).
+- Zero-duration motion: `Anim.settle`, `Anim.passesTarget` and `FlightTiming.settles` return 0 (`Anim.swift:72`, `:32`), so both timers run next turn. Every `FlightTiming.animation(0)` is `.linear(duration: 0)` (`Anim.swift:23`).
 
 ### TransitionLayer panel and press (implicit)
 
 Owner: `TransitionLayer.swift:11`. Tests: none.
 
-The layer's one panel and the press it is holding. `PressCatcher` (`:503-505`) hands each mouse event to `pressed` (`:94`); `FlightPress` decides where the press goes.
+The layer's one panel and the press it is holding. `PressCatcher` (`:473-475`) hands each mouse event to `pressed` (`:97`); `FlightPress` decides where the press goes.
 
 **States**:
 
-- `panel.isVisible` (`:79`). Shown by `showPanel` (`:428`), taken down by `orderOutIfIdle` (`:412`). `orderIn` and `orderBelow` only order other windows relative to it.
-- `staysUp` (`:63`), set by `ThumbnailController.swift:758` (`flights.staysUp = run.isActive`).
-- `pressDown` (`:59`), `pressedFlight` (`:58`), `releaseWatch` (`:67`), `screen` (`:68`).
+- `panel.isVisible` (`:82`). Shown by `showPanel` (`:441`), taken down by `orderOutIfIdle` (`:425`). `orderIn` and `orderBelow` only order other windows relative to it.
+- `staysUp` (`:66`), set by `ThumbnailController.swift:758` (`flights.staysUp = run.isActive`).
+- `pressDown` (`:62`), `pressedFlight` (`:61`), `releaseWatch` (`:70`), `screen` (`:71`).
 
 **Transitions**
 
@@ -472,31 +472,31 @@ Panel:
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| hidden | `fly`, `converge`, `swallowPresses` | visible | `showPanel` sets the frame to `screen.frame` and calls `orderFrontRegardless` (`:433-436`) |
-| visible | `end`, `endAll`, rect expiry, `released`, `staysUp = false` | hidden if `!staysUp && flights.isEmpty && swallowRects.isEmpty && !pressDown` (`:413`) | otherwise stays up |
-| visible | `showPanel` for another screen | visible, frame moves to that screen (`:433-435`) | existing flights and swallow rects keep frames local to the earlier screen ([flights-2](#flights-2)) |
+| hidden | `fly`, `converge`, `swallowPresses` | visible | `showPanel` sets the frame to `screen.frame` and calls `orderFrontRegardless` (`:446-449`) |
+| visible | `end`, `endAll`, rect expiry, `released`, `staysUp = false` | hidden if `!staysUp && flights.isEmpty && swallowRects.isEmpty && !pressDown` (`:426`) | otherwise stays up |
+| visible | `showPanel` for another screen | visible, frame moves to that screen (`:446-448`) | existing flights and swallow rects keep frames local to the earlier screen ([flights-2](#flights-2)) |
 
 Press:
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| up | `leftMouseDown` | down | `pressedFlight` is nil if a swallow rect covers the point, else the topmost flight under it (`:99`); `watchRelease` starts; `.pressed` reported (`:102`) |
-| down | `leftMouseDragged` | down | `.dragged` reported (`:104`) |
-| down | `leftMouseUp` | up | `released`: timer cancelled, `orderOutIfIdle`, `.released` reported (`:112-122`) |
-| down | timer: the button reads up on 2 ticks (`:146-147`) | up | logs `[flight] release missed`, calls `released` |
-| up | `leftMouseUp` | up | ignored by `guard pressDown` (`:113`) |
-| up | extra `leftMouseDragged` | up | still reported with `pressedFlight` nil (`:104`); `FlightPress` ignores it in `idle` (`FlightPress.swift:61`) |
-| down | `leftMouseDown` | down | state overwritten, old watch invalidated (`:141`); nothing is done for the lost first press |
+| up | `leftMouseDown` | down | `pressedFlight` is nil if a swallow rect covers the point, else the topmost flight under it (`:102`); `watchRelease` starts; `.pressed` reported (`:105`) |
+| down | `leftMouseDragged` | down | `.dragged` reported (`:107`) |
+| down | `leftMouseUp` | up | `released`: timer cancelled, `orderOutIfIdle`, `.released` reported (`:115-125`) |
+| down | timer: the button reads up on 2 ticks (`:149-150`) | up | logs `[flight] release missed`, calls `released` |
+| up | `leftMouseUp` | up | ignored by `guard pressDown` (`:116`) |
+| up | extra `leftMouseDragged` | up | still reported with `pressedFlight` nil (`:107`); `FlightPress` ignores it in `idle` (`FlightPress.swift:61`) |
+| down | `leftMouseDown` | down | state overwritten, old watch invalidated (`:144`); nothing is done for the lost first press |
 
 **Invariants**
 
-- A swallow rect always clears: expiry is an unconditional `asyncAfter` (`:403`) and `endAll` empties them (`:375`). Checked by: nothing.
-- The panel stays up while a press is down, even after its swallow rect expired. Checked by: the `!pressDown` term at `:413`.
+- A swallow rect always clears: expiry is an unconditional `asyncAfter` (`:416`) and `endAll` empties them (`:388`). Checked by: nothing.
+- The panel stays up while a press is down, even after its swallow rect expired. Checked by: the `!pressDown` term at `:426`.
 
 **Late and concurrent answers**
 
-- A release that never arrives: `watchRelease` (`:140`) ends the press from the button's own state; the real release, if it comes late, is ignored (`:113`).
-- A release after the flight is gone: `fraction(of:on:)` returns nil (`:171`); `FlightPress` takes events with `picture` nil (`:127`).
+- A release that never arrives: `watchRelease` (`:143`) ends the press from the button's own state; the real release, if it comes late, is ignored (`:116`).
+- A release after the flight is gone: `fraction(of:on:)` returns nil (`:174`); `FlightPress` takes events with `picture` nil (`:130`).
 
 ### FlightPress (explicit)
 

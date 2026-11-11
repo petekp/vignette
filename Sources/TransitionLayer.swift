@@ -16,6 +16,9 @@ final class TransitionLayer {
         var marks: MarkLayers?
         var frame: CGRect      // top-left origin, in the layer's own coordinates
         var look: Look
+        /// The shape the picture is drawn in, width over height, filling the frame: the image's own,
+        /// or the frame's where the look stretches the picture. Animated with the frame.
+        var aspect: CGFloat
         var opacity: Double = 1
         var caption: Caption?
         /// Leaving the annotator, which still draws the title: the flight shows its caption from
@@ -195,19 +198,20 @@ final class TransitionLayer {
                         from: from, to: to, look: lookFrom, ui: ui, dropped: dropped)
         let travel = max(abs(to.minX - from.minX), abs(to.minY - from.minY),
                          abs(to.width - from.width), abs(to.height - from.height))
-        let settleTime = Anim.settle(ui.expandDuration, bounce: Anim.flightBounce, distance: travel, within: Self.arrivalTolerance)
-        let coverTime = min(settleTime, Anim.passesTarget(ui.expandDuration, bounce: Anim.flightBounce))
+        let timing = FlightTiming(ui)
+        let settleTime = timing.settles(ui.expandDuration, distance: travel, within: Self.arrivalTolerance)
+        let coverTime = timing.covers(ui.expandDuration, distance: travel, within: Self.arrivalTolerance)
+        let aspect = Self.aspect(of: image, in: to, look: lookTo)
         // The starting state has to be committed before the animated change, or it starts at `to`.
         // The annotator's `Removal` hides its frame and the title on this same turn, so the flight
         // home takes over from it in one commit, caption and all.
         DispatchQueue.main.async { [weak self] in
             guard let self, let i = self.model.flights.firstIndex(where: { $0.id == id }), self.model.flights[i].generation == gen else { return }
             if self.model.flights[i].leavingAnnotator { self.annotatorStoppedDrawing() }
-            // A spring, so a flight retargeted mid-way (a swap) blends into the new path instead
-            // of restarting; SwiftUI springs are additive by default.
-            withAnimation(Anim.spring(ui.expandDuration, bounce: Anim.flightBounce)) {
+            withAnimation(timing.animation(ui.expandDuration)) {
                 self.model.flights[i].frame = self.local(to)
                 self.model.flights[i].look = lookTo
+                self.model.flights[i].aspect = aspect
                 self.model.flights[i].opacity = 1
                 self.model.flights[i].blend = 1
             }
@@ -217,14 +221,15 @@ final class TransitionLayer {
                 guard let self, self.isCurrent(id, gen) else { return }
                 covered()
             }
-            // The spring's tail runs on past its nominal duration. By here
-            // it is inside `arrivalTolerance`, so putting it exactly on the target is a sub-pixel
-            // move, and whatever takes its place lands on the same pixels.
+            // A spring's tail runs on past its nominal duration. By here it is inside
+            // `arrivalTolerance`, so putting it exactly on the target is a sub-pixel move, and
+            // whatever takes its place lands on the same pixels.
             DispatchQueue.main.asyncAfter(deadline: .now() + settleTime) { [weak self] in
                 guard let self, self.isCurrent(id, gen), let i = self.model.flights.firstIndex(where: { $0.id == id }) else { return }
                 withTransaction(Transaction(animation: nil)) {
                     self.model.flights[i].frame = self.local(to)
                     self.model.flights[i].look = lookTo
+                    self.model.flights[i].aspect = aspect
                     self.model.flights[i].blend = 1
                 }
                 self.arrivedFlights.insert(id)
@@ -261,7 +266,8 @@ final class TransitionLayer {
         remove { $0.id == result.id }
         arrivedFlights.remove(result.id)
         pendingLift.remove(result.id)
-        let resting = Flight(id: result.id, image: result.image, frame: local(result.frame), look: look, opacity: 0)
+        let resting = Flight(id: result.id, image: result.image, frame: local(result.frame), look: look,
+                             aspect: Self.aspect(of: result.image, in: result.frame, look: look), opacity: 0)
         model.flights.append(resting)
         // Every piece answers exactly once: `arrived` when its spring settles, `dropped` when its
         // flight is ended before that (the stack dismissed mid-converge). The last answer finishes
@@ -330,9 +336,16 @@ final class TransitionLayer {
             model.flights[i].dropped = dropped
             return gen
         }
-        model.flights.append(Flight(id: id, image: image, marks: marks, frame: local(from), look: look, caption: caption,
+        model.flights.append(Flight(id: id, image: image, marks: marks, frame: local(from), look: look,
+                                    aspect: Self.aspect(of: image, in: from, look: look), caption: caption,
                                     leavingAnnotator: leavingAnnotator, path: path, previousPath: path, generation: gen, dropped: dropped))
         return gen
+    }
+
+    /// The shape `image` is drawn in, filling `frame`, at an end that looks like `look`.
+    private static func aspect(of image: NSImage, in frame: NSRect, look: Look) -> CGFloat {
+        let shape = look.stretchesPicture || image.size.width <= 0 || image.size.height <= 0 ? frame.size : image.size
+        return shape.height > 0 ? shape.width / shape.height : 1
     }
 
     /// The marks the flight `id` shows, while it is in the air.
@@ -449,48 +462,6 @@ final class TransitionLayer {
     }
 
     private func center(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.midY) }
-}
-
-private struct FlightsView: View {
-    @ObservedObject var model: TransitionLayer.Model
-    var body: some View {
-        let ui = Settings.shared.data.ui
-        return ZStack(alignment: .topLeading) {
-            Color.clear
-            ForEach(model.swallowRects) { swallow in
-                Color.black.opacity(0.01)
-                    .frame(width: swallow.frame.width, height: swallow.frame.height)
-                    .position(x: swallow.frame.midX, y: swallow.frame.midY)
-            }
-            ForEach(model.flights) { f in
-                Image(nsImage: f.image)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFill()
-                    .frame(width: f.frame.width, height: f.frame.height)
-                    .background(Color(nsColor: Config.matte).opacity(f.look.matte))
-                    .clipShape(RoundedRectangle(cornerRadius: f.look.corner, style: .continuous))
-                    // The shadow of whichever end the flight is nearest, so nothing pops when the
-                    // card or the annotator window takes over. Cast by the clipped image, before
-                    // the ring: a card casts its shadow from the same shape, and the two have to
-                    // match at the ends or the shadow steps when one takes the other's place.
-                    .shadow(color: .black.opacity(f.look.shadowOpacity), radius: f.look.shadowRadius, y: f.look.shadowY)
-                    .marks(f.marks, picture: f.image.size, corner: f.look.corner)
-                    // The card's ring travels with the image, and the annotator window carries it on.
-                    .overlay(ui.ring(cornerRadius: f.look.corner).stroke(.white.opacity(ui.cardBorderOpacity * f.look.ring), lineWidth: ui.cardBorderWidth))
-                    // Before the bow, so the spot is where the picture is on screen, swell and all.
-                    .overlay(FlightSpot(id: f.id, picture: f.image.size))
-                    // The agent's title, pinned to the picture's top-left corner, so it bows and swells with it.
-                    .overlay(alignment: .topLeading) {
-                        if let caption = f.caption { FlightCaption(caption: caption, frameWidth: f.frame.width, shown: !f.leavingAnnotator) }
-                    }
-                    .modifier(Bow(center: CGPoint(x: f.frame.midX, y: f.frame.midY), path: f.path, previous: f.previousPath, blend: f.blend))
-                    .opacity(f.opacity)
-                    .position(x: f.frame.midX, y: f.frame.midY)
-            }
-        }
-        .ignoresSafeArea()
-    }
 }
 
 /// The panel's content. The window server gives the panel only the presses on a flight's pixels,

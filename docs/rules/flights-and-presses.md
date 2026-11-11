@@ -8,15 +8,22 @@
   belongs to the line rather than the direction of travel, so a flight that turns around mid-air
   keeps bowing the same way; `TransitionLayer`'s `Bow` blends between a flight's old and new paths,
   so a flight re-aimed in mid-air crosses from one bow to the other instead of stepping sideways.
-  A flight also carries a `Look` (corner, shadow opacity, radius, y) animated from `.annotator(ui)`
-  to `.card(ui)`; `AnnotationController` reads the annotator window's frame shadow from the same
-  `Look.annotator`, so the two ends cannot drift apart. `dropShadow(id:)` zeroes a flight's shadow
+  A flight also carries a `Look` (corner, shadow opacity, radius, y, the ring's inset, and whether
+  the picture fills the frame as a card's does or is stretched to it as the editor's is) animated
+  from `.annotator(ui)` to `.card(ui)`; `AnnotationController` reads the annotator window's frame
+  shadow from the same `Look.annotator`, so the two ends cannot drift apart. The fitted frame is
+  rounded out to whole points, so a picture filling it is cropped by about a point on a side, which
+  would step outward as the editor takes over. `dropShadow(id:)` zeroes a flight's shadow
   in the same run-loop turn the card appears or the annotator turns its own shadow on, so the
   shadow is never drawn twice and never missing for a frame.
 - Nothing takes a flight's place until it has arrived; the annotator hides behind it before then. A
   spring's tail runs well past its nominal duration, so anything put at the exact target on a timer
-  steps by what the spring still had to go. `fly` therefore answers on `arrived`, at `Anim.settle`
-  (the spring within half a point of the target, with the flight put exactly on it in that turn):
+  steps by what the spring still had to go. Every flight moves by `ui.flightTiming` (`FlightTiming`):
+  the spring with `Anim.flightBounce`, the same spring with no bounce, an ease-out or linear. The
+  bouncing spring overshoots by 0.6% of the path, which on a flight across a laptop's screen is
+  about 7 points that shrink back over its last 0.2 s. `fly` answers on `arrived`, at `Anim.settle` for a spring (within
+  half a point of the target, with the flight put exactly on it in that turn), and 50 ms after a
+  curve's end, since a curve's last frames still move several points each:
   the card retakes its slot, and the annotator takes the shadow back
   (`AnnotationController.landed`). The flight into the editor lifts at the last of three moments,
   which reach `AnnotationRun` as events for the opening and come back as `liftFlight`: `arrived`,
@@ -25,7 +32,8 @@
   flight can arrive before the image, and lifting it then would show an empty editor;
   `docs/native-editor-2026-09-23.md` has the timings. The wait for presses keeps the flight over the
   window until the window takes presses itself, so a press there never falls through to the app
-  behind. `fly` answers a second time, earlier, at `Anim.passesTarget`: from the moment a bouncing
+  behind. `fly` answers a second time, earlier for the bouncing spring, at `Anim.passesTarget`; the
+  other timings never pass the target and answer both at `arrived`. From the moment a bouncing
   spring first reaches its target the flight's rect contains the target on every side, so the
   annotator's window comes up there, with its own shadow off (`AnnotationController.show`), hidden
   behind the flight image until `arrived`. That is what makes the editor take the pointer the moment

@@ -19,6 +19,13 @@ extension TransitionLayer {
         /// How much of the card's border ring and of the matte behind transparent pixels show, 0 to 1.
         var ring: Double = 1
         var matte: Double = 1
+        /// How far inside `ui.ring`'s line the ring is stroked. A card strokes it centred on the line;
+        /// the annotator's `FrameRing` is the clip's border, which lies wholly inside the frame.
+        var ringInset: CGFloat = 0
+        /// The picture is stretched to the frame, as the editor draws it, rather than filling it and
+        /// cropping the excess, as a card does. The fitted frame is rounded out to whole points, so
+        /// its shape and the image's differ by up to two points on a side.
+        var stretchesPicture = false
 
         static func card(_ ui: UITweaks) -> Look {
             Look(corner: ui.cardCornerRadius, shadowOpacity: ui.cardShadowOpacity,
@@ -26,7 +33,8 @@ extension TransitionLayer {
         }
         /// The annotator window's frame view carries exactly this shadow; see `AnnotationController`.
         static func annotator(_ ui: UITweaks) -> Look {
-            Look(corner: ui.annotationCornerRadius, shadowOpacity: 0.45, shadowRadius: 24, shadowY: 10)
+            Look(corner: ui.annotationCornerRadius, shadowOpacity: 0.45, shadowRadius: 24, shadowY: 10,
+                 ringInset: ui.ringOutsideImage ? 0 : ui.cardBorderWidth / 2, stretchesPicture: true)
         }
         /// A capture where it was taken: the screen's own pixels, with no corners, shadow, ring or
         /// matte, so the flight's first frame shows nothing the screen did not.
