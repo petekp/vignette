@@ -74,6 +74,11 @@ This file is the index. Each file below is under `docs/state-machines/`; the tab
 | ModifierTap and KeyMonitors | `ModifierTap`, `KeyMonitors` | [stack](state-machines/stack.md) |
 | StackSwipe | `StackSwipe` | [stack](state-machines/stack.md) |
 | StackAreaReader | `StackAreaReader` | [stack](state-machines/stack.md) |
+| OlderShots | `OlderShots`, `ThumbnailController` | [stack-column](state-machines/stack-column.md) |
+| CardPictures | `CardPictures`, `ThumbnailController` | [stack-column](state-machines/stack-column.md) |
+| CardColumn built cards | `CardColumn`, `StackModel`, `StackLayout` | [stack-column](state-machines/stack-column.md) |
+| StackModel.liftFraction | `StackModel`, `ThumbnailController` | [stack-column](state-machines/stack-column.md) |
+| StackModel.carried | `StackModel`, `ThumbnailController` | [stack-column](state-machines/stack-column.md) |
 | EditorCore | `EditorCore` | [editor-core](state-machines/editor-core.md) |
 | HeldKey | `EditorCore`, `EditorView` | [editor-core](state-machines/editor-core.md) |
 | HeldToolLetter | `HeldToolLetter` | [editor-core](state-machines/editor-core.md) |
