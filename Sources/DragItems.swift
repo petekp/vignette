@@ -27,7 +27,8 @@ final class DragItems {
     private var ahead: PendingRendering?
     /// The cards `prepare` named last.
     private var wanted: [Card] = []
-    /// How many finished PNGs' bytes are kept. A full-screen capture with a drawing is 1 to 10 MB.
+    /// How many finished PNGs' bytes are kept beyond the wanted ones. A full-screen capture with a
+    /// drawing is 1 to 10 MB.
     private static let keptBytes = 32 << 20
 
     init(drawings: Drawings) { self.drawings = drawings }
@@ -36,6 +37,7 @@ final class DragItems {
     /// already. An empty list renders nothing more after the one already running.
     func prepare(_ cards: [Card]) {
         wanted = cards
+        trim()
         startAhead()
     }
 
@@ -99,10 +101,13 @@ final class DragItems {
         }
     }
 
-    /// Lets the oldest finished PNGs go once their bytes pass `keptBytes`.
+    /// Lets the oldest finished PNGs go once their bytes pass `keptBytes`, except the wanted ones,
+    /// which `startAhead` would only render again.
     private func trim() {
+        let wantedKeys = wanted.compactMap(key(for:))
         var total = kept.reduce(0) { $0 + ($1.rendering.wait(timeout: 0)?.png?.count ?? 0) }
-        while total > Self.keptBytes, let index = kept.firstIndex(where: { $0.rendering.isDone }) {
+        while total > Self.keptBytes,
+              let index = kept.firstIndex(where: { entry in entry.rendering.isDone && !wantedKeys.contains(entry.key) }) {
             total -= kept[index].rendering.wait(timeout: 0)?.png?.count ?? 0
             kept.remove(at: index)
         }

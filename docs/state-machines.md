@@ -1347,7 +1347,7 @@ Done, Cmd+C, Copy Drawing and a card drag render a drawing to a PNG on one seria
 | no `ahead`, or `ahead` finished | `prepare(cards)` (hover or press on a card) | `ahead` = the first wanted key not kept | Renders that key's PNG in turn and keeps it. Nothing when every wanted key is kept. |
 | `ahead` pending | `prepare(cards)` | `ahead` unchanged | Only `wanted` changes. When `ahead` finishes, `trim` runs and the next wanted key starts. |
 | any | drag begins (`items(for:)`) | file pending | Takes the kept PNG for each card's key, or renders one in turn, and calls `file(from:beside:)`, which names the file now and writes it on its own queue once the PNG exists (`RenderingQueue.swift:52`). A kept PNG that failed is rendered again. |
-| kept over 32 MB | `trim` | oldest finished entries dropped | Pending entries stay. |
+| kept over 32 MB | `trim` (after `prepare` and each rendering) | oldest finished entries dropped | Pending entries and the wanted keys' entries stay, so a wanted PNG is never dropped and rendered again. |
 | pending | job runs | finished | Reads the screenshot file now, so a trash or rename before this fails as `unreadableImage`; the card says Not copied. |
 | clipboard promised | paste before finish | waits | `RenderingProvider` waits up to 5 s on the main thread (`Clipboard.swift:108`); gives nothing if the rendering failed (`:113-117`). |
 | clipboard promised | rendering fails | clipboard cleared, or kept | Cleared only if `changeCount` is unchanged (`Clipboard.swift:35-39`). |
