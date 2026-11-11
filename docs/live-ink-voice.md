@@ -6,19 +6,36 @@ and ends, typing over it, and what the agent gets.
 
 | Part | Where |
 | --- | --- |
-| Opening the note while the chord is held | `LiveInk+Listening.swift` (`showNoteWhileListening`, `listen(into:)`) |
+| Opening the note while the chord is held | `LiveInk+Listening.swift` (`heard`, `showNoteWhileListening`, `listen(into:)`) |
+| The note by the pointer, before any ink | `LiveInk+Note.swift` (`showNoteOnTheVoice`, `noteMayMove`), `LiveNotePopover+Place.swift` (`pointerPlace`) |
+| The pointer field's light following the voice | `PointerFieldMotion.swift` (`hear`, `voice`), `PointerField.swift` (`ringVoice`) |
 | The note's side: starting, words, levels, the end | `LiveNotePopover+Voice.swift` |
 | The waveform, the letters and the levels, as pure values | `VoiceCaret.swift` (`VoiceCaret`, `HeardLetters`, `VoiceLevels`) |
 | Drawing them in the note | `LiveNoteVoice.swift` (`NoteVoice`, `VoiceCaretView`, `NoteWordsLayout`) |
 | The input's level | `Microphone.swift` (`levels(of:)`) |
-| Tests | `Tests/VoiceCaretTests.swift` |
+| Tests | `Tests/VoiceCaretTests.swift`, `Tests/LiveInkTests+Voice.swift` |
 
 ## Opening while the chord is held
 
-A stroke that ends while live ink listens opens the note on that ink without the keys, so the words
-show as they are said. A later stroke moves it to the newest ink, as the release does. The chord's
+From the moment live ink listens, the pointer field's light follows the voice: the lamp grows
+brighter and wider with the input's level, by `ui.liveInkLampVoice` (0.8), and settles over about
+0.45 s once the sound stops. It is the same field, and it covers nothing new.
+
+The first word heard opens the note without the keys, `ui.liveInkNoteClearance` (40 pt) from the
+pointer, to its right where it fits, then its left, below or above. The chord alone opens nothing,
+since the person may be about to draw in silence. When the pointer or the pen comes within half that
+distance of the note, the note slides out of its way on a spring and keeps its side while it fits.
+
+A stroke that ends while live ink listens moves the note to that ink, or opens it there when nothing
+has been heard yet. A later stroke moves it to the newest ink, as the release does. The chord's
 release gives the note the keys. A menu still open waits for the release, which closes it first.
 While it listens the words show at full strength, keys or not, and the empty note shows no prompt.
+
+Let go with words and no ink, and the note stays by the pointer with the keys and the words. It
+sends nothing on its own, and `liveInkSendWhenQuiet` waits for ink. An ask is about ink, so Return
+there beeps and keeps the note; a stroke drawn on a later hold moves the note to it. Esc closes it.
+With nothing heard and no ink, nothing opens. When inking is cut short, by sleep or a screen
+change, or the stack or the annotator comes up, a note by the pointer closes.
 
 ## The waveform
 

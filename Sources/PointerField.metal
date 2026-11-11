@@ -20,6 +20,7 @@ struct FieldUniforms {
     float ringSpread;      // how far its light reaches, in ring sizes
     float time;            // seconds, for the lamp's breath and drift
     float ringEnergy;      // 0 to 1: how fast the pointer has moved lately
+    float ringVoice;       // how loud the voice has been lately, times its gain
     float4 lampLife;       // breath depth, breath length in seconds, energy gain, drift
 };
 
@@ -68,12 +69,12 @@ static float2 stretched(float2 q, float2 v, float s) {
 // It never reads the screen. It is a tint: light added to what is behind a window does not reach the
 // screen, since the window server keeps no colour where a window's pixel has no coverage, so over
 // light content it takes the deep blue and darkens what is there. It lives: it breathes, grows
-// brighter and wider with the pointer's speed, and light drifts slowly round inside it.
+// brighter and wider with the pointer's speed and with the voice, and light drifts slowly round inside it.
 static float4 lamp(float2 p, float2 pixel, constant FieldUniforms &u) {
     float R = u.ringRadius;
     float2 pc = p - u.ringCentre;
     float breath = u.lampLife.x * sin(6.2831853 * u.time / u.lampLife.y);
-    float energy = u.lampLife.z * u.ringEnergy;
+    float energy = u.lampLife.z * u.ringEnergy + u.ringVoice;
     float r = length(stretched(pc, u.ringVelocity, stretchOf(u, 0.5)));
     float S = u.ringSpread * R * (1.0 - 0.25 * u.ringPress) * (1.0 + 0.5 * breath + 0.35 * energy);
     float x = r / S;

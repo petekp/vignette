@@ -2938,7 +2938,7 @@ Derived states:
 |---|---|---|---|
 | any | `.began` and `mayInk()` false | unchanged | log only; `HeldChord` stays held (`:1763`) |
 | Idle, Settled, MenuWait | `.began` | Inking | `chordInterrupted=false`, `listening?.pressedAgain()`, then `startInking`: `inkings += 1`, `FocusReturn.sessionStarting`, `drewWhileInking=false`, `releaseWatch=nil`, `inking=activeSurfaces()`, overlays `setInking(true)`, `startTap`, hover, `fieldTimer`. A pending `closeMenus` is dropped by the `inkings` mismatch. |
-| Inking, Stroking | `.began` (script, or a re-begin) | same | `startInking` runs again: new `inkings`, timer restarted, tap kept (`startTap` guard, `:1826`) |
+| Inking, Stroking | `.began` (script, or a re-begin) | same | `startInking` runs again: new `inkings`, timer restarted, tap and `pressedSurface` kept (`startTap` guard, `:1826`) |
 | ReleasePending | `.began` | Stroking | `releaseWatch` invalidated (`:1783`); the stroke now ends without ending inking |
 | Inking | first non-empty `strokeMoved`, or `fieldTimer` fires | Inking, field shown | `showFieldForChord`: `holdField`, `letGoOfFocus("ink")`, `InkBackdrop.refresh`, `listen()` |
 | Stroking | tap `.released` | Inking | overlay `endStroke` → `strokeEnded` → `take`; `strokeBegan=nil` |
@@ -2946,8 +2946,8 @@ Derived states:
 | Stroking | `.ended` or `.interrupted` | ReleasePending | `watchRelease` |
 | ReleasePending | tap `.released` | Settled or MenuWait | `strokeEnded` → `finishInking` (`:1921`) |
 | ReleasePending | 50 ms poll finds `!LiveInkTap.isButtonDown` | Settled or MenuWait | `endStroke` on each inking overlay, `finishInking` (`:1987`) |
-| any inking state | `spaceChanged`, `willSleep`, `sessionDidResignActive`, `screensChanged` with a changed inking frame, `takeChord()` | Settled | `cutInkingShort`: `stopListening`, `stopInking`. Stroke dropped (`cancelStroke`), no note ([hand-6](#hand-6)) |
-| any inking state | `standAside()` (from `ThumbnailController.onTakesScreen`) | Settled | note hidden, `stopListening`, `stopInking`. No note for ink drawn this hold ([hand-6](#hand-6)) |
+| any inking state | `spaceChanged`, `willSleep`, `sessionDidResignActive`, `screensChanged` with a changed inking frame, `takeChord()` | Settled | `cutInkingShort`: `closeNote` if by the pointer, `stopListening`, `stopInking`. Stroke dropped (`cancelStroke`), no note ([hand-6](#hand-6)) |
+| any inking state | `standAside()` (from `ThumbnailController.onTakesScreen`) | Settled | note hidden (closed if by the pointer), `stopListening`, `stopInking`. No note for ink drawn this hold ([hand-6](#hand-6)) |
 | any inking state | `setOn(false)` | Settled | `stopInking`, everything torn down (`:206`) |
 | Idle, Settled, MenuWait | `.ended` or `.interrupted` | — | ignored by `guard isInking` (`:1773`) |
 | `finishInking` | no open menus | Settled | `pinOverMenus`, `settleInking(opensNote)` |
@@ -2957,7 +2957,7 @@ Derived states:
 | any inking state | a display is added | unchanged | `inking` was fixed at `startInking`; the tap swallows clicks on the new display ([hand-12](#hand-12)) |
 | MenuWait | `LiveMenus.close` runs | unchanged | Accessibility reads on the main thread ([hand-13](#hand-13)) |
 
-`finishInking` sets `opensNote = !newInk.isEmpty && (drewWhileInking || listening != nil || heardBeforeNote != nil || !chordInterrupted)` (`:1930`).
+`finishInking` sets `opensNote` to `noteHangsAtPointer || heardWords` with no new ink, else `drewWhileInking || listening != nil || heardBeforeNote != nil || !chordInterrupted` (`:1930`).
 
 **Invariants**
 
@@ -2966,8 +2966,7 @@ Derived states:
 - A chord let go mid-stroke keeps the overlays raised until the button is up. Checked by: `watchRelease` (`:1982`).
 - Ink no ask has been about always has its note. Checked by: nothing; cut-short inking breaks it ([hand-6](#hand-6)).
 - No frame shows two copies of a mark handed from a surface to its window. Checked by: `LiveMarksLayer.handOff`, nothing tests it.
-- A surface exists only while it has marks or is inking. Checked by: `closeEmpty` (`:2050`).
-- `chordChanged(.began)` from the URL leaves `isInking` true while the real chord is not held ([hand-10](#hand-10)).
+- A surface exists only while it has marks, is inking or holds the note. Checked by: `closeEmpty` (`:2050`).
 
 **Late and concurrent answers**
 
@@ -2976,7 +2975,6 @@ Derived states:
 - The two menu-close triggers (the glance `Task` and the 0.8 s `asyncAfter`) run one close: `menusWaiting = nil` after the first, `:1957`.
 - A stroke's release after the chord was let go: `chordChanged(.ended)` checks `inking.contains(where: \.overlay.isTracking)`, `:1774`.
 - `stopInking` always invalidates `releaseWatch` and `fieldTimer` and resets `chordShowsField`, `:1806`.
-- `startInking` twice in a row: tap not remade, `pressedSurface` unchanged, `:1826`.
 - A tap hand-off queued before `stopTap`: dropped by `source != nil` (`LiveInkTap.swift:194`); `pressedSurface = nil` in `stopTap` (`:1835`); `inking` is empty so `under()` finds nothing (`:1847`).
 - `setOn(false)` does not clear `menusWaiting`, `fieldTimer` or `releaseWatch` unless inking was on; a pending `closeMenus` after off cancels the menus before it checks `isOn`, `:1958`.
 
@@ -3064,7 +3062,6 @@ One overlay window per screen per Space holds the strokes and the field. `active
 
 - An overlay is closed, never ordered out. Checked by: nothing.
 - A surface closed by `closeEmpty` is never reused, because it leaves `surfaces` first. Checked by: `closeEmpty`.
-- A surface with marks stays. Checked by: `closeEmpty`.
 
 **Late and concurrent answers**
 
@@ -3211,7 +3208,7 @@ An answer with steps is shown one step group at a time; clicking the target of t
 
 ### LiveListening and the transcriber chain (implicit)
 
-Owner: `LiveListening.swift:36`; `LiveInk+Listening.swift:6` (`listen`), `:45` (`doneListening`), `:66` (`stopListening`); `Microphone.swift:16`; `AppleTranscriber.swift:6`. Tests: `LiveInkTests.testListeningEndsJustAfterTheChordIsLetGo`, `testPressingTheChordAgainKeepsListening` cover `ListeningEnd` only.
+Owner: `LiveListening.swift:36`; `LiveInk+Listening.swift:6` (`listen`), `:45` (`doneListening`), `:66` (`stopListening`); `Microphone.swift:16`; `AppleTranscriber.swift:6`. Tests: `ListeningEnd` only.
 
 Captures speech while the chord is held and a short time after, and turns it into the note's words.
 
@@ -3225,6 +3222,7 @@ Captures speech while the chord is held and a short time after, and turns it int
 | none | `listen()`, speech off | none | `speechProblem = nil` |
 | none | `listen()`, no permission or no recognizer | none | `speechProblem` set |
 | starting, listening | `pressedAgain()` | same | `end.pressAgain()` |
+| listening | first words, chord held, no note or menu | same | `showNoteOnTheVoice`: note by the pointer, no keys |
 | starting, listening | `released()` | same | `end.release(at:)`; ends 0.3 s later |
 | starting, listening | start fails and `!finishing` | none | `failed` → `LiveInk.listening = nil`, `speechProblem = reason` |
 | starting, listening | `finish()` (0.1 s timer says `ListeningEnd.isOver`, or `typedInNote`) | finishing | mic stop queued behind start, `transcriber.finish(timeout: 2)`, then `onFinished` |
@@ -3232,7 +3230,7 @@ Captures speech while the chord is held and a short time after, and turns it int
 | finishing | `finish()`, `cancel()` | — | ignored, `guard !finishing` (`:90`, `:107`) |
 | finishing | `pressedAgain()`, `released()` | finishing | only edit `end`; no new listening starts because `listen()` returns at `guard listening == nil` (`LiveInk+Listening.swift:7`) ([hand-5](#hand-5)) |
 | finishing | transcriber words | — | dropped, `LiveListening.swift:62` |
-| finishing (finish) | `onFinished`, `LiveInk.listening === listening` | none | `doneListening`: `listening = nil`; no note → `heardBeforeNote`; note and `!typedOver` → `spoken`, `note.hear`, and `note.send()` when `liveInkSendWhenQuiet` (default true), which may send while the next stroke is under way ([hand-5](#hand-5)) |
+| finishing (finish) | `onFinished`, `LiveInk.listening === listening` | none | `doneListening`: `listening = nil`; no note → `heardBeforeNote`; note and `!typedOver` → `spoken`, `note.hear`, and `note.send()` with ink when `liveInkSendWhenQuiet` (default true), which may send while the next stroke is under way ([hand-5](#hand-5)) |
 | finishing | `onFinished` after `stopListening` or a new listening | — | dropped by identity, `LiveInk+Listening.swift:25`, `:30` |
 | starting | microphone start fails after `finish()` | finishing | the failure is dropped with no `speechProblem` ([hand-11](#hand-11)) |
 
@@ -3732,6 +3730,7 @@ The note panel a person types into. Created at `showNote` (`LiveInk.swift:616`).
 | created | `reveal` | `revealed` | fade in |
 | `revealed` | `send` (Return) with words | `sent` | letter fades, keys returned |
 | `revealed` | `send` with empty words | `closing` | `dismiss` |
+| `revealed` | `send` with words, no ink (`mayAsk`) | `revealed` | beep |
 | `sent` | `handOver(when:)` | `closing`, `handingOver` | delayed `ready`, then close |
 | `handingOver` | `fadeAway` | `closing`, `handingOver = false` | closes; the delayed `ready` does not run (392, `guard handingOver` at 380) |
 | any | `dismiss` | `closing` | closes |

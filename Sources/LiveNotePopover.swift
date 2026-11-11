@@ -33,6 +33,8 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     var onEscape: (() -> Void)?
     /// The person typed in the note, which takes over from what they say.
     var onTyped: (() -> Void)?
+    /// Whether Return may ask with words: false while there is nothing to ask about.
+    var mayAsk: (() -> Bool)?
     private(set) var target: Target
     /// The agents that answer on the screen (`offer`). A note aimed at one that cannot answer says why
     /// in place of its prompt, and its row in the target menu says why.
@@ -230,12 +232,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         return StateReport.flipped(window.convertToScreen(content.convert(content.bounds, to: nil)))
     }
 
-    /// The words, in global top-left points: where the drawn note's tag goes once they are asked.
-    var tagFrame: CGRect? {
-        guard let window = content.window else { return nil }
-        return StateReport.flipped(window.convertToScreen(content.convert(content.wordsFrame, to: nil)))
-    }
-
     /// Shows the note where it hangs, fading in.
     func reveal() {
         guard !revealed, !closing, content.window != nil else { return }
@@ -357,6 +353,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     func send() {
         guard !sent, !closing else { return }
         let words = content.field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard words.isEmpty || mayAsk?() != false else { return NSSound.beep() }
         let (target, title) = (target, targetTitle)
         if words.isEmpty { dismiss() } else { showSent() }
         onAsk?(words, target, title)
