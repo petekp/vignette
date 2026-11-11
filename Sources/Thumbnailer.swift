@@ -177,14 +177,15 @@ enum Thumbnailer: @unchecked Sendable {
     }
 
     /// A decoded copy whose longest side is at most `maxPixel` pixels, in `space`: the colour space
-    /// of the screen it will be shown on (`NSScreen.colorSpace`), or nil for the file's own. Cached.
+    /// of the screen it will be shown on (`NSScreen.colorSpace`), or nil for the file's own. Cached
+    /// unless `caches` is false: a card of an older chunk would push the newest cards' pictures out.
     /// For a recording, its first frame.
-    static func image(at url: URL, maxPixel: Int, space: CGColorSpace?) -> NSImage? {
+    static func image(at url: URL, maxPixel: Int, space: CGColorSpace?, caches: Bool = true) -> NSImage? {
         if let hit = cached(at: url, maxPixel: maxPixel, space: space) { return hit }
         let decoded = Screenshot.Kind(of: url) == .recording ? posterFrame(url, maxPixel: maxPixel) : thumbnail(url, maxPixel: maxPixel)
         guard let cg = decoded.map({ converted($0, to: space) }) else { return nil }
         let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-        if let modified = modified(url) {
+        if caches, let modified = modified(url) {
             lock.lock()
             insert(url.path, Entry(modified: modified, maxPixel: maxPixel, space: space, image: image, bytes: cg.width * cg.height * 4))
             lock.unlock()
@@ -220,14 +221,14 @@ enum Thumbnailer: @unchecked Sendable {
     /// A card's picture. A file that is not downloaded gets iCloud's thumbnail instead of a decode of
     /// its pixels, which would download it; the thumbnail's shape is kept as the file's header until
     /// the file's own is read.
-    static func cardImage(at url: URL, maxPixel: Int, space: CGColorSpace?) -> NSImage? {
-        guard isDataless(url) else { return image(at: url, maxPixel: maxPixel, space: space) }
+    static func cardImage(at url: URL, maxPixel: Int, space: CGColorSpace?, caches: Bool = true) -> NSImage? {
+        guard isDataless(url) else { return image(at: url, maxPixel: maxPixel, space: space, caches: caches) }
         if let hit = cached(at: url, maxPixel: maxPixel, space: space) { return hit }
         guard let cg = cloudThumbnail(url, maxPixel: maxPixel).map({ converted($0, to: space) }) else { return nil }
         let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
         guard let modified = modified(url) else { return image }
         lock.lock()
-        insert(url.path, Entry(modified: modified, maxPixel: maxPixel, space: space, image: image, bytes: cg.width * cg.height * 4))
+        if caches { insert(url.path, Entry(modified: modified, maxPixel: maxPixel, space: space, image: image, bytes: cg.width * cg.height * 4)) }
         if headers[url.path]?.modified != modified {
             headers[url.path] = (modified, Header(size: NSSize(width: cg.width, height: cg.height), duration: nil, exact: false))
         }
@@ -302,10 +303,10 @@ enum Thumbnailer: @unchecked Sendable {
 
     /// A card's picture, off the main thread, with the file's header as it stands once the picture
     /// is in: for a file that is not downloaded, the shape of iCloud's thumbnail if nothing better was kept.
-    static func loadCard(at url: URL, maxPixel: Int, space: CGColorSpace?,
+    static func loadCard(at url: URL, maxPixel: Int, space: CGColorSpace?, caches: Bool = true,
                          completion: @escaping @MainActor @Sendable (NSImage?, Header?) -> Void) {
         queue.async {
-            let image = self.cardImage(at: url, maxPixel: maxPixel, space: space)
+            let image = self.cardImage(at: url, maxPixel: maxPixel, space: space, caches: caches)
             let header = self.kept(url)
             DispatchQueue.main.async { MainActor.assumeIsolated { completion(image, header) } }
         }

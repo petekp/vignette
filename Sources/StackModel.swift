@@ -10,7 +10,10 @@ final class StackModel: ObservableObject {
     @Published var cards: [Card] = []          // index 0 is newest, drawn at the bottom
     @Published var offscreen: Set<UUID> = []   // cards parked past the right screen edge
     @Published var entering: UUID? = nil       // the one card joining a visible column, for the length of its entrance
-    @Published var lift: [UUID: CGFloat] = [:] // how far below its slot a card shifting up is drawn, springing to 0
+    @Published var lift: [UUID: CGFloat] = [:] // how far below its slot a card shifting up starts, drawn times `liftFraction`
+    /// The part of each card's `lift` still drawn: 1 when the lifts are set, springing to 0. Every
+    /// card shares it, so a card the column builds in mid-spring is drawn where the spring is (`CardColumn`).
+    @Published var liftFraction: CGFloat = 0
     /// Where each card entering a column that already shows cards falls in the slide-in's stagger,
     /// so the first to enter goes at once rather than after the cards that stayed (`StackEntrance`).
     @Published var entranceRanks: [UUID: Int] = [:]
@@ -55,6 +58,25 @@ final class StackModel: ObservableObject {
         didSet { if scroll != oldValue { scrolled(scroll > oldValue) } }
     }
     var scrolled: (_ towardOlder: Bool) -> Void = { _ in }
+    /// The card a drag-select began on. Its selection circle carries the sweep's gesture, which
+    /// ends if the card's view goes.
+    var sweepCard: UUID?
+    /// The cards a removal's relayout carries through the view, kept built while it runs
+    /// (`ThumbnailController.removeCards(where:)`).
+    var carried: Set<UUID> = []
+    /// The cards the column builds wherever they are (`CardColumn`): one in the annotator or in a
+    /// stitch, whose slot a flight lands in; one pressed, dragged out, hovered or carrying a
+    /// drag-select, whose gesture or hover would end with its view; one showing a notice, whose
+    /// overlay keeps its own state; the focused and entering card; and those a relayout carries.
+    var keptBuilt: Set<UUID> {
+        outCards.union(forming).union(carried).union([pressedCard, draggedCard, hoveredCard, focused, entering, sweepCard].compactMap { $0 })
+            .union(cards.lazy.filter { self.notices.notice(on: $0.shot.key) != nil }.map(\.id))
+    }
+    /// Sets each card's lift, drawn whole until `liftFraction` springs.
+    func setLifts(_ lifts: [UUID: CGFloat]) {
+        lift = lifts
+        liftFraction = lifts.isEmpty ? 0 : 1
+    }
     /// How far a two-finger swipe moves the column toward the screen's edge (`StackSwipe`).
     @Published var swipe: CGFloat = 0
     /// The swipe carries the column off the screen, or back, as one piece; the cards' own slide-out is off.

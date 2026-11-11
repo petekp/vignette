@@ -100,3 +100,33 @@ final class CardPicturesTests: XCTestCase {
         XCTAssertFalse(result.drop.contains(0))
     }
 }
+
+final class ColumnSlotsTests: XCTestCase {
+    private let layout = StackLayout(ui: UITweaks())
+    private var sizes: [NSSize] { Array(repeating: NSSize(width: 188, height: 100), count: 10) }
+
+    private func slotBottom(_ index: Int) -> CGFloat { CGFloat(index) * (100 + layout.spacing) }
+
+    func testTheCardsMeetingABandAreEveryCardWithAnyPartInIt() {
+        let band = (slotBottom(3) + 99)...(slotBottom(6) + 1)
+        XCTAssertEqual(layout.cards(meeting: band, sizes: sizes), IndexSet(3..<7))
+    }
+
+    func testABandInTheGapBetweenTwoCardsMeetsNeither() {
+        let band = (slotBottom(4) + 100.5)...(slotBottom(5) - 0.5)
+        XCTAssertTrue(layout.cards(meeting: band, sizes: sizes).isEmpty)
+    }
+
+    func testABandPastEitherEndMeetsOnlyTheCardsThere() {
+        XCTAssertEqual(layout.cards(meeting: -500...50, sizes: sizes), IndexSet(0..<1))
+        XCTAssertEqual(layout.cards(meeting: (slotBottom(9) + 50)...5000, sizes: sizes), IndexSet(9..<10))
+        XCTAssertTrue(layout.cards(meeting: 5000...6000, sizes: sizes).isEmpty)
+    }
+
+    func testALiftedCardMeetsTheBandWhereItIsDrawn() {
+        var lifts = Array(repeating: CGFloat(0), count: 10)
+        lifts[5] = slotBottom(5) - slotBottom(2)
+        let band = (slotBottom(2) + 10)...(slotBottom(2) + 50)
+        XCTAssertEqual(layout.cards(meeting: band, sizes: sizes, lifts: lifts), IndexSet([2, 5]))
+    }
+}

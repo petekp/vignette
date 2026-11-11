@@ -485,7 +485,7 @@ final class ThumbnailController {
         // When no card would be left, they slide out with the panel rather than vanish, and the
         // slide-out's end takes them out. A panel already sliding out is left to that end too.
         if !visible || model.cards.allSatisfy({ urls.contains($0.shot.url) }) { dismiss(by: .removed); return }
-        model.removeCards { urls.contains($0.shot.url) }
+        removeCards { urls.contains($0.shot.url) }
         model.setSelection(model.selection.filter { id in model.cards.contains { $0.id == id } })
         relayout()
     }
@@ -518,12 +518,12 @@ final class ThumbnailController {
         flights.restyle(style, markStyle: markStyle)
         sessionCard?.marks?.restyle(style, markStyle: markStyle)
         guard visible else { return }
-        model.cards = model.cards.map { card in
+        model.cards = model.cards.enumerated().map { index, card in
             let size = layout.cardSize(for: card.pointSize)
             // A file not downloaded keeps its picture, since a decode downloads it; a card far from view keeps none.
             let image = card.image == nil || Thumbnailer.isDataless(card.shot.url) ? card.image
                 : Thumbnailer.image(at: card.shot.url, maxPixel: thumbnailPixels(size: size, pointSize: card.pointSize),
-                                    space: screenSpace) ?? card.image
+                                    space: screenSpace, caches: cachesPicture(at: index)) ?? card.image
             if let marks = card.marks, let drawing = marks.drawing {
                 marks.show(drawing, filling: size, backingScale: screen.backingScaleFactor, style: style, markStyle: markStyle)
             }
@@ -558,7 +558,7 @@ final class ThumbnailController {
         model.forming.formUnion(ids)
         model.forming.insert(result.id)
         if let focused = model.focused, ids.contains(focused) { model.focused = nil }
-        model.removeCards { ids.contains($0.id) }
+        removeCards { ids.contains($0.id) }
         model.clearSelection()
         sweep.end()
         model.cards.insert(result, at: 0)
@@ -1166,7 +1166,7 @@ final class ThumbnailController {
     /// panel from the full-width height instead, so a narrowed stack keeps the panel it comes back to.
     var drawnContentHeight: CGFloat { layout.contentHeight(cards: cardSizes) }
 
-    private var maxScroll: CGFloat { max(0, drawnContentHeight - model.viewport) }
+    var maxScroll: CGFloat { max(0, drawnContentHeight - model.viewport) }
 
     private func scroll(_ event: NSEvent) {
         guard visible else { return }
@@ -1218,16 +1218,6 @@ final class ThumbnailController {
         if model.hoveredCard != id { model.hoveredCard = id }
     }
 
-    private func scrollToReveal(_ index: Int) {
-        let span = layout.cardSpan(index: index, cards: cardSizes)
-        var target = model.scroll
-        if span.top - model.scroll > model.viewport { target = span.top - model.viewport }
-        if span.bottom - model.scroll < 0 { target = span.bottom }
-        target = min(maxScroll, max(0, target))
-        guard target != model.scroll else { return }
-        withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = target }
-    }
-
     // MARK: Internals
 
     private func card(for shot: Screenshot) -> Card? {
@@ -1246,7 +1236,7 @@ final class ThumbnailController {
     /// that is not downloaded is never read here: its card takes the shape kept for it, or the
     /// screen's until iCloud's thumbnail arrives, and a screenshot is downloaded in the background
     /// for the editor. A recording is not downloaded, and its badge shows no length.
-    func makeCard(_ shot: Screenshot, lookup: Thumbnailer.Lookup? = nil) -> Card? {
+    func makeCard(_ shot: Screenshot, lookup: Thumbnailer.Lookup? = nil, caches: Bool = true) -> Card? {
         let header: Thumbnailer.Header
         var notDownloaded = false
         switch lookup ?? Thumbnailer.lookUp(shot.url) {
@@ -1262,7 +1252,7 @@ final class ThumbnailController {
         let card = Card(id: UUID(), shot: shot, image: Thumbnailer.cached(at: shot.url, maxPixel: maxPixel, space: space),
                         pointSize: header.size, size: size, agent: Agent.of(shot.url), duration: header.duration)
         if card.image == nil {
-            Thumbnailer.loadCard(at: shot.url, maxPixel: maxPixel, space: space) { [weak self] image, kept in
+            Thumbnailer.loadCard(at: shot.url, maxPixel: maxPixel, space: space, caches: caches) { [weak self] image, kept in
                 guard let self, self.model.cards.contains(where: { $0.id == card.id }) else { return }
                 if let image { self.replaceImage(of: card, with: image) }
                 if notDownloaded, let kept { self.reshape(card.id, to: kept) }
@@ -1338,8 +1328,9 @@ final class ThumbnailController {
             model.forming = []
             model.focused = nil
             model.entranceRanks = [:]
-            model.lift = [:]
+            model.setLifts([:])
             sweep.end()
+            model.sweepCard = nil
             model.slidingOut = false
             model.scroll = 0
             model.widthScale = 1
@@ -1361,7 +1352,7 @@ final class ThumbnailController {
                 if let entranceOver {
                     for (card, rank) in zip(next, entranceOver.ranks) { model.entranceRanks[card.id] = rank }
                 }
-                model.lift = lift
+                model.setLifts(lift)
             }
             if !lift.isEmpty { springLifts(lift, from: now) }
         }
@@ -1425,7 +1416,7 @@ final class ThumbnailController {
             guard let self else { return }
             first()
             withAnimation(Anim.spring(self.ui.shiftUpDuration)) {
-                self.model.lift = [:]
+                self.model.liftFraction = 0
                 alongside()
             }
         }
@@ -1451,7 +1442,7 @@ final class ThumbnailController {
         layoutPanel(shrinkLater: false, animated: false) {
             model.entering = card.id
             model.cards.insert(card, at: 0)
-            model.lift = lift
+            model.setLifts(lift)
             model.scroll = 0
         }
         orderPanelIn()
