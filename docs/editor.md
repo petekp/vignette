@@ -1,7 +1,7 @@
 # The drawing editor
 
 This is how Vignette's drawing editor behaves. The editor is written in Swift and runs in the app's
-own process. `AGENTS.md` has the rules for changing it.
+own process. `AGENTS.md` says where its rules are.
 
 The host is the app around the editor. It is the annotator (`AnnotationController`), which opens,
 parks and zooms the editor, and the rest of the app, which stores and renders its drawing.

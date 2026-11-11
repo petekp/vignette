@@ -38,7 +38,7 @@ Three places hold what you are most likely to change:
 - `Sources/Config.swift`: the actions list.
 - `Sources/EditorCore.swift`: the editor's tools (`EditorCore.Tool`).
 
-See [AGENTS.md](../AGENTS.md) for the working loop.
+See [docs/rules/driving-the-app.md](rules/driving-the-app.md) for the working loop.
 
 ## Signing
 
