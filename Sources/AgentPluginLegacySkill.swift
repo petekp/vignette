@@ -63,9 +63,11 @@ struct LegacySkillMigrations {
     }
 
     private func roots() -> Set<String> {
-        guard let data = try? Data(contentsOf: file),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let roots = object["roots"] as? [String] else { return [] }
+        guard let data = try? Data(contentsOf: file) else { return [] }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let roots = object["roots"] as? [String] else {
+            Log.write("[plugin] error \(file.path) does not parse; read as no folders")
+            return []
+        }
         return Set(roots)
     }
 

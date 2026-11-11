@@ -1485,7 +1485,7 @@ Tracks one Send press from the bar to the stored request. `AppDelegate.sendDrawi
 **Invariants**
 
 - `sending` stays on from the press until the bar has left, and `prepare` resets it. Checked by: `prepare` at `AnnotationController.swift:166`.
-- A press the editor ignored leaves nothing for the next image. Checked by: `EditorCoreSendTests.testASendPressedAfterTheEditorClosedIsDroppedAndTheNextImagesKeySendsWhereItsOwnBarDoes` ([toolbar-1](#toolbar-1)).
+- A press the editor ignored leaves nothing for the next image. Held by the destination travelling in the input, with no flag outside the core; `EditorCoreSendTests` checks the core's side only ([toolbar-1](#toolbar-1)).
 
 **Late and concurrent answers**
 
@@ -2613,7 +2613,7 @@ Keeps Apple's `com.apple.screencapture` defaults the way Vignette needs them: it
 
 ### AgentPlugins (implicit)
 
-Owner: `AgentPlugin.swift:438` (class), `AppDelegate.swift:276-350` (callers). Tests: `AgentPluginTests.testLaunchMigratesTheOldSkillAndUpdatesOlderPlugins`, `testLaunchInstallsNothingWhereNothingWas`, `testOldSkillFolderGoesAndALinkStays`, `testALaunchLeavesThePluginOffAfterTheSwitchTurnedItOffWhereTheOldSkillIsALink`, `testALaunchThatFindsThePluginBesideALinkedSkillLeavesItOffOnceTheSwitchTurnsItOff`.
+Owner: `AgentPlugin.swift:401` (class), `AppDelegate.swift:276-350` (callers). Tests: `AgentPluginTests.testLaunchMigratesTheOldSkillAndUpdatesOlderPlugins`, `testLaunchInstallsNothingWhereNothingWas`, `testOldSkillFolderGoesAndALinkStays`, `testALaunchLeavesThePluginOffAfterTheSwitchTurnedItOffWhereTheOldSkillIsALink`, `testALaunchThatFindsThePluginBesideALinkedSkillLeavesItOffOnceTheSwitchTurnsItOff`.
 
 Installs, updates and removes the Vignette plugin in Claude Code and Codex, one run at a time on a serial `DispatchQueue("vignette.agent-plugin")`.
 
@@ -2628,7 +2628,7 @@ Installs, updates and removes the Vignette plugin in Claude Code and Codex, one 
 | plugin not on, legacy skill is a link, folder recorded | `launch` | — | — (the switch's off holds) |
 | plugin on, legacy skill present | `launch`, or `install(into:)` succeeding | on | records the folder (`retireLegacySkill`, `AgentPlugin.swift:515`) |
 | plugin not on, no legacy skill | `launch` | — | — |
-| plugin on, marketplace changed or version differs | `launch` | on | `plugin update` (`:492`) |
+| plugin on, marketplace changed or version differs | `launch` | on | `plugin update` (`:458`) |
 | any | `install(into:)` (Settings switch, setup `record`, `install-skill`) | on | stage the marketplace, run the tool's install steps, remove the legacy folder |
 | any | `remove(from:)` (Settings switch) | off | the tool's uninstall steps; "not found" counts as done |
 
