@@ -44,7 +44,7 @@ changed, and the finding that changed it.
 |---|---|
 | [The annotation run](#the-annotation-run) | AnnotatorTransition, AnnotationRun (explicit, composite), EventHold, ThumbnailController, the run's effect layer, AnnotationController session, TitleReveal, WindowRemoval, OutsideClick, FocusReturn |
 | [Flights and zoom](#flights-and-zoom) | TransitionLayer flights, TransitionLayer panel and press, FlightPress, Tween, AnnotatorZoom, Zoom glue: `fitBeforeHide` and `hideWindows`, DimPanel, BackdropPanel |
-| [The corner and the stack](#the-corner-and-the-stack) | CornerPresentation, CornerKeys window side, Panel visibility and dismissal in ThumbnailController, Lone thumbnail timer, `leaveTimer`, CardNotices and its posting timers (explicit value, implicit timers), Stack selection, focus and hover, Stitch converge, shiftUp and card entrance, StackSweep, HotKey, ModifierTap and KeyMonitors, StackAreaReader |
+| [The corner and the stack](#the-corner-and-the-stack) | CornerPresentation, CornerKeys window side, Panel visibility and dismissal in ThumbnailController, Lone thumbnail timer, `leaveTimer`, CardNotices and its posting timers (explicit value, implicit timers), Stack selection, focus and hover, Stitch converge, shiftUp and card entrance, StackSweep, StackSwipe, HotKey, ModifierTap and KeyMonitors, StackAreaReader |
 | [The editor and drawings](#the-editor-and-drawings) | EditorCore, HeldKey, HeldToolLetter, EditorView session, MarkLayers text bitmap (implicit, one per text mark), TypingField, Drawings (implicit, per screenshot key), Rendering and clipboard promise, DragSourceView press |
 | [The toolbar and destinations](#the-toolbar-and-destinations) | AnnotatorToolbar.Model: target and offer, ToolbarOffer (explicit, derived), Send progress: sending, failure, sendingTo, Bar presence: shown, hideGeneration, sliding, Keyboard focus: focus, keyed, tookKeysOnOpen, toolLetter, heldLetter, HeldToolLetter, Target menu pick, SessionListing, AppDelegate.refreshDestinations and listDestinations, DestinationChoice (pure functions, no state), ClaudeCodeConnection: submit, preflight, start, HerdrLauncher.start, CodexConnection: discover and submit, AppServer.converse, AppServerSession (implicit; live ink's), SendOverlay notice animation |
 | [Requests, replies and the screenshots folder](#requests-replies-and-the-screenshots-folder) | Record.Status, SendGrace, Send bookkeeping, Reply.Stage, Reply import pipeline, Clearing and cleanup, Admission limit, FolderWrites pending adds, FolderWrites held-back reports, ScreenshotWatcher (implicit, with explicit pieces), Thumbnailer, CaptureOrigin, ReplyCommand and ReplyProtocol (explicit by order) |
@@ -1051,6 +1051,33 @@ The double-tap-a-modifier shortcut. `KeyMonitors` installs global and local even
 **Late and concurrent answers**
 
 - A global and a local monitor both report one event; only an event newer than the last passes, `KeyMonitors.swift:33`. Callbacks hold `self` weakly.
+
+### StackSwipe (explicit)
+
+Owner: `StackSwipe.swift:13`, run by `StackSwipeDriver` and fed by `ThumbnailController.scroll` (`:1170`). Tests: `StackSwipeTests`.
+
+A sideways two-finger swipe moves the column toward the edge and closes the corner (`docs/rules/stack.md`). **States**: `phase` (`:50`) is `idle`, `touching`, `deciding`, `vertical`, `horizontal(raw)`, `closing` or `leaving`, with `offset`, a spring and `carriesColumn` (`model.swipeExit`).
+
+| State | Event | Next state | Effects |
+|---|---|---|---|
+| not `closing`, `leaving` | `mayBegin` | `touching`; a spring stops | — |
+| not `closing`, `leaving` | `began` | `deciding`; a spring stops | — |
+| `deciding` | `changed` under 3 pt | unchanged | — |
+| `deciding` | `changed` | `vertical` or `horizontal` | `scrollColumn` or `moved` |
+| `horizontal` | `ended` toward the edge fast enough, or past the distance | `closing` | `close`: `dismiss(by: .swipe)` |
+| `horizontal` | other `ended`, `cancelled`, swipes turn off | `idle`, springing to 0 | — |
+| `closing` | `leave` from `slideOut` (`:706`) | `leaving`, springing past the edge | `carriesColumn` |
+| `closing` | the dismissal did not happen | `idle`, springing to 0 | `cancelClose` |
+| `closing`, `leaving` | `presented` from `present` (`:1343`) | `idle`, springing to 0 | `carriesColumn` until it lands |
+| any | `reset` from the removal (`:719`) | `idle`, offset 0 | — |
+| `vertical` | `ended` | `idle` | `scrollColumn` |
+| not `closing`, `leaving` | momentum | unchanged | `scrollColumn` after a vertical gesture |
+| not `closing`, `leaving` | no phase (a wheel) | unchanged | `scrollColumn` |
+| `closing`, `leaving` | any scroll | unchanged | — |
+
+**Invariants**
+
+- Momentum never moves the column, and a gesture without `began` never swipes. A leaving column is never caught. Checked by: `StackSwipeTests`.
 
 ### StackAreaReader (implicit)
 
