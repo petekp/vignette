@@ -19,6 +19,12 @@ extension ThumbnailController {
         pictures.reset()
     }
 
+    /// The scroll changed, by any path. Checked on the next turn, since the scroll often changes
+    /// in the middle of a change to the cards.
+    func scrolled(towardOlder: Bool) {
+        DispatchQueue.main.async { [weak self] in self?.columnMoved(towardOlder: towardOlder) }
+    }
+
     /// The column moved, or older cards were asked for by a scroll toward them: the next chunk loads
     /// once the top is near, and the pictures follow the view.
     func columnMoved(towardOlder: Bool) {
@@ -39,7 +45,8 @@ extension ThumbnailController {
     }
 
     private func loadOlder() {
-        older.load(shown: Set(model.cards.map(\.shot.key)), limit: Settings.shared.data.recentCount) { [weak self] looked in
+        older.load(top: model.cards.last?.shot.key, shown: Set(model.cards.map(\.shot.key)),
+                   limit: Settings.shared.data.recentCount) { [weak self] looked in
             self?.addOlder(looked)
         }
     }
@@ -61,44 +68,51 @@ extension ThumbnailController {
             model.offscreen.formUnion(ids)
             for (rank, id) in ids.enumerated() { model.entranceRanks[id] = rank }
         }
-        DispatchQueue.main.async { [weak self] in self?.model.offscreen.subtract(ids) }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.visible else { return }
+            self.model.offscreen.subtract(ids)
+        }
         keepPictures()
     }
 
     /// Lets the pictures of cards far from the view go and asks for the ones coming near
-    /// (`CardPictures.plan`). A card in the annotator, in a stitch, pressed, dragged or hovered
-    /// keeps its own.
+    /// (`CardPictures.plan`). A card in the annotator, in a stitch, selected, pressed, dragged,
+    /// hovered or focused keeps its own, since a flight out of the column carries the card's picture.
+    /// So do the newest `recentCount`, which a capture or a stitch springs the column back to.
     func keepPictures() {
-        guard visible, model.cards.count > CardPictures.keptAlways else { return }
-        let held: Set<UUID> = model.outCards.union(model.forming)
+        let recentCount = Settings.shared.data.recentCount
+        guard visible, model.cards.count > max(CardPictures.keptAlways, recentCount) else { return }
+        let held: Set<UUID> = model.outCards.union(model.forming).union(model.selection)
             .union([model.pressedCard, model.draggedCard, model.hoveredCard, model.focused].compactMap { $0 })
         let cards = model.cards
         let plan = CardPictures.plan(heights: cardSizes.map(\.height), spacing: layout.spacing,
                                      view: model.scroll...(model.scroll + model.viewport),
                                      holding: cards.map { $0.image != nil || pictures.arrived[$0.id] != nil },
-                                     keeps: { held.contains(cards[$0].id) })
+                                     keepsAll: recentCount, keeps: { $0 < recentCount || held.contains(cards[$0].id) })
         for index in plan.want where !pictures.asked.contains(cards[index].id) { askPicture(of: cards[index]) }
         guard !plan.drop.isEmpty else { return }
         let dropped = Set(plan.drop.map { cards[$0].id })
         model.cards = model.cards.map { dropped.contains($0.id) ? $0.with(image: nil) : $0 }
     }
 
-    /// The card's picture from the cache at once, or decoded on the thumbnail queue and given to the
-    /// card with the others that arrive in the same turn.
+    /// The card's picture from the cache, or decoded on the thumbnail queue, given to the card with
+    /// the others that arrive within `CardPictures.arrivalWindow`. A picture that does not decode is
+    /// not asked for again in this column.
     private func askPicture(of card: Card) {
         let url = card.shot.url
         let maxPixel = Thumbnailer.isDataless(url) ? cloudThumbnailPixels : thumbnailPixels(size: card.size, pointSize: card.pointSize)
         if let image = Thumbnailer.cached(at: url, maxPixel: maxPixel, space: screenSpace) { return arrive(image, for: card.id) }
         pictures.asked.insert(card.id)
         Thumbnailer.loadCard(at: url, maxPixel: maxPixel, space: screenSpace) { [weak self] image, _ in
-            guard let self, self.pictures.asked.remove(card.id) != nil, let image else { return }
+            guard let self, self.pictures.asked.contains(card.id), let image else { return }
+            self.pictures.asked.remove(card.id)
             self.arrive(image, for: card.id)
         }
     }
 
     private func arrive(_ image: NSImage, for id: UUID) {
         if pictures.arrived.isEmpty {
-            DispatchQueue.main.async { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + CardPictures.arrivalWindow) { [weak self] in
                 guard let self else { return }
                 let arrived = self.pictures.arrived
                 self.pictures.arrived = [:]

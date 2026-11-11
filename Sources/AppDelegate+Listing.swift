@@ -24,7 +24,7 @@ extension AppDelegate {
     func listOlderShots() {
         thumbnail.older.listing = { [weak self] in
             guard let watcher = self?.watcher else { return nil }
-            return { after, shown, limit in watcher.older(after: after, shown: shown, limit: limit) }
+            return { after, top, shown, limit in watcher.older(after: after, top: top, shown: shown, limit: limit) }
         }
         thumbnail.older.isShown = { [weak self] key in self?.isShown(key) ?? true }
     }

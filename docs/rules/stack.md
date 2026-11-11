@@ -160,10 +160,13 @@
   asks for the next `recentCount` screenshots older than the oldest card (`OlderShots`,
   `ThumbnailController+Older.swift`). Up arrow on the top card asks too, and the focus moves on to
   the first new card once the chunk is in. The order is the index's, read by
-  `ScreenshotWatcher.older(after:shown:limit:)` on a background queue, which also looks up each
-  file's header. Only the person's filter (`AppDelegate.isShown`) runs on the main thread, so a chunk
-  never holds up a frame of the scroll. Each chunk starts after the last file the one before took
-  (`ScreenshotWatcher.Place`, a date and a name), so a file removed meanwhile does not move it.
+  `ScreenshotWatcher.older(after:top:shown:limit:)` on a background queue, which also looks up each
+  file's header. The main thread never lists the folder: it runs the person's filter
+  (`AppDelegate.isShown`), then makes the chunk's cards and lays out the column. The first chunk
+  starts after the top card, so a card that joined the bottom with an old date moves nothing. Each
+  later chunk starts after the last file the one before took (`ScreenshotWatcher.Place`, a date and
+  a name), so a file removed meanwhile does not move it. Every change to `StackModel.scroll` is
+  checked on the next turn (`StackModel.scrolled`), so a drag-select's auto-scroll loads chunks too.
 - A chunk joins the column in one update with animations off, as `present` changes it. The scroll
   counts from the newest card, so the cards in view do not move while the column grows at its top.
   The new cards slide in from the screen's edge, staggered from the lowest, as cards entering above
@@ -172,10 +175,10 @@
   more. Only the stack the shortcut opened loads older cards; the corner's own cards made into the
   stack by a selection are the latest captures and nothing more. Showing a new column starts over
   (`newColumn`): the next shortcut opens the newest `recentCount`, and a chunk still being read is
-  dropped. Once a chunk is in, a new capture no longer drops the oldest card
+  dropped. Once a chunk is asked for, a new capture no longer drops the oldest card
   (`OlderShots.columnLimit`), since the oldest are the cards the person scrolled to. Cmd+A selects
-  every card in the column, chunks included, and nothing that is not loaded. A column of more than
-  100 cards lets pictures go far from the view (`CardPictures`, the memory rule). `[state]
+  every card in the column, chunks included, and nothing that is not loaded. A column longer than
+  100 cards and `recentCount` lets pictures go far from the view (`CardPictures`, the memory rule). `[state]
   stack.older` gives `loading`, `reachedOldest` and `added`. The column still lays out every card
   it holds, so each frame of a long column's scroll and narrowing costs more with every card.
 - A card joining the open stack is not animated as a layout change. `ThumbnailController.shiftUp`

@@ -12,11 +12,14 @@ extension ScreenshotWatcher {
     }
 
     /// The files after `place` in the stack's order, at most `limit` of them, and whether more
-    /// follow. With no `place`, the files after the oldest of `shown` that the index holds, or every
+    /// follow. With no `place`, the files after `top`, the column's top card: a card that joined the
+    /// bottom with an old date, a file put back from the Trash, would skip the files between them.
+    /// When the index does not hold `top`, the files after the oldest of `shown` it holds, or every
     /// file when it holds none of them. A name in `shown` is never answered.
-    static func older(from files: [String: Date], after place: Place?, shown: Set<String>,
+    static func older(from files: [String: Date], after place: Place?, top: String?, shown: Set<String>,
                       limit: Int) -> (places: [Place], more: Bool) {
-        let start = place ?? files.lazy.filter { shown.contains($0.key) }.map { Place(date: $0.value, name: $0.key) }.max()
+        let start = place ?? top.flatMap { name in files[name].map { Place(date: $0, name: name) } }
+            ?? files.lazy.filter { shown.contains($0.key) }.map { Place(date: $0.value, name: $0.key) }.max()
         var places = files.lazy.map { Place(date: $0.value, name: $0.key) }
             .filter { place in !shown.contains(place.name) && start.map { $0 < place } ?? true }
             .sorted()
@@ -25,11 +28,14 @@ extension ScreenshotWatcher {
         return (places, more)
     }
 
-    /// `older(from:after:shown:limit:)` on the index, as keys. It sorts the whole index, so it is
+    /// `older(from:after:top:shown:limit:)` on the index, as keys. It sorts the whole index, so it is
     /// for a background queue: the main thread never lists the folder.
-    func older(after place: Place?, shown: Set<ScreenshotKey>, limit: Int) -> (shots: [(key: ScreenshotKey, place: Place)], more: Bool) {
-        let names = Set(shown.filter { $0 == ScreenshotKey(folder: folder, name: $0.name) }.map(\.name))
-        let found = Self.older(from: candidates(), after: place, shown: names, limit: limit)
+    func older(after place: Place?, top: ScreenshotKey?, shown: Set<ScreenshotKey>,
+               limit: Int) -> (shots: [(key: ScreenshotKey, place: Place)], more: Bool) {
+        let inFolder = { (key: ScreenshotKey) in key == ScreenshotKey(folder: self.folder, name: key.name) }
+        let names = Set(shown.filter(inFolder).map(\.name))
+        let found = Self.older(from: candidates(), after: place, top: top.flatMap { inFolder($0) ? $0.name : nil },
+                               shown: names, limit: limit)
         return (found.places.map { (ScreenshotKey(folder: folder, name: $0.name), $0) }, found.more)
     }
 }

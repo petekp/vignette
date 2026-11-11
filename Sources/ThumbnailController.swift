@@ -99,6 +99,7 @@ final class ThumbnailController {
         keys.changed = { [weak self] old, new in self?.presentationChanged(from: old, to: new) }
         flights.onPress = { [weak self] id, event in self?.flightPressed(id, event) }
         panel.onScroll = { [weak self] event in self?.scroll(event) }
+        model.scrolled = { [weak self] in self?.scrolled(towardOlder: $0) }
         model.onAction = { [weak self] action, cards in
             guard let self else { return }
             if cards.count == 1, let index = self.model.cards.firstIndex(where: { $0.id == cards[0].id }) { self.scrollToReveal(index) }
@@ -1224,9 +1225,7 @@ final class ThumbnailController {
         if span.bottom - model.scroll < 0 { target = span.bottom }
         target = min(maxScroll, max(0, target))
         guard target != model.scroll else { return }
-        let up = target > model.scroll
         withAnimation(Anim.spring(ui.relayoutDuration)) { model.scroll = target }
-        columnMoved(towardOlder: up)
     }
 
     // MARK: Internals
