@@ -17,6 +17,15 @@
   rest of the inset. `StackLayout.inset` is therefore at least that room plus `shadowFade`, so a
   shadow bigger than `ui.panelInset` grows the panel around the column instead of being cut off.
   The flight's shadow is cast by the clipped image, before the ring, for the same reason.
+- A card dragged out of the stack hands over to its drag image, and the drag image to the pour at a
+  drop (`DropLanding`), with nothing changing in between. `DragSourceView.lift` draws the drag image
+  with `CardView`'s views and modifiers: corners, shadow, marks and resting border, at the card's
+  scale on screen and on its device pixels, in a clear margin that holds the shadow. The pour bends
+  that same bitmap at that frame and draws no corners or shadow of its own. On screen the card casts
+  one shadow from its image and matte together, and `ImageRenderer` casts one from each, so `lift`
+  composites them first (`compositingGroup`). Compared through the window server, with the card
+  pressed and a drawing on it, the two differ by 0.2 to 0.6 levels of 255 on average. The rest is
+  one-pixel edge rows and a shadow up to 7 levels lighter beside the card.
 - The backdrop's progressive blur is a stack of masked NSVisualEffectViews with different radii.
   The private CAFilter variableBlur ignores its mask when the backdrop renders in the window
   server on macOS 15, and a bare CABackdropLayer renders black. Do not retry. The band masks are
