@@ -46,8 +46,24 @@ final class IdentityTests: XCTestCase {
     }
 
     func testATestLaunchOnAScratchHomeKeepsItsDataInThatHome() {
-        let scratch = dir.appendingPathComponent("test")
-        XCTAssertEqual(dataHome(home: scratch, settings: scratch.appendingPathComponent("settings.json")), scratch.path)
+        let scratch = dir.appendingPathComponent("scratch-home")
+        XCTAssertEqual(dataHome(home: scratch, settings: dir.appendingPathComponent("test/settings.json")), scratch.path)
+    }
+
+    func testATestLaunchOnAScratchHomeThatLinksIntoThePersonsLibraryKeepsItsDataInTheTemporaryFolder() throws {
+        let scratch = dir.appendingPathComponent("scratch-home")
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: scratch.appendingPathComponent("Library"),
+                                                   withDestinationURL: person.appendingPathComponent("Library"))
+        XCTAssertEqual(dataHome(home: scratch, settings: dir.appendingPathComponent("test/settings.json")), temporary.path)
+    }
+
+    func testATestLaunchOnThePersonsHomeWithARelativeOrRootSettingsFileKeepsItsDataInTheTemporaryFolder() {
+        for settings in ["settings.json", "/settings.json"] {
+            let folder = Launch.dataHome(bundleID: "com.example.vignette", home: person, environment: ["VIGNETTE_SETTINGS": settings],
+                                         personHome: person, temporary: dir.appendingPathComponent("temporary"))
+            XCTAssertEqual(folder.path, temporary.path, settings)
+        }
     }
 
     func testATestLaunchNeverGetsThePersonsOwnFoldersWhereverItsSettingsFileIs() {

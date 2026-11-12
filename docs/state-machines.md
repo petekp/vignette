@@ -3575,13 +3575,13 @@ Tells Settings, Setup and note waits which agents can answer, and runs Codex sig
 
 ### CodexLogin (implicit)
 
-Owner: `CodexSignIn.swift:34`. Tests: none.
+Owner: `CodexSignIn.swift:36`. Tests: none.
 
 One Codex sign-in or sign-out process. **States**: `done` (completion, once), `session`, `loginID`, `limit` timer (15 s to start, 10 min for the sign-in).
 
 **Invariants**
 
-- `finish` is the one exit. It clears `done` first, so cancel, completion, process end and the timer cannot report twice. Checked by: the `guard let done` at `CodexSignIn.swift:145`.
+- `finish` is the one exit. It clears `done` first, so cancel, completion, process end and the timer cannot report twice. Checked by: the `guard let done` at `CodexSignIn.swift:147`.
 
 **Late and concurrent answers**
 

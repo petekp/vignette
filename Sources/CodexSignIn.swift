@@ -6,9 +6,11 @@ import AppKit
 /// (docs/adr/0026-codex-answers-live-ink-too.md).
 enum CodexSignIn {
     /// Vignette's own Codex home: none of the person's config, instructions, memories or sessions. It
-    /// is in the app's Application Support folder, which a test launch never shares with the
-    /// person's own app (`Launch.dataHome`).
-    nonisolated static let defaultHome: URL? = Identity.applicationSupportURL.appendingPathComponent("live-ink/codex-home", isDirectory: true)
+    /// is in the app's Application Support folder (`Launch.dataHome`). A test launch on the person's
+    /// own home has none, as it runs no agent tool there (`AgentPlugins.runsNoTool`).
+    nonisolated static let defaultHome: URL? =
+        Launch.isOnPersonsHome(AgentPlugin.appHome, environment: AgentPlugin.appEnvironment, personHome: AgentPlugin.personHome)
+            ? nil : Identity.applicationSupportURL.appendingPathComponent("live-ink/codex-home", isDirectory: true)
 
     /// Whether Vignette's Codex home holds a ChatGPT sign-in. Only whether the tokens are there is
     /// read. It reads a file, so it runs off the main thread.

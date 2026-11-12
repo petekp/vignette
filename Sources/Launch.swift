@@ -2,8 +2,9 @@ import Foundation
 
 /// A launch with `VIGNETTE_SETTINGS` set is a test launch. It reads and writes that settings file and
 /// its own screenshot defaults, and reaches nothing else of the person's: no login item, no folder
-/// the person's own app stores data in, and no update feed, agent folder or agent tool the
-/// environment does not name.
+/// under `Library` the person's own app stores data in, and no update feed, agent folder or agent
+/// tool the environment does not name. With the person's app's bundle id, it shares that app's
+/// defaults domain.
 enum Launch {
     static let settingsPath = settingsPath(in: ProcessInfo.processInfo.environment)
     static let isTest = settingsPath != nil
@@ -23,18 +24,23 @@ enum Launch {
     /// The folder that stands in for the home folder under `storedDataFolders`. It is `home`, except
     /// in a test launch on the person's own home, where `home`'s would be the person's own app's
     /// folders whenever the bundle id is the same. There it is the settings file's folder, laid out
-    /// as a home, so the reply helper run with `HOME` set to it takes the copy's tickets. When that
-    /// folder's would still be the person's own, or inside them, it is `<temporary>/<bundle id>`.
+    /// as a home, so the reply helper run with `HOME` set to it takes the copy's tickets. In a test
+    /// launch, when that folder is not an absolute folder below the root, or its folders would still
+    /// be the person's own or inside them, it is `<temporary>/<bundle id>`.
     static func dataHome(bundleID: String, home: URL, environment: [String: String], personHome: URL, temporary: URL) -> URL {
-        guard isOnPersonsHome(home, environment: environment, personHome: personHome),
-              let settings = settingsPath(in: environment) else { return home }
-        let beside = URL(fileURLWithPath: (settings as NSString).expandingTildeInPath).deletingLastPathComponent()
-        let sharesThePersonsFolders = storedDataFolders.contains { folder in
-            let own = comparablePath(personHome.appendingPathComponent(folder).appendingPathComponent(bundleID))
-            let copy = comparablePath(beside.appendingPathComponent(folder).appendingPathComponent(bundleID))
+        guard let settings = settingsPath(in: environment) else { return home }
+        let settingsFile = (settings as NSString).expandingTildeInPath
+        let beside = URL(fileURLWithPath: settingsFile).deletingLastPathComponent()
+        let isOnPersonsHome = isOnPersonsHome(home, environment: environment, personHome: personHome)
+        let settingsFolderIsBelowTheRoot = settingsFile.hasPrefix("/") && beside.path != "/"
+        let folder = isOnPersonsHome ? beside : home
+        let sharesThePersonsFolders = storedDataFolders.contains { stored in
+            let own = comparablePath(personHome.appendingPathComponent(stored).appendingPathComponent(bundleID))
+            let copy = comparablePath(folder.appendingPathComponent(stored).appendingPathComponent(bundleID))
             return copy == own || copy.hasPrefix(own + "/")
         }
-        return sharesThePersonsFolders ? temporary.appendingPathComponent(bundleID, isDirectory: true) : beside
+        let folderIsTheCopysOwn = (!isOnPersonsHome || settingsFolderIsBelowTheRoot) && !sharesThePersonsFolders
+        return folderIsTheCopysOwn ? folder : temporary.appendingPathComponent(bundleID, isDirectory: true)
     }
 
     /// `url`'s path with every link resolved, as far as its folders exist, and without case, as APFS

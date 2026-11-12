@@ -67,9 +67,10 @@
   `VignetteReplyCommand` (project.yml): a binary without the command would start the app and
   replace the running instance. The ticket decides what runs, so the script takes only a ticket in
   `~/Library/Application Support/<that app's bundle id>/requests/<request id>/`, with `~` the
-  agent's `HOME`. A test copy keeps its requests under its own home or, on the person's, under its
-  settings file's folder (`Launch.dataHome`), so an agent answering it runs the script with `HOME`
-  set to that folder, as the end-to-end runner does. It finds
+  agent's `HOME`. A test copy keeps its requests under its own home or, on the person's, under the
+  folder its launch logs in `[app] test launch: … stores its data under <folder>/Library`
+  (`Launch.dataHome`), so an agent answering it runs the script with `HOME` set to that folder, as
+  the end-to-end runner does with its scratch home. It finds
   `--ticket` the way `ReplyCommand.Options` does, and the command refuses a ticket another app
   issued (`checkIssuer`); change the two parsers together. The file is also Python that hands
   itself to sh, for agents that still hold the version 3 instructions. The command checks the marks

@@ -23,8 +23,8 @@
   `failed`. In a test launch whose Claude Code folder is the person's, Send reads neither its
   `history.jsonl` nor its `projects` folder: `StartableSessions` and
   `ClaudeCodeConnection.transcripts` read `AgentPlugin.claudeRoot`, which is nil there. Such a
-  launch keeps its marketplace and its inboxes under its settings file's folder, never in the
-  person's own app's Application Support (`Launch.dataHome`). So it never rewrites the marketplace
+  launch keeps its marketplace and its inboxes under the folder `Launch.dataHome` gives, never in the
+  person's own app's Application Support. So it never rewrites the marketplace
   the person's agents read, and it lists none of their sessions. `AgentPlugins` takes the home folder, the
   environment and the person's home as parameters, and gives each tool that home as `HOME`. Its
   `init()` and the `AgentPlugin.app…` entry points (`AgentPluginFolders.swift`) read the app's own.

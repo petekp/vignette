@@ -148,30 +148,31 @@ Four launch tests cover these: `testATestLaunchOnThePersonsHomeRunsNoAgentToolEv
 
 ## The person's own app's stored data (added 2026-11-11)
 
-A test launch on the person's own home kept its Application Support and Caches at
-`~/Library/Application Support/<bundle id>` and `~/Library/Caches/<bundle id>`. Every checkout builds
-the shipped bundle id, so those were the person's own app's folders. Such a copy read their Claude Code
-session inboxes and the transcript each names, and a Send wrote into a real session's inbox. Its
-launch rewrote the marketplace their agents read in place, so the skill's `open` commands named the
-test build. It also read and changed their drawings and requests, and removed their old web editor
-data. A unit test run on this Mac is such a launch, since the test scheme sets `VIGNETTE_SETTINGS`:
-before the change, every folder it named was under the person's `~/Library`.
+A test launch on the person's own home kept its Application Support, Caches and WebKit folders at
+`~/Library/<folder>/<bundle id>`. Every checkout builds the shipped bundle id, so those were the
+person's own app's folders. Such a copy read their Claude Code session inboxes and the transcript each
+names, and a Send wrote into a real session's inbox. Its launch rewrote the marketplace their agents
+read in place, so the skill's `open` commands named the test build. It also read and changed their
+drawings and requests, and removed their old web editor data.
 
 `Launch.dataHome` now decides where those folders hang from, in one place, whatever the bundle id:
 
 - A launch without `VIGNETTE_SETTINGS`: the home folder, as before.
 - A test launch with `CFFIXED_USER_HOME`, as the end-to-end copies are: that home, as before.
 - A test launch on the person's own home: the settings file's folder, laid out as a home, so
-  `<settings folder>/Library/Application Support/<bundle id>`. The launch logs
-  `[app] test launch: <home> is the person's own home folder, so this copy stores its data under
-  <folder>/Library; …`.
-- When that folder's would still be the person's own or inside them, as for a settings file in the home
-  folder itself: `<the user's temporary folder>/<bundle id>`.
+  `<settings folder>/Library/Application Support/<bundle id>`.
+- A test launch whose folder would still reach the person's own folders, as for a settings file in
+  the home folder itself or a scratch home whose `Library` links into theirs, or whose settings path is
+  relative or in `/`: `<the user's temporary folder>/<bundle id>`.
+
+When the folder is not the home folder, the launch logs `[app] test launch: <home>/Library would reach
+the person's own app's data, so this copy stores its data under <folder>/Library; …`.
 
 Every store follows: the inboxes, the marketplace and its `scripts/inbox-root`, the old-skill record,
-the drawings, the requests and replies, live ink's folder, its Codex home, and the leftovers a launch
-removes. `CodexSignIn` no longer needs its own test-launch guard, so such a copy signs Codex in to a
-Codex home of its own when `VIGNETTE_CODEX` names one. The reply helper takes a ticket only under
+the drawings, the requests and replies, live ink's folder and the leftovers a launch removes. A test
+launch on the person's own home still has no Codex home (`CodexSignIn.defaultHome`), since it runs no
+agent tool there. The reply helper takes a ticket only under
 `$HOME/Library/Application Support/<bundle id>`, so an agent answering such a copy runs it with `HOME`
-set to the copy's settings folder. The log (`~/Library/Logs/<name>.log`) and the app's defaults do not
-move. `IdentityTests` covers the decision.
+set to the copy's data folder. The log (`~/Library/Logs/<name>.log`) and the app's defaults domain do
+not move, so a copy with the shipped bundle id still writes the person's app's defaults.
+`IdentityTests` covers the decision.
