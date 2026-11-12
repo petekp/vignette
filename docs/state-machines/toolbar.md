@@ -14,7 +14,7 @@ Holds which session Send goes to for the open image. `AnnotationController.begin
 - `destinations` (`:14`): the last list answered for this image. `startable` (`:16`): rows Send would start.
 - `listed` (`:18`): every client has answered. `whole` (`:22`): the last complete list, possibly the image before's.
 - `replyTo` (`:25`): the session this image came from. `target` (`:27`): the chosen destination.
-- `picked` (`:41`): the person chose the target. `keepsPick(sendingTo:)` reads it: a Send to the picked target, or to a target marked `.kept`, sets or refreshes the kept pick (the next machine). `carried` (`:44`): the target is the image before's and waits for this image's first deciding answer.
+- `picked` (`:41`): the person chose the target. `isHandPick(_:)` reads it, and a Send to a hand pick sets the kept pick (the next machine). `carried` (`:44`): the target is the image before's and waits for this image's first deciding answer.
 - `offer` (`:131`) is derived (next machine). `reportOffer` (`:139`) calls `onOfferChanged` only when the offer changed.
 
 A `decided` answer is one `DestinationChoice` marks as settled: complete, or any session marked by herdr.
@@ -50,7 +50,7 @@ Events: `begin(replyTo:carryingTarget:)` (`:148`, sent by `beginDestinations` wi
 
 ### Kept pick: AnnotationController.keptPick (implicit)
 
-Owner: `AnnotationController.keptPick`, driven in `AnnotationController+Send.swift`. The window is `DestinationChoice.KeptPick.lasts`. Tests: `DestinationChoiceTests.testSendStartsOnTheKeptPickBeforeTheAgentsAppAndHerdrsFocus`, `testSendSettlesOnNothingElseUntilTheKeptPickIsListedOrEveryClientHasAnsweredAfresh`, `testAKeptPickClearedToANewIdIsNotFoundAgainByItsProject`; `ToolbarOfferTests.testOnlyASendToAHandPickOrToTheKeptPickKeepsIt`, `testAKeptPickSettlesASwappedBarWithoutShowingAnotherSessionFirst`.
+Owner: `AnnotationController.keptPick`, driven in `AnnotationController+Send.swift`. The window is `DestinationChoice.KeptPick.lasts`. Tests: `DestinationChoiceTests` (the tests named for the kept pick); `ToolbarOfferTests.testOnlyTheTargetPickedInTheMenuIsAHandPick`, `testAKeptPickSettlesASwappedBarWithoutShowingAnotherSessionFirst`.
 
 The session Send starts on after the person picked it in the target's menu and sent to it. It spans openings and lives in memory only.
 
@@ -60,21 +60,23 @@ The session Send starts on after the person picked it in the target's menu and s
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| any | `sent(to:)` from `AppDelegate.submit` once the request is stored, `model.keepsPick` true | kept (`sentAt` now) | `[send] kept <address> project=<detail>` |
-| any | `sent(to:)`, `keepsPick` false (a Reply, or a start Vignette chose) | unchanged | — |
+| kept | `sent(to:)` from `AppDelegate.submit` once the request is stored, 10 minutes since `sentAt` | none, then as below | `[send] kept ended <address> reason=time` |
+| any | `sent(to:)`, a Send to the hand pick (`model.isHandPick`) or to the kept session (`KeptPick.after`) | kept (`sentAt` now) | `[send] kept <address> project=<detail>` |
+| any | `sent(to:)`, a Reply, or a Send to a start Vignette chose | unchanged | — |
 | kept | `beginDestinations`, 10 minutes since `sentAt` | none | `[send] kept ended <address> reason=time` |
 | kept | `beginDestinations`, within 10 minutes | kept | answers `session`, passed to `Asker.send(kept:)` for this opening |
 | kept | `destinationsAnswered`, `answer.keptIsGone` | none | `[send] kept ended <address> reason=gone` |
 
 **Invariants**
 
-- A pick that is never sent keeps nothing. Checked by: `testOnlyASendToAHandPickOrToTheKeptPickKeepsIt`.
-- A Reply neither sets, refreshes nor ends it. Checked by: the same test for set and refresh; nothing ends it but time and `keptIsGone`.
+- A pick that is never sent keeps nothing. Checked by: `DestinationChoiceTests.testOnlyASendToAHandPickOrToTheKeptPickKeepsIt`, `ToolbarOfferTests.testOnlyTheTargetPickedInTheMenuIsAHandPick`.
+- A Reply neither sets, refreshes nor ends it. Checked by: the first of those for set and refresh; nothing ends it but time and `keptIsGone`.
+- A listing that failed does not end it: `keptIsGone` needs the kept session's agent to have listed some session. Checked by: `testAnAgentThatListedNoSessionDoesNotEndTheKeptPick`. A Codex listing that times out takes 8 s, and the target waits for it only when the kept Codex list lacks the thread.
 - Until the kept session is listed, or every client has answered afresh, no other session settles the target. Checked by: `testSendSettlesOnNothingElseUntilTheKeptPickIsListedOrEveryClientHasAnsweredAfresh`, `testAKeptPickSettlesASwappedBarWithoutShowingAnotherSessionFirst`.
 
 **Late and concurrent answers**
 
-- An opening reads the window once, at `beginDestinations`; a pick that expires while the image is open still holds for that image.
+- An opening reads the window once, at `beginDestinations`, so a pick that expires while the image is open still starts that image. The send checks the window again, so a send after it ends does not start it again.
 - A send closes its opening, so no answer of the opening that set the kept pick reaches `destinationsAnswered` after it.
 - A kept session that is still starting (a Continue last session or New session row) is not listed until its inbox is up, up to 45 s; an opening in that time finds it gone.
 

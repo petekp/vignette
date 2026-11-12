@@ -191,12 +191,7 @@ final class AnnotatorToolbar {
             carried = false
         }
 
-        /// Whether a send to `destination` keeps it as Send's start (`DestinationChoice.KeptPick`): a
-        /// Send to the target picked in the menu, or to the target the kept pick started on.
-        func keepsPick(sendingTo destination: AgentDestination) -> Bool {
-            guard offer.isSend, let target, target.id == destination.id else { return false }
-            return picked || target.focus == .kept
-        }
+        func isHandPick(_ destination: AgentDestination) -> Bool { picked && target?.id == destination.id }
     }
 
     let panel: ToolbarPanel

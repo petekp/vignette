@@ -33,6 +33,15 @@ enum DestinationChoice {
         let sentAt: Date
 
         func holds(at now: Date) -> Bool { now.timeIntervalSince(sentAt) < Self.lasts }
+
+        /// The kept pick after a send from the editor stored its request, given `kept` while it
+        /// still holds. A Send to the session picked by hand keeps it, and a Send to the kept pick
+        /// keeps it for longer. A Reply, or a Send elsewhere, leaves `kept` as it was.
+        static func after(sendTo destination: AgentDestination, isSend: Bool, handPicked: Bool,
+                          kept: KeptPick?, at now: Date) -> KeptPick? {
+            guard isSend, handPicked || kept?.session.id == destination.id else { return kept }
+            return KeptPick(session: destination, sentAt: now)
+        }
     }
 
     /// One answer from the listing, and the pick made from it.
@@ -52,7 +61,8 @@ enum DestinationChoice {
         /// The sessions Vignette can start, as the listing found them. Only a person's pick starts a
         /// process, so they are never picked and only the menus show them.
         var startable: [AgentDestination] = []
-        /// Every client answered afresh without the kept pick's session, so the kept pick has ended.
+        /// Every client answered afresh, and its agent listed sessions without the kept pick's, so the
+        /// kept pick has ended. An agent that listed none may have failed to answer.
         var keptIsGone = false
     }
 
@@ -146,7 +156,7 @@ enum DestinationChoice {
             if let index = list.firstIndex(where: { $0.id == kept.id }) {
                 list[index].focus = .kept
             } else if everyAnswerIsFresh {
-                keptIsGone = true
+                keptIsGone = list.contains { $0.client == kept.client }
             } else {
                 // A later answer may still list it, so nothing settles on another session meanwhile.
                 return Answer(list: list, complete: false, decided: false, pick: nil, startable: candidates.startable)

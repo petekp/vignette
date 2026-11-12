@@ -30,12 +30,15 @@
   minutes, and a short window drops a pick once he moves to other work. It comes before every rule
   below, the Codex app's thread included, so one rule says where Send starts. It ends when the 10
   minutes pass, when a Send goes to another hand pick, which is kept instead, or when every client
-  has answered afresh without it. A session that `/clear` gave a new id is gone: no guess at the
+  has answered afresh without it, its agent's list holding other sessions: an agent that listed
+  none may have failed to answer, so the image starts on the usual choice and the pick stays. A session that `/clear` gave a new id is gone: no guess at the
   same one replaces it, since no send in two weeks of Pete's log was refused as cleared. A pick that
   is never sent keeps nothing, so a first send is never surprised. A Reply neither sets, refreshes
   nor ends it, and a card that offers Reply still offers Reply. It is kept in memory only. Codex
   lists only the threads used last, so a kept Codex thread is asked for by its id
-  (`SessionListing.list(shown:)`). Otherwise Send starts on
+  (`SessionListing.list(shown:)`). A listing reads one thread by id, so the kept thread then takes
+  the place of the thread the Codex app shows, which is listed only while it is among the threads
+  used last. Otherwise Send starts on
   the session you came from (`DestinationChoice`). When the app before Vignette
   (`FocusReturn.previousApp`) was the Codex app, that is the thread it shows, or else the Codex
   thread used last; herdr's focus is ignored then, because herdr keeps a focused pane while its

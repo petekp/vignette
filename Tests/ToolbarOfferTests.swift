@@ -160,24 +160,17 @@ final class ToolbarOfferTests: XCTestCase {
                                  for: .send(cameFrom: nil, kept: kept))
     }
 
-    func testOnlyASendToAHandPickOrToTheKeptPickKeepsIt() {
+    func testOnlyTheTargetPickedInTheMenuIsAHandPick() {
         let model = AnnotatorToolbar.Model()
         let a = session("a"), b = session("b")
         model.begin(replyTo: nil, carryingTarget: false)
-        model.answered(answer([a, b], complete: true, herdr: inPane("a")))
-        XCTAssertFalse(model.keepsPick(sendingTo: model.target!), "a start Vignette chose is not kept")
-        model.pick(b)
-        XCTAssertTrue(model.keepsPick(sendingTo: b))
-
-        model.begin(replyTo: nil, carryingTarget: false)
         model.answered(answer([a, b], complete: true, kept: b, herdr: inPane("a")))
-        XCTAssertEqual(model.target?.id, "b")
-        XCTAssertTrue(model.keepsPick(sendingTo: model.target!), "a send to the kept pick keeps it longer")
-
-        model.begin(replyTo: a, carryingTarget: false)
-        model.answered(answer([a, b], complete: true, kept: b))
-        XCTAssertEqual(model.offer.destination?.id, "a")
-        XCTAssertFalse(model.keepsPick(sendingTo: a), "a Reply neither sets nor refreshes it")
+        XCTAssertFalse(model.isHandPick(b), "a start Vignette chose, the kept pick included, is not one")
+        model.pick(a)
+        XCTAssertTrue(model.isHandPick(a))
+        XCTAssertFalse(model.isHandPick(b))
+        model.begin(replyTo: nil, carryingTarget: true)
+        XCTAssertFalse(model.isHandPick(a), "a pick belongs to its own image")
     }
 
     func testAKeptPickSettlesASwappedBarWithoutShowingAnotherSessionFirst() {

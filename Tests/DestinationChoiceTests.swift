@@ -105,6 +105,30 @@ final class DestinationChoiceTests: XCTestCase {
         XCTAssertEqual(gone.pick?.id, "b", "a gone kept pick gives way to the usual choice")
     }
 
+    func testAnAgentThatListedNoSessionDoesNotEndTheKeptPick() {
+        let b = Self.claude("b")
+        let failed = send([b], kept: Self.codex("t"), herdr: Self.focusOnB)
+        XCTAssertFalse(failed.keptIsGone, "a Codex listing that failed answers no threads at all")
+        XCTAssertEqual(failed.pick?.id, "b", "and this image starts on the usual choice")
+    }
+
+    func testOnlyASendToAHandPickOrToTheKeptPickKeepsIt() {
+        typealias Kept = DestinationChoice.KeptPick
+        let a = Self.claude("a"), b = Self.claude("b")
+        let then = Date(timeIntervalSince1970: 0), now = Date(timeIntervalSince1970: 300)
+        let kept = Kept(session: a, sentAt: then)
+        XCTAssertEqual(Kept.after(sendTo: b, isSend: true, handPicked: true, kept: kept, at: now),
+                       Kept(session: b, sentAt: now), "another hand pick replaces it")
+        XCTAssertEqual(Kept.after(sendTo: a, isSend: true, handPicked: false, kept: kept, at: now),
+                       Kept(session: a, sentAt: now), "a send to it starts the window again")
+        XCTAssertEqual(Kept.after(sendTo: a, isSend: false, handPicked: false, kept: kept, at: now), kept,
+                       "a Reply to it does not")
+        XCTAssertEqual(Kept.after(sendTo: b, isSend: true, handPicked: false, kept: kept, at: now), kept,
+                       "a send to a start Vignette chose leaves it")
+        XCTAssertNil(Kept.after(sendTo: b, isSend: true, handPicked: false, kept: nil, at: now),
+                     "a start Vignette chose is never kept")
+    }
+
     func testAKeptPickClearedToANewIdIsNotFoundAgainByItsProject() {
         let cleared = Self.claude("a"), sameProject = Self.claude("a2")
         let answer = send([sameProject], kept: cleared)

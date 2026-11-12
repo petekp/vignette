@@ -16,18 +16,20 @@ extension AnnotationController {
 
     /// Another client answered with its sessions, and the pick made from them.
     func destinationsAnswered(_ answer: DestinationChoice.Answer) {
-        let before = toolbar.model.offer.destination?.id
+        let before = toolbar.model.offer.destination
         toolbar.model.answered(answer)
         logOffer(was: before)
         if answer.keptIsGone { endKeptPick("gone") }
     }
 
-    /// A send from the editor stored its request. A Send to the session the person picked in the menu
-    /// keeps it as Send's start, and a Send to the kept pick keeps it for longer. A Reply leaves the
-    /// kept pick as it was.
+    /// A send from the editor stored its request (`DestinationChoice.KeptPick.after`).
     func sent(to destination: AgentDestination) {
-        guard toolbar.model.keepsPick(sendingTo: destination) else { return }
-        keptPick = DestinationChoice.KeptPick(session: destination, sentAt: Date())
+        let now = Date()
+        if keptPick?.holds(at: now) == false { endKeptPick("time") }
+        let after = DestinationChoice.KeptPick.after(sendTo: destination, isSend: toolbar.model.offer.isSend,
+                                                     handPicked: toolbar.model.isHandPick(destination), kept: keptPick, at: now)
+        guard after != keptPick else { return }
+        keptPick = after
         Log.write("[send] kept \(destination.address.description) project=\(destination.detail)")
     }
 
@@ -37,11 +39,13 @@ extension AnnotationController {
         Log.write("[send] kept ended \(kept.session.address.description) reason=\(reason)")
     }
 
-    /// Logs where the bar's filled button sends, whenever that changes: the card's own session for a
-    /// Reply, else the target. `reply` marks the first, since the target is then not on the bar.
-    private func logOffer(was before: String?) {
+    /// Logs where the bar's filled button sends, and why, whenever either changes: the card's own
+    /// session for a Reply, else the target. `reply` marks the first, since the target is then not on
+    /// the bar. A carried target that this image's answer settles on again, now as the kept pick, is a
+    /// change of why.
+    private func logOffer(was before: AgentDestination?) {
         let offer = toolbar.model.offer
-        guard let to = offer.destination, to.id != before else { return }
+        guard let to = offer.destination, to.id != before?.id || to.focus != before?.focus else { return }
         Log.write("[send] target \(to.address.description) project=\(to.detail) focus=\(to.focus?.rawValue ?? "none")\(offer.isSend ? "" : " reply")")
     }
 
