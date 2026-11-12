@@ -39,16 +39,21 @@ final class LiveAsksWithoutInkTests: XCTestCase {
         XCTAssertNil(a.ask(id))
     }
 
-    func testAnAskFollowingItsAnswerIsAboutTheSameWindow() {
+    func testAnAskFollowingItsAnswerIsAboutTheSameWindowEvenWithInkAskedBefore() {
         var a = A()
+        let asked = Mark(geometry: .ellipse(CGRect(x: 0, y: 0, width: 40, height: 30)))
         let answer = reply("A window.")
-        guard case .began(let first, _, _, _) = a.begin(among: [], following: nil, words: "what is this", at: pointer)
+        _ = a.reduce(.drew(asked.id))
+        _ = a.begin(among: [asked], following: nil, words: "what is this")
+        guard case .began(let first, _, _, _) = a.begin(among: [asked], following: nil, words: "and this window?", at: pointer)
         else { return XCTFail("the ask was refused") }
         _ = a.reduce(.arrived(.packetCame, for: first))
         _ = a.reduce(.arrived(.answerCame, for: first))
         _ = a.reduce(.answered(reply: answer, actions: [], findings: [], shown: [answer.id], for: first))
-        guard case .began(let follow, _, let point, _) = a.begin(among: [answer], following: A.Following(reply: answer, pick: .reply, words: "and?"))
+        guard case .began(let follow, let about, let point, _) = a.begin(
+            among: [asked, answer], following: A.Following(reply: answer, pick: .reply, words: "and?"))
         else { return XCTFail("the follow-up was refused") }
+        XCTAssertEqual(about, [])
         XCTAssertEqual(point, pointer)
         XCTAssertEqual(a.ask(follow)?.spot, pointer)
     }

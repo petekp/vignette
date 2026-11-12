@@ -159,9 +159,9 @@ The names in brackets are `// MARK:` sections.
 
   After a release that opens or keeps the note, steps 1 and 2 apply wherever the pointer is, to a
   note without the keys too (`LiveEscapeAfterRelease`), until a press off the ink, a switch to
-  another app (not the one the keys return to), or nothing is left to stop. Otherwise steps 2 to 5 apply only
+  another app (not the one the keys return to), or no note or ask from it is left. Otherwise steps 2 to 5 apply only
   while the pointer is on a mark or a reply on the active Space (`LiveInk.pointerIsOnInk`), and none
-  while the note is up without the keys, since the keys are in another app.
+  while the note is up without the keys, as the keys are elsewhere.
 
   `LiveInk` holds Esc as a Carbon hotkey (`HotKey`, no permission) while `LiveEscape.next` has a step
   and nothing else has Esc (the stack, the annotator, the note's target menu), with the chord's

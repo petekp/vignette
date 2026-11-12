@@ -11,10 +11,14 @@ final class LiveEscapeAfterRelease {
     private var pressWatch: Any?
     private var activationWatch: NSObjectProtocol?
     private let ended: (String) -> Void
+    /// The newest ask when the chord was let go. Esc stops only asks after it.
+    let asksBefore: LiveAsks.Ask.ID
 
     /// `returningTo` is the app the keys go back to; `isOnInk` says whether the pointer is on live ink.
-    init(returningTo app: NSRunningApplication?, isOnInk: @escaping () -> Bool, ended: @escaping (String) -> Void) {
+    init(returningTo app: NSRunningApplication?, asksBefore: LiveAsks.Ask.ID, isOnInk: @escaping () -> Bool,
+         ended: @escaping (String) -> Void) {
         self.ended = ended
+        self.asksBefore = asksBefore
         pressWatch = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard !isOnInk() else { return }

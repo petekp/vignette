@@ -45,7 +45,8 @@ extension LiveInk {
         panel.mayAsk = { [weak self] in self.map { !$0.asks.noteInk.isEmpty || $0.noteHangsAtPointer } ?? false }
         panel.onAsk = { [weak self, weak panel] words, target, title in
             guard let self else { return }
-            let byThePointer = self.noteHangsAtPointer
+            // Ink drawn while a menu held the note by the pointer is what the note asks about.
+            let byThePointer = self.noteHangsAtPointer && self.asks.noteInk.isEmpty
             self.stopListening()
             self.letGoOfNotePanel()
             self.lastTarget = target

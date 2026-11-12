@@ -91,7 +91,10 @@ final class ModifierChord {
     }
 
     private func flagsChanged(_ event: NSEvent) {
-        if keyRead, let change = chord.keyDown() { return apply(change) }
+        if keyRead, let change = chord.keyDown() {
+            _ = chord.flagsChanged(event.modifierFlags)
+            return apply(change)
+        }
         guard let change = chord.flagsChanged(event.modifierFlags) else { return }
         if change == .began { beganAt = event.timestamp }
         apply(change)

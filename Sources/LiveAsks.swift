@@ -192,14 +192,15 @@ struct LiveAsks: Equatable {
 
     /// Begins an ask about the new ink among `shown`, or, with none, about the ink asked about,
     /// looking for its packet. With `pointer`, it is about the window under it, with no ink.
-    /// `following` is the reply whose button the person picked: the ask takes that answer's place, and
-    /// is about its marks and the ink asked about, or the window its ask was about, never the new ink,
-    /// which stays the note's.
+    /// `following` is the reply whose button the person picked: the ask takes that answer's place and
+    /// is about its marks and the ink asked about, or its ask's window, never the new ink.
     mutating func begin(among shown: [Mark], following: Following?, words: String = "", toSession: Bool = false,
                         sentOnRelease: Bool = false, at pointer: CGPoint? = nil) -> Begun {
         let before = asks.map(\.id)
-        let about = following == nil ? (pointer == nil ? about(among: shown) : []) : askedInk(among: shown)
-        let spot = about.isEmpty ? following.flatMap { ask(withReply: $0.reply.id)?.spot } ?? pointer : nil
+        let answered = following.flatMap { ask(withReply: $0.reply.id) }
+        let about = following == nil ? (pointer == nil ? about(among: shown) : [])
+            : answered?.spot == nil ? askedInk(among: shown) : []
+        let spot = about.isEmpty ? answered?.spot ?? pointer : nil
         guard let point = about.last?.shapeExtent.map({ CGPoint(x: $0.midX, y: $0.midY) }) ?? spot else {
             return refuse(.noInk, following: following)
         }
@@ -214,7 +215,7 @@ struct LiveAsks: Equatable {
         if let following {
             new.say = following.reply
             new.picked = following.pick
-            if let answered = ask(withReply: following.reply.id) {
+            if let answered {
                 picks[lastID] = ButtonPick(answer: answered, words: following.words, pick: following.pick)
                 let marks = answerMarks(of: answered.id)
                 new.about.formUnion(marks)

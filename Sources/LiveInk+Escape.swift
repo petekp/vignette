@@ -127,13 +127,13 @@ extension LiveInk {
 
     // MARK: Right after the release
 
-    /// The chord was let go and the note opened or stayed for this hold, or its words were sent: while
-    /// the note or an ask under way is there, Esc is live ink's wherever the pointer is, until the
-    /// person presses off the ink, another app becomes active, or nothing is left for Esc to stop.
+    /// The chord was let go and the note opened or stayed for this hold: while the note or an ask sent
+    /// from it is there, Esc is live ink's wherever the pointer is, until the person presses off the
+    /// ink, another app becomes active, or nothing is left for Esc to stop.
     func keepEscapeAfterRelease() {
-        guard note != nil || asks.cancellable(sendsWait: sendsWait) != nil else { return }
+        guard note != nil else { return }
         escapeAfterRelease = LiveEscapeAfterRelease(
-            returningTo: FocusReturn.shared.previousApp,
+            returningTo: FocusReturn.shared.previousApp, asksBefore: asks.newest?.id ?? 0,
             isOnInk: { [weak self] in self?.pointerIsOnInk() ?? false },
             ended: { [weak self] reason in self?.endEscapeAfterRelease(because: reason) })
     }
@@ -145,8 +145,10 @@ extension LiveInk {
     }
 
     /// The answer came, the note was sent to a session and stored, or the note and its ask are gone.
+    /// An ask from before the release does not keep Esc.
     private func endEscapeAfterReleaseWhenDone() {
-        guard escapeAfterRelease != nil, note == nil, asks.cancellable(sendsWait: sendsWait) == nil else { return }
+        guard let window = escapeAfterRelease, note == nil,
+              (asks.cancellable(sendsWait: sendsWait) ?? 0) <= window.asksBefore else { return }
         endEscapeAfterRelease(because: "nothing left to stop")
     }
 }

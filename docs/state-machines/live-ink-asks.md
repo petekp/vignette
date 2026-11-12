@@ -56,7 +56,7 @@ Side tables: `picks[askID]` (the answer a picked button was picked under, plus `
 - What comes back for an ask no longer under way changes nothing. Checked by: the same test, `testAReplyAndAnAnswerFromADismissedAskAreDropped`, `testAPacketFromAClearedAskIsDroppedAndTheNextAskTakesItsOwn`.
 - `interrupt` is emitted only for the ask the responder has. Checked by: the same test, `testEscStopsTheNewestAskFirstAndTheResponderOnlyForTheOneItHas`.
 - Esc on an ask sent on release gives no ink back to the note: its new ink is removed. Checked by: `LiveAsksSentOnReleaseTests`.
-- An ask with no ink has a `spot`, the point its picture is taken under, and an ask following its answer keeps it. Esc on it opens no note. Without a pointer, no ink is still refused. Checked by: `LiveAsksWithoutInkTests`.
+- An ask with no ink has a `spot`, the point its picture is taken under, and an ask following its answer keeps it and takes no ink, even with other ink asked about on screen. Esc on it opens no note. Without a pointer, no ink is still refused. Checked by: `LiveAsksWithoutInkTests`.
 - A session ask Esc stopped has its first arrival swallowed and a stored note withdrawn. Checked by: `testStoppingASessionAskWithdrawsItsNoteIfItIsStoredAfterAll`, `testStoppingASessionAskBeforeItsPacketSendsNothing`.
 - An erased mark loses its roles and its finish; asks under way are unchanged. Checked by: `testAnErasedMarkLosesItsRolesAndItsFinish`.
 - Overlapping finish timers: the first ends the marks. Checked by: `testAnOverlappingFinishIsEndedByTheFirstTimer`, `testAFinishAfterAClearDoesNothing`.
