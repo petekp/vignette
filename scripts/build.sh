@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Regenerates the Xcode project and builds the app.
-# `--test` first runs scripts/check-agent-folders.py, then the VignetteTests unit tests after the
-# build, and names any that fail.
+# `--test` first runs scripts/check-agent-folders.py and scripts/check-app-data-paths.py, then the
+# VignetteTests unit tests after the build, and names any that fail.
 set -e
 cd "$(dirname "$0")/.."
 run_tests=false
@@ -11,7 +11,7 @@ for arg in "$@"; do
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
-if $run_tests; then python3 scripts/check-agent-folders.py; fi
+if $run_tests; then python3 scripts/check-agent-folders.py; python3 scripts/check-app-data-paths.py; fi
 scheme=$(sed -n 's/^name: *//p' project.yml)
 xcodegen generate >/dev/null   # also writes Info.plist
 # The git stamp (CFBundleVersion, VignetteBuild) is a build phase in project.yml.

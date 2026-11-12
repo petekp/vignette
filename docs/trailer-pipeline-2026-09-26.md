@@ -68,11 +68,13 @@ times against.
   Launched with `VIGNETTE_SETTINGS`, it runs no herdr, no Codex (`AgentTools.forSessions`) and no
   updater, and its plugin's skill names its own URL scheme, log and path (`AgentPlugin.stage`).
   `build` changes no source: the identity comes from `xcodebuild` settings. The stage copy lists only inboxes under its own Application Support
-  folder, and only the trailer's config has its plugin. So Send and Reply reach a real Claude Code,
+  folder, which a test launch keeps beside its settings file, in `out/stage/Library` (`Launch.dataHome`),
+  and only the trailer's config has its plugin. So Send and Reply reach a real Claude Code,
   the toolbar shows none of your sessions, and nothing reaches one of them.
 - **The trailer's Claude Code has its own config.** `trailer.py claude` puts it in
   `out/stage/claude` (`CLAUDE_CONFIG_DIR`) and signs it in once. Each take installs the plugin
-  there from the marketplace the stage copy writes at launch, and runs `claude` straight in Ghostty.
+  there from the marketplace the stage copy writes at launch, adding that marketplace again first so a
+  plugin installed from an earlier folder reads this one, and runs `claude` straight in Ghostty.
   The take waits on the inbox's `turn` file for Claude to start and finish a turn, and waits 20 s
   after Claude Code starts, so the notices it shows over its input for its first seconds, such as
   the account's usage, are gone before the camera sees them. It never reads your `~/.claude`.

@@ -16,7 +16,7 @@ Shows the setup window once per Mac, records what the person chose when the wind
 - `introducing: Bool` (`:187`). Set by `windowShouldClose`, never reset. Safe only because one controller shows one window.
 - `quitting: Bool` (`:57`). Set by `AppDelegate.applicationWillTerminate` (`AppDelegate.swift:211`).
 - `applyLoginItem` closure (`:190`), set by `AppDelegate` before `show` (`AppDelegate.swift:176`).
-- Persistent: `Settings.data.setup` (`unasked` | `done`), `UserDefaults setupDoneOnThisMac` (`:73`), `launchedHereBefore` (`:75`, read when the controller is built, before the Application Support folder exists), and `setupReturnsToLiveInkPermissions`, which is `SetupModel.returnsToLiveInkSetup` (`:408`).
+- Persistent: `Settings.data.setup` (`unasked` | `done`), `setupDoneOnThisMac` in `Identity.defaults` (`:73`; a test launch whose data moved keeps it in `<bundle id>.test-launch`), `launchedHereBefore` (`:75`, read when the controller is built, before the Application Support folder exists), and `setupReturnsToLiveInkPermissions` in `Identity.defaults`, which is `SetupModel.returnsToLiveInkSetup` (`:408`).
 
 Whether setup is asked (`isUnasked`, `:67`, non-test launch):
 

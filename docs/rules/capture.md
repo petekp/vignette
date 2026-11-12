@@ -35,7 +35,9 @@
   it travelled unseen and appeared part way along. `[origin]` lines say what was found, and `[annotate] from capture` says the flight used
   it. `docs/capture-origin-spike-2026-10-03.md` has the measurements, and the `capture_origin`
   scenario drives it with `screencapture -i`.
-- The status item has an autosave name and a seeded preferred position. Without it, a crowded
+- The status item has an autosave name and a seeded preferred position. AppKit keeps the position
+  in the app's standard defaults under that name, so a test launch whose data moved uses
+  `<bundle id>.test-launch` (`Identity.statusItemAutosaveName`) and never moves the person's own icon. Without it, a crowded
   menu bar on a notch Mac puts the new icon under the notch and it never appears. Opening Vignette
   again, from Finder or Spotlight, opens Settings (`applicationShouldHandleReopen`), or brings setup
   forward while it is up; with the icon hidden it is the way back. A `vignette://` URL is not a

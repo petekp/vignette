@@ -143,11 +143,11 @@ class Stage:
 
     def marketplace(self):
         """The plugin marketplace the stage copy writes at every launch."""
-        return os.path.expanduser(f"~/Library/Application Support/{self.app['bundle']}/agent-plugin")
+        return os.path.join(self.paths['support'], self.app['bundle'], 'agent-plugin')
 
     def inbox_root(self):
         """Where the stage copy's plugin keeps an inbox per Claude Code process."""
-        return os.path.expanduser(f"~/Library/Application Support/{self.app['bundle']}/claude-sessions")
+        return os.path.join(self.paths['support'], self.app['bundle'], 'claude-sessions')
 
     def turn(self):
         """`busy` or `idle`, as the plugin's hooks record the session's turn."""
@@ -535,9 +535,8 @@ def stage_game(stage):
     remove_work(p)
     shutil.copytree(p['game'], p['work'])
     open(os.path.join(p['work'], MARKER), 'w').close()
-    # A rule's path starting with ~/ is in the home folder; one starting with / would be relative
-    # to this settings file.
-    requests = f"~/Library/Application Support/{stage.app['bundle']}/**"
+    # A rule path with // is absolute; with / it is relative to this settings file.
+    requests = f"/{p['support']}/{stage.app['bundle']}/**"
     # The skill runs its helper as `sh "<path>"`. Claude Code reads a folder marketplace in place,
     # so the helper is in the stage copy's own marketplace.
     reply = os.path.join(stage.marketplace(), 'plugins', 'vignette', 'skills', 'vignette', 'scripts', 'reply')
@@ -677,10 +676,10 @@ def install_plugin(stage):
     marketplace = stage.marketplace()
     if not os.path.isdir(marketplace):
         raise TakeFailed(f'the stage copy wrote no marketplace at {marketplace}')
-    listed = subprocess.run(['claude', 'plugin', 'list'], capture_output=True, text=True, env=env).stdout
-    if plugin in listed:
-        return
+    # Added again, it moves an installed plugin here (Claude Code 2.1.322).
     for args in (['plugin', 'marketplace', 'add', marketplace], ['plugin', 'install', plugin, '--scope', 'user']):
+        if 'install' in args and plugin in subprocess.run(['claude', 'plugin', 'list'], capture_output=True, text=True, env=env).stdout:
+            return
         out = subprocess.run(['claude', *args], capture_output=True, text=True, env=env, timeout=60)
         if out.returncode != 0 and 'already' not in (out.stdout + out.stderr):
             raise TakeFailed(f"claude {' '.join(args)}: {(out.stderr or out.stdout).strip()}")
