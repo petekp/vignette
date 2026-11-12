@@ -102,12 +102,13 @@ Installs, updates and removes the Vignette plugin in Claude Code and Codex, one 
 | plugin on, marketplace changed or version differs | `launch` | on | `plugin update` |
 | any | `install(into:)` (Settings switch, setup `record`, `install-skill`) | on | stage the marketplace, run the tool's install steps, remove the legacy folder |
 | any | `remove(from:)` (Settings switch) | off | the tool's uninstall steps; "not found" counts as done |
-| test launch, the person's own folder or home | `install(into:)`, `remove(from:)`, or `launch` | — | no tool runs: `.failed` (`refusal`); `launch` only stages |
+| test launch, the person's own folder or home (`Launch.isOnPersonsHome`) | `install(into:)`, `remove(from:)`, or `launch` | — | no tool runs: `.failed` (`refusal`); `launch` only stages |
 
 **Invariants**
 
 - A launch never removes the plugin, and installs only where the skill from before the plugin is. Checked by: `testLaunchInstallsNothingWhereNothingWas`, `testLaunchMigratesTheOldSkillAndUpdatesOlderPlugins`. A link counts as that skill.
 - A test launch never reads or changes the person's `.claude`, `.codex` or `.agents`, and the `.agents` skill goes only with the Codex folder the environment names. Checked by: `testATestLaunch…` and `testAnInstall…`.
+- A test launch stages its marketplace and lists inboxes only under its own data folder (`Launch.dataHome`), never the person's own app's Application Support, whatever its bundle id. Checked by: `IdentityTests.testATestLaunch…`.
 - A launch installs for the old skill at most once per agent folder, so the switch's off holds. Checked by: `testALaunchLeavesThePluginOffAfterTheSwitchTurnedItOffWhereTheOldSkillIsALink`, `testALaunchThatFindsThePluginBesideALinkedSkillLeavesItOffOnceTheSwitchTurnsItOff` ([setup-1](findings.md#setup-1)).
 - An install started by setup finishes before the app quits. Checked by: nothing; `applicationWillTerminate` (`AppDelegate.swift:210`) waits for `requests.releaseHeld()` and not for this queue ([setup-4](plausible-findings-requests-to-live-ink.md#setup-4)).
 - `ClaudeReadRule.set` does not lose a concurrent write to Claude's `settings.json`. Checked by: nothing; it reads and rewrites without a lock.
@@ -148,7 +149,7 @@ Finds the `claude`, `codex` and `herdr` programs. `start()` runs once per launch
 
 Owner: `LoginItem.swift:7`. Tests: none.
 
-Registers Vignette as a login item. The state is `SMAppService.mainApp.status` plus `UserDefaults loginItemRegisteredPath`.
+Registers Vignette as a login item. The state is `SMAppService.mainApp.status` plus `loginItemRegisteredPath` in `Identity.defaults`.
 
 **Transitions**
 

@@ -4,7 +4,7 @@ extension AgentPluginTests {
     private func launcher(home: URL, environment: [String: String] = [:], personHome: URL? = nil, calls: @escaping (AgentClient) -> Calls,
                           answer: @escaping ([String]) -> (Int32, String) = { _ in (0, "") }) -> AgentPlugins {
         AgentPlugins(home: home, environment: environment, personHome: personHome ?? dir.appendingPathComponent("nobody"),
-                     template: template, skill: skill, marketplaceFolder: staged, inboxRoot: inboxes,
+                     template: template, skill: skill, marketplaceFolder: staged, inboxRoot: inboxes, requestsRoot: requests,
                      marketplace: "vignette", migrations: LegacySkillMigrations(file: dir.appendingPathComponent("support/migrated.json")),
                      host: { client, root in self.host(client, root: root, calls: calls(client), answer: answer) })
     }

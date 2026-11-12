@@ -24,14 +24,14 @@ enum LoginItem {
     /// Removed with "−" under Open at Login, the status reads `.notFound` (measured on macOS 15).
     static var removedByPerson: Bool {
         [.notRegistered, .notFound].contains(SMAppService.mainApp.status)
-            && UserDefaults.standard.string(forKey: registeredPathKey) == Bundle.main.bundleURL.path
+            && Identity.defaults.string(forKey: registeredPathKey) == Bundle.main.bundleURL.path
     }
 
     /// Registers or unregisters, logging one `[login]` line. Skips the call when macOS already
     /// agrees, so a launch with the setting on does not re-register every time.
     /// A test launch changes nothing: macOS would open a registered copy at login without
     /// `VIGNETTE_SETTINGS`, on the person's own settings file, and a copy with the person's bundle id
-    /// shares their registration and their defaults.
+    /// shares their registration.
     static func apply(_ enabled: Bool) {
         guard !Launch.isTest else {
             Log.write("[login] test launch: left alone status=\(status)")
@@ -39,15 +39,15 @@ enum LoginItem {
         }
         let current = SMAppService.mainApp.status
         // Also for a registration made before the path was kept.
-        if current == .enabled { UserDefaults.standard.set(Bundle.main.bundleURL.path, forKey: registeredPathKey) }
+        if current == .enabled { Identity.defaults.set(Bundle.main.bundleURL.path, forKey: registeredPathKey) }
         do {
             if enabled, current != .enabled {
                 try SMAppService.mainApp.register()
-                UserDefaults.standard.set(Bundle.main.bundleURL.path, forKey: registeredPathKey)
+                Identity.defaults.set(Bundle.main.bundleURL.path, forKey: registeredPathKey)
                 Log.write("[login] registered status=\(status)")
             } else if !enabled, current != .notRegistered, current != .notFound {
                 try SMAppService.mainApp.unregister()
-                UserDefaults.standard.removeObject(forKey: registeredPathKey)
+                Identity.defaults.removeObject(forKey: registeredPathKey)
                 Log.write("[login] unregistered status=\(status)")
             }
         } catch {

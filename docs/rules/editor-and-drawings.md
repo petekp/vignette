@@ -53,7 +53,8 @@
   flight, restyled, and flattened on a card.
 - Drawings are owned by the app, and every write goes through `Drawings` (`Drawings.swift`, with
   `DrawingStore` for the files): one JSON file per screenshot under
-  `~/Library/Application Support/<bundle id>/drawings/`, named by a hash of the screenshot's
+  `~/Library/Application Support/<bundle id>/drawings/` (`Identity.applicationSupportURL`, which
+  `Launch.dataHome` moves for a test copy), named by a hash of the screenshot's
   `ScreenshotKey` path (`key.path`). The editor hands its drawing over 0.3 s after each change,
   never while a button is held (`[drawing] saved`), and once more when it parks (`parked`). Until
   then the open drawing is ahead of its file, so whatever needs a screenshot's drawing as it is now

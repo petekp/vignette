@@ -31,25 +31,13 @@ extension AgentPlugin {
     // MARK: The person's own folders in a test launch
 
     /// Whether this is a test launch and `folder` is one of the person's own agent folders (`.claude`,
-    /// `.codex` and `.agents` of `personHome`) or inside one. Both sides are compared by their paths
-    /// with every link resolved, and without case, as APFS compares names by default.
+    /// `.codex` and `.agents` of `personHome`) or inside one, compared by `Launch.comparablePath`.
     static func isPersons(_ folder: URL, environment: [String: String], personHome: URL) -> Bool {
         guard Launch.isTest(in: environment) else { return false }
-        let path = realPath(folder)
+        let path = Launch.comparablePath(folder)
         return [".claude", ".codex", ".agents"].contains { name in
-            let own = realPath(personHome.appendingPathComponent(name))
+            let own = Launch.comparablePath(personHome.appendingPathComponent(name))
             return path == own || path.hasPrefix(own + "/")
         }
-    }
-
-    /// Whether this is a test launch on the person's own home folder, one without `CFFIXED_USER_HOME`.
-    /// An agent's tool run there gets the person's `HOME`, and Codex reads `$HOME/.agents/skills`
-    /// whatever folder it is pointed at, so such a launch runs no tool.
-    static func isPersonsHome(_ home: URL, environment: [String: String], personHome: URL) -> Bool {
-        Launch.isTest(in: environment) && realPath(home) == realPath(personHome)
-    }
-
-    private static func realPath(_ url: URL) -> String {
-        url.standardizedFileURL.resolvingSymlinksInPath().path.lowercased()
     }
 }

@@ -8,7 +8,7 @@ enum Leftovers {
         [Identity.applicationSupportURL.appendingPathComponent("drafts"),
          Identity.cachesURL.appendingPathComponent("drafts"),
          Identity.cachesURL.appendingPathComponent("WebKit"),
-         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/WebKit/\(Identity.bundleID)")]
+         Identity.webKitURL]
     }
 
     /// The shadow log a live-ink build kept of what it saw at each capture and send.

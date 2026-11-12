@@ -66,7 +66,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     /// launch has only its scratch file to go by.
     var isUnasked: Bool {
         if Launch.isTest { return settings.data.setupChoice == .unasked }
-        if UserDefaults.standard.bool(forKey: SetupWindowController.doneOnThisMacKey) { return false }
+        if Identity.defaults.bool(forKey: SetupWindowController.doneOnThisMacKey) { return false }
         return !(settings.data.setupChoice == .done && launchedHereBefore)
     }
 
@@ -215,7 +215,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             if model.sawLiveInk { $0.liveInkOffered = true }
             if let choice = model.launchAtLoginChoice { $0.launchAtLogin = choice }
         }
-        UserDefaults.standard.set(true, forKey: SetupWindowController.doneOnThisMacKey)
+        Identity.defaults.set(true, forKey: SetupWindowController.doneOnThisMacKey)
         SetupModel.returnsToLiveInkSetup = false
         // The plugin is installed only for someone who saw the page offering it. Closed earlier, the
         // offer is left unmade, and the next launch makes it in the Settings window.
@@ -406,8 +406,8 @@ final class SetupModel: ObservableObject {
 
     /// Set until setup is done, so a quit and reopen part way through comes back to live ink's permissions.
     static var returnsToLiveInkSetup: Bool {
-        get { UserDefaults.standard.bool(forKey: returnsToLiveInkSetupKey) }
-        set { UserDefaults.standard.set(newValue, forKey: returnsToLiveInkSetupKey) }
+        get { Identity.defaults.bool(forKey: returnsToLiveInkSetupKey) }
+        set { Identity.defaults.set(newValue, forKey: returnsToLiveInkSetupKey) }
     }
     private static let returnsToLiveInkSetupKey = "setupReturnsToLiveInkPermissions"
 }

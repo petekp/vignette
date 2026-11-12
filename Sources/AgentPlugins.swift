@@ -17,17 +17,21 @@ final class AgentPlugins: @unchecked Sendable {
     private let skill: URL?
     private let marketplaceFolder: URL
     private let inboxRoot: URL
+    private let requestsRoot: URL
     private let marketplace: String
     private let appName: String
     private let migrations: LegacySkillMigrations
     /// Makes the host for an agent; tests give one whose tool is a script.
     private let host: (AgentClient, URL) -> PluginHost
-    /// A test launch on the person's own home folder: it runs no agent tool (`isPersonsHome`).
+    /// A test launch on the person's own home folder (`Launch.isOnPersonsHome`) runs no agent tool:
+    /// the tool would get the person's `HOME`, and Codex reads `$HOME/.agents/skills` whatever folder
+    /// it is pointed at.
     private let runsNoTool: Bool
 
     init(home: URL, environment: [String: String], personHome: URL,
          template: URL? = AgentPlugin.bundled, skill: URL? = AgentPlugin.bundledSkill,
          marketplaceFolder: URL = AgentPlugin.marketplaceFolder, inboxRoot: URL = AgentPlugin.inboxRoot,
+         requestsRoot: URL = ScreenshotRequests.defaultRoot,
          marketplace: String = AgentPlugin.marketplace, appName: String = Identity.name,
          migrations: LegacySkillMigrations = LegacySkillMigrations(file: LegacySkillMigrations.standard),
          host: ((AgentClient, URL) -> PluginHost)? = nil) {
@@ -38,11 +42,12 @@ final class AgentPlugins: @unchecked Sendable {
         self.skill = skill
         self.marketplaceFolder = marketplaceFolder
         self.inboxRoot = inboxRoot
+        self.requestsRoot = requestsRoot
         self.marketplace = marketplace
         self.appName = appName
         self.migrations = migrations
         self.host = host ?? { PluginHost(client: $0, root: $1, home: home) }
-        runsNoTool = AgentPlugin.isPersonsHome(home, environment: environment, personHome: personHome)
+        runsNoTool = Launch.isOnPersonsHome(home, environment: environment, personHome: personHome)
     }
 
     /// The app's: its home folder, which `CFFIXED_USER_HOME` moves, and its own environment.
@@ -180,7 +185,8 @@ final class AgentPlugins: @unchecked Sendable {
             throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "the plugin is missing from this copy of \(Identity.name)"])
         }
         let changed = try AgentPlugin.stage(template: template, skill: skill, into: marketplaceFolder,
-                                            inboxRoot: inboxRoot, marketplace: marketplace, appName: appName, app: Bundle.main.bundleURL)
+                                            inboxRoot: inboxRoot, requestsRoot: requestsRoot, marketplace: marketplace, appName: appName,
+                                            app: Bundle.main.bundleURL)
         if changed { Log.write("[plugin] staged \(marketplaceFolder.path) version=\(bundledVersion ?? "?")") }
         return changed
     }

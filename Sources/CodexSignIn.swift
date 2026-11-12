@@ -5,21 +5,12 @@ import AppKit
 /// `auth.json` there and renews it itself. The person's own Codex folder is never read
 /// (docs/adr/0026-codex-answers-live-ink-too.md).
 enum CodexSignIn {
-    /// Vignette's own Codex home: none of the person's config, instructions, memories or sessions.
-    /// None in a test launch that left the home folder in place (`home(in:environment:personHome:)`).
-    nonisolated static let defaultHome = home(in: Identity.applicationSupportURL)
-
-    /// The Codex home in `folder`, the app's Application Support folder. A test launch
-    /// (`VIGNETTE_SETTINGS`) gets none while that folder is the person's own, since it holds their
-    /// sign-in, as `AgentPlugin.guarded` keeps it out of `~/.codex`. `CFFIXED_USER_HOME` moves it.
-    nonisolated static func home(in folder: URL, environment: [String: String] = ProcessInfo.processInfo.environment,
-                                 personHome: URL = AgentPlugin.personHome) -> URL? {
-        let home = folder.appendingPathComponent("live-ink/codex-home", isDirectory: true)
-        let own = personHome.appendingPathComponent("Library/Application Support").resolvingSymlinksInPath().path + "/"
-        guard Launch.isTest(in: environment), folder.resolvingSymlinksInPath().path.hasPrefix(own) else { return home }
-        Log.write("[live-ink] test launch: left \(home.path) alone; launch with CFFIXED_USER_HOME to use Codex")
-        return nil
-    }
+    /// Vignette's own Codex home: none of the person's config, instructions, memories or sessions. It
+    /// is in the app's Application Support folder (`Launch.dataHome`). A test launch on the person's
+    /// own home has none, as it runs no agent tool there (`AgentPlugins.runsNoTool`).
+    nonisolated static let defaultHome: URL? =
+        Launch.isOnPersonsHome(AgentPlugin.appHome, environment: AgentPlugin.appEnvironment, personHome: AgentPlugin.personHome)
+            ? nil : Identity.applicationSupportURL.appendingPathComponent("live-ink/codex-home", isDirectory: true)
 
     /// Whether Vignette's Codex home holds a ChatGPT sign-in. Only whether the tokens are there is
     /// read. It reads a file, so it runs off the main thread.

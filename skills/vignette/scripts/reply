@@ -55,20 +55,29 @@ info=$app/Contents/Info.plist
 [ "$(plutil -extract VignetteReplyCommand raw -o - "$info" 2>/dev/null)" = true ] ||
   fail "the Vignette that sent this request is older than this skill; ask the user to update Vignette, then run this again"
 
-# Only a ticket where Vignette writes them names the app to run, in
-# ~/Library/Application Support/<that app's bundle id>/requests/<request id>/ticket.json.
-# Anything that can put a file there can already run code as the user.
-[ -n "$HOME" ] || fail "HOME is not set, so the ticket's folder cannot be checked"
+# Only a ticket where Vignette writes them names the app to run: <requests>/<request id>/ticket.json,
+# where <requests> is the requests folder the app wrote into the next line when it staged its
+# plugin, or ~/Library/Application Support/<that app's bundle id>/requests. Either way it ends in
+# <that app's bundle id>/requests. Anything that can put a file in either place can already run
+# code as the user.
+requests_root=
 request=$(plutil -extract requestId raw -o - "$ticket" 2>/dev/null)
 bundle=$(plutil -extract CFBundleIdentifier raw -o - "$info" 2>/dev/null)
 name=$(plutil -extract CFBundleExecutable raw -o - "$info" 2>/dev/null)
 folder=$(cd "$(dirname "$ticket")" 2>/dev/null && pwd -P)
-support=$(cd "$HOME/Library/Application Support" 2>/dev/null && pwd -P)
-[ -n "$request" ] && [ -n "$bundle" ] && [ -n "$folder" ] && [ -n "$support" ] &&
+staged=
+case $requests_root in /?*) staged=$(cd "$requests_root" 2>/dev/null && pwd -P) ;; esac
+support=
+case $HOME in /?*) support=$(cd "$HOME/Library/Application Support" 2>/dev/null && pwd -P) ;; esac
+[ -n "$staged" ] || [ -n "$support" ] ||
+  fail "HOME is not set and this skill names no requests folder, so the ticket's folder cannot be checked"
+requests=$(dirname "$folder")
+[ -n "$request" ] && [ -n "$bundle" ] && [ -n "$folder" ] &&
   [ "$(basename "$ticket")" = ticket.json ] &&
   [ "$(basename "$folder")" = "$request" ] &&
-  [ "$(basename "$(dirname "$folder")")" = requests ] &&
-  [ "$(dirname "$(dirname "$folder")")" = "$support/$bundle" ] ||
+  { { [ -n "$staged" ] && [ "$requests" = "$staged" ] &&
+      [ "$(basename "$staged")" = requests ] && [ "$(basename "$(dirname "$staged")")" = "$bundle" ]; } ||
+    { [ -n "$support" ] && [ "$requests" = "$support/$bundle/requests" ]; }; } ||
   fail "this is not a ticket Vignette wrote; the ticket is the ticket.json beside the image Vignette sent"
 
 case $name in ''|*/*) fail "the Vignette that sent this request names no binary; ask the user to reinstall Vignette" ;; esac

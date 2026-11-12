@@ -44,6 +44,9 @@ PATHS = {
     'watch': os.path.join(OUT, 'stage', 'watch'),
     'cards': os.path.join(OUT, 'stage', 'cards'),
     'settings': os.path.join(OUT, 'stage', 'settings.json'),
+    # A test launch on your own home keeps its Application Support beside its settings file
+    # (`Launch.dataHome`).
+    'support': os.path.join(OUT, 'stage', 'Library', 'Application Support'),
     # Where the take's Claude Code works on a copy of the app, and the path its header shows. The
     # take makes it and removes it after.
     'work': os.path.expanduser('~/Code/postcard'),
