@@ -764,25 +764,8 @@ final class LiveInk {
         guard let about = shared else { return }
         guard let sendNote else { return letGoOfNote(of: id) }
         let numbered = numberedNote(spoken, packet: packet)
-        var place = [packet.app, packet.title.map { "\"\($0)\"" }, packet.location].compactMap { $0 }.joined(separator: ", ")
-        if !packet.windows.isEmpty {
-            place = "the screen, across " + packet.windows.map { window in
-                [window.app, window.title.flatMap { $0.isEmpty ? nil : "\"\($0)\"" }].compactMap { $0 }.joined(separator: " ")
-            }.joined(separator: " and ")
-        }
-        if place.isEmpty { place = "the screen" }
-        // One line: the plugin's monitor makes each line it prints a message of its own.
-        var said = (numbered ?? words).components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }.joined(separator: " ")
-        if let last = said.last, !".?!]".contains(last) { said += "." }
         let pointer = asks.ask(id)?.spot
-        let how = pointer == nil ? "Drawn with Vignette's live ink on" : "Asked with Vignette's live ink, without drawing, about"
-        var message = (said.isEmpty ? "" : said + " ") + "\(how) \(place)."
-        if numbered != nil { message += " Each [n] in the words is where the ink numbered n in the picture was drawn as they were said." }
-        let covered = packet.alone.flatMap(\.covered).compactMap { packet.numbers[$0] }.sorted()
-        if !covered.isEmpty {
-            message += " On the screen, a window in front covers the ink numbered \(covered.map(String.init).joined(separator: ", "))."
-        }
+        let message = packet.sessionLine(note: numbered ?? words, numbered: numbered != nil, pointer: pointer)
         // The same ink the picture has, so the card holds what the session sees and what leaves the window.
         let person = asks.drawnInk(ink.filter { packet.frame.intersects($0.shapeExtent ?? .null) }, for: id)
         let note = noteMark(words, about: about, packet: packet, at: spot)

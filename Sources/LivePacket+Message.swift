@@ -47,4 +47,34 @@ extension LivePacket {
         let data = (try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
         return String(decoding: data, as: UTF8.self)
     }
+
+    /// The message a session is sent with a live ink note: the person's words, `numbered` when they
+    /// carry the ink's `[n]`, then where they drew. For an ask with no ink, `pointer` is where they
+    /// asked, given in whole percentages of the picture when it is on it.
+    func sessionLine(note: String, numbered: Bool, pointer: CGPoint?) -> String {
+        var place = [app, title.map { "\"\($0)\"" }, location].compactMap { $0 }.joined(separator: ", ")
+        if !windows.isEmpty {
+            place = "the screen, across " + windows.map { window in
+                [window.app, window.title.flatMap { $0.isEmpty ? nil : "\"\($0)\"" }].compactMap { $0 }.joined(separator: " ")
+            }.joined(separator: " and ")
+        }
+        if place.isEmpty { place = "the screen" }
+        // One line: the plugin's monitor makes each line it prints a message of its own.
+        var said = note.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }.joined(separator: " ")
+        if let last = said.last, !".?!]".contains(last) { said += "." }
+        let how = pointer == nil ? "Drawn with Vignette's live ink on" : "Asked with Vignette's live ink, without drawing, about"
+        var message = (said.isEmpty ? "" : said + " ") + "\(how) \(place)."
+        if let pointer, frame.contains(pointer) {
+            let percent = { (fraction: CGFloat) in Int((fraction * 100).rounded()) }
+            let across = percent((pointer.x - frame.minX) / frame.width), down = percent((pointer.y - frame.minY) / frame.height)
+            message += " The pointer was at \(across)% across and \(down)% down the picture."
+        }
+        if numbered { message += " Each [n] in the words is where the ink numbered n in the picture was drawn as they were said." }
+        let covered = alone.flatMap(\.covered).compactMap { numbers[$0] }.sorted()
+        if !covered.isEmpty {
+            message += " On the screen, a window in front covers the ink numbered \(covered.map(String.init).joined(separator: ", "))."
+        }
+        return message
+    }
 }
