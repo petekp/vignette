@@ -30,6 +30,8 @@ A stroke that ends while live ink listens moves the note to that ink, or opens i
 has been heard yet. A later stroke moves it to the newest ink, as the release does. The chord's
 release gives the note the keys. A menu still open waits for the release, which closes it first.
 While it listens the words show at full strength, keys or not, and the empty note shows no prompt.
+Esc while the chord is held cancels the hold: the microphone stops, the words heard go, and a note
+opened in this hold closes with the ink drawn in it (`docs/live-ink.md`, the Esc rule).
 
 Let go with words and no ink, and the note stays by the pointer with the keys and the words. It
 sends nothing on its own, and `liveInkSendWhenQuiet` waits for ink. An ask is about ink, so Return

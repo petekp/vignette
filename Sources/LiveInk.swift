@@ -15,7 +15,7 @@ final class LiveInk {
     var surfaces: [Surface] = []
     /// The surfaces taking presses: the active Space's when the chord went down.
     private var inking: [Surface] = []
-    private var chord: ModifierChord?
+    var chord: ModifierChord?
     private var observers: [(NotificationCenter, Any)] = []
     /// Runs out the pointer field's delay after the chord goes down.
     private var fieldTimer: Timer?
@@ -104,8 +104,16 @@ final class LiveInk {
     /// What each ask to the responder sends, from when its packet came until the asks before it end
     /// (`LiveAsks.Effect.send`).
     private var held: [LiveAsks.Ask.ID: LiveResponder.Ask] = [:]
-    /// Esc, held while `LiveEscape` has a step for it.
-    var escapeKey: HotKey?
+    /// Esc, held while `LiveEscape` has a step for it, with the chord's modifiers while it is held.
+    var escapeKey: (key: HotKey, modifiers: UInt32)?
+    /// Keeps Esc live ink's from the chord's release until the person goes elsewhere.
+    var escapeAfterRelease: LiveEscapeAfterRelease?
+    /// The marks drawn or picked since the chord last went down, and the note up then with its words,
+    /// which Esc during the hold leaves as they were.
+    var holdInk = Set<Mark.ID>()
+    var noteBeforeHold: (note: LiveNotePopover, words: String)?
+    /// The note is sent because the person stopped talking (`liveInkSendWhenQuiet`).
+    var sendingOnRelease = false
     /// The note's target picked last, which the next note starts on.
     var lastTarget: LiveNotePopover.Target?
     /// The asks since the screen was last cleared, and each mark's part in them.
@@ -121,6 +129,7 @@ final class LiveInk {
     /// as well as one on the mark, wherever its window has moved it since.
     private var stepTargets: [Mark.ID: (target: CGRect, at: CGPoint)] = [:]
     private var stepClicks: Any?
+    var tourRunning: Bool { focusRun != nil || stepClicks != nil }
     /// Marks that draw themselves on at the next `showMarks`.
     private var drawingOn = Set<Mark.ID>()
     /// The answer's shapes whose window was dark behind them when it was captured, which are drawn
@@ -174,7 +183,7 @@ final class LiveInk {
     }
 
     /// The surfaces on the Space the person sees. A surface on another Space keeps its marks out of sight.
-    private var surfacesInSight: [Surface] { surfaces.filter(\.overlay.isOnActiveSpace) }
+    var surfacesInSight: [Surface] { surfaces.filter(\.overlay.isOnActiveSpace) }
 
     /// `marks` with the person's in the order they were drawn, and the rest after them in the order
     /// given. The windows' marks come window by window, in no order, so ink across windows is put back
@@ -360,6 +369,7 @@ final class LiveInk {
             "pair": Settings.shared.data.liveInkChordChoice.glyphs,
             "escape": LiveEscape.next(escapeSnapshot)?.rawValue ?? NSNull(),
             "escapeHeld": escapeKey != nil,
+            "escapeAfterRelease": escapeAfterRelease != nil,
             "ask": asks.newest.map(\.stateJSON) ?? NSNull(),
             "asks": asks.asks.map(\.stateJSON),
             "queued": asks.queued.count,
@@ -418,6 +428,7 @@ final class LiveInk {
     /// its shape from them.
     private func stroked(_ mark: Mark, by points: [CGPoint]? = nil) {
         strokeTimes[mark.id] = (strokeBegan ?? Date(), Date())
+        if isInking { holdInk.insert(mark.id) }
         _ = asks.reduce(.drew(mark.id))
         if let points, let hand = InkHand(raw: points, mark: mark, feel: Settings.shared.data.ui.inkHandFeel) {
             hands[mark.id] = hand
@@ -526,7 +537,7 @@ final class LiveInk {
     }
 
     /// Takes marks off every surface and window, and they lose their part in the asks.
-    private func remove(_ ids: Set<Mark.ID>) {
+    func remove(_ ids: Set<Mark.ID>) {
         takeOff(ids)
         run(asks.reduce(.removed(ids)))
     }
@@ -631,7 +642,7 @@ final class LiveInk {
         let id: LiveAsks.Ask.ID
         let about: [Mark]
         let point: CGPoint
-        switch asks.begin(among: shownMarks, following: following, words: trimmed, toSession: session != nil) {
+        switch asks.begin(among: shownMarks, following: following, words: trimmed, toSession: session != nil, sentOnRelease: sendingOnRelease) {
         case .refused(let refusal, let effects):
             run(effects)
             return .failure(LiveResponder.Failure(reason: refusal.rawValue, detail: refusal.detail))
@@ -1567,28 +1578,6 @@ final class LiveInk {
         prepared = nil
     }
 
-    // MARK: Esc
-
-    var escapeSnapshot: LiveEscape.Snapshot {
-        /// Whether a mark that shows on the active Space and is not leaving passes `test`.
-        func shows(_ test: (Mark.ID) -> Bool) -> Bool {
-            func staying(_ id: Mark.ID) -> Bool { !asks.isFinishing(id) && test(id) }
-            return windows.containsShown(where: staying) || surfacesInSight.contains { $0.marks.contains { staying($0.id) } }
-        }
-        var snapshot = LiveEscape.Snapshot(
-            isOn: isOn,
-            screenIsFree: mayInk(),
-            menuOpen: note?.menuOpen == true,
-            note: note.map { $0.hasKeys ? .hasKeys : .withoutKeys } ?? LiveEscape.Note.none,
-            replyFieldOpen: actionsPanels.values.contains(where: \.isTyping),
-            askCanBeCancelled: asks.cancellable(sendsWait: sendsWait) != nil,
-            tourRunning: focusRun != nil || stepClicks != nil,
-            answerShown: shows(asks.isSettledAnswer),
-            marksShown: shows { _ in true })
-        snapshot.pointerOnInk = LiveEscape.needsPointer(snapshot) && pointerIsOnInk()
-        return snapshot
-    }
-
     // MARK: Inking
 
     /// The chord pressed or let go: by the hand, through `HeldChord`, or by a script, through
@@ -1607,6 +1596,8 @@ final class LiveInk {
         case .ended, .interrupted:
             chordInterrupted = change == .interrupted
             guard isInking else { return }
+            // Esc the hotkey did not hear, as when macOS takes ⌘⌥Esc for Force Quit, still cancels.
+            if chordInterrupted, Self.escapeIsDown { return escape() }
             if inking.contains(where: \.overlay.isTracking) { watchRelease() } else { finishInking() }
         }
     }
@@ -1615,6 +1606,9 @@ final class LiveInk {
         let began = Date()
         keysDown = began
         isInking = true
+        holdInk = []
+        noteBeforeHold = note.map { ($0, $0.content.field.stringValue) }
+        escapeAfterRelease = nil
         inkings += 1
         FocusReturn.shared.sessionStarting()
         drewWhileInking = false

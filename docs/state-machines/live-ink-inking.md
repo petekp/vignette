@@ -109,6 +109,7 @@ Derived states:
 | ReleasePending | 50 ms poll finds `!LiveInkTap.isButtonDown` | Settled or MenuWait | `endStroke` on each inking overlay, `finishInking` (`:1987`) |
 | any inking state | `spaceChanged`, `willSleep`, `sessionDidResignActive`, `screensChanged` with a changed inking frame, `takeChord()` | Settled | `cutInkingShort`: `closeNote` if by the pointer, `stopListening`, `stopInking`. Stroke dropped (`cancelStroke`), no note ([hand-6](plausible-findings-requests-to-live-ink.md#hand-6)) |
 | any inking state | `standAside()` (from `ThumbnailController.onTakesScreen`) | Settled | note hidden (closed if by the pointer), `stopListening`, `stopInking`. No note for ink drawn this hold ([hand-6](plausible-findings-requests-to-live-ink.md#hand-6)) |
+| any inking state | Esc (`cancelHold`), or `.interrupted` while Esc is down | Settled | `stopListening`, `stopInking("esc")`, the hold's note ink removed with the fade, a note opened in the hold closed, `FocusReturn.restore` unless the note has the keys. No note, no ask. The chord's later `.ended` is ignored |
 | any inking state | `setOn(false)` | Settled | `stopInking`, everything torn down (`:206`) |
 | Idle, Settled, MenuWait | `.ended` or `.interrupted` | — | ignored by `guard isInking` (`:1773`) |
 | `finishInking` | no open menus | Settled | `pinOverMenus`, `settleInking(opensNote)` |

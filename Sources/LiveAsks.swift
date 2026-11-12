@@ -33,6 +33,9 @@ struct LiveAsks: Equatable {
         var toSession = false
         /// The words asked with, which the note opens with again when Esc stops the ask.
         var words = ""
+        /// It went by itself when the person stopped talking (`liveInkSendWhenQuiet`), so Esc takes its
+        /// ink and words away rather than opening the note on them again.
+        var sentOnRelease = false
         var reason: String?
         var picture = false
         /// The reply as it streams in, and once it is whole. An ask from one of an answer's buttons
@@ -215,7 +218,8 @@ struct LiveAsks: Equatable {
     /// looking for its packet. `following` is the reply whose button the person picked: the ask takes
     /// that answer's place, and is about its marks and the ink asked about, never the new ink, which
     /// stays the note's.
-    mutating func begin(among shown: [Mark], following: Following?, words: String = "", toSession: Bool = false) -> Begun {
+    mutating func begin(among shown: [Mark], following: Following?, words: String = "", toSession: Bool = false,
+                        sentOnRelease: Bool = false) -> Begun {
         let before = asks.map(\.id)
         let about = following == nil ? about(among: shown) : askedInk(among: shown)
         guard let shape = about.last?.shapeExtent else { return refuse(.noInk, following: following) }
@@ -225,7 +229,8 @@ struct LiveAsks: Equatable {
         take(.noteInk, from: ids)
         lastID += 1
         let leader = Self.leader(of: about)
-        var new = Ask(id: lastID, phase: .looking, about: ids, fresh: fresh, toSession: toSession, words: words, leader: leader)
+        var new = Ask(id: lastID, phase: .looking, about: ids, fresh: fresh, toSession: toSession, words: words,
+                      sentOnRelease: sentOnRelease && following == nil, leader: leader)
         if let following {
             new.say = following.reply
             new.picked = following.pick
@@ -295,9 +300,9 @@ struct LiveAsks: Equatable {
         /// this ask's.
         case dismissed(Ask.ID)
         /// Esc on ask `id`, under way: it stops, and its ink is as it was before it began: ink that was
-        /// new is the note's again, and the note opens on it with the ask's words. A reply to put back
-        /// must be among `shown`. Nothing is said, since the person stopped it. A session's note stored
-        /// after this is withdrawn.
+        /// new is the note's again, and the note opens on it with the ask's words. Ink new to an ask sent
+        /// on release goes instead. A reply to put back must be among `shown`. Nothing is said, since the
+        /// person stopped it. A session's note stored after this is withdrawn.
         case cancelled(Ask.ID, shown: Set<Mark.ID>)
         /// Esc with no ask to stop: the newest answer's marks leave, and the person's ink stays.
         case answerClosed
@@ -305,20 +310,6 @@ struct LiveAsks: Equatable {
         case finished(Set<Mark.ID>)
         /// The screen was cleared, or live ink turned off.
         case cleared
-    }
-
-    /// What comes back for an ask.
-    enum Arrival: Equatable {
-        /// The packet was captured. Taken only while looking.
-        case packetCame
-        /// The responder's reply streamed in further. Taken only while asking.
-        case replyCame
-        case answerCame
-        /// The packet could not be captured, the responder failed, or a session refused the note.
-        /// `shown` is every mark on the screen, among which an answer to put back must be.
-        case failed(reason: String, shown: Set<Mark.ID>)
-        /// A session took the note, with `ink` in its picture.
-        case sentToSession(ink: Set<Mark.ID>)
     }
 
     enum Effect: Equatable {
@@ -459,12 +450,13 @@ struct LiveAsks: Equatable {
             let new = current.fresh.subtracting(aboutOfOtherAsks(than: id))
             let present = new.filter { records[$0] != nil }
             take(.asked, from: new)
-            add(.noteInk, to: present)
+            if !current.sentOnRelease { add(.noteInk, to: present) }
             let interrupt: [Effect] = current.phase == .asking ? [.interrupt] : []
             if let restored = restore(id, saying: nil, shown: shown) { return interrupt + [restored] }
             let removal = removeAnswer(of: id)
             end(id)
-            return interrupt + [removal] + (present.isEmpty ? [] : [.reopenNote(words: current.words)])
+            let ink: [Effect] = present.isEmpty ? [] : [current.sentOnRelease ? .remove(present) : .reopenNote(words: current.words)]
+            return interrupt + [removal] + ink
         case .answerClosed:
             guard let ask = asks.last(where: { !$0.isUnderWay && answerMarks(of: $0.id).contains { !isFinishing($0) } }) else { break }
             let ids = answerMarks(of: ask.id)

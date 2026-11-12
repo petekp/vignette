@@ -59,6 +59,8 @@ struct HeldChord {
 /// counts no modifier, so while the chord is held it is asked every 50 ms whether a key has gone down
 /// since the chord began, and whether the chord's modifiers are still down: a release no monitor
 /// heard, with Accessibility taken away or Secure Event Input on, would leave inking taking every click.
+/// The poll cannot tell which key went down, so a key it reads ends the chord one poll later: by then
+/// a hotkey held on the chord's own modifiers, as live ink holds Esc, has had its press.
 @MainActor
 final class ModifierChord {
     private var chord: HeldChord
@@ -66,6 +68,8 @@ final class ModifierChord {
     private var keyWatch: Timer?
     /// The event that began the chord, in seconds since the Mac started.
     private var beganAt: TimeInterval = 0
+    /// A key went down since the chord began, read at the last poll, which ends the chord at the next.
+    private var keyRead = false
     private let changed: (HeldChord.Change) -> Void
 
     var isHeld: Bool { chord.isHeld }
@@ -94,6 +98,7 @@ final class ModifierChord {
     private func apply(_ change: HeldChord.Change) {
         keyWatch?.invalidate()
         keyWatch = nil
+        keyRead = false
         if change == .began {
             keyWatch = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.checkKeys() }
@@ -104,7 +109,10 @@ final class ModifierChord {
 
     private func checkKeys() {
         let sinceKey = CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown)
-        if sinceKey < ProcessInfo.processInfo.systemUptime - beganAt, let change = chord.keyDown() { return apply(change) }
+        if sinceKey < ProcessInfo.processInfo.systemUptime - beganAt {
+            if keyRead, let change = chord.keyDown() { return apply(change) }
+            keyRead = true
+        }
         let held = NSEvent.ModifierFlags(rawValue: UInt(CGEventSource.flagsState(.hidSystemState).rawValue))
         if let change = chord.flagsChanged(held) { apply(change) }
     }

@@ -59,4 +59,39 @@ final class LiveEscapeTests: XCTestCase {
         state.isOn = false
         XCTAssertNil(LiveEscape.next(state))
     }
+
+    func testEscDuringTheHoldCancelsItWhateverElseIsUp() {
+        var state = everything()
+        state.inking = true
+        state.pointerOnInk = false
+        XCTAssertEqual(LiveEscape.next(state), .cancelHold)
+        state.note = .withoutKeys
+        XCTAssertEqual(LiveEscape.next(state), .cancelHold, "the early note opened while the chord is held goes with the hold")
+        XCTAssertFalse(LiveEscape.needsPointer(state))
+        state.menuOpen = true
+        XCTAssertNil(LiveEscape.next(state))
+    }
+
+    func testRightAfterTheReleaseEscStopsTheNoteOrTheAskWhereverThePointerIs() {
+        var state = LiveEscape.Snapshot(isOn: true, justLetGo: true, note: .withoutKeys, askCanBeCancelled: true, tourRunning: true,
+                                        answerShown: true, marksShown: true)
+        XCTAssertEqual(LiveEscape.next(state), .discardNote, "a note a menu kept the keys from")
+        state.note = .none
+        XCTAssertEqual(LiveEscape.next(state), .cancelAsk)
+        XCTAssertFalse(LiveEscape.needsPointer(state))
+        state.askSentOnRelease = true
+        XCTAssertEqual(LiveEscape.next(state), .discardAsk)
+        state.askCanBeCancelled = false
+        XCTAssertNil(LiveEscape.next(state), "the tour, an answer and the ink keep the pointer rule")
+        XCTAssertTrue(LiveEscape.needsPointer(state))
+        state.pointerOnInk = true
+        XCTAssertEqual(LiveEscape.next(state), .endTour)
+    }
+
+    func testAnAskSentOnReleaseIsDiscardedOnlyFromTheInk() {
+        var state = LiveEscape.Snapshot(isOn: true, askCanBeCancelled: true, askSentOnRelease: true)
+        XCTAssertNil(LiveEscape.next(state), "once the person has gone elsewhere, Esc is that app's")
+        state.pointerOnInk = true
+        XCTAssertEqual(LiveEscape.next(state), .discardAsk)
+    }
 }
