@@ -3,8 +3,8 @@ import Foundation
 /// A launch with `VIGNETTE_SETTINGS` set is a test launch. It reads and writes that settings file and
 /// its own screenshot defaults, and reaches nothing else of the person's: no login item, no folder
 /// under `Library` the person's own app stores data in, and no update feed, agent folder or agent
-/// tool the environment does not name. With the person's app's bundle id, it shares that app's
-/// defaults domain.
+/// tool the environment does not name. Where it would share the person's own app's folders, it
+/// keeps its defaults apart too (`Identity.defaults`).
 enum Launch {
     static let settingsPath = settingsPath(in: ProcessInfo.processInfo.environment)
     static let isTest = settingsPath != nil

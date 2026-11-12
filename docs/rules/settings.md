@@ -31,7 +31,9 @@
   (`open -g --env VIGNETTE_SETTINGS=/tmp/x/settings.json <app>`) points a launch at another file,
   and the launch line names it. It also moves Apple's screenshot defaults to
   `<bundle id>.screencapture`, a domain macOS never reads, so a test launch neither takes nor moves
-  the user's save location. Vignette follows that domain's `location`, so write it before a launch
+  the user's save location. A test launch whose data `Launch.dataHome` moves keeps the app's own
+  records (`ThisMac`, `setupDoneOnThisMac`, `returnsToLiveInkSetup`, the login item's path) in
+  `<bundle id>.test-launch` (`Identity.defaults`), never in the person's own app's domain. Vignette follows that domain's `location`, so write it before a launch
   that should watch a scratch folder: `defaults write <bundle id>.screencapture location <folder>`. The tweak panel writes to whichever file the instance was launched
   with, so copy the real file over the scratch copy before a test round and, before relaunching the
   real build, merge back any `ui` keys that changed (`[settings] wrote ui.…` in the log lists them).

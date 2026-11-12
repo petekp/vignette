@@ -3,7 +3,8 @@
 - The agent plugin (`agent-plugin/`) and the skill it carries (`skills/vignette/SKILL.md`) ship in
   the bundle as folder resources (project.yml), and `AgentPlugin.swift` installs them.
   `AgentPlugin.stage` writes a marketplace into Application Support: the template, the skill copied
-  into `plugins/vignette/skills/vignette`, `scripts/inbox-root` naming this app's inboxes, and both
+  into `plugins/vignette/skills/vignette` with `scripts/requests-root` naming this app's requests
+  folder for the reply helper (`docs/rules/replies.md`), `scripts/inbox-root` naming this app's inboxes, and both
   marketplace lists named for the URL scheme, so a fork installs `vignette@<its scheme>`. It is
   assembled beside the old copy and swapped in whole. Each agent installs from it with its own
   command line tool (`PluginHost`): `claude plugin marketplace add`, then `claude plugin install

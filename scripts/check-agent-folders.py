@@ -36,13 +36,17 @@ TEST_READS = [
 OPENING = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
 
 
-def code_only(text):
+def code_only(text, keep_strings=False):
     """Blanks comments and the literal text of strings, keeping each string's interpolations and
-    every newline, so a value inside `\\( )` is still seen and line numbers hold."""
+    every newline, so a value inside `\\( )` is still seen and line numbers hold. With
+    `keep_strings`, strings stay as written. Every character keeps its index either way."""
     out, i, n = [], 0, len(text)
 
     def blank(s):
         return re.sub(r"[^\n]", " ", s)
+
+    def literal(s):
+        return s if keep_strings else blank(s)
 
     while i < n:
         if text.startswith("//", i):
@@ -65,13 +69,13 @@ def code_only(text):
                     while j < n and depth:
                         depth += {"(": 1, ")": -1}.get(text[j], 0)
                         j += 1
-                    out.append("  " + text[i + 2:j - 1] + " ")
+                    out.append(text[i:j] if keep_strings else "  " + text[i + 2:j - 1] + " ")
                     i = j
                 elif text[i] == "\\":
-                    out.append(blank(text[i:i + 2]))
+                    out.append(literal(text[i:i + 2]))
                     i += 2
                 else:
-                    out.append(blank(text[i]))
+                    out.append(literal(text[i]))
                     i += 1
             if text.startswith(close, i):
                 out.append(close)

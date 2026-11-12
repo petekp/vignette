@@ -171,8 +171,11 @@ the person's own app's data, so this copy stores its data under <folder>/Library
 Every store follows: the inboxes, the marketplace and its `scripts/inbox-root`, the old-skill record,
 the drawings, the requests and replies, live ink's folder and the leftovers a launch removes. A test
 launch on the person's own home still has no Codex home (`CodexSignIn.defaultHome`), since it runs no
-agent tool there. The reply helper takes a ticket only under
-`$HOME/Library/Application Support/<bundle id>`, so an agent answering such a copy runs it with `HOME`
-set to the copy's data folder. The log (`~/Library/Logs/<name>.log`) and the app's defaults domain do
-not move, so a copy with the shipped bundle id still writes the person's app's defaults.
-`IdentityTests` covers the decision.
+agent tool there. The reply helper in a copy's staged plugin takes a ticket in the requests folder that copy named in
+`requests-root` beside it, so an agent answering such a copy needs no `HOME` of its own. Such a launch keeps the app's own defaults (`ThisMac`, `setupDoneOnThisMac`,
+`returnsToLiveInkSetup`, the login item's path) in `<bundle id>.test-launch` (`Identity.defaults`),
+and its status item's autosave name is that domain's name, so it never moves the person's own icon.
+AppKit still writes that position into the app's standard domain, under the test launch's own key. The log (`~/Library/Logs/<name>.log`) does not move.
+`IdentityTests` covers the decision. `scripts/check-app-data-paths.py`, which `scripts/build.sh
+--test` runs, fails a statement outside `Identity.swift` that names `Library` in a string and the
+app's bundle id (`bundleID` or `bundleIdentifier`), as `Leftovers`' WebKit path did.

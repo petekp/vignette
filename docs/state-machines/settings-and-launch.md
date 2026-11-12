@@ -149,7 +149,7 @@ Finds the `claude`, `codex` and `herdr` programs. `start()` runs once per launch
 
 Owner: `LoginItem.swift:7`. Tests: none.
 
-Registers Vignette as a login item. The state is `SMAppService.mainApp.status` plus `UserDefaults loginItemRegisteredPath`.
+Registers Vignette as a login item. The state is `SMAppService.mainApp.status` plus `loginItemRegisteredPath` in `Identity.defaults`.
 
 **Transitions**
 

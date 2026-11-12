@@ -17,6 +17,7 @@ final class AgentPlugins: @unchecked Sendable {
     private let skill: URL?
     private let marketplaceFolder: URL
     private let inboxRoot: URL
+    private let requestsRoot: URL
     private let marketplace: String
     private let appName: String
     private let migrations: LegacySkillMigrations
@@ -30,6 +31,7 @@ final class AgentPlugins: @unchecked Sendable {
     init(home: URL, environment: [String: String], personHome: URL,
          template: URL? = AgentPlugin.bundled, skill: URL? = AgentPlugin.bundledSkill,
          marketplaceFolder: URL = AgentPlugin.marketplaceFolder, inboxRoot: URL = AgentPlugin.inboxRoot,
+         requestsRoot: URL = ScreenshotRequests.defaultRoot,
          marketplace: String = AgentPlugin.marketplace, appName: String = Identity.name,
          migrations: LegacySkillMigrations = LegacySkillMigrations(file: LegacySkillMigrations.standard),
          host: ((AgentClient, URL) -> PluginHost)? = nil) {
@@ -40,6 +42,7 @@ final class AgentPlugins: @unchecked Sendable {
         self.skill = skill
         self.marketplaceFolder = marketplaceFolder
         self.inboxRoot = inboxRoot
+        self.requestsRoot = requestsRoot
         self.marketplace = marketplace
         self.appName = appName
         self.migrations = migrations
@@ -182,7 +185,8 @@ final class AgentPlugins: @unchecked Sendable {
             throw CocoaError(.fileNoSuchFile, userInfo: [NSLocalizedDescriptionKey: "the plugin is missing from this copy of \(Identity.name)"])
         }
         let changed = try AgentPlugin.stage(template: template, skill: skill, into: marketplaceFolder,
-                                            inboxRoot: inboxRoot, marketplace: marketplace, appName: appName, app: Bundle.main.bundleURL)
+                                            inboxRoot: inboxRoot, requestsRoot: requestsRoot, marketplace: marketplace, appName: appName,
+                                            app: Bundle.main.bundleURL)
         if changed { Log.write("[plugin] staged \(marketplaceFolder.path) version=\(bundledVersion ?? "?")") }
         return changed
     }

@@ -24,7 +24,17 @@ enum Identity {
     static let applicationSupportURL = dataHome.appendingPathComponent("Library/Application Support/\(bundleID)")
     static let cachesURL = dataHome.appendingPathComponent("Library/Caches/\(bundleID)")
     static let webKitURL = dataHome.appendingPathComponent("Library/WebKit/\(bundleID)")
-    static let statusItemAutosaveName = bundleID
+    /// Whether this launch keeps its data apart from its home folder's (`dataHome`), as a test launch
+    /// does where it would otherwise share the person's own app's.
+    static let keepsItsOwnData = dataHome.standardizedFileURL.path != FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+    /// The defaults domain for the app's own records: the bundle id's, or `<bundle id>.test-launch`
+    /// for a launch that keeps its own data, so it never reads or changes the person's own app's.
+    static let defaultsDomain = keepsItsOwnData ? "\(bundleID).test-launch" : bundleID
+    /// A suite named for the app's own bundle id would be nil; `defaultsDomain` names another.
+    static let defaults = keepsItsOwnData ? UserDefaults(suiteName: defaultsDomain)! : .standard
+    /// AppKit keeps a status item's position under this name in the app's standard defaults, which
+    /// no launch can move, so a test launch's position is a key of its own there.
+    static let statusItemAutosaveName = defaultsDomain
     static let hotKeySignature = hotKeySignature(for: bundleID)
 
     /// The first scheme under CFBundleURLTypes.

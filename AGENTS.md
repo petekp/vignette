@@ -150,8 +150,9 @@ Before you drive the app:
   person's own home, and the launch logs a `[plugin] test launch:` line for each. On the person's
   own home it keeps its Application Support, Caches and WebKit folders under its settings file's
   folder, or the temporary folder when that one would reach theirs (`Launch.dataHome`), and logs
-  `[app] test launch: … stores its data under <folder>/Library`. It still writes their app's defaults
-  when its bundle id is the same. It neither registers nor removes a login item. It runs no updater, and logs
+  `[app] test launch: … stores its data under <folder>/Library`. It keeps the app's own defaults in
+  `<bundle id>.test-launch` there (`Identity.defaults`). `scripts/check-app-data-paths.py` fails a
+  path into `Library` with the bundle id built outside `Identity.swift`. It neither registers nor removes a login item. It runs no updater, and logs
   `[update] test launch: no updater`, unless `VIGNETTE_FEED` names a feed. With one, it checks that
   feed in place of the release feed. Each of these gates reads `Launch.isTest`. To test the plugin, also launch with
   `CFFIXED_USER_HOME=<scratch home>` (`docs/test-isolation-2026-09-29.md`). It runs no codex, herdr

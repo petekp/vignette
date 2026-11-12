@@ -9,6 +9,7 @@ final class AgentPluginTests: XCTestCase {
     var skill: URL!
     var staged: URL!
     var inboxes: URL!
+    var requests: URL!
 
     override func setUpWithError() throws {
         dir = FileManager.default.temporaryDirectory.appendingPathComponent("vignette-plugin-\(UUID().uuidString)")
@@ -16,12 +17,14 @@ final class AgentPluginTests: XCTestCase {
         skill = dir.appendingPathComponent("bundle/vignette")
         staged = dir.appendingPathComponent("support/agent-plugin")
         inboxes = dir.appendingPathComponent("support/claude-sessions")
+        requests = dir.appendingPathComponent("support/requests")
         try write("{\"name\": \"vignette\", \"plugins\": []}", to: template.appendingPathComponent(".claude-plugin/marketplace.json"))
         try write("{\"name\": \"vignette\", \"plugins\": []}", to: template.appendingPathComponent(".agents/plugins/marketplace.json"))
         try write("{\"name\": \"vignette\", \"version\": \"6.0.0\"}",
                   to: template.appendingPathComponent("plugins/vignette/.claude-plugin/plugin.json"))
         try write("#!/bin/sh\n", to: template.appendingPathComponent("plugins/vignette/scripts/inbox.sh"))
         try write("---\nname: vignette\n---\n", to: skill.appendingPathComponent("SKILL.md"))
+        try write("#!/bin/sh\n", to: skill.appendingPathComponent("scripts/reply"))
     }
 
     override func tearDownWithError() throws {
@@ -37,8 +40,8 @@ final class AgentPluginTests: XCTestCase {
 
     private func stage(marketplace: String = "vignette", appName: String = "Vignette",
                        app: URL = URL(fileURLWithPath: "/Applications/Vignette.app")) throws -> Bool {
-        try AgentPlugin.stage(template: template, skill: skill, into: staged, inboxRoot: inboxes, marketplace: marketplace, appName: appName,
-                              app: app)
+        try AgentPlugin.stage(template: template, skill: skill, into: staged, inboxRoot: inboxes, requestsRoot: requests,
+                              marketplace: marketplace, appName: appName, app: app)
     }
 
     // MARK: The marketplace
@@ -50,6 +53,7 @@ final class AgentPluginTests: XCTestCase {
         let plugin = AgentPlugin.pluginFolder(in: staged)
         XCTAssertEqual(try read(plugin.appendingPathComponent("skills/vignette/SKILL.md")), "---\nname: vignette\n---\n")
         XCTAssertEqual(try read(plugin.appendingPathComponent("scripts/inbox-root")), inboxes.path + "\n")
+        XCTAssertEqual(try read(plugin.appendingPathComponent("skills/vignette/scripts/requests-root")), requests.path + "\n")
         XCTAssertEqual(AgentPlugin.version(inMarketplace: staged), "6.0.0")
     }
 
