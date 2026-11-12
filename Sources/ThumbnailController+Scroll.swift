@@ -27,6 +27,8 @@ extension ThumbnailController {
         let carried = Set(passing.map { model.cards[$0] }.filter { !leaves($0) }.map(\.id))
         model.carried = carried
         model.removeCards(where: leaves)
+        // The cards above slide down with no scroll, which can bring cards without pictures into view.
+        keepPictures()
         DispatchQueue.main.asyncAfter(deadline: .now() + 2 * ui.relayoutDuration) { [weak self] in
             guard let self, self.model.carried == carried else { return }
             self.model.carried = []

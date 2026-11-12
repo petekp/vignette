@@ -4,7 +4,8 @@ import AppKit
 /// column as long as the folder, and a card's picture is about 0.8 MB, so a card far from the view
 /// lets its picture go and takes it back as the view comes near: from `Thumbnailer`'s cache when it
 /// is still there, decoded off the main thread when it is not. A column no longer than `keptAlways`
-/// or `recentCount`, whichever is larger, holds every picture, as it always has.
+/// or `recentCount`, whichever is larger, lets no picture go, as it always has, and still takes
+/// back the pictures it let go while it was longer.
 @MainActor
 final class CardPictures {
     static let keptAlways = 100
@@ -19,16 +20,16 @@ final class CardPictures {
     /// The cards to let go of their pictures and the cards to give theirs back, by index.
     /// `heights` are the cards' drawn heights from the newest, `view` is the scroll's range, and
     /// `holding` says which cards hold a picture now. A card `keeps` holds its own whatever the
-    /// distance, and a column of no more than `keepsAll` cards holds every one.
+    /// distance, and a column of no more than `keepsAll` cards lets none go.
     static func plan(heights: [CGFloat], spacing: CGFloat, view: ClosedRange<CGFloat>, holding: [Bool],
                      keepsAll: Int, keeps: (Int) -> Bool) -> (drop: [Int], want: [Int]) {
-        guard heights.count > max(keptAlways, keepsAll) else { return ([], []) }
+        let dropsAny = heights.count > max(keptAlways, keepsAll)
         let viewport = max(view.upperBound - view.lowerBound, 1)
         var drop: [Int] = [], want: [Int] = [], bottom: CGFloat = 0
         for (index, height) in heights.enumerated() {
             let top = bottom + height
             let distance = max(0, bottom - view.upperBound, view.lowerBound - top) / viewport
-            if holding[index], distance > far, !keeps(index) { drop.append(index) }
+            if dropsAny, holding[index], distance > far, !keeps(index) { drop.append(index) }
             if !holding[index], distance < near { want.append(index) }
             bottom = top + spacing
         }
@@ -37,6 +38,11 @@ final class CardPictures {
 
     /// Cards whose picture is being decoded, or failed to decode, so the next plan does not ask again.
     var asked: Set<UUID> = []
+    /// Cards in the column that let their picture go and have not had it back. While there are any,
+    /// a column too short to let pictures go is still planned, so it takes them back. It outlasts
+    /// `reset`, since a new column keeps the cards on screen by id, and a plan trims it to the
+    /// column's cards. A card whose picture does not decode leaves it, as it is not asked again.
+    var dropped: Set<UUID> = []
     /// Pictures decoded in the last `arrivalWindow`, given to the cards in one change.
     var arrived: [UUID: NSImage] = [:]
     /// How long arriving pictures gather before the cards take them, since each change to the cards

@@ -68,14 +68,14 @@ Owner: `ThumbnailController.shiftUp` (`:1430`). Tests: none.
 
 Inserts a card into the open stack without animating the layout change; the new card slides in after the old ones are lifted back.
 
-**States**: `model.entering` (`StackModel.swift:12`), `model.lift`, `model.offscreen`, `shift` (`ThumbnailController.swift:1417`), `model.scroll`.
+**States**: `model.entering` (`StackModel.swift:12`), `model.lift`, `model.liftFraction` (`StackModel.swift:16`), `model.offscreen`, `shift` (`ThumbnailController.swift:1417`), `model.scroll`.
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| visible stack | `shiftUp` | card inserted at 0, `lift` set for every old card, `scroll = 0` | synchronous |
-| next turn | `first` | card removed from `offscreen` | then `withAnimation`: `lift = [:]`, `removeOverflow()`, `relayout()` |
+| visible stack | `shiftUp` | card inserted at 0, `setLifts`: `lift` set for every old card and `liftFraction = 1`, `scroll = 0` | synchronous |
+| next turn | `first` | card removed from `offscreen` | then `withAnimation`: `liftFraction = 0`, `removeOverflow()`, `relayout()`; `lift` keeps its values, drawn times 0 |
 | after `shiftUpDuration` | clear | `entering` cleared if still this card | — |
 
 **Invariants**
