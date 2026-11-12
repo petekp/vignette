@@ -81,9 +81,9 @@ A mark drawn over an open menu cannot belong to the menu's window. It stays on t
 
 ### LiveEscape (explicit) and the Esc hotkey (implicit)
 
-Owner: `LiveEscape.swift:8` (`next`, `:60`), `LiveInk+Escape.swift:23` (`holdEscape`), `LiveInk.swift:1736` (`escapeSnapshot`). Tests: `LiveEscapeTests.testEscBacksOutOneStepAtATimeInOrder`, `testEscIsTheAppsWhileTheNoteIsUpWithoutTheKeys`, `testEscClearsInkAloneAndNothingElse`, `testEscPastTheNoteAndReplysFieldIsTheAppsUnlessThePointerIsOnInk`, `testEscIsNeverTakenWhileTheStackHoldsTheScreenAMenuIsUpOrLiveInkIsOff`.
+Owner: `LiveEscape.swift` (`next`), `LiveInk+Escape.swift` (`escapeSnapshot`, `holdEscape`, `cancelHold`, `keepEscapeAfterRelease`), `LiveEscapeAfterRelease.swift`. Tests: `LiveEscapeTests` (every test in it).
 
-Esc backs out of live ink one step per press. `LiveEscape.next(Snapshot)` is pure: it returns the step to run, or nil to let the app have the key. `escapeKey: HotKey?` (`LiveInk.swift:105`) is held only while a step exists.
+Esc backs out of live ink a step per press. `LiveEscape.next(Snapshot)` is pure: the step to run, or nil, leaving the key to the app. `escapeKey: (key: HotKey, modifiers: UInt32)?` is held only while a step exists, with the chord's Carbon modifiers for `cancelHold` while it is held, else plain. From `cancelHold` until Esc is up (`escapeRepeats`), `escapeKey` has the chord's modifiers held, `escape()` does nothing and `[state]` `escape` is null. `escapeAfterRelease: LiveEscapeAfterRelease?` is set when `settleInking` opens or keeps the note, before its words can send, recording `LiveAsks.lastID` (`asksBefore`). It is cleared by a mouse press off the ink, an app's activation (not the keys' return, within `handBackLeeway` of `FocusReturn.handedBackAt`), the next `startInking`, or `holdEscape` once no note is up and `LiveAsks.cancellable(sendsWait:after: asksBefore)` is nil.
 
 **States**: `Snapshot` (`LiveEscape.swift:29`) in, `Step?` out; and the hotkey, held or not.
 
@@ -91,20 +91,23 @@ Esc backs out of live ink one step per press. `LiveEscape.next(Snapshot)` is pur
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| `!isOn`, or the stack holds the screen, or a menu is open, or the note is up without the keys | any | no step | Esc goes to the app |
-| note has keys | Esc | step `discardNote` | note discarded |
+| `!isOn`, or the stack holds the screen, or the note's menu is open | any | no step | Esc goes to the app |
+| inking (chord held, or a stroke outliving it) | Esc with the chord's modifiers, or plain Esc after it | step `cancelHold` | inking stops; the hold's ink fades; listening stops; a note opened in the hold closes; nothing sent |
+| note has keys, or note without keys and `justLetGo` | Esc | step `discardNote` | note discarded |
+| note without keys, not `justLetGo` | any | no step | Esc goes to the app |
 | Reply field open | Esc | step `closeReplyField` | field closed |
-| the pointer is on ink, and an ask is out | Esc | step `cancelAsk` | ask stopped |
+| the pointer is on ink or `justLetGo`, and an ask is out | Esc | step `cancelAsk`, or `discardAsk` when that ask was sent on release | ask stopped; `discardAsk` takes its new ink away and opens no note, as stopping an ask with no ink does |
 | the pointer is on ink, a tour is running | Esc | step `endTour` | tour let go |
 | the pointer is on ink, an answer is up | Esc | step `closeAnswer` | answer closed |
 | the pointer is on ink, ink exists | Esc | step `clearInk` | ink cleared |
-| the pointer is not on ink, none of the first two apply | Esc | no step | Esc goes to the app |
+| the pointer is not on ink, none of the steps before the tour apply | Esc | no step | Esc goes to the app |
 
 The order in the table is the order of `next`: when two things are open, the earlier step runs first, one per press. A `CFRunLoopObserver` re-evaluates the hotkey before every wait of the main loop (`LiveInk.swift:196`). `escape()` recomputes `next` at press time (`LiveInk+Escape.swift:35`).
 
 **Invariants**
 
 - Esc backs out one step per press, in the order above. Checked by: `LiveEscapeTests.testEscBacksOutOneStepAtATimeInOrder`.
+- While the chord is held, the chord does not end on the Esc press before the hotkey runs `cancelHold`: `ModifierChord.checkKeys` ends the chord one poll after it reads a key, and a modifier change after a key goes down ends it as `.interrupted`, not `.ended`. Checked by: nothing; it reads the HID state.
 - The hotkey is held exactly while `next(snapshot)` is non-nil. Checked by: nothing; `LiveInk` is not constructible in a test.
 - `pointerOnInk` reads `NSEvent.mouseLocation` (`LiveInk+Escape.swift:11`), which stays stale after inking, so the hotkey may not be held and Esc reaches the app ([hand-9](plausible-findings-requests-to-live-ink.md#hand-9)).
 
@@ -189,10 +192,10 @@ Captures speech while the chord is held and a short time after, and turns it int
 | starting, listening | `finish()` (0.1 s timer says `ListeningEnd.isOver`, or `typedInNote`) | finishing | mic stop queued behind start, `transcriber.finish(timeout: 2)`, then `onFinished` |
 | starting, listening | `cancel()` (from `stopListening`) | finishing, cancelled | mic stop, `transcriber.cancel()` |
 | finishing | `finish()`, `cancel()` | — | ignored, `guard !finishing` (`:90`, `:107`) |
-| finishing | `pressedAgain()`, `released()` | finishing | only edit `end`; no new listening starts because `listen()` returns at `guard listening == nil` (`LiveInk+Listening.swift:7`) ([hand-5](plausible-findings-requests-to-live-ink.md#hand-5)) |
+| finishing | `pressedAgain()`, `released()` | finishing | a press sets `pressedWhileFinishing`; `listen()` drops it if no words, else a note's `doneListening` listens again ([hand-5](plausible-findings-requests-to-live-ink.md#hand-5)) |
 | finishing | transcriber words | — | dropped, `LiveListening.swift:62` |
-| finishing (finish) | `onFinished`, `LiveInk.listening === listening` | none | `doneListening`: `listening = nil`; no note → `heardBeforeNote`; note and `!typedOver` → `spoken`, `note.hear`, and `note.send()` with ink when `liveInkSendWhenQuiet` (default true), which may send while the next stroke is under way ([hand-5](plausible-findings-requests-to-live-ink.md#hand-5)) |
-| finishing | `onFinished` after `stopListening` or a new listening | — | dropped by identity, `LiveInk+Listening.swift:25`, `:30` |
+| finishing (finish) | `onFinished`, `LiveInk.listening === listening` | none | `doneListening`: `listening = nil`; no note → `heardBeforeNote`; words from `tailMayOpenNote`'s tail open it by the pointer; note and `!typedOver` → `spoken`, `note.hear`, and `note.send()` with ink when `liveInkSendWhenQuiet` (default true), which may send while the next stroke is under way ([hand-5](plausible-findings-requests-to-live-ink.md#hand-5)) |
+| finishing | `onFinished` after `stopListening` or a new listening | — | dropped by identity, `LiveInk+Listening.swift:29`, `:34` |
 | starting | microphone start fails after `finish()` | finishing | the failure is dropped with no `speechProblem` ([hand-11](plausible-findings-requests-to-live-ink.md#hand-11)) |
 
 **Invariants**
@@ -208,7 +211,7 @@ Captures speech while the chord is held and a short time after, and turns it int
 - `AppleTranscriber.finish` timing out after the real answer: `answer(timedOut:)` no-ops when `waiting` is nil (`AppleTranscriber.swift:117`); the continuation is taken and cleared under the lock.
 - A failed `begin()` cancels the transcriber (`Microphone.swift:31`), so a later `finish` returns `latest` at once.
 - Heard words with no note: `heardBeforeNote` is reset by the next `listen()` and by `stopListening`.
-- Permission is read once, synchronously (`SpeechPermission.granted`, `LiveInk+Listening.swift:11`); no async permission answer reaches live ink.
+- Permission is read once, synchronously (`SpeechPermission.granted`, `LiveInk+Listening.swift:14`); no async permission answer reaches live ink.
 
 ### LiveWindows Tracked (implicit)
 

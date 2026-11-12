@@ -30,11 +30,20 @@ A stroke that ends while live ink listens moves the note to that ink, or opens i
 has been heard yet. A later stroke moves it to the newest ink, as the release does. The chord's
 release gives the note the keys. A menu still open waits for the release, which closes it first.
 While it listens the words show at full strength, keys or not, and the empty note shows no prompt.
+Esc while the chord is held cancels the hold: the microphone stops, the words heard go, and a note
+opened in this hold closes with the ink drawn in it (`docs/live-ink.md`, the Esc rule).
 
 Let go with words and no ink, and the note stays by the pointer with the keys and the words. It
-sends nothing on its own, and `liveInkSendWhenQuiet` waits for ink. An ask is about ink, so Return
-there beeps and keeps the note; a stroke drawn on a later hold moves the note to it. Esc closes it.
-With nothing heard and no ink, nothing opens. When inking is cut short, by sleep or a screen
+sends nothing on its own: `liveInkSendWhenQuiet` waits for ink. Return asks about the window under
+the point the note hangs from, with that window's picture, no strokes, and the point as `pointer`
+in the ask's JSON (`LivePacket.message`). Vignette's own
+windows never count, so with the pointer on the note it is the window under the note, and with no
+window there, the desktop. The answer's conversation takes the note's place, and its marks go on that
+window. To an agent session, Return sends a card of that window with the words and no strokes. With
+no words left, Return closes the note. A stroke drawn on a later hold moves the note to it, and
+Return then asks about the ink. Esc closes the note, and one Esc stops its ask with no note to reopen.
+With no ink and no note, listening runs 0.3 s past the release, and words heard by then open the
+note by the pointer; once words are heard, Esc in that time stops it. With nothing heard and no ink, nothing opens. When inking is cut short, by sleep or a screen
 change, or the stack or the annotator comes up, a note by the pointer closes.
 
 ## The waveform

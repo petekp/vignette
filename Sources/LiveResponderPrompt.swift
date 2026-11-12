@@ -26,6 +26,9 @@ extension LiveResponder {
     means ink 2. The numbers are Vignette's; never mention them.
 
     Answer what they asked about the thing their ink points at. With no note, say what matters about it. \
+    When the JSON has `pointer`, they asked without drawing, with their pointer there on this window: \
+    answer their note about what is at that point, or about the whole window when the note asks about it. \
+    With empty `ink` and no `pointer`, answer their note about the whole window. \
     Be specific and brief: one to three short sentences in `say`, plain text, no Markdown. `say` takes \
     the place of their note as the reply to it, beside your first mark; with labelled marks, it ties them \
     together and does not repeat the labels. List marks in reading order, top to bottom. Point with \

@@ -38,7 +38,7 @@ final class LiveListening {
     private let transcriber: Transcriber
     private var end: ListeningEnd
     private var timer: Timer?
-    private var finishing = false
+    private(set) var finishing = false
     /// When listening began, the time the words' times count from.
     let began = Date()
     /// When the chord went down for this listening, which the log counts the first sound from.
@@ -102,7 +102,13 @@ final class LiveListening {
 
     func released() { end.release(at: CACurrentMediaTime()) }
 
-    func pressedAgain() { end.pressAgain() }
+    /// The chord went down again once this listening was finishing: that hold waits for its words.
+    private(set) var pressedWhileFinishing = false
+
+    func pressedAgain() {
+        if finishing { pressedWhileFinishing = true }
+        end.pressAgain()
+    }
 
     /// Stops the microphone and answers the final words through `onFinished`.
     func finish() {

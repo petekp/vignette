@@ -107,8 +107,8 @@ final class LiveResponders {
     /// What an ask about `packet` sends `client`'s conversation `conversation`, with `note` as its words
     /// and `near` the text lines near its ink: the pictures, unless that conversation has this window
     /// with this text already, then the lines it has not been sent, then the ask itself. Answers
-    /// whether the pictures went.
-    func content(of packet: LivePacket, note: String, ink: [Mark], new: Set<Mark.ID>, near: [LivePacket.Line],
+    /// whether the pictures went. `pointer` is where an ask with no ink was made.
+    func content(of packet: LivePacket, note: String, ink: [Mark], new: Set<Mark.ID>, near: [LivePacket.Line], pointer: CGPoint?,
                  to client: AgentClient, conversation: Int) -> (parts: [LiveResponder.Part], fresh: Bool) {
         let last = pictures[client]
         let same = last.map { $0.conversation == conversation && $0.subject == packet.subject && $0.text == packet.textSignature } ?? false
@@ -122,7 +122,7 @@ final class LiveResponders {
             for window in packet.alone { parts.append(.picture(window.picture)) }
         }
         if let lines = LivePacket.textLines(unsent) { parts.append(.text(lines)) }
-        parts.append(.text(packet.message(note: note, ink: ink, new: new, freshPicture: !same)))
+        parts.append(.text(packet.message(note: note, ink: ink, new: new, freshPicture: !same, pointer: pointer)))
         return (parts, !same)
     }
 

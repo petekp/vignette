@@ -34,6 +34,7 @@ final class LiveInkVoiceTests: XCTestCase {
         XCTAssertEqual(place.edge, .right)
         XCTAssertGreaterThanOrEqual(place.body.minX, pointer.x + 40)
         XCTAssertFalse(LiveNotePopover.pointer(pointer, crowds: place.body, clearance: 40))
+        XCTAssertEqual(LiveNotePopover.pointer(hungFrom: place), pointer)
     }
 
     func testNearTheRightEdgeTheNoteHangsLeftOfThePointer() {

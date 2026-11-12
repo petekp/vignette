@@ -33,6 +33,12 @@ struct LiveAsks: Equatable {
         var toSession = false
         /// The words asked with, which the note opens with again when Esc stops the ask.
         var words = ""
+        /// It went by itself when the person stopped talking (`liveInkSendWhenQuiet`), so Esc takes its
+        /// ink and words away rather than opening the note on them again.
+        var sentOnRelease = false
+        /// Where the pointer was, for an ask with no ink: it is about the window under that point, and
+        /// so is an ask that follows its answer.
+        var spot: CGPoint?
         var reason: String?
         var picture = false
         /// The reply as it streams in, and once it is whole. An ask from one of an answer's buttons
@@ -90,7 +96,8 @@ struct LiveAsks: Equatable {
     private var picks: [Ask.ID: ButtonPick] = [:]
     /// Only marks with a role or leaving have one.
     private var records: [Mark.ID: Record] = [:]
-    private var lastID: Ask.ID = 0
+    /// The id given last, above every ask's, whatever order they are in.
+    private(set) var lastID: Ask.ID = 0
     /// The asks to a session that Esc stopped before their send was stored.
     private var withdrawn = Set<Ask.ID>()
 
@@ -141,10 +148,10 @@ struct LiveAsks: Equatable {
     /// The asks to the responder that wait for an earlier one, in the order sent.
     var queued: [Ask.ID] { asks.filter { $0.isUnderWay && !$0.toSession }.dropFirst().map(\.id) }
 
-    /// The ask Esc stops next: the newest under way that can be. One to a session only when
-    /// `sendsWait`, since what stops it is taking the send back in its grace.
-    func cancellable(sendsWait: Bool) -> Ask.ID? {
-        asks.last { $0.isUnderWay && (!$0.toSession || sendsWait) }?.id
+    /// The ask Esc stops next: the newest under way that can be, begun after ask `first`. One to a
+    /// session only when `sendsWait`, since what stops it is taking the send back in its grace.
+    func cancellable(sendsWait: Bool, after first: Ask.ID = 0) -> Ask.ID? {
+        asks.last { $0.id > first && $0.isUnderWay && (!$0.toSession || sendsWait) }?.id
     }
 
     /// Not while the ask from one of the answer's buttons is under way, unless its send was queued or
@@ -184,52 +191,32 @@ struct LiveAsks: Equatable {
 
     // MARK: Beginning
 
-    /// The reply the person answered with one of its buttons, and the words sent.
-    struct Following: Equatable {
-        var reply: Mark
-        var pick: LiveAnswerActions.Pick
-        var words: String
-    }
-
-    /// Why an ask did not begin.
-    enum Refusal: String, Equatable {
-        case noInk = "There's no ink to ask about."
-
-        var detail: String {
-            switch self {
-            case .noInk: "no ink"
-            }
-        }
-    }
-
-    enum Begun: Equatable {
-        /// `about` is oldest first and its last mark has a shape, centred on `point`. The ask looks for
-        /// its packet at once, whatever else is under way. Following a reply, `effects` ends the answer
-        /// it takes the place of.
-        case began(Ask.ID, about: [Mark], point: CGPoint, effects: [Effect])
-        /// Following a reply, the answer it hangs from comes back, saying why.
-        case refused(Refusal, effects: [Effect])
-    }
-
     /// Begins an ask about the new ink among `shown`, or, with none, about the ink asked about,
-    /// looking for its packet. `following` is the reply whose button the person picked: the ask takes
-    /// that answer's place, and is about its marks and the ink asked about, never the new ink, which
-    /// stays the note's.
-    mutating func begin(among shown: [Mark], following: Following?, words: String = "", toSession: Bool = false) -> Begun {
+    /// looking for its packet. With `pointer`, it is about the window under it, with no ink.
+    /// `following` is the reply whose button the person picked: the ask takes that answer's place and
+    /// is about its marks and the ink asked about, or its ask's window, never the new ink.
+    mutating func begin(among shown: [Mark], following: Following?, words: String = "", toSession: Bool = false,
+                        sentOnRelease: Bool = false, at pointer: CGPoint? = nil) -> Begun {
         let before = asks.map(\.id)
-        let about = following == nil ? about(among: shown) : askedInk(among: shown)
-        guard let shape = about.last?.shapeExtent else { return refuse(.noInk, following: following) }
+        let answered = following.flatMap { ask(withReply: $0.reply.id) }
+        let about = following == nil ? (pointer == nil ? about(among: shown) : [])
+            : answered?.spot == nil ? askedInk(among: shown) : []
+        let spot = about.isEmpty ? answered?.spot ?? pointer : nil
+        guard let point = about.last?.shapeExtent.map({ CGPoint(x: $0.midX, y: $0.midY) }) ?? spot else {
+            return refuse(.noInk, following: following)
+        }
         let ids = Set(about.map(\.id))
         let fresh = ids.filter { !isAsked($0) }
         add(.asked, to: ids)
         take(.noteInk, from: ids)
         lastID += 1
         let leader = Self.leader(of: about)
-        var new = Ask(id: lastID, phase: .looking, about: ids, fresh: fresh, toSession: toSession, words: words, leader: leader)
+        var new = Ask(id: lastID, phase: .looking, about: ids, fresh: fresh, toSession: toSession, words: words,
+                      sentOnRelease: sentOnRelease && following == nil, spot: spot, leader: leader)
         if let following {
             new.say = following.reply
             new.picked = following.pick
-            if let answered = ask(withReply: following.reply.id) {
+            if let answered {
                 picks[lastID] = ButtonPick(answer: answered, words: following.words, pick: following.pick)
                 let marks = answerMarks(of: answered.id)
                 new.about.formUnion(marks)
@@ -238,7 +225,7 @@ struct LiveAsks: Equatable {
             }
         }
         asks.append(new)
-        return .began(lastID, about: about, point: CGPoint(x: shape.midX, y: shape.midY), effects: ended(since: before))
+        return .began(lastID, about: about, point: point, effects: ended(since: before))
     }
 
     /// Following a reply, the answer it hangs from comes back as it was, saying why the ask did not
@@ -295,9 +282,9 @@ struct LiveAsks: Equatable {
         /// this ask's.
         case dismissed(Ask.ID)
         /// Esc on ask `id`, under way: it stops, and its ink is as it was before it began: ink that was
-        /// new is the note's again, and the note opens on it with the ask's words. A reply to put back
-        /// must be among `shown`. Nothing is said, since the person stopped it. A session's note stored
-        /// after this is withdrawn.
+        /// new is the note's again, and the note opens on it with the ask's words. Ink new to an ask sent
+        /// on release goes instead. A reply to put back must be among `shown`. Nothing is said, since the
+        /// person stopped it. A session's note stored after this is withdrawn.
         case cancelled(Ask.ID, shown: Set<Mark.ID>)
         /// Esc with no ask to stop: the newest answer's marks leave, and the person's ink stays.
         case answerClosed
@@ -305,58 +292,6 @@ struct LiveAsks: Equatable {
         case finished(Set<Mark.ID>)
         /// The screen was cleared, or live ink turned off.
         case cleared
-    }
-
-    /// What comes back for an ask.
-    enum Arrival: Equatable {
-        /// The packet was captured. Taken only while looking.
-        case packetCame
-        /// The responder's reply streamed in further. Taken only while asking.
-        case replyCame
-        case answerCame
-        /// The packet could not be captured, the responder failed, or a session refused the note.
-        /// `shown` is every mark on the screen, among which an answer to put back must be.
-        case failed(reason: String, shown: Set<Mark.ID>)
-        /// A session took the note, with `ink` in its picture.
-        case sentToSession(ink: Set<Mark.ID>)
-    }
-
-    enum Effect: Equatable {
-        /// Ask `id` is over: let go of everything kept for it. It comes before the effects on its marks.
-        case ended(Ask.ID)
-        /// Ask the responder, with ask `id`'s packet. Every ask before it to the responder has ended.
-        case send(Ask.ID)
-        /// Stop the responder's turn: the ask it was answering was stopped or dismissed.
-        case interrupt
-        /// Send the note to the session, as a card of the ink `about`.
-        case share(about: Set<Mark.ID>)
-        /// Lay out the reply so far and draw it, then send `streamed`.
-        case showReply
-        /// Lay out the answer and draw it, then send `answered`.
-        case drawAnswer
-        /// The answer is back as it was before its button was picked. Show its set-aside marks `aside`
-        /// again, then draw `reply` again, saying `reason` in its header when there is one, and send
-        /// `replyRedrawn`.
-        case restore(reply: Mark.ID, reason: String?, aside: Set<Mark.ID>)
-        /// Say `reason` in a reply hung from ask `id`'s ink, and send `answerShown`.
-        case say(Ask.ID, String)
-        /// Say `reason` in `reply`'s row, in place of its words, and send `replyRedrawn`.
-        case notice(reply: Mark.ID, reason: String)
-        /// Take these marks off the screen.
-        case remove(Set<Mark.ID>)
-        /// Ink is the note's again: open the note on it, with the keys and with `words`, or give the keys
-        /// to the note up already, which keeps its own words.
-        case reopenNote(words: String)
-        /// The note of an ask Esc stopped was stored after all: take the send back.
-        case withdraw
-        /// Let go of ask `id`'s steps, focus and buttons, then take these marks off. The ask has already
-        /// taken their part as its answer. May be empty.
-        case removeAnswer(Ask.ID, Set<Mark.ID>)
-        /// Let go of ask `id`'s steps, focus and buttons, and hide these marks where they are. The ask
-        /// has already taken their part as its answer.
-        case setAside(Ask.ID, Set<Mark.ID>)
-        /// These marks are leaving: show them going, and send `finished` once they have.
-        case finish(Set<Mark.ID>, LiveMarksLayer.Finish)
     }
 
     mutating func reduce(_ event: Event) -> [Effect] {
@@ -459,12 +394,13 @@ struct LiveAsks: Equatable {
             let new = current.fresh.subtracting(aboutOfOtherAsks(than: id))
             let present = new.filter { records[$0] != nil }
             take(.asked, from: new)
-            add(.noteInk, to: present)
+            if !current.sentOnRelease { add(.noteInk, to: present) }
             let interrupt: [Effect] = current.phase == .asking ? [.interrupt] : []
             if let restored = restore(id, saying: nil, shown: shown) { return interrupt + [restored] }
             let removal = removeAnswer(of: id)
             end(id)
-            return interrupt + [removal] + (present.isEmpty ? [] : [.reopenNote(words: current.words)])
+            let ink: [Effect] = present.isEmpty ? [] : [current.sentOnRelease ? .remove(present) : .reopenNote(words: current.words)]
+            return interrupt + [removal] + ink
         case .answerClosed:
             guard let ask = asks.last(where: { !$0.isUnderWay && answerMarks(of: $0.id).contains { !isFinishing($0) } }) else { break }
             let ids = answerMarks(of: ask.id)

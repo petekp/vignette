@@ -78,7 +78,7 @@ Decides when the screen takes ink, and what happens to the ink when the hand let
 - `tap: LiveInkTap?` (`:27`), `pressedSurface` (`:30`).
 - `fieldTimer` (`:21`), `chordShowsField` (`:23`): the pointer field and listening start together at the first stroke movement or after `ui.liveInkFieldDelay`.
 - `releaseWatch: Timer?` (`:25`): non-nil means the chord was let go mid-stroke and the button is awaited.
-- `inkings: Int` (`:1951`): counts inkings. `menusWaiting: Int?` (`:1953`): the inking whose note waits for open menus to close.
+- `inkings: Int` (`:1951`): counts inkings. `menusWaiting: (inking: Int, noteWasUp: Bool)?`: the inking whose note waits for open menus to close, and whether a note was up then.
 - `chordInterrupted` (`:68`), `drewWhileInking` (`:66`).
 - `strokeBegan` (`:89`), `strokeScreenDiagonal` (`:91`): scratch for the stroke in progress.
 - `overMenus` (`:465`), `pinsAfterMenus` (`:468`), each overlay's `keptAboveMenus`.
@@ -90,7 +90,7 @@ Derived states:
 - Inking: `isInking`, tap up (or refused), field timer pending or `chordShowsField`.
 - Stroking: Inking and some `inking` overlay `isTracking`.
 - ReleasePending: `isInking && releaseWatch != nil` (chord up, button down).
-- MenuWait: `!isInking && menusWaiting == inkings` (chord up, an open menu is being closed, ink kept above menus).
+- MenuWait: `!isInking && menusWaiting?.inking == inkings` (chord up, an open menu is being closed, ink kept above menus).
 - Settled: `!isInking`, nothing pending. Idle and Settled differ only in history.
 
 **Transitions**
@@ -109,11 +109,12 @@ Derived states:
 | ReleasePending | 50 ms poll finds `!LiveInkTap.isButtonDown` | Settled or MenuWait | `endStroke` on each inking overlay, `finishInking` (`:1987`) |
 | any inking state | `spaceChanged`, `willSleep`, `sessionDidResignActive`, `screensChanged` with a changed inking frame, `takeChord()` | Settled | `cutInkingShort`: `closeNote` if by the pointer, `stopListening`, `stopInking`. Stroke dropped (`cancelStroke`), no note ([hand-6](plausible-findings-requests-to-live-ink.md#hand-6)) |
 | any inking state | `standAside()` (from `ThumbnailController.onTakesScreen`) | Settled | note hidden (closed if by the pointer), `stopListening`, `stopInking`. No note for ink drawn this hold ([hand-6](plausible-findings-requests-to-live-ink.md#hand-6)) |
+| any inking state | Esc (`cancelHold`), or `.interrupted` while Esc is down | Settled | `stopListening`, `stopInking("esc")`, the hold's note ink removed with the fade, a note opened in the hold closed, `FocusReturn.restore` unless the note has the keys. No note, no ask. The chord's later `.ended` is ignored |
 | any inking state | `setOn(false)` | Settled | `stopInking`, everything torn down (`:206`) |
 | Idle, Settled, MenuWait | `.ended` or `.interrupted` | — | ignored by `guard isInking` (`:1773`) |
 | `finishInking` | no open menus | Settled | `pinOverMenus`, `settleInking(opensNote)` |
 | `finishInking` | open menus and `opensNote` | MenuWait | surfaces kept at `.screenSaver`; `closeMenus` after the glance or `revealLimit` (0.8 s) |
-| MenuWait | first `closeMenus` caller | Settled | `LiveMenus.close`, `pinOverMenus`, then `settleInking(opensNote:true, takingKeys:)`; stops early if `!isOn`; no note if `!mayInk()` ([hand-6](plausible-findings-requests-to-live-ink.md#hand-6)) |
+| MenuWait | first `closeMenus` caller | Settled | `LiveMenus.close`, `pinOverMenus`, then `settleInking(opensNote:, takingKeys:)`, with `opensNote` false when a note was up and is gone, asked from or closed during the wait; stops early if `!isOn`; no note if `!mayInk()` ([hand-6](plausible-findings-requests-to-live-ink.md#hand-6)) |
 | MenuWait | second `closeMenus` caller | — | ignored: `menusWaiting == nil` (`:1956`) |
 | any inking state | a display is added | unchanged | `inking` was fixed at `startInking`; the tap swallows clicks on the new display ([hand-12](plausible-findings-requests-to-live-ink.md#hand-12)) |
 | MenuWait | `LiveMenus.close` runs | unchanged | Accessibility reads on the main thread ([hand-13](plausible-findings-requests-to-live-ink.md#hand-13)) |
@@ -132,7 +133,7 @@ Derived states:
 **Late and concurrent answers**
 
 - A press again before the button came up: `releaseWatch` invalidated, `LiveInk.swift:1783`.
-- A stale menu closer from an earlier inking: dropped by `menusWaiting == inking, inkings == inking, !isInking`, `:1956`, and again in the closure, `:1960`.
+- A stale menu closer from an earlier inking: dropped by `menusWaiting?.inking == inking, inkings == inking, !isInking`, `:1956`, and again in the closure, `:1960`.
 - The two menu-close triggers (the glance `Task` and the 0.8 s `asyncAfter`) run one close: `menusWaiting = nil` after the first, `:1957`.
 - A stroke's release after the chord was let go: `chordChanged(.ended)` checks `inking.contains(where: \.overlay.isTracking)`, `:1774`.
 - `stopInking` always invalidates `releaseWatch` and `fieldTimer` and resets `chordShowsField`, `:1806`.
