@@ -52,6 +52,7 @@ final class SessionListing {
                 var stamped = destination
                 stamped.lastSent = history[destination.id]
                 stamped.hostLabel = answers.herdr?.label(ofSession: destination.id)
+                stamped.role = answers.herdr?.role(ofSession: destination.id)
                 return stamped
             }.sorted(by: DestinationChoice.newestFirst)
             completion(DestinationChoice.Candidates(destinations: found, complete: clients.allSatisfy { answers.lists[.client($0)] != nil },

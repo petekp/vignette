@@ -29,6 +29,18 @@ struct HerdrFocus: Equatable, Sendable {
         var tab: String = ""
         /// The terminal's foreground process, which is Claude Code itself when the terminal runs it.
         var pid: Int32? = nil
+        /// The terminal's `fleet.role` label as `loggedRole` writes it, such as `coordinator`. Nil
+        /// without the label. Only the log reads it.
+        var role: String? = nil
+    }
+
+    /// A `fleet.role` label as the log may hold it: the label when it is 1 to 24 letters, digits and
+    /// hyphens, else `other`. Pete's tools set the label, and it may be any text.
+    static func loggedRole(_ label: String) -> String {
+        let isName = (1...24).contains(label.count) && label.unicodeScalars.allSatisfy {
+            $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "-")
+        }
+        return isName ? label : "other"
     }
 
     /// How long the herdr command line tool may take, for `HerdrLauncher`.
@@ -136,7 +148,8 @@ struct HerdrFocus: Equatable, Sendable {
         }
         func pane(_ terminal: (terminal: String, pane: String, tab: String, isAgent: Bool)) -> AgentPane {
             AgentPane(pane: terminal.pane, session: terminal.isAgent ? core[terminal.terminal]?.labels["inbox.session"] : nil,
-                      tab: terminal.tab, pid: core[terminal.terminal]?.pid)
+                      tab: terminal.tab, pid: core[terminal.terminal]?.pid,
+                      role: core[terminal.terminal]?.labels["fleet.role"].map(loggedRole))
         }
         return .success(HerdrFocus(pane: focusedTerminal?.pane ?? focused, tab: tab, agents: placed.filter(\.isAgent).map(pane),
                                    tabLabels: labels, unreported: placed.filter { !$0.isAgent }.map(pane)))
@@ -177,6 +190,11 @@ struct HerdrFocus: Equatable, Sendable {
             return resolved
         }
         return HerdrFocus(pane: pane, tab: tab, agents: resolved, tabLabels: tabLabels)
+    }
+
+    /// The role of the terminal that runs `session`, as `loggedRole` writes it.
+    func role(ofSession session: String) -> String? {
+        agents.first { $0.session == session }?.role
     }
 
     /// The label of the tab whose terminal runs `session`, if Herdr names it.
