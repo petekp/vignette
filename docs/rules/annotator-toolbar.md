@@ -36,9 +36,8 @@
   is never sent keeps nothing, so a first send is never surprised. A Reply neither sets, refreshes
   nor ends it, and a card that offers Reply still offers Reply. It is kept in memory only. Codex
   lists only the threads used last, so a kept Codex thread is asked for by its id
-  (`SessionListing.list(shown:)`). A listing reads one thread by id, so the kept thread then takes
-  the place of the thread the Codex app shows, which is listed only while it is among the threads
-  used last. Otherwise Send starts on
+  (`SessionListing.list(including:)`). When the Codex app shows another thread, the same listing
+  reads that one by its id too, so the menu lists both. Otherwise Send starts on
   the session you came from (`DestinationChoice`). When the app before Vignette
   (`FocusReturn.previousApp`) was the Codex app, that is the thread it shows, or else the Codex
   thread used last; herdr's focus is ignored then, because herdr keeps a focused pane while its

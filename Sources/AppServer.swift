@@ -37,15 +37,14 @@ enum AppServer {
         var originURL: String? = nil
     }
 
-    /// The request lines for one discovery: the handshake, the listing of the threads used last, and,
-    /// given `shown`, a read of that thread, which finds it whatever its age. `initialized` is a
-    /// notification and takes no id. The listing reads the store's state database only
-    /// (`useStateDbOnly`): the five used last took 0.06 s instead of 0.13 to 0.26 s (measured
-    /// 2026-09-25).
-    static func discoveryRequests(limit: Int = listLimit, shown: String? = nil) -> [String] {
-        var lines = handshake + [request(id: listingID, "thread/list", ["limit": limit, "sortKey": "recency_at", "useStateDbOnly": true])]
-        if let shown { lines.append(request(id: readID, "thread/read", ["threadId": shown])) }
-        return lines
+    /// The request lines for one discovery: the handshake, the listing of the threads used last, and
+    /// a read of each thread in `ids`, which finds it whatever its age. The reads are numbered from
+    /// `readID`, in order. `initialized` is a notification and takes no id. The listing reads the
+    /// store's state database only (`useStateDbOnly`): the five used last took 0.06 s instead of 0.13
+    /// to 0.26 s (measured 2026-09-25).
+    static func discoveryRequests(limit: Int = listLimit, reading ids: [String] = []) -> [String] {
+        handshake + [request(id: listingID, "thread/list", ["limit": limit, "sortKey": "recency_at", "useStateDbOnly": true])]
+            + ids.enumerated().map { request(id: readID + $0.offset, "thread/read", ["threadId": $0.element]) }
     }
 
     /// The request lines for a read of one thread, which names its rollout file.
@@ -68,7 +67,7 @@ enum AppServer {
         [request(id: 1, "initialize", initializeParams), #"{"method":"initialized"}"#]
     }
 
-    /// The id of the listing's answer, and of the read's.
+    /// The id of the listing's answer, and of the first read's.
     static let listingID = 2
     static let readID = 3
 
@@ -91,10 +90,12 @@ enum AppServer {
         return found
     }
 
-    /// The thread the read found. Nil when there was none, or the server refused it, as it does a
-    /// thread that is not in the store.
-    static func read(in lines: [String]) -> Thread? {
-        (answer(readID, in: lines)?["thread"] as? [String: Any]).flatMap(thread)
+    /// The threads the reads of `ids` found, in the order of `ids`. A read the server refused, as it
+    /// does a thread that is not in the store, or that answered another thread, finds none.
+    static func reads(of ids: [String], in lines: [String]) -> [Thread] {
+        ids.enumerated().compactMap { index, id in
+            (answer(readID + index, in: lines)?["thread"] as? [String: Any]).flatMap(thread).flatMap { $0.id == id ? $0 : nil }
+        }
     }
 
     /// The rollout file the read found, the thread's `path`, which 0.165 still marks unstable.

@@ -694,12 +694,12 @@ final class AgentConnectionTests: XCTestCase {
     /// Starts one listing, collecting what it delivers, and an expectation met by the first delivery
     /// `done` accepts.
     @MainActor
-    private func collect(_ listing: SessionListing, shown: (client: AgentClient, id: String)? = nil,
+    private func collect(_ listing: SessionListing, including: [AgentClient: [String]] = [:],
                          until done: @escaping (DestinationChoice.Candidates) -> Bool) -> (Delivered, XCTestExpectation) {
         let delivered = Delivered()
         let finished = expectation(description: "the listing delivers")
         finished.assertForOverFulfill = false
-        listing.list(shown: shown) { candidates in
+        listing.list(including: including) { candidates in
             delivered.all.append(candidates)
             if done(candidates) { finished.fulfill() }
         }
@@ -788,8 +788,6 @@ final class AgentConnectionTests: XCTestCase {
         withExtendedLifetime(listing) {}
     }
 
-    /// The thread the Codex app shows is found for that one editor. Its ask does not wait on a plain
-    /// one, and an old thread it finds never joins the kept list the next editor opens on.
     @MainActor
     func testAnAskIncludingAShownThreadRunsAloneAndIsNotKept() async throws {
         let codex = ListedSessions(.codex, keepsList: true, sessions: [thread("t1", used: 200)], extra: thread("old", used: 1))
@@ -797,7 +795,7 @@ final class AgentConnectionTests: XCTestCase {
         codex.gate = gate
         let listing = SessionListing(connections: [.codex: codex], readHerdr: { nil })
         listing.refreshKeptLists()
-        let (shown, shownAnswered) = collect(listing, shown: (.codex, "old")) { $0.fresh }
+        let (shown, shownAnswered) = collect(listing, including: [.codex: ["old"]]) { $0.fresh }
         await fulfillment(of: [shownAnswered], timeout: 5)
         XCTAssertEqual(codex.including, 1, "it did not join the plain ask on its way")
         XCTAssertEqual(shown.all.last?.destinations.map(\.id), ["t1", "old"])
@@ -940,10 +938,10 @@ private final class ListedSessions: AgentConnection, @unchecked Sendable {
         return sessions
     }
 
-    func destinations(including id: String) -> [AgentDestination] {
+    func destinations(including ids: [String]) -> [AgentDestination] {
         locked {
             includingCount += 1
-            return listed + (extra.map { $0.id == id ? [$0] : [] } ?? [])
+            return listed + (extra.map { ids.contains($0.id) ? [$0] : [] } ?? [])
         }
     }
 

@@ -19,7 +19,8 @@
   otherwise the first `AgentTools` finds. `AppServer.swift` is the only thing that
   speaks the app-server protocol, and it only reads: it carries a `thread/list` to a `codex
   app-server` of its own, asking for the threads used last (`sortKey: recency_at`), and a
-  `thread/read` of the thread the Codex app shows, and turns the answers into menu rows, each
+  `thread/read` of each thread asked for by its id, the kept pick's and the one the Codex app
+  shows, each under its own request id, and turns the answers into menu rows, each
   with the thread's own `cwd` and `recencyAt`. An ephemeral thread and a sub-agent's thread (one with
   a `parentThreadId`) are left out. A thread with no name is named by its first message. The thread store is on disk,
   so a server started for the length of that one listing answers for every session, whoever owns
