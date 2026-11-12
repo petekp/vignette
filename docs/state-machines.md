@@ -76,9 +76,9 @@ This file is the index. Each file below is under `docs/state-machines/`; the tab
 | StackAreaReader | `StackAreaReader` | [stack](state-machines/stack.md) |
 | OlderShots | `OlderShots`, `ThumbnailController` | [stack-column](state-machines/stack-column.md) |
 | CardPictures | `CardPictures`, `ThumbnailController` | [stack-column](state-machines/stack-column.md) |
-| CardColumn built cards | `CardColumn`, `StackModel`, `StackLayout` | [stack-column](state-machines/stack-column.md) |
-| StackModel.liftFraction | `StackModel`, `ThumbnailController` | [stack-column](state-machines/stack-column.md) |
-| StackModel.carried | `StackModel`, `ThumbnailController` | [stack-column](state-machines/stack-column.md) |
+| CardColumn built cards | `CardColumn`, `StackModel`, `StackLayout` | [stack-column-built-cards](state-machines/stack-column-built-cards.md) |
+| StackModel.liftFraction | `StackModel`, `ThumbnailController` | [stack-column-built-cards](state-machines/stack-column-built-cards.md) |
+| StackModel.carried | `StackModel`, `ThumbnailController` | [stack-column-built-cards](state-machines/stack-column-built-cards.md) |
 | EditorCore | `EditorCore` | [editor-core](state-machines/editor-core.md) |
 | HeldKey | `EditorCore`, `EditorView` | [editor-core](state-machines/editor-core.md) |
 | HeldToolLetter | `HeldToolLetter` | [editor-core](state-machines/editor-core.md) |
@@ -98,7 +98,7 @@ This file is the index. Each file below is under `docs/state-machines/`; the tab
 | SessionListing | `SessionListing` | [destinations](state-machines/destinations.md) |
 | AppDelegate.refreshDestinations and listDestinations | `AppDelegate` | [destinations](state-machines/destinations.md) |
 | DestinationChoice | `DestinationChoice` | [destinations](state-machines/destinations.md) |
-| ClaudeCodeConnection: submit, preflight, start | `ClaudeCodeConnection`, `ClaudeInbox` | [destinations](state-machines/destinations.md) |
+| ClaudeCodeConnection: submit, preflight, start | `ClaudeCodeConnection`, `ClaudeCodeConnection.Inbox` | [destinations](state-machines/destinations.md) |
 | HerdrLauncher.start | `HerdrLauncher` | [destinations](state-machines/destinations.md) |
 | CodexConnection: discover and submit | `CodexConnection` | [destinations](state-machines/destinations.md) |
 | AppServer.converse | `AppServer` | [destinations](state-machines/destinations.md) |
@@ -134,7 +134,7 @@ This file is the index. Each file below is under `docs/state-machines/`; the tab
 | Launch sequence | `AppDelegate` | [settings-and-launch](state-machines/settings-and-launch.md) |
 | Hotkey press and hold pair | `AppDelegate` | [settings-and-launch](state-machines/settings-and-launch.md) |
 | Stitch action | `AppDelegate` | [settings-and-launch](state-machines/settings-and-launch.md) |
-| Setup Lab and Intro Lab | `SetupLab`, `IntroLab` | [settings-and-launch](state-machines/settings-and-launch.md) |
+| Setup Lab and Intro Lab | `SetupLabController`, `SetupLabModel`, `IntroLabController`, `IntroLabModel` | [settings-and-launch](state-machines/settings-and-launch.md) |
 | HeldChord | `HeldChord` | [live-ink-inking](state-machines/live-ink-inking.md) |
 | ModifierChord | `ModifierChord` | [live-ink-inking](state-machines/live-ink-inking.md) |
 | LiveInk inking lifecycle | `LiveInk` | [live-ink-inking](state-machines/live-ink-inking.md) |
