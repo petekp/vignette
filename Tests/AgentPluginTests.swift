@@ -258,16 +258,4 @@ final class AgentPluginTests: XCTestCase {
         XCTAssertNil(AgentPlugin.claudeRoot(home: scratch, environment: test.merging(["CLAUDE_CONFIG_DIR": own[0].path]) { $1 }, personHome: person))
         XCTAssertEqual(AgentPlugin.claudeRoot(home: scratch, environment: test, personHome: person), scratch.appendingPathComponent(".claude"))
     }
-
-    func testATestLaunchNeverGetsThePersonsOwnCodexHomeForLiveInk() {
-        let person = dir.appendingPathComponent("person"), scratch = dir.appendingPathComponent("scratch")
-        let support = "Library/Application Support/com.example.vignette"
-        let own = person.appendingPathComponent(support), moved = scratch.appendingPathComponent(support)
-        let test = ["VIGNETTE_SETTINGS": "/tmp/x/settings.json"]
-        XCTAssertEqual(CodexSignIn.home(in: own, environment: [:], personHome: person)?.path, own.appendingPathComponent("live-ink/codex-home").path,
-                       "an ordinary launch")
-        XCTAssertNil(CodexSignIn.home(in: own, environment: test, personHome: person))
-        XCTAssertEqual(CodexSignIn.home(in: moved, environment: test, personHome: person)?.path, moved.appendingPathComponent("live-ink/codex-home").path,
-                       "with CFFIXED_USER_HOME")
-    }
 }

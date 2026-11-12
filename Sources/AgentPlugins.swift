@@ -22,7 +22,9 @@ final class AgentPlugins: @unchecked Sendable {
     private let migrations: LegacySkillMigrations
     /// Makes the host for an agent; tests give one whose tool is a script.
     private let host: (AgentClient, URL) -> PluginHost
-    /// A test launch on the person's own home folder: it runs no agent tool (`isPersonsHome`).
+    /// A test launch on the person's own home folder (`Launch.isOnPersonsHome`) runs no agent tool:
+    /// the tool would get the person's `HOME`, and Codex reads `$HOME/.agents/skills` whatever folder
+    /// it is pointed at.
     private let runsNoTool: Bool
 
     init(home: URL, environment: [String: String], personHome: URL,
@@ -42,7 +44,7 @@ final class AgentPlugins: @unchecked Sendable {
         self.appName = appName
         self.migrations = migrations
         self.host = host ?? { PluginHost(client: $0, root: $1, home: home) }
-        runsNoTool = AgentPlugin.isPersonsHome(home, environment: environment, personHome: personHome)
+        runsNoTool = Launch.isOnPersonsHome(home, environment: environment, personHome: personHome)
     }
 
     /// The app's: its home folder, which `CFFIXED_USER_HOME` moves, and its own environment.

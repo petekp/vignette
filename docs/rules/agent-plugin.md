@@ -16,15 +16,16 @@
   `~/.agents` either, and `install(into:)` and `remove(from:)` refuse the person's own folders, which
   `install-skill?root=` can name. A folder inside one, one reached through a link, or one spelled in
   another case counts as theirs (`AgentPlugin.isPersons`). A test launch on the person's own home
-  folder, one without `CFFIXED_USER_HOME`, runs no agent tool (`AgentPlugin.isPersonsHome`): a tool
+  folder, one without `CFFIXED_USER_HOME`, runs no agent tool (`Launch.isOnPersonsHome`): a tool
   run there gets the person's `HOME`, and codex reads `$HOME/.agents/skills` whatever `CODEX_HOME`
   says. Its launch writes the marketplace and logs `[plugin] test launch: <home> is the person's own
   home folder, so no install or update runs; …`, and `install(into:)` and `remove(from:)` answer
   `failed`. In a test launch whose Claude Code folder is the person's, Send reads neither its
   `history.jsonl` nor its `projects` folder: `StartableSessions` and
-  `ClaudeCodeConnection.transcripts` read `AgentPlugin.claudeRoot`, which is nil there. It still
-  reads the inboxes in Application Support, which a copy with the shipped bundle id shares with the
-  person's own, and the transcript each inbox names. `AgentPlugins` takes the home folder, the
+  `ClaudeCodeConnection.transcripts` read `AgentPlugin.claudeRoot`, which is nil there. Such a
+  launch keeps its marketplace and its inboxes under its settings file's folder, never in the
+  person's own app's Application Support (`Launch.dataHome`). So it never rewrites the marketplace
+  the person's agents read, and it lists none of their sessions. `AgentPlugins` takes the home folder, the
   environment and the person's home as parameters, and gives each tool that home as `HOME`. Its
   `init()` and the `AgentPlugin.app…` entry points (`AgentPluginFolders.swift`) read the app's own.
   `scripts/check-agent-folders.py`, which `scripts/build.sh --test` runs, fails a parameter default

@@ -129,10 +129,6 @@ What was built:
   `LSEnvironment`, so they still install.
 - In a test launch whose Claude Code folder is the person's, Send reads neither its `history.jsonl`
   nor its `projects` folder (`AgentPlugin.claudeRoot` is nil there).
-- Still open: without `CFFIXED_USER_HOME`, a copy with the shipped bundle id shares the person's
-  Application Support. It reads their session inboxes and the transcript each names, and a Send writes
-  into a real session's inbox. Its launch also writes the marketplace their own agents installed
-  from, aiming the skill's `open` commands at the test build.
 - `scripts/check-agent-folders.py`, which `scripts/build.sh --test` and so CI run, fails a parameter
   default or a non-static `var` or `let` in `Sources/AgentPlugin*.swift` that reads
   `ProcessInfo.processInfo.environment`, `NSHomeDirectory()`, `homeDirectoryForCurrentUser`,
@@ -149,3 +145,33 @@ Four launch tests cover these: `testATestLaunchOnThePersonsHomeRunsNoAgentToolEv
 `testATestLaunchOnAScratchHomeNeverRemovesThroughALinkIntoThePersonsFolders`.
 `testATestLaunchNeverGetsThePersonsOwnAgentFolders` also covers a nested folder, another case and
 `claudeRoot`.
+
+## The person's own app's stored data (added 2026-11-11)
+
+A test launch on the person's own home kept its Application Support and Caches at
+`~/Library/Application Support/<bundle id>` and `~/Library/Caches/<bundle id>`. Every checkout builds
+the shipped bundle id, so those were the person's own app's folders. Such a copy read their Claude Code
+session inboxes and the transcript each names, and a Send wrote into a real session's inbox. Its
+launch rewrote the marketplace their agents read in place, so the skill's `open` commands named the
+test build. It also read and changed their drawings and requests, and removed their old web editor
+data. A unit test run on this Mac is such a launch, since the test scheme sets `VIGNETTE_SETTINGS`:
+before the change, every folder it named was under the person's `~/Library`.
+
+`Launch.dataHome` now decides where those folders hang from, in one place, whatever the bundle id:
+
+- A launch without `VIGNETTE_SETTINGS`: the home folder, as before.
+- A test launch with `CFFIXED_USER_HOME`, as the end-to-end copies are: that home, as before.
+- A test launch on the person's own home: the settings file's folder, laid out as a home, so
+  `<settings folder>/Library/Application Support/<bundle id>`. The launch logs
+  `[app] test launch: <home> is the person's own home folder, so this copy stores its data under
+  <folder>/Library; …`.
+- When that folder's would still be the person's own or inside them, as for a settings file in the home
+  folder itself: `<the user's temporary folder>/<bundle id>`.
+
+Every store follows: the inboxes, the marketplace and its `scripts/inbox-root`, the old-skill record,
+the drawings, the requests and replies, live ink's folder, its Codex home, and the leftovers a launch
+removes. `CodexSignIn` no longer needs its own test-launch guard, so such a copy signs Codex in to a
+Codex home of its own when `VIGNETTE_CODEX` names one. The reply helper takes a ticket only under
+`$HOME/Library/Application Support/<bundle id>`, so an agent answering such a copy runs it with `HOME`
+set to the copy's settings folder. The log (`~/Library/Logs/<name>.log`) and the app's defaults do not
+move. `IdentityTests` covers the decision.

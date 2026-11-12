@@ -50,7 +50,8 @@ Allow it and run again.
 `docs/e2e-suite-plan-2026-09-29.md` has the design and what is still to come.
 
 Testing Send without a real session: a Claude Code session is an inbox folder under the copy's
-Application Support, `claude-sessions/<pid>/` with `session`, `cwd` and a fresh `alive`, and `<pid>`
+Application Support (`Identity.applicationSupportURL`, which for a copy on your own home is
+`<settings folder>/Library/Application Support/<bundle id>`), `claude-sessions/<pid>/` with `session`, `cwd` and a fresh `alive`, and `<pid>`
 a live process (`App.fake_session` in the runner). Send writes its request line there. A Codex
 thread is listed by a fake codex that `VIGNETTE_CODEX` names (`App.fake_codex`,
 `scripts/e2e/fake_codex.py`): it answers `app-server`'s `initialize` and `thread/list`, and records
