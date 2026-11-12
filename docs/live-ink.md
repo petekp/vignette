@@ -139,36 +139,36 @@ The names in brackets are `// MARK:` sections.
      outlives it: nothing is sent, this hold's ink and stroke fade as a discarded note's, listening and
      the microphone stop, and a note opened in the hold closes. One from before stays.
      An erase or a pick in the hold is not undone.
-  1. Discard the note (`discard-note`), while it has the keys or right after the release: listening
-     stops and its ink, which no ask has been about, goes. Or close Reply's field, keeping its draft.
+  1. Discard the note (`discard-note`), while it has the keys, right after the release or in that tail: listening
+     stops and its ink, which no ask was about, goes. Or close Reply's field, keeping its draft.
   2. Stop the newest ask under way or waiting its turn (`LiveInk.cancelAsk`, `LiveAsks.cancellable`),
-     one per press. Its note and any reply leave. After an ask sent with Return (`cancel-ask`)
+     one per press, with its note and any reply. After an ask sent with Return (`cancel-ask`)
      ink that was new is new again, and the note opens on it with the keys and the ask's words; a note up already takes the keys and keeps
      its words. An ask `liveInkSendWhenQuiet` sent (`discard-ask`,
-     `LiveAsks.Ask.sentOnRelease`), or one with no ink, takes its ink and words with it: no note opens. A follow-up
-     from a button puts the earlier answer back as it was, even once its reply streams.
+     `LiveAsks.Ask.sentOnRelease`), or one with no ink, takes its ink and words: no note opens. A follow-up
+     from a button puts the earlier answer back, even once its reply streams.
      Nothing says it failed. Stopping the ask the responder is answering interrupts its turn
      (`LiveResponder.cancel`), and the next ask waiting goes. An ask to a session is a step only with a
-     send grace, until its send is stored: one stored after all is withdrawn with Don't send
-     (`LiveNoteCards.unsend`). Once stored, Don't send on the card takes it back.
+     send grace, until its send is stored: one stored after all is withdrawn
+     (`LiveNoteCards.unsend`). Once stored, the card's Don't send takes it back.
   3. End the tour: the focus run, and the steps still to show.
   4. Close the newest answer, one per press: its reply, buttons and the agent's marks leave
-     (`LiveAsks.Event.answerClosed`). A failure's reply counts as an answer. The person's ink stays,
-     unlike the ×, which takes the ink it answered too.
-  5. Clear what is left, as `clear()` does, which also ends the conversation.
+     (`LiveAsks.Event.answerClosed`). A failure's reply counts as an answer. The person's ink stays;
+     the × takes it too.
+  5. Clear what is left (`clear()`), ending the conversation.
 
   After a release that opens or keeps the note, steps 1 and 2 apply wherever the pointer is, to a
   note without the keys too (`LiveEscapeAfterRelease`), until a press off the ink, a switch to
-  an app (not Vignette handing the keys back), or no note or ask from it is left. Otherwise steps 2 to 5 apply only
+  an app (not Vignette returning the keys), or no note or ask from it is left. Otherwise steps 2 to 5 apply only
   while the pointer is on a mark or a reply on the active Space (`LiveInk.pointerIsOnInk`), and none
-  while the note is up without the keys, as the keys are elsewhere.
+  while the note is up without the keys.
 
   `LiveInk` holds Esc as a Carbon hotkey (`HotKey`, no permission) while `LiveEscape.next` has a step
   and nothing else has Esc (the stack, the annotator, the note's target menu), with the chord's
   modifiers while it is held. `ModifierChord`'s poll cannot tell which key went down, so it ends the
   chord one poll later, after the hotkey. An Esc the hotkey misses, as ⌘⌥Esc (Force Quit), cancels
-  only if still down as the chord ends. After `cancel-hold` the chord's Esc stays held until Esc
-  comes up, and its repeats do nothing. The note's and Reply's `cancelOperation:` reach
+  only if still down as the chord ends. After `cancel-hold` the chord's Esc is held until Esc
+  comes up; its repeats do nothing. The note's and Reply's `cancelOperation:` reach
   `LiveInk.escape` only for a press the held key misses. Each press logs `[live-ink] esc <step>`.
   `[state] liveInk.escape` is the next step or null, `escapeHeld` whether the key is held, and
   `escapeAfterRelease` whether Esc is live ink's after the release.
@@ -338,7 +338,7 @@ The names in brackets are `// MARK:` sections.
   and the note keeps what it heard. Words already in the note when listening starts stay, and what is
   said then does not replace them. `ListeningEnd`
   decides the end: listening stops 0.3 s after the chord is let go, and never past 60 s; words heard
-  by then wait for the note. With `liveInkSendWhenQuiet` and ink, the final words are sent as Return sends them. Speech is
+  by then wait for the note. A release with no ink or note keeps that tail; its words open the note by the pointer (`tailMayOpenNote`). With `liveInkSendWhenQuiet` and ink, the final words are sent as Return sends them. Speech is
   turned into words on the Mac only: `Transcriber` is the interface every engine conforms to,
   `SpeechEngine.make` picks one, and `AppleTranscriber` refuses to run without an on-device model
   rather than send audio to Apple. The Settings switch asks for the microphone and speech

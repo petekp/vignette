@@ -60,4 +60,14 @@ extension LiveInk {
         }
         Log.write("[live-ink] moved \(moves.count) onto the screen")
     }
+
+    /// A surface with no marks closes, unless it is taking ink, so an idle live ink puts no
+    /// full-screen window over every app.
+    func closeEmpty(fade: TimeInterval) {
+        let empty = surfaces.filter { surface in
+            surface.marks.isEmpty && !inking.contains { $0 === surface } && !surface.overlay.marks.holdsNote
+        }
+        empty.forEach { $0.overlay.close(after: fade) }
+        surfaces.removeAll { surface in empty.contains { $0 === surface } }
+    }
 }

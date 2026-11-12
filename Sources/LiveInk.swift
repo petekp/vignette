@@ -86,6 +86,9 @@ final class LiveInk {
     var spoken: (words: [SpokenWord], began: Date)?
     /// What a listening that reached its limit before the note opened heard, for the note to take.
     var heardBeforeNote: (words: [SpokenWord], began: Date)?
+    /// The chord was let go with no ink and no note, and listening runs on for `ListeningEnd.tail`:
+    /// words it hears open the note by the pointer.
+    var tailMayOpenNote = false
     /// When the chord last went down, which the log counts the first sound from.
     var keysDown = Date()
     /// Where the pointer was when the chord was last let go, which a note with no ink asks about.
@@ -1688,7 +1691,7 @@ final class LiveInk {
         let menus = opensNote ? LiveMenus.open() : []
         guard !menus.isEmpty else {
             pinOverMenus()
-            return settleInking(opensNote: opensNote)
+            return settleInking(opensNote: opensNote, listensOn: newInk.isEmpty && !chordInterrupted)
         }
         let inking = inkings
         menusWaiting = (inking, note != nil)
@@ -1724,11 +1727,12 @@ final class LiveInk {
 
     /// Opens the note on the new ink, with the keys unless `takingKeys` is false, and hands the keys back
     /// to the app the person was in when it does not take them.
-    private func settleInking(opensNote: Bool, takingKeys: Bool = true) {
+    /// With `listensOn`, listening runs its tail even when no note opens.
+    func settleInking(opensNote: Bool, takingKeys: Bool = true, listensOn: Bool = false) {
         let noteHasKeys = opensNote && showNote(takingKeys: takingKeys)
         keepNoteWithItsInk()
         if opensNote { keepEscapeAfterRelease() }
-        listenOnceLetGo()
+        listenOnceLetGo(keepingTail: listensOn)
         if !noteHasKeys { FocusReturn.shared.restore(reason: "live ink inking") }
     }
 
@@ -1767,16 +1771,6 @@ final class LiveInk {
             surfaces.append(surface)
             return surface
         }
-    }
-
-    /// A surface with no marks closes, unless it is taking ink, so an idle live ink puts no
-    /// full-screen window over every app.
-    func closeEmpty(fade: TimeInterval) {
-        let empty = surfaces.filter { surface in
-            surface.marks.isEmpty && !inking.contains { $0 === surface } && !surface.overlay.marks.holdsNote
-        }
-        empty.forEach { $0.overlay.close(after: fade) }
-        surfaces.removeAll { surface in empty.contains { $0 === surface } }
     }
 
     func showMarks() {

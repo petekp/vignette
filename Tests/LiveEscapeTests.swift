@@ -88,6 +88,17 @@ final class LiveEscapeTests: XCTestCase {
         XCTAssertEqual(LiveEscape.next(state), .endTour)
     }
 
+    func testWhileListeningGoesOnAfterAReleaseWithNoNoteEscStopsItWhereverThePointerIs() {
+        var state = LiveEscape.Snapshot(isOn: true, listeningAfterRelease: true, askCanBeCancelled: true, answerShown: true, marksShown: true)
+        XCTAssertEqual(LiveEscape.next(state), .discardNote)
+        XCTAssertFalse(LiveEscape.needsPointer(state))
+        state.inking = true
+        XCTAssertEqual(LiveEscape.next(state), .cancelHold)
+        state.inking = false
+        state.listeningAfterRelease = false
+        XCTAssertNil(LiveEscape.next(state))
+    }
+
     func testAnAskSentOnReleaseIsDiscardedOnlyFromTheInk() {
         var state = LiveEscape.Snapshot(isOn: true, askCanBeCancelled: true, askSentOnRelease: true)
         XCTAssertNil(LiveEscape.next(state), "once the person has gone elsewhere, Esc is that app's")

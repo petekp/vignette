@@ -45,6 +45,8 @@ enum LiveEscape {
         /// The chord was let go and the person has not gone anywhere since: no press off the ink, no
         /// switch to another app, and the answer has not come (`LiveEscapeAfterRelease`).
         var justLetGo = false
+        /// The chord was let go with no ink and no note, and listening goes on for the last words.
+        var listeningAfterRelease = false
         var note: Note = .none
         var replyFieldOpen = false
         /// An ask is under way that Esc can stop: any ask to the responder, waiting its turn or not, and
@@ -76,6 +78,7 @@ enum LiveEscape {
         guard state.isOn, state.screenIsFree, !state.menuOpen else { return nil }
         if state.inking { return .cancelHold }
         if state.note == .hasKeys || (state.note == .withoutKeys && state.justLetGo) { return .discardNote }
+        if state.note == .none, state.listeningAfterRelease { return .discardNote }
         guard state.note == .none else { return nil }
         if state.replyFieldOpen { return .closeReplyField }
         if state.askCanBeCancelled, state.pointerOnInk || state.justLetGo {

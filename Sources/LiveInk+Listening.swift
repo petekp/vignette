@@ -30,6 +30,7 @@ extension LiveInk {
             Log.write("[speech] error \(failure.detail)")
             guard let self, let listening, self.listening === listening else { return }
             self.listening = nil
+            self.tailMayOpenNote = false
             self.note?.stopListening()
             self.speechProblem = failure.reason
         }
@@ -53,10 +54,11 @@ extension LiveInk {
         if !listening.words.isEmpty { panel.hear(listening.text) }
     }
 
-    /// The chord was let go and the note settled: what is said goes into the note, and with no note
-    /// there is nowhere for it to go.
-    func listenOnceLetGo() {
-        if note != nil { listening?.released() } else { stopListening() }
+    /// The chord was let go and the note settled: what is said goes into the note. With no note,
+    /// listening stops, unless `keepingTail`: then words heard by the tail's end open one.
+    func listenOnceLetGo(keepingTail: Bool = false) {
+        tailMayOpenNote = note == nil && keepingTail && listening != nil
+        if note != nil || tailMayOpenNote { listening?.released() } else { stopListening() }
         if note != nil, let heard = heardBeforeNote { doneListening(heard.words, began: heard.began) }
     }
 
@@ -83,7 +85,13 @@ extension LiveInk {
     func doneListening(_ words: [SpokenWord], began: Date) {
         listening = nil
         heardBeforeNote = nil
-        guard let note else { heardBeforeNote = (words, began); return }
+        let opensNote = tailMayOpenNote && !isInking && !words.isEmpty
+        tailMayOpenNote = false
+        guard let note else {
+            heardBeforeNote = (words, began)
+            if opensNote { settleInking(opensNote: true) }
+            return
+        }
         defer { note.stopListening() }
         let text = LiveListening.text(of: words)
         guard !typedOver, !text.isEmpty else { return }
@@ -110,5 +118,6 @@ extension LiveInk {
         listening?.cancel()
         listening = nil
         heardBeforeNote = nil
+        tailMayOpenNote = false
     }
 }

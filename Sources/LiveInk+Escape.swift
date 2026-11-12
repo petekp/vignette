@@ -22,6 +22,7 @@ extension LiveInk {
             menuOpen: note?.menuOpen == true,
             inking: isInking,
             justLetGo: escapeAfterRelease != nil,
+            listeningAfterRelease: tailMayOpenNote && listening != nil,
             note: note.map { $0.hasKeys ? .hasKeys : .withoutKeys } ?? LiveEscape.Note.none,
             replyFieldOpen: actionsPanels.values.contains(where: \.isTyping),
             askCanBeCancelled: cancellable != nil,
