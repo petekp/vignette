@@ -107,7 +107,7 @@ The order in the table is the order of `next`: when two things are open, the ear
 **Invariants**
 
 - Esc backs out one step per press, in the order above. Checked by: `LiveEscapeTests.testEscBacksOutOneStepAtATimeInOrder`.
-- While the chord is held, the chord does not end on the Esc press before the hotkey runs `cancelHold`: `ModifierChord.checkKeys` ends the chord one poll after it reads a key, and a change of modifiers after that read ends it as `.interrupted`, not `.ended`. Checked by: nothing; it reads the HID state.
+- While the chord is held, the chord does not end on the Esc press before the hotkey runs `cancelHold`: `ModifierChord.checkKeys` ends the chord one poll after it reads a key, and a modifier change after a key goes down ends it as `.interrupted`, not `.ended`. Checked by: nothing; it reads the HID state.
 - The hotkey is held exactly while `next(snapshot)` is non-nil. Checked by: nothing; `LiveInk` is not constructible in a test.
 - `pointerOnInk` reads `NSEvent.mouseLocation` (`LiveInk+Escape.swift:11`), which stays stale after inking, so the hotkey may not be held and Esc reaches the app ([hand-9](plausible-findings-requests-to-live-ink.md#hand-9)).
 
@@ -192,10 +192,10 @@ Captures speech while the chord is held and a short time after, and turns it int
 | starting, listening | `finish()` (0.1 s timer says `ListeningEnd.isOver`, or `typedInNote`) | finishing | mic stop queued behind start, `transcriber.finish(timeout: 2)`, then `onFinished` |
 | starting, listening | `cancel()` (from `stopListening`) | finishing, cancelled | mic stop, `transcriber.cancel()` |
 | finishing | `finish()`, `cancel()` | — | ignored, `guard !finishing` (`:90`, `:107`) |
-| finishing | `pressedAgain()`, `released()` | finishing | only edit `end`; no new listening starts because `listen()` returns at `guard listening == nil` (`LiveInk+Listening.swift:7`) ([hand-5](plausible-findings-requests-to-live-ink.md#hand-5)) |
+| finishing | `pressedAgain()`, `released()` | finishing | a press sets `pressedWhileFinishing`; `listen()` drops it if no words, else a note's `doneListening` listens again ([hand-5](plausible-findings-requests-to-live-ink.md#hand-5)) |
 | finishing | transcriber words | — | dropped, `LiveListening.swift:62` |
 | finishing (finish) | `onFinished`, `LiveInk.listening === listening` | none | `doneListening`: `listening = nil`; no note → `heardBeforeNote`; words from `tailMayOpenNote`'s tail open it by the pointer; note and `!typedOver` → `spoken`, `note.hear`, and `note.send()` with ink when `liveInkSendWhenQuiet` (default true), which may send while the next stroke is under way ([hand-5](plausible-findings-requests-to-live-ink.md#hand-5)) |
-| finishing | `onFinished` after `stopListening` or a new listening | — | dropped by identity, `LiveInk+Listening.swift:25`, `:30` |
+| finishing | `onFinished` after `stopListening` or a new listening | — | dropped by identity, `LiveInk+Listening.swift:29`, `:34` |
 | starting | microphone start fails after `finish()` | finishing | the failure is dropped with no `speechProblem` ([hand-11](plausible-findings-requests-to-live-ink.md#hand-11)) |
 
 **Invariants**
@@ -211,7 +211,7 @@ Captures speech while the chord is held and a short time after, and turns it int
 - `AppleTranscriber.finish` timing out after the real answer: `answer(timedOut:)` no-ops when `waiting` is nil (`AppleTranscriber.swift:117`); the continuation is taken and cleared under the lock.
 - A failed `begin()` cancels the transcriber (`Microphone.swift:31`), so a later `finish` returns `latest` at once.
 - Heard words with no note: `heardBeforeNote` is reset by the next `listen()` and by `stopListening`.
-- Permission is read once, synchronously (`SpeechPermission.granted`, `LiveInk+Listening.swift:11`); no async permission answer reaches live ink.
+- Permission is read once, synchronously (`SpeechPermission.granted`, `LiveInk+Listening.swift:14`); no async permission answer reaches live ink.
 
 ### LiveWindows Tracked (implicit)
 

@@ -50,6 +50,9 @@ struct HeldChord {
         waitingForRelease = true
         return .interrupted
     }
+
+    /// Whether `held` is the chord's modifiers and no others.
+    func isExactly(_ held: NSEvent.ModifierFlags) -> Bool { held.intersection(Self.modifiers) == flags }
 }
 
 /// Watches the keyboard for a `HeldChord` and says when it begins and ends.
@@ -60,7 +63,8 @@ struct HeldChord {
 /// since the chord began, and whether the chord's modifiers are still down: a release no monitor
 /// heard, with Accessibility taken away or Secure Event Input on, would leave inking taking every click.
 /// The poll cannot tell which key went down, so a key it reads ends the chord one poll later: by then
-/// a hotkey held on the chord's own modifiers, as live ink holds Esc, has had its press.
+/// a hotkey held on the chord's own modifiers, as live ink holds Esc, has had its press. A key read as
+/// the chord's modifiers change was a shortcut's, so the chord ends then, as cut short.
 @MainActor
 final class ModifierChord {
     private var chord: HeldChord
@@ -90,8 +94,13 @@ final class ModifierChord {
         KeyMonitors.flagsChanged { [weak self] in self?.flagsChanged($0) }
     }
 
+    /// A key went down since the chord began, by the HID state, which counts keys no monitor sees.
+    private var keyWentDown: Bool {
+        CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown) < ProcessInfo.processInfo.systemUptime - beganAt
+    }
+
     private func flagsChanged(_ event: NSEvent) {
-        if keyRead, let change = chord.keyDown() {
+        if keyRead || chord.isHeld && !chord.isExactly(event.modifierFlags) && keyWentDown, let change = chord.keyDown() {
             _ = chord.flagsChanged(event.modifierFlags)
             return apply(change)
         }
@@ -114,9 +123,8 @@ final class ModifierChord {
 
     private func checkKeys() {
         let held = NSEvent.ModifierFlags(rawValue: UInt(CGEventSource.flagsState(.hidSystemState).rawValue))
-        let sinceKey = CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown)
-        if sinceKey < ProcessInfo.processInfo.systemUptime - beganAt {
-            if keyRead, let change = chord.keyDown() { _ = chord.flagsChanged(held); return apply(change) }
+        if keyWentDown {
+            if keyRead || !chord.isExactly(held), let change = chord.keyDown() { _ = chord.flagsChanged(held); return apply(change) }
             keyRead = true
         }
         if let change = chord.flagsChanged(held) { apply(change) }
