@@ -159,7 +159,8 @@ final class SessionListing {
                                         readHerdr: @Sendable () -> HerdrFocus?) -> Listed {
         let destinations = ids.isEmpty ? connection.destinations() : connection.destinations(including: ids)
         // In the same job, so the focus arrives with the answer that can settle the target.
-        let herdr = DestinationChoice.readsHerdr(beside: connection.client, listed: destinations) ? readHerdr() : nil
+        let herdr = DestinationChoice.readsHerdr(beside: connection.client, listed: destinations)
+            ? readHerdr()?.sessions(from: destinations) : nil
         return Listed(destinations: destinations, herdr: herdr)
     }
 }

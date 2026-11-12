@@ -3,7 +3,7 @@
 - `Sources/AgentConnection.swift`, `Sources/ScreenshotRequests.swift`, `Sources/ReplyProtocol.swift`,
   `Sources/ReplyCommand.swift` and `skills/vignette/scripts/reply` are the closed loop: a drawing
   sent to an agent session and that agent's drawing sent back. `Sources/SessionListing.swift` lists
-  the sessions Send can go to, `Sources/SendGrace.swift` decides what a send does while its line waits, and `Sources/HerdrFocus.swift` reads herdr's focus. See the rules below, `docs/rules/replies.md` and
+  the sessions Send can go to, `Sources/SendGrace.swift` decides what a send does while its line waits, and `Sources/HerdrFocus.swift` reads the Herdr app's focus. See the rules below, `docs/rules/replies.md` and
   `docs/closed-agent-loop-implementation-2026-09-20.md`. `agent-plugin/` is the plugin Claude Code
   and Codex install, which carries the skill and, for Claude Code, delivers what Send sends, and
   `Sources/AgentPlugin.swift` installs it (`docs/claude-code-without-herdr-2026-09-27.md`).
@@ -37,7 +37,7 @@
   `timestamp` is when it was last used. That entry's `cwd` follows the session's shell, so it is the
   project only when the inbox gives none. The file's modification time is
   not the last use: Claude Code writes entries with no message in them to transcripts it is not
-  using (measured 2026-09-24). herdr, when it runs, only says which session has the focus (`HerdrFocus`). `/clear`
+  using (measured 2026-09-24). The Herdr app, when it runs, only says which session has the focus (`HerdrFocus`). `/clear`
   and `/resume` give the same process another session, so Vignette checks that the inbox still
   holds that exact session immediately before writing the line (`AddressGuard.preflight`). A
   session in no inbox is an error, "closed" or "cleared", and never another session. The line is

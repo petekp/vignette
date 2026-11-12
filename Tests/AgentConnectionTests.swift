@@ -3,24 +3,6 @@ import XCTest
 final class AgentConnectionTests: XCTestCase {
     let session = "e011fff1-c791-4934-9e61-9307d840a5eb"
 
-    /// The same panes as `herdr pane list` reports them, which is what the listing reads: every
-    /// pane, agent or not, so it says where the focus is even when that pane runs no agent. Here a
-    /// browser pane beside the session has the focus, as observed 2026-09-24.
-    private func paneList(session: String, focused: String = "w9:p6") -> String {
-        """
-        {"id":"cli:pane:list","result":{"type":"pane_list","panes":[
-          {"agent":"claude","agent_status":"idle","cwd":"/Users/p/Code/vignette","focused":\(focused == "w9:p6"),
-           "agent_session":{"agent":"claude","kind":"id","value":"\(session)"},
-           "pane_id":"w9:p6","tab_id":"w9:t1","terminal_title_stripped":"Closed agent loop","workspace_id":"w9"},
-          {"agent":null,"agent_status":"unknown","cwd":"/Users/p/Code/vignette","focused":\(focused == "w9:pC"),
-           "pane_id":"w9:pC","tab_id":"w9:t1","terminal_title_stripped":"browser","workspace_id":"w9"},
-          {"agent":"claude","agent_status":"idle","cwd":"/Users/p/Code/other","focused":false,
-           "pane_id":"w9:pA","tab_id":"w9:t2","terminal_title_stripped":"No session id","workspace_id":"w9"},
-          {"agent":"codex","agent_status":"idle","cwd":"/Users/p/Code/two","focused":\(focused == "w9:pB"),
-           "pane_id":"w9:pB","tab_id":"w9:t3","workspace_id":"w9"}]}}
-        """
-    }
-
     func claude(inboxes root: URL, running: Set<Int32> = [101, 102], now: Date = Date()) -> ClaudeCodeConnection {
         var connection = ClaudeCodeConnection()
         connection.inboxes = root
@@ -56,27 +38,6 @@ final class AgentConnectionTests: XCTestCase {
     }
 
     // MARK: Claude Code, by session rather than by pane
-
-    func testAnswerThatIsNotAPaneListIsNoAgents() {
-        XCTAssertEqual(HerdrFocus.agents(in: Data("not json".utf8)), [])
-        XCTAssertEqual(HerdrFocus.agents(in: Data(#"{"error":{"code":"no_server"}}"#.utf8)), [])
-        XCTAssertNil(HerdrFocus(paneList: Data("not json".utf8)))
-    }
-
-    /// herdr's focus comes from `herdr pane list` when it succeeds. A failed herdr's output, or no
-    /// herdr at all, is no focus.
-    func testHerdrsFocusIsReadFromItsPaneList() {
-        let panes = paneList(session: session)
-        func read(binary: String? = "/bin/herdr", status: Int32 = 0) -> HerdrFocus? {
-            HerdrFocus.read(binary: { binary }, run: { _, arguments, _ in
-                (status, arguments == ["pane", "list"] ? panes : "", false)
-            })
-        }
-        XCTAssertEqual(read(), HerdrFocus(paneList: Data(panes.utf8)))
-        XCTAssertEqual(read()?.pane, "w9:p6")
-        XCTAssertNil(read(status: 1), "a failed herdr says nothing about the focus")
-        XCTAssertNil(read(binary: nil))
-    }
 
     /// A test launch reaches sessions only through a tool the environment names: any other codex or
     /// herdr on the Mac is the person's, and would list and send to their own sessions.
@@ -170,15 +131,17 @@ final class AgentConnectionTests: XCTestCase {
         func choose(_ sessions: [AgentDestination], complete: Bool = false, herdr: HerdrFocus?) -> DestinationChoice.Answer {
             DestinationChoice.choose(.init(destinations: sessions, complete: complete, fresh: true, herdr: herdr), for: .send(cameFrom: nil))
         }
+        let listed: [HerdrFocus.AgentPane] = [.init(pane: "w9:p6", session: session, tab: "w9:t1"),
+                                              .init(pane: "w9:pA", tab: "w9:t2"), .init(pane: "w9:pB", tab: "w9:t3")]
         func focus(_ pane: String) -> AgentDestination.Focus? {
-            choose([mew], herdr: HerdrFocus(paneList: Data(paneList(session: session, focused: pane).utf8))).list.first?.focus
+            let tab = ["w9:pA": "w9:t2", "w9:pB": "w9:t3"][pane] ?? "w9:t1"
+            return choose([mew], herdr: HerdrFocus(pane: pane, tab: tab, agents: listed)).list.first?.focus
         }
         XCTAssertEqual(focus("w9:p6"), .pane)
         XCTAssertEqual(focus("w9:pC"), .tab, "the browser beside the session")
         XCTAssertNil(focus("w9:pA"), "another session's pane, even one herdr cannot name")
         XCTAssertNil(focus("w9:pB"), "a Codex pane")
 
-        let listed = HerdrFocus.agents(in: Data(paneList(session: session).utf8))
         func marked(_ extra: HerdrFocus.AgentPane, focus: String) -> [AgentDestination.Focus?] {
             choose([mew], herdr: HerdrFocus(pane: focus, tab: "w9:t1", agents: listed + [extra])).list.map(\.focus)
         }
@@ -480,14 +443,6 @@ final class AgentConnectionTests: XCTestCase {
                        .repository(name: "evercars-backend", root: nil, worktree: nil, subfolder: nil))
         XCTAssertEqual(place("Code/gone"), .folder(fromHome: "~/Code/gone"))
         XCTAssertEqual(SessionPlaces.remoteName("https://github.com/Ever-Cars/evercars-backend.git"), "evercars-backend")
-    }
-
-    func testHerdrTabLabelsAreReadByTabAndFoundBySession() {
-        let labels = HerdrFocus.tabLabels(in: Data(#"{"result":{"tabs":[{"tab_id":"w1:t1","label":"Fix ink"},{"tab_id":"w1:t2","label":" "}]}}"#.utf8))
-        XCTAssertEqual(labels, ["w1:t1": "Fix ink"])
-        let focus = HerdrFocus(pane: "p", tab: "w1:t1", agents: [.init(pane: "p", session: "s1", tab: "w1:t1")], tabLabels: labels)
-        XCTAssertEqual(focus.label(ofSession: "s1"), "Fix ink")
-        XCTAssertNil(focus.label(ofSession: "s2"))
     }
 
     // MARK: The session menu's order and groups

@@ -48,16 +48,26 @@
   app left Electron in late September 2026 (openai/codex#25740). A thread older than the list is
   read by its id (`thread/read`). A Codex thread is named the way the app names it
   (`CodexConnection.name(of:)`).
-  Otherwise, when herdr runs, it is the session in herdr's focused pane, or the one session in that
-  pane's tab when the pane runs none. `DestinationChoice` applies herdr's focus to Claude Code
-  sessions only (`DestinationChoice.markedByHerdr`). Else it is the session used last.
+  Otherwise, when the Herdr app runs, it is the session in Herdr's focused pane, or the one agent
+  session in that pane's tab when the pane runs none. `DestinationChoice` applies Herdr's focus to
+  Claude Code sessions only (`DestinationChoice.markedByHerdr`). Else it is the session used last.
+  `HerdrFocus` reads the focus with three calls at once, each 5 to 20 ms (measured 2026-11-12):
+  `herdr-app status` names the focused pane and its tab, `herdr-app ls` places each terminal in a
+  tab and a pane, and `hc connect`'s `terminal.list` gives each terminal's foreground process and
+  labels. The status's `agent` field is never read: it named a stale terminal. The focused
+  terminal is the one in the focused pane. When the focus is on the inbox mod's panel, it is the
+  terminal whose `inbox.panel` label names that panel. A terminal's session is the listed Claude
+  Code session whose plugin inbox belongs to its foreground process, which follows `/clear`. When
+  none does, the inbox mod's `inbox.session` label names it. A closed Herdr window, a timeout, an
+  answer that does not parse, or a status whose tab is not the focused terminal's marks nothing,
+  and logs `[herdr] no focus: <reason>` when the reason changes, then `[herdr] focus read again`.
   The target shows the agent's logo and the session's title, cut in the middle past 132 pt, with
   the title, the second line and the repository in its tooltip (`SessionMenu.row(of:among:)`). Its width is set rather than left to the text, so it springs with the bar. A
   pick from its menu is applied a turn later, after the menu's own event loop ends, since a change
   made inside it jumped instead of animating. Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
   sessions the person sent to in the last 4 hours, newest send first, then the rest by when the agent last worked; five of them, with
   the target always among them, grouped under a header for each repository with Other folders last, then, after a separator, one submenu per project, titled as its header, with its count as a badge and every
-  active session of that project in it, the top rows too (live ink's Tab steps through the five only). The menu's first row is a search field that has the keyboard: typing lists the matching sessions from every project, Return picks the first, and Esc closes the menu (`SessionMenuSearch`). A row's title is the herdr tab's label, else
+  active session of that project in it, the top rows too (live ink's Tab steps through the five only). The menu's first row is a search field that has the keyboard: typing lists the matching sessions from every project, Return picks the first, and Esc closes the menu (`SessionMenuSearch`). A row's title is the name of the Herdr tab its terminal is in, unless Herdr numbered it, else
   the session's name; its second line is the worktree, the branch and the inbox mod's goal; a badge says Needs you or Working
   (`InboxModStore` reads the mod's private file and may find nothing). A Claude Code session is active while the plugin's monitor runs in it,
   and a Codex thread when it was used in the last day, since nothing says which threads the Codex
@@ -71,7 +81,7 @@
   changes only when its session is gone, so it never changes under the pointer. Codex's list is kept (`AgentConnection.keepsList`, `SessionListing`): an opening editor answers
   from the last one at once and asks for a fresh one, which comes in about 0.1 s for the five
   threads used last (`AppServer.listLimit`), and it is asked for again at launch, on a capture and
-  when the stack opens. Claude Code's list is always asked afresh, and herdr's focus, which
+  when the stack opens. Claude Code's list is always asked afresh, and Herdr's focus, which
   moves whenever you change panes, is read in the same job right after it (`HerdrFocus`), so the
   focus comes with Claude Code's first answer. Coming from the Codex
   app, a kept list that holds the shown thread settles the target at once; one that does not waits

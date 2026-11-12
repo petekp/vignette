@@ -59,7 +59,7 @@ Starts one listing for the open image, gated by the opening. It reads the `annot
 
 ### DestinationChoice (pure functions, no state)
 
-Owner: `DestinationChoice.swift`. Tests: `DestinationChoiceTests`; Send's rules in `ToolbarOfferTests` and the herdr test in `AgentConnectionTests`.
+Owner: `DestinationChoice.swift`. Tests: `DestinationChoiceTests`; Send's rules in `ToolbarOfferTests`, the herdr test in `AgentConnectionTests`, and reading the focus in `HerdrFocusTests`.
 
 `choose(_:for:)` is a pure function of `Candidates` and `Asker`. It has no states. Send's pick order is `.kept`, `.app`, `.pane`, `.tab`, else first by `newestFirst`. An answer is `decided` when it is complete or any session is marked. A kept Codex list that lacks the shown thread forces `complete = false`. With a kept pick (`Asker.send`'s `kept`), a list that has its session marks it `.kept`; a list without it is undecided until every client has answered afresh, and then the usual order picks. `keptIsGone` is set only when the kept session's agent listed other sessions, since a failed listing answers none. `KeptPick.holds(at:)` is the 10-minute window; its owner is `AnnotationController.keptPick` ([toolbar.md](toolbar.md#kept-pick-annotationcontrollerkeptpick-implicit)).
 
