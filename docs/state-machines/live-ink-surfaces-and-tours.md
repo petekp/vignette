@@ -83,7 +83,7 @@ A mark drawn over an open menu cannot belong to the menu's window. It stays on t
 
 Owner: `LiveEscape.swift` (`next`), `LiveInk+Escape.swift` (`escapeSnapshot`, `holdEscape`, `cancelHold`, `keepEscapeAfterRelease`), `LiveEscapeAfterRelease.swift`. Tests: `LiveEscapeTests` (every test in it).
 
-Esc backs out of live ink one step per press. `LiveEscape.next(Snapshot)` is pure: it returns the step to run, or nil to let the app have the key. `escapeKey: (key: HotKey, modifiers: UInt32)?` is held only while a step exists, with the chord's Carbon modifiers while the step is `cancelHold` and the chord is held, and plain Esc otherwise. `escapeAfterRelease: LiveEscapeAfterRelease?` is set when `listenOnceLetGo` runs with a note up or a stoppable ask, and cleared by a mouse press off the ink, another app's activation (not the app `FocusReturn` hands back to), the next `startInking`, or `holdEscape` once no note and no stoppable ask is left.
+Esc backs out of live ink one step per press. `LiveEscape.next(Snapshot)` is pure: it returns the step to run, or nil to let the app have the key. `escapeKey: (key: HotKey, modifiers: UInt32)?` is held only while a step exists, with the chord's Carbon modifiers while the step is `cancelHold` and the chord is held, and plain Esc otherwise. `escapeAfterRelease: LiveEscapeAfterRelease?` is set when `settleInking` opens or keeps the note and a note or a stoppable ask is up, and cleared by a mouse press off the ink, another app's activation (not the app `FocusReturn` hands back to), the next `startInking`, or `holdEscape` once no note and no stoppable ask is left.
 
 **States**: `Snapshot` (`LiveEscape.swift:29`) in, `Step?` out; and the hotkey, held or not.
 
@@ -107,7 +107,7 @@ The order in the table is the order of `next`: when two things are open, the ear
 **Invariants**
 
 - Esc backs out one step per press, in the order above. Checked by: `LiveEscapeTests.testEscBacksOutOneStepAtATimeInOrder`.
-- While the chord is held, the chord does not end on the Esc press before the hotkey runs `cancelHold`: `ModifierChord.checkKeys` ends the chord one poll after it reads a key. Checked by: nothing; it reads the HID state.
+- While the chord is held, the chord does not end on the Esc press before the hotkey runs `cancelHold`: `ModifierChord.checkKeys` ends the chord one poll after it reads a key, and a change of modifiers after that read ends it as `.interrupted`, not `.ended`. Checked by: nothing; it reads the HID state.
 - The hotkey is held exactly while `next(snapshot)` is non-nil. Checked by: nothing; `LiveInk` is not constructible in a test.
 - `pointerOnInk` reads `NSEvent.mouseLocation` (`LiveInk+Escape.swift:11`), which stays stale after inking, so the hotkey may not be held and Esc reaches the app ([hand-9](plausible-findings-requests-to-live-ink.md#hand-9)).
 

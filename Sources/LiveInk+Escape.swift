@@ -109,6 +109,11 @@ extension LiveInk {
         stopInking(because: "esc")
         if let note, let before = noteBeforeHold, note === before.note {
             if note.content.field.stringValue != before.words { note.put(before.words) }
+            // A stroke in the hold moved it to the new ink, which is about to go.
+            if notePlace != before.place {
+                notePlace = before.place
+                hangNote(takingKeys: false)
+            }
         } else {
             closeNote()
         }
@@ -122,9 +127,9 @@ extension LiveInk {
 
     // MARK: Right after the release
 
-    /// The chord was let go with a note up or an ask under way: Esc is live ink's wherever the pointer
-    /// is, until the person presses off the ink, another app becomes active, or nothing is left for
-    /// Esc to stop.
+    /// The chord was let go and the note opened or stayed for this hold, or its words were sent: while
+    /// the note or an ask under way is there, Esc is live ink's wherever the pointer is, until the
+    /// person presses off the ink, another app becomes active, or nothing is left for Esc to stop.
     func keepEscapeAfterRelease() {
         guard note != nil || asks.cancellable(sendsWait: sendsWait) != nil else { return }
         escapeAfterRelease = LiveEscapeAfterRelease(

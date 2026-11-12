@@ -54,11 +54,10 @@ extension LiveInk {
     }
 
     /// The chord was let go and the note settled: what is said goes into the note, and with no note
-    /// there is nowhere for it to go. Esc stays live ink's while the note or its ask is there.
+    /// there is nowhere for it to go.
     func listenOnceLetGo() {
         if note != nil { listening?.released() } else { stopListening() }
         if note != nil, let heard = heardBeforeNote { doneListening(heard.words, began: heard.began) }
-        keepEscapeAfterRelease()
     }
 
     /// Words heard: the first opens the note by the pointer while the chord is held and no note is up.

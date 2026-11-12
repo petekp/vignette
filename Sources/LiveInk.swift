@@ -108,10 +108,10 @@ final class LiveInk {
     var escapeKey: (key: HotKey, modifiers: UInt32)?
     /// Keeps Esc live ink's from the chord's release until the person goes elsewhere.
     var escapeAfterRelease: LiveEscapeAfterRelease?
-    /// The marks drawn or picked since the chord last went down, and the note up then with its words,
-    /// which Esc during the hold leaves as they were.
+    /// The marks drawn or picked since the chord last went down, and the note up then with its words
+    /// and place, which Esc during the hold leaves as they were.
     var holdInk = Set<Mark.ID>()
-    var noteBeforeHold: (note: LiveNotePopover, words: String)?
+    var noteBeforeHold: (note: LiveNotePopover, words: String, place: PopoverPlace?)?
     /// The note is sent because the person stopped talking (`liveInkSendWhenQuiet`).
     var sendingOnRelease = false
     /// The note's target picked last, which the next note starts on.
@@ -457,7 +457,7 @@ final class LiveInk {
     private var overMenus: Set<Mark.ID> = []
     /// The window under each mark drawn over a menu, which it goes onto, where it is, once the menu has
     /// closed. One drawn where there is no window stays on its surface.
-    private var pinsAfterMenus: [Mark.ID: CGWindowID] = [:]
+    private(set) var pinsAfterMenus: [Mark.ID: CGWindowID] = [:]
 
     /// Puts the marks drawn over a menu on the windows under them, and lets the surfaces that kept
     /// them above the menu down.
@@ -861,22 +861,6 @@ final class LiveInk {
         }
         prepared = (Set(person.map(\.id)), plan, packet, glance)
     }
-
-    /// What the picture of an ask about `about` is of, from the windows on the screen now.
-    private func picturePlan(for about: [Mark]) -> LivePacket.Plan {
-        let asked = about.filter { $0.kind != .text }.compactMap { mark in
-            mark.shapeExtent.map { LivePacket.Asked(id: mark.id, box: $0, window: window(of: mark.id)) }
-        }
-        return LivePacket.plan(for: asked, windows: LivePacket.listedWindows(), screens: StateReport.screenFrames)
-    }
-
-    /// The window each of `marks` is on, for those on one.
-    private func inkWindows(of marks: [Mark]) -> [Mark.ID: CGWindowID] {
-        Dictionary(uniqueKeysWithValues: marks.compactMap { mark in window(of: mark.id).map { (mark.id, $0) } })
-    }
-
-    /// The window a mark is on, or goes onto once the menu it was drawn over has closed.
-    private func window(of id: Mark.ID) -> CGWindowID? { windows.window(of: id) ?? pinsAfterMenus[id] }
 
     /// Shows the note against its ink, where a hand would write it, from a glance at the window's
     /// frame and text: the one started as the stroke ended, which also serves an ask about the same
@@ -1607,7 +1591,7 @@ final class LiveInk {
         keysDown = began
         isInking = true
         holdInk = []
-        noteBeforeHold = note.map { ($0, $0.content.field.stringValue) }
+        noteBeforeHold = note.map { ($0, $0.content.field.stringValue, notePlace) }
         escapeAfterRelease = nil
         inkings += 1
         FocusReturn.shared.sessionStarting()
@@ -1806,6 +1790,7 @@ final class LiveInk {
         let noteHasKeys = opensNote && showNote(takingKeys: takingKeys)
         keepNoteWithItsInk()
         listenOnceLetGo()
+        if opensNote { keepEscapeAfterRelease() }
         if !noteHasKeys { FocusReturn.shared.restore(reason: "live ink inking") }
     }
 

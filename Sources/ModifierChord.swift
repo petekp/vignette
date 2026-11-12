@@ -68,7 +68,8 @@ final class ModifierChord {
     private var keyWatch: Timer?
     /// The event that began the chord, in seconds since the Mac started.
     private var beganAt: TimeInterval = 0
-    /// A key went down since the chord began, read at the last poll, which ends the chord at the next.
+    /// A key went down since the chord began, read at the last poll, which ends the chord at the next,
+    /// or at a change of modifiers before it, as cut short.
     private var keyRead = false
     private let changed: (HeldChord.Change) -> Void
 
@@ -90,6 +91,7 @@ final class ModifierChord {
     }
 
     private func flagsChanged(_ event: NSEvent) {
+        if keyRead, let change = chord.keyDown() { return apply(change) }
         guard let change = chord.flagsChanged(event.modifierFlags) else { return }
         if change == .began { beganAt = event.timestamp }
         apply(change)

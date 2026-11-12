@@ -136,16 +136,16 @@ The names in brackets are `// MARK:` sections.
 - Esc backs out of live ink one step per press, the first of these that applies (`LiveEscape.next`,
   a pure function of what is up; `LiveEscapeTests`):
   0. Cancel the hold (`cancel-hold`, `LiveInk.cancelHold`), while the chord is held or a stroke
-     outlives it: nothing is sent, the ink drawn in this hold fades as a discarded note's does,
-     listening and the microphone stop, and a note opened in this hold closes. Earlier ink stays, and
-     so does a note up before the hold, with its words.
+     outlives it: nothing is sent, this hold's ink fades as a discarded note's does, listening and
+     the microphone stop, and a note opened in the hold closes. A note from before stays as it was.
+     An erase or a pick in the hold is not undone.
   1. Discard the note (`discard-note`), while it has the keys or right after the release: listening
-     stops and its ink, the ink no ask has been about, goes. Or close Reply's field, keeping its draft.
+     stops and its ink, which no ask has been about, goes. Or close Reply's field, keeping its draft.
   2. Stop the newest ask under way or waiting its turn (`LiveInk.cancelAsk`, `LiveAsks.cancellable`),
      one per press. Its sent note and any reply leave. After an ask sent with Return (`cancel-ask`)
      ink that was new is new again (`LiveAsks.Event.cancelled`), and the note opens on it with the keys
      and the ask's words (`LiveAsks.Effect.reopenNote`); a note up already takes the keys and keeps
-     its words. An ask that went by itself when the person stopped talking (`discard-ask`,
+     its words. An ask `liveInkSendWhenQuiet` sent (`discard-ask`,
      `LiveAsks.Ask.sentOnRelease`) takes its new ink and words with it, and no note opens. A follow-up
      from a button puts the earlier answer back as it was, even once its reply has started to stream.
      Nothing says the ask failed. Stopping the ask the responder is answering interrupts its turn
@@ -158,23 +158,21 @@ The names in brackets are `// MARK:` sections.
      unlike the ×, which takes the ink it answered too.
   5. Clear what is left, as `clear()` does, which also ends the conversation.
 
-  Right after the release, steps 1 and 2 apply wherever the pointer is, to a note without the keys
-  too (`LiveEscapeAfterRelease`), until a mouse press off the ink, another app becoming active (not
-  `FocusReturn.restore`), or no note or stoppable ask is left. Otherwise steps 2 to 5 apply only
+  After a release that opens or keeps the note, steps 1 and 2 apply wherever the pointer is, to a
+  note without the keys too (`LiveEscapeAfterRelease`), until a mouse press off the ink, another
+  app becoming active (not the app the keys go back to), or no note or stoppable ask is left. Otherwise steps 2 to 5 apply only
   while the pointer is on a mark or a reply on the active Space (`LiveInk.pointerIsOnInk`), and none
-  while the note is up without the keys: the person is typing in another app, where Esc stops a
-  terminal's agent.
+  while the note is up without the keys, since the keys are in another app.
 
-  `LiveInk` holds Esc as a Carbon hotkey (`HotKey`, no permission) only while `LiveEscape.next` has
-  a step, with the chord's modifiers while the chord is held. `ModifierChord`
-  cannot tell which key its poll read, so it ends the chord one 50 ms poll later, once the hotkey has
-  had the press. An Esc the hotkey misses, as ⌘⌥Esc that macOS takes for Force Quit, still cancels
-  when Esc is down as the chord ends. Never while the stack, the annotator or the note's target
-  menu has Esc, or live ink is off. `LiveInk.holdEscape` decides before each wait of the main run loop. The note's and
-  Reply's `cancelOperation:` reach `LiveInk.escape` only for a press the held key misses (the `HotKey`
-  comment). Each press logs `[live-ink] esc <step>`.
-  `[state] liveInk.escape` is the next step or null, `escapeHeld` says whether the key is held, and
-  `escapeAfterRelease` whether Esc is still live ink's after the release.
+  `LiveInk` holds Esc as a Carbon hotkey (`HotKey`, no permission) while `LiveEscape.next` has a step
+  and nothing else has Esc (the stack, the annotator, the note's target menu), with the chord's
+  modifiers while it is held. `ModifierChord`'s poll cannot tell which key went down, so it ends the
+  chord one poll later, after the hotkey. An Esc the hotkey misses, as ⌘⌥Esc (Force Quit), cancels
+  only if still down as the chord ends. `LiveInk.holdEscape` decides before each wait of the main run
+  loop. The note's and Reply's `cancelOperation:` reach `LiveInk.escape` only for a press the held
+  key misses. Each press logs `[live-ink] esc <step>`.
+  `[state] liveInk.escape` is the next step or null, `escapeHeld` whether the key is held, and
+  `escapeAfterRelease` whether Esc is live ink's after the release.
 - Inking never covers the stack or the annotator. The chord does nothing while
   `ThumbnailController.holdsScreen`, and either coming up while it is held ends the inking
   (`onTakesScreen`). A chord let go mid-stroke keeps the overlays raised until the button is up,
