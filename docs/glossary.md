@@ -175,6 +175,11 @@ sent to. When there is none, or it is not found again, the note starts on a resp
 not a destination.
 _Avoid_: Default target
 
+**Kept pick**:
+A session the person picked in Send's menu and then sent to. Send starts on it before any other
+rule for 10 minutes after each send to it. It is a destination choice, kept in memory only.
+_Avoid_: Sticky target, last sent
+
 **Delivery route**:
 The way a screenshot request reaches a destination. Each agent client has exactly one, and the
 routes differ in how firmly they pin the destination.

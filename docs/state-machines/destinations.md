@@ -35,9 +35,9 @@ Asks each agent connection for its sessions and delivers lists to the toolbar. `
 
 ### AppDelegate.refreshDestinations and listDestinations (implicit)
 
-Owner: `AppDelegate.swift:1350`, `:1371`. Tests: none.
+Owner: `AppDelegate+Send.swift`. Tests: none.
 
-Starts one listing for the open image, gated by the opening. It reads the `annotator.opening`, calls `begin`, and, if `FocusReturn.shared.previousApp` is the Codex app, reads the shown thread off the main thread (`AgentApp.shownThread`). It then calls `sessions.list`.
+Starts one listing for the open image, gated by the opening. It reads the `annotator.opening`, calls `beginDestinations`, which answers the kept pick's session while it holds, and, if `FocusReturn.shared.previousApp` is the Codex app, reads the shown thread off the main thread (`AgentApp.shownThread`). It then calls `sessions.list`, with the kept Codex thread's id in place of the shown thread's when there is one. Both now live in `AppDelegate+Send.swift`.
 
 **States**: the captured `opening`.
 
@@ -45,8 +45,8 @@ Starts one listing for the open image, gated by the opening. It reads the `annot
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| opening current | off-main thread read returns | — | main re-checks the opening (`:1362`), then `sessions.list` |
-| opening current | each `deliver` | — | re-checks (`:1376`), then `destinationsAnswered` |
+| opening current | off-main thread read returns | — | main re-checks the opening (`:96`), then `sessions.list` |
+| opening current | each `deliver` | — | re-checks (`:113`), then `destinationsAnswered` |
 | opening ended | either hop | — | dropped |
 
 **Invariants**
@@ -55,13 +55,13 @@ Starts one listing for the open image, gated by the opening. It reads the `annot
 
 **Late and concurrent answers**
 
-- Both hops compare the opening id: guards at `:1362` and `:1376`.
+- Both hops compare the opening id: guards at `AppDelegate+Send.swift:96` and `:113`.
 
 ### DestinationChoice (pure functions, no state)
 
 Owner: `DestinationChoice.swift`. Tests: `DestinationChoiceTests`; Send's rules in `ToolbarOfferTests` and the herdr test in `AgentConnectionTests`.
 
-`choose(_:for:)` is a pure function of `Candidates` and `Asker`. It has no states. Send's pick order is `.app`, `.pane`, `.tab`, else first by `newestFirst` (`:186`). An answer is `decided` when it is complete or any session is marked. A kept Codex list that lacks the shown thread forces `complete = false` (`:123`).
+`choose(_:for:)` is a pure function of `Candidates` and `Asker`. It has no states. Send's pick order is `.kept`, `.app`, `.pane`, `.tab`, else first by `newestFirst`. An answer is `decided` when it is complete or any session is marked. A kept Codex list that lacks the shown thread forces `complete = false`. With a kept pick (`Asker.send`'s `kept`), a list that has its session marks it `.kept`; a list without it is undecided until every client has answered afresh, and then `keptIsGone` is set and the usual order picks. `KeptPick.holds(at:)` is the 10-minute window; its owner is `AnnotationController.keptPick` ([toolbar.md](toolbar.md#kept-pick-annotationcontrollerkeptpick-implicit)).
 
 ### ClaudeCodeConnection: submit, preflight, start (implicit)
 

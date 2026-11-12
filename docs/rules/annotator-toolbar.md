@@ -23,7 +23,19 @@
   (`AnnotationController.offerTyping`), so typing goes to the agent at once. The field counts as
   typed in only while the panel is key
   (`Model.keyed`), because AppKit makes it the panel's first responder when the bar comes up. There is no
-  palette: a mark's colour says who drew it. Send starts on
+  palette: a mark's colour says who drew it. Send starts on the kept pick when there is one: the
+  session the person picked in the target's menu and then sent to (`DestinationChoice.KeptPick`,
+  `AnnotationController.keptPick`). It holds for 10 minutes after the send that set it, and each
+  Send to it starts the 10 minutes again. Pete's runs of sends to one session had gaps under 6
+  minutes, and a short window drops a pick once he moves to other work. It comes before every rule
+  below, the Codex app's thread included, so one rule says where Send starts. It ends when the 10
+  minutes pass, when a Send goes to another hand pick, which is kept instead, or when every client
+  has answered afresh without it. A session that `/clear` gave a new id is gone: no guess at the
+  same one replaces it, since no send in two weeks of Pete's log was refused as cleared. A pick that
+  is never sent keeps nothing, so a first send is never surprised. A Reply neither sets, refreshes
+  nor ends it, and a card that offers Reply still offers Reply. It is kept in memory only. Codex
+  lists only the threads used last, so a kept Codex thread is asked for by its id
+  (`SessionListing.list(shown:)`). Otherwise Send starts on
   the session you came from (`DestinationChoice`). When the app before Vignette
   (`FocusReturn.previousApp`) was the Codex app, that is the thread it shows, or else the Codex
   thread used last; herdr's focus is ignored then, because herdr keeps a focused pane while its
@@ -48,7 +60,12 @@
   (`InboxModStore` reads the mod's private file and may find nothing). A Claude Code session is active while the plugin's monitor runs in it,
   and a Codex thread when it was used in the last day, since nothing says which threads the Codex
   app has open. The target settles once, from the first answer that names a focus (herdr's comes in
-  about 60 ms, before the bar is up), or else from the whole list (`Model.answered`). After that it
+  about 60 ms, before the bar is up), or else from the whole list (`Model.answered`). With a kept
+  pick, nothing settles until an answer lists the kept session, or every client has answered afresh
+  without it. A kept Claude Code session settles with Claude Code's first answer, as herdr's focus
+  does. A kept Codex thread settles at once from the kept list when the list has it, else from the
+  fresh one. A target carried from the image before stays until then, so the bar never shows a
+  third session between the two. After that it
   changes only when its session is gone, so it never changes under the pointer. Codex's list is kept (`AgentConnection.keepsList`, `SessionListing`): an opening editor answers
   from the last one at once and asks for a fresh one, which comes in about 0.1 s for the five
   threads used last (`AppServer.listLimit`), and it is asked for again at launch, on a capture and
