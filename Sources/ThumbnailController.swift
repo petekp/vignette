@@ -1358,6 +1358,7 @@ final class ThumbnailController {
         }
         visible = true
         layoutPanel(shrinkLater: false, animated: false)
+        keepPictures()
         if ordersPanel { flights.orderIn(panel) }
         // The offscreen state must be committed before it is cleared, or nothing animates: next run loop turn.
         if entrance == .slide {

@@ -18,7 +18,7 @@
   `removeCards` lets a card's marks go when it leaves the column. A card holds its own picture, out
   of the cache's reach, so a column longer than 100 cards and `recentCount` lets the pictures of
   cards more than four viewports from the view go, 30 at a time. It takes them back within two
-  viewports, whatever moved the column: from the cache, or decoded on the thumbnail queue, and the
+  viewports, whatever moved the column, and still does once removals make the column shorter: from the cache, or decoded on the thumbnail queue, and the
   pictures that arrive within 50 ms go to the cards in one change (`CardPictures`). Only the newest
   `recentCount` cards decode into the cache (`ThumbnailController.cachesPicture`): those pictures,
   a chunk's and a settings change's decode past them do not, so they never push out the newest
