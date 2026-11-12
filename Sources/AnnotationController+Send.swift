@@ -39,14 +39,14 @@ extension AnnotationController {
         Log.write("[send] kept ended \(kept.session.address.description) reason=\(reason)")
     }
 
-    /// Logs where the bar's filled button sends, and why, whenever either changes: the card's own
-    /// session for a Reply, else the target. `reply` marks the first, since the target is then not on
-    /// the bar. A carried target that this image's answer settles on again, now as the kept pick, is a
-    /// change of why.
+    /// Logs where the bar's filled button sends, why, and its terminal's role, whenever one changes:
+    /// the card's own session for a Reply, else the target. `reply` marks the first, since the target
+    /// is then not on the bar. A carried target that this image's answer settles on again, now as the
+    /// kept pick, is a change of why. The role comes with Claude Code's listing.
     private func logOffer(was before: AgentDestination?) {
         let offer = toolbar.model.offer
-        guard let to = offer.destination, to.id != before?.id || to.focus != before?.focus else { return }
-        Log.write("[send] target \(to.address.description) project=\(to.detail) focus=\(to.focus?.rawValue ?? "none")\(offer.isSend ? "" : " reply")")
+        guard let to = offer.destination, to.id != before?.id || to.focus != before?.focus || to.role != before?.role else { return }
+        Log.write("[send] target \(to.address.description) project=\(to.detail) focus=\(to.focus?.rawValue ?? "none") role=\(to.role ?? "none")\(offer.isSend ? "" : " reply")")
     }
 
     /// Whether the open image's drawing is still exactly what its agent sent, which Reply reads

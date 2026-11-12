@@ -111,10 +111,25 @@ menu bar opens it. The codes are fixed:
 `no-agent`, `send-failed`, `reply-refused`, `live-ink-off`, `invalid-points`, `live-ink-not-asked`, `unknown-section`, `nothing-to-unsend`. The log has one event per line,
 `HH:mm:ss.SSS [tag] key=value …`, and rotates to `Vignette.log.1` at 5 MB.
 
-Where Send starts is logged too. `[send] target <address> project=<detail> focus=<why>` names the
-session the bar's filled button sends to whenever it changes. `focus` is `kept`, `app`, `pane`, `tab`
-or `none` (the session used last). `[send] picked <address> project=<detail>` is a pick from the
-target's menu. `[send] kept <address> project=<detail>` is a send that set or refreshed the kept pick
+Where Send starts is logged too. `[send] target <address> project=<detail> focus=<why> role=<role>`
+names the session the bar's filled button sends to whenever one of these changes. `focus` is `kept`,
+`app`, `pane`, `tab` or `none` (the session used last).
+
+`role` is the `fleet.role` label of the herdr-core terminal that runs the session. It is the label
+when that is 1 to 24 letters, digits and hyphens, and `other` for any other text. It is `none` for a
+Codex thread, without the label or Herdr, and until Claude Code's listing answers. The target is
+logged again when its role arrives, so the last `target` line before a send has it.
+
+`[send] picked <address> project=<detail> role=<role>` is a pick from the target's menu. The next
+line, `[send] menu top=<rows> list=top|project|search [submenu=<n>] [rows=<rows>] picked=<row>
+row=<n>`, says where the pick was made:
+
+- `top` holds the menu's first rows, up to five, and is empty with no session running.
+- `list=top` means the pick came from those rows, with or without a search that left the same rows.
+- `list=project` is the `submenu`-th project submenu, counted from the top.
+- `list=search` is the rows a search left.
+- `rows` is that list when it is not `top`, and `row` is the picked row's place in it, from 1.
+- A row is a session id, `resume:<id>` for Continue last session, or `new` for New session. `[send] kept <address> project=<detail>` is a send that set or refreshed the kept pick
 (`docs/glossary.md`), and `[send] kept ended <address> reason=time|gone` is its end.
 `[state] annotator.keptPick` is the kept pick's `session`, `client` and `secondsLeft`, or null.
 

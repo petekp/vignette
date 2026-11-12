@@ -93,8 +93,10 @@ struct AgentDestination: Equatable, Identifiable {
     /// The checked-out branch when it is not the repository's default. Nil on the default branch,
     /// on a detached `HEAD`, and when it could not be read.
     var branch: String? = nil
-    /// The label of the herdr tab the session runs in, when it runs in a herdr pane.
+    /// The name of the Herdr tab the session runs in.
     var hostLabel: String? = nil
+    /// Its terminal's `fleet.role` (`HerdrFocus.loggedRole`).
+    var role: String? = nil
     /// When the session started, which numbers sessions with equal names.
     var started: Date? = nil
     /// Where the session is in its turns. Nil when its client does not report turns.
@@ -146,8 +148,7 @@ protocol AgentConnection: Sendable {
     var keepsList: Bool { get }
     /// The sessions this route can address right now. Empty when the route cannot enumerate.
     func destinations() -> [AgentDestination]
-    /// The same, with each session in `ids` the route finds though it lists only recent ones, such
-    /// as a Codex thread used weeks ago that the Codex app shows.
+    /// The same, with each session in `ids` it finds by id though it lists only recent ones.
     func destinations(including ids: [String]) -> [AgentDestination]
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome
     /// The same, answering `completion` off the main thread. The default runs `submit` on a pool

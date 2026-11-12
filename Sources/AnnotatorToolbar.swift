@@ -261,11 +261,12 @@ final class AnnotatorToolbar {
         let content = NSView()
         content.addSubview(hosting)
         panel.contentView = content
-        targetMenuActions.onPick = { [weak self] destination in
+        targetMenuActions.onPick = { [weak self] destination, menuLine in
             // A turn later, once the menu's own event loop has ended, and on the bar's spring.
             DispatchQueue.main.async {
                 guard let self else { return }
-                Log.write("[send] picked \(destination.address.description) project=\(destination.detail)")
+                Log.write("[send] picked \(destination.address.description) project=\(destination.detail) role=\(destination.role ?? "none")")
+                if let menuLine { Log.write(menuLine) }
                 withAnimation(Anim.spring(0.35 * Settings.shared.motionScale)) { self.model.pick(destination) }
             }
         }
@@ -423,7 +424,9 @@ final class AnnotatorToolbar {
         let target = model.offer.destination
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let search = SessionMenu.add(SessionMenu.menu(model.destinations + model.startable, destination: target), to: menu) { row in
+        let sessions = SessionMenu.menu(model.destinations + model.startable, destination: target)
+        targetMenuActions.open = (menu, sessions)
+        let search = SessionMenu.add(sessions, to: menu) { row in
             let item = SessionMenu.item(for: row, selected: row.id == target?.id)
             item.target = self.targetMenuActions
             item.action = #selector(TargetMenuActions.pick(_:))
@@ -1232,15 +1235,6 @@ private struct GrowingField: Layout {
             subview.place(at: CGPoint(x: bounds.minX, y: bounds.minY - up), anchor: .topLeading,
                           proposal: ProposedViewSize(width: bounds.width, height: height))
         }
-    }
-}
-
-/// The target menu's items answer here: AppKit calls an item's action on an object.
-@MainActor
-private final class TargetMenuActions: NSObject {
-    var onPick: ((AgentDestination) -> Void)?
-    @objc func pick(_ item: NSMenuItem) {
-        if let destination = item.representedObject as? AgentDestination { onPick?(destination) }
     }
 }
 

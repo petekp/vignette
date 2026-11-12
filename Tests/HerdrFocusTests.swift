@@ -25,12 +25,13 @@ final class HerdrFocusTests: XCTestCase {
         [#"""
         {"id":1,"jsonrpc":"2.0","result":{"hidden_finished":0,"machines":[],"terminals":[
           {"address":"t1","pid":500,"foreground":{"pid":501,"name":"2.1.322","argv":["claude"],"cwd":"/x"},
-           "labels":{"inbox.session":"\#(session)","inbox.panel":"pPanel1","herdr.tab":"tbA"}},
+           "labels":{"inbox.session":"\#(session)","inbox.panel":"pPanel1","herdr.tab":"tbA","fleet.role":"coordinator"}},
           {"address":"t2","pid":600,"foreground":{"pid":600,"name":"zsh","argv":["zsh"],"cwd":"/x"},"labels":{}},
           {"address":"t3","pid":700,"foreground":{"pid":700,"name":"2.1.322","argv":["claude"],"cwd":"/x"},
            "labels":{"inbox.session":"\#(other)"}},
           {"address":"t4","pid":800,"foreground":{"pid":800,"name":"codex","argv":["codex"],"cwd":"/x"},"labels":{}},
-          {"address":"t5","pid":900,"foreground":{"pid":900,"name":"2.1.322","argv":["claude"],"cwd":"/x"},"labels":{}}]}}
+          {"address":"t5","pid":900,"foreground":{"pid":900,"name":"2.1.322","argv":["claude"],"cwd":"/x"},
+           "labels":{"fleet.role":"fix the ink, then ship"}}]}}
         """#]
     }
 
@@ -53,10 +54,10 @@ final class HerdrFocusTests: XCTestCase {
         let read = try XCTUnwrap(focus("pA1"))
         XCTAssertEqual(read.pane, "pA1")
         XCTAssertEqual(read.tab, "tbA")
-        XCTAssertEqual(read.agents, [.init(pane: "pA1", session: session, tab: "tbA", pid: 501),
+        XCTAssertEqual(read.agents, [.init(pane: "pA1", session: session, tab: "tbA", pid: 501, role: "coordinator"),
                                      .init(pane: "pB1", session: other, tab: "tbB", pid: 700),
                                      .init(pane: "pC1", tab: "tbC", pid: 800),
-                                     .init(pane: "pC2", tab: "tbC", pid: 900)],
+                                     .init(pane: "pC2", tab: "tbC", pid: 900, role: "other")],
                        "a shell is no agent, and the foreground process is Claude Code's, not the shell it was started from")
         XCTAssertEqual(read.tabLabels, ["tbA": "vignette [fix ink]", "tbC": "two agents"], "a tab Herdr numbered has no label")
         XCTAssertEqual(read.label(ofSession: session), "vignette [fix ink]")
@@ -89,6 +90,17 @@ final class HerdrFocusTests: XCTestCase {
         XCTAssertEqual(marked(focus("pA2"), listing: [claude(session, pid: 501), claude(unreported, pid: 600)]), [nil, .pane],
                        "the terminal Herdr shows as running nothing runs a listed Claude Code, which has the focus")
         XCTAssertEqual(marked(focus("pA2"), listing: [claude(session, pid: 501)]), [.tab], "a shell is still no agent")
+    }
+
+    func testASessionsRoleFollowsItsProcessAndTheLogGetsARuleNameOrOther() {
+        let read = focus("pA2")?.sessions(from: [claude("cleared", pid: 501), claude("c5", pid: 900)])
+        XCTAssertEqual(read?.role(ofSession: "cleared"), "coordinator", "after /clear the role stays with the terminal")
+        XCTAssertEqual(read?.role(ofSession: "c5"), "other", "a sentence in the label never reaches the log")
+        XCTAssertNil(read?.role(ofSession: other), "no fleet.role label")
+        XCTAssertEqual(HerdrFocus.loggedRole("delegate-2"), "delegate-2")
+        XCTAssertEqual(HerdrFocus.loggedRole(String(repeating: "a", count: 25)), "other")
+        XCTAssertEqual(HerdrFocus.loggedRole("délégué"), "other")
+        XCTAssertEqual(HerdrFocus.loggedRole(""), "other")
     }
 
     func testEveryFailureMarksNothingAndSaysWhy() {
