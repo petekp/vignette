@@ -89,6 +89,7 @@ This file is the index. Each file below is under `docs/state-machines/`; the tab
 | Rendering and clipboard promise | `RenderingQueue`, `Clipboard`, `DragItems` | [editor-view-and-drawings](state-machines/editor-view-and-drawings.md) |
 | DragSourceView press | `DragSourceView`, `StackModel` | [editor-view-and-drawings](state-machines/editor-view-and-drawings.md) |
 | AnnotatorToolbar.Model: target and offer | `AnnotatorToolbar.Model` | [toolbar](state-machines/toolbar.md) |
+| Kept pick: AnnotationController.keptPick | `AnnotationController`, `DestinationChoice.KeptPick` | [toolbar](state-machines/toolbar.md) |
 | ToolbarOffer | `ToolbarOffer` | [toolbar](state-machines/toolbar.md) |
 | Send progress: sending, failure | `AnnotatorToolbar.Model` | [toolbar](state-machines/toolbar.md) |
 | Bar presence: shown, hideGeneration, sliding | `AnnotatorToolbar.Model` | [toolbar](state-machines/toolbar.md) |

@@ -8,13 +8,13 @@ A destination is an `AgentDestination`: one agent session a line can go to. A st
 
 Owner: `AnnotatorToolbar.swift:9`. Tests: `ToolbarOfferTests.testTheTargetSettlesOnHerdrsFocusAndStaysWhenCodexAnswersLater`, `testWithNoFocusTheTargetIsTheSessionUsedLastAndIsReplacedOnlyWhenItIsGone`, `testASwapKeepsTheTargetOnTheBarUntilTheNextImagesSettles`.
 
-Holds which session Send goes to for the open image. `AnnotationController.beginDestinations` (`AnnotationController.swift:617`) and `destinationsAnswered` (`:623`) drive it, called from `AppDelegate.refreshDestinations` and `listDestinations` (`AppDelegate.swift:1350`, `:1371`).
+Holds which session Send goes to for the open image. `AnnotationController.beginDestinations` (`AnnotationController.swift:617`) and `destinationsAnswered` (`:623`) drive it, called from `AppDelegate.refreshDestinations` and `listDestinations` (`AppDelegate+Send.swift`).
 
 **States**: the properties together:
 - `destinations` (`:14`): the last list answered for this image. `startable` (`:16`): rows Send would start.
 - `listed` (`:18`): every client has answered. `whole` (`:22`): the last complete list, possibly the image before's.
 - `replyTo` (`:25`): the session this image came from. `target` (`:27`): the chosen destination.
-- `picked` (`:41`): the person chose the target. `carried` (`:44`): the target is the image before's and waits for this image's first deciding answer.
+- `picked` (`:41`): the person chose the target. `isHandPick(_:)` reads it, and a Send to a hand pick sets the kept pick (the next machine). `carried` (`:44`): the target is the image before's and waits for this image's first deciding answer.
 - `offer` (`:131`) is derived (next machine). `reportOffer` (`:139`) calls `onOfferChanged` only when the offer changed.
 
 A `decided` answer is one `DestinationChoice` marks as settled: complete, or any session marked by herdr.
@@ -44,13 +44,45 @@ Events: `begin(replyTo:carryingTarget:)` (`:148`, sent by `beginDestinations` wi
 
 **Late and concurrent answers**
 
-- A list answer for an ended opening: dropped, guard at `AppDelegate.swift:1376` (`annotator.opening == opening`), and again after the off-main read at `:1362`. `Opening` ids are never reused, so closing and reopening the same file is another opening. `annotator.opening` is nil when `current == nil` (`AnnotationController.swift:594`).
+- A list answer for an ended opening: dropped, guard at `AppDelegate+Send.swift:113` (`annotator.opening == opening`), and again after the off-main read at `:96`. `Opening` ids are never reused, so closing and reopening the same file is another opening. `annotator.opening` is nil when `current == nil` (`AnnotationController.swift:594`).
 - A carried target whose session is gone: Send still shows. A send to it fails at the preflight (`AgentConnection.swift:416-420`, "closed" or "cleared") and never lands on another session.
 - A menu pick applied after a newer `begin`: accepted without a check, guard none (`AnnotatorToolbar.swift:260-266`) ([toolbar-4](plausible-findings-run-to-toolbar.md#toolbar-4)).
 
+### Kept pick: AnnotationController.keptPick (implicit)
+
+Owner: `AnnotationController.keptPick`, driven in `AnnotationController+Send.swift`. The window is `DestinationChoice.KeptPick.lasts`. Tests: `DestinationChoiceTests` (the tests named for the kept pick); `ToolbarOfferTests.testOnlyTheTargetPickedInTheMenuIsAHandPick`, `testAKeptPickSettlesASwappedBarWithoutShowingAnotherSessionFirst`.
+
+The session Send starts on after the person picked it in the target's menu and sent to it. It spans openings and lives in memory only.
+
+**States**: none (`keptPick == nil`); kept (`session`, `sentAt`).
+
+**Transitions**
+
+| State | Event | Next state | Effects |
+|---|---|---|---|
+| kept | `sent(to:)` from `AppDelegate.submit` once the request is stored, 10 minutes since `sentAt` | none, then as below | `[send] kept ended <address> reason=time` |
+| any | `sent(to:)`, a Send to the hand pick (`model.isHandPick`) or to the kept session (`KeptPick.after`) | kept (`sentAt` now) | `[send] kept <address> project=<detail>` |
+| any | `sent(to:)`, a Reply, or a Send to a start Vignette chose | unchanged | — |
+| kept | `beginDestinations`, 10 minutes since `sentAt` | none | `[send] kept ended <address> reason=time` |
+| kept | `beginDestinations`, within 10 minutes | kept | answers `session`, passed to `Asker.send(kept:)` for this opening |
+| kept | `destinationsAnswered`, `answer.keptIsGone` | none | `[send] kept ended <address> reason=gone` |
+
+**Invariants**
+
+- A pick that is never sent keeps nothing. Checked by: `DestinationChoiceTests.testOnlyASendToAHandPickOrToTheKeptPickKeepsIt`, `ToolbarOfferTests.testOnlyTheTargetPickedInTheMenuIsAHandPick`.
+- A Reply neither sets, refreshes nor ends it. Checked by: the first of those for set and refresh; nothing ends it but time and `keptIsGone`.
+- A listing that failed does not end it: `keptIsGone` needs the kept session's agent to have listed some session. Checked by: `testAnAgentThatListedNoSessionDoesNotEndTheKeptPick`. A Codex listing that times out takes 8 s, and the target waits for it only when the kept Codex list lacks the thread.
+- Until the kept session is listed, or every client has answered afresh, no other session settles the target. Checked by: `testSendSettlesOnNothingElseUntilTheKeptPickIsListedOrEveryClientHasAnsweredAfresh`, `testAKeptPickSettlesASwappedBarWithoutShowingAnotherSessionFirst`.
+
+**Late and concurrent answers**
+
+- An opening reads the window once, at `beginDestinations`, so a pick that expires while the image is open still starts that image. The send checks the window again, so a send after it ends does not start it again.
+- A send closes its opening, so no answer of the opening that set the kept pick reaches `destinationsAnswered` after it.
+- A kept session that is still starting (a Continue last session or New session row) is not listed until its inbox is up, up to 45 s; an opening in that time finds it gone.
+
 ### ToolbarOffer (explicit, derived)
 
-Owner: `AnnotatorToolbar.swift:640`. Tests: `ToolbarOfferTests.testEachOfferSaysWhatReturnAndCmdReturnDo`.
+Owner: `ToolbarOffer.swift`. Tests: `ToolbarOfferTests.testEachOfferSaysWhatReturnAndCmdReturnDo`.
 
 What the bar offers for the open image. It is computed from `Model` inputs and never stored. `AnnotationController.offerChanged` passes it to `editor.finishes` (`:639`); the bar's `controls` and `offersTarget` read it.
 
@@ -69,7 +101,7 @@ The offer is recomputed whenever an input (`replyTo`, destinations, `listed`, `t
 
 **Invariants**
 
-- Return never sends to a session Vignette picked (`finishes`, `:686`). Checked by: `ToolbarOfferTests.testEachOfferSaysWhatReturnAndCmdReturnDo`.
+- Return never sends to a session Vignette picked (`ToolbarOffer.finishes`). Checked by: `ToolbarOfferTests.testEachOfferSaysWhatReturnAndCmdReturnDo`.
 
 **Late and concurrent answers**
 

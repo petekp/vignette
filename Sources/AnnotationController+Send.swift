@@ -5,24 +5,47 @@ import AppKit
 extension AnnotationController {
     /// A new image opened: `replyTo` is the session it came from, when it names one, and the list
     /// of sessions is on its way. Read once per image: the list comes from subprocesses, and a menu
-    /// that re-read it on every click would stall the bar.
-    func beginDestinations(replyTo: AgentDestination?) {
+    /// that re-read it on every click would stall the bar. Answers the kept pick's session, which
+    /// this image's listing starts on while it holds.
+    func beginDestinations(replyTo: AgentDestination?) -> AgentDestination? {
         toolbar.model.begin(replyTo: replyTo, carryingTarget: toolbar.model.shown)
         logOffer(was: nil)
+        if keptPick?.holds(at: Date()) == false { endKeptPick("time") }
+        return keptPick?.session
     }
 
     /// Another client answered with its sessions, and the pick made from them.
     func destinationsAnswered(_ answer: DestinationChoice.Answer) {
-        let before = toolbar.model.offer.destination?.id
+        let before = toolbar.model.offer.destination
         toolbar.model.answered(answer)
         logOffer(was: before)
+        if answer.keptIsGone { endKeptPick("gone") }
     }
 
-    /// Logs where the bar's filled button sends, whenever that changes: the card's own session for a
-    /// Reply, else the target. `reply` marks the first, since the target is then not on the bar.
-    private func logOffer(was before: String?) {
+    /// A send from the editor stored its request (`DestinationChoice.KeptPick.after`).
+    func sent(to destination: AgentDestination) {
+        let now = Date()
+        if keptPick?.holds(at: now) == false { endKeptPick("time") }
+        let after = DestinationChoice.KeptPick.after(sendTo: destination, isSend: toolbar.model.offer.isSend,
+                                                     handPicked: toolbar.model.isHandPick(destination), kept: keptPick, at: now)
+        guard after != keptPick else { return }
+        keptPick = after
+        Log.write("[send] kept \(destination.address.description) project=\(destination.detail)")
+    }
+
+    private func endKeptPick(_ reason: String) {
+        guard let kept = keptPick else { return }
+        keptPick = nil
+        Log.write("[send] kept ended \(kept.session.address.description) reason=\(reason)")
+    }
+
+    /// Logs where the bar's filled button sends, and why, whenever either changes: the card's own
+    /// session for a Reply, else the target. `reply` marks the first, since the target is then not on
+    /// the bar. A carried target that this image's answer settles on again, now as the kept pick, is a
+    /// change of why.
+    private func logOffer(was before: AgentDestination?) {
         let offer = toolbar.model.offer
-        guard let to = offer.destination, to.id != before else { return }
+        guard let to = offer.destination, to.id != before?.id || to.focus != before?.focus else { return }
         Log.write("[send] target \(to.address.description) project=\(to.detail) focus=\(to.focus?.rawValue ?? "none")\(offer.isSend ? "" : " reply")")
     }
 

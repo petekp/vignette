@@ -111,6 +111,13 @@ menu bar opens it. The codes are fixed:
 `no-agent`, `send-failed`, `reply-refused`, `live-ink-off`, `invalid-points`, `live-ink-not-asked`, `unknown-section`, `nothing-to-unsend`. The log has one event per line,
 `HH:mm:ss.SSS [tag] key=value …`, and rotates to `Vignette.log.1` at 5 MB.
 
+Where Send starts is logged too. `[send] target <address> project=<detail> focus=<why>` names the
+session the bar's filled button sends to whenever it changes. `focus` is `kept`, `app`, `pane`, `tab`
+or `none` (the session used last). `[send] picked <address> project=<detail>` is a pick from the
+target's menu. `[send] kept <address> project=<detail>` is a send that set or refreshed the kept pick
+(`docs/glossary.md`), and `[send] kept ended <address> reason=time|gone` is its end.
+`[state] annotator.keptPick` is the kept pick's `session`, `client` and `secondsLeft`, or null.
+
 ## Input events
 
 `scripts/input.sh` posts real input events for clicks, drags, and the shortcut itself. It needs the
