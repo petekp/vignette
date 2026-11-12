@@ -1,6 +1,10 @@
 import Foundation
 
 extension LiveAsks {
+    /// What of the person's `ink` ask `id`'s picture and message carry: none for an ask about the
+    /// window under the pointer, or one following its answer.
+    func drawnInk(_ ink: [Mark], for id: Ask.ID) -> [Mark] { ask(id)?.spot == nil ? ink : [] }
+
     /// The reply the person answered with one of its buttons, and the words sent.
     struct Following: Equatable {
         var reply: Mark

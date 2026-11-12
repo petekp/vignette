@@ -812,6 +812,19 @@ final class LiveAsksTests: XCTestCase {
         XCTAssertTrue(a.isUnderWay, "a new ask can begin at once")
     }
 
+    func testAStoppedFollowUpPutsItsAnswerLastAndNoEarlierAskIsAfterTheLastIdGiven() {
+        var a = A()
+        let first = ink(), second = ink(50), reply = text("A button.", agent: true)
+        let one = answer(&a, on: [first], reply: reply)
+        let two = begin(&a, on: [first, second])
+        let three = begin(&a, on: [first, second, reply], following: reply)
+        _ = reduce(&a, .cancelled(three, shown: [first.id, second.id, reply.id]))
+        XCTAssertEqual(a.asks.map(\.id), [two, one])
+        XCTAssertEqual(a.lastID, three)
+        XCTAssertEqual(a.cancellable(sendsWait: false), two)
+        XCTAssertNil(a.cancellable(sendsWait: false, after: a.lastID))
+    }
+
     func testEscStopsTheNewestAskFirstAndTheResponderOnlyForTheOneItHas() {
         var a = A()
         let first = ink(), second = ink(50), third = ink(100)
@@ -1018,6 +1031,7 @@ final class LiveAsksTests: XCTestCase {
     func testRandomSequencesKeepTheInvariants() {
         var dropped = 0, restores = 0, otherAsk = 0, overlapping = 0, refused = 0, setAside = 0, broughtBack = 0
         var stopped = 0, withdrawals = 0, queued = 0, coexisting = 0, interrupted = 0, closed = 0, sharedInk = 0
+        var aboutWindows = 0, followingWindows = 0
         for seed in 0..<2000 {
             var lastID = 0
             var answeredAsks: Set<A.Ask.ID> = []
@@ -1101,14 +1115,18 @@ final class LiveAsksTests: XCTestCase {
                     }
                 }
 
+                XCTAssertTrue(after.asks.allSatisfy { $0.id <= after.lastID }, fail("no ask's id is above the last id given"))
                 let event: A.Event
                 switch sent.step {
-                case .begun(let begun, let shown, let following):
+                case .begun(let begun, let shown, let reply, let pointer):
+                    let following = reply != nil
+                    let window = pointer ?? reply.flatMap { before.ask(withReply: $0)?.spot }
                     let askedInk = before.ink(among: shown).filter { !before.newInk(among: shown).contains($0) }
-                    let about = following ? askedInk : before.about(among: shown)
+                    let about = window != nil ? [] : following ? askedInk : before.about(among: shown)
                     switch begun {
                     case .refused(let refusal, let effects):
                         refused += 1
+                        XCTAssertNil(window, fail("an ask about a window is never refused"))
                         XCTAssertNil(about.last?.shapeExtent, fail("only an ask with no ink is refused"))
                         XCTAssertEqual(refusal, .noInk)
                         if case .restore(let reply, let said, _)? = effects.first {
@@ -1119,14 +1137,23 @@ final class LiveAsksTests: XCTestCase {
                             XCTAssertEqual(effects, [], fail("a refusal answers nothing but an answer put back"))
                             XCTAssertEqual(after, before, fail("and changes nothing"))
                         }
-                    case .began(let id, let asked, _, _):
-                        XCTAssertNotNil(about.last?.shapeExtent, fail("an ask begins only about ink"))
+                    case .began(let id, let asked, let point, _):
+                        if let window {
+                            if following { followingWindows += 1 } else { aboutWindows += 1 }
+                            XCTAssertEqual(point, window, fail("an ask about a window is centred on its pointer"))
+                            XCTAssertEqual(after.ask(id)?.spot, window, fail("and keeps it"))
+                            XCTAssertEqual(after.drawnInk(env.made, for: id), [], fail("and draws none of the person's ink"))
+                        } else {
+                            XCTAssertNotNil(about.last?.shapeExtent, fail("any other ask begins only about ink"))
+                            XCTAssertNil(after.ask(id)?.spot, fail("and has no pointer"))
+                        }
                         if before.isUnderWay { queued += 1 }
                         XCTAssertEqual(asked.map(\.id), about.map(\.id), fail("it is about the ink it says"))
                         XCTAssertEqual(after.newest?.id, id, fail("the ask begun is the newest"))
                         XCTAssertEqual(after.ask(id)?.phase, .looking, fail("an ask begins looking"))
                         XCTAssertGreaterThan(id, lastID, fail("each ask's id is above every earlier one"))
                         lastID = id
+                        XCTAssertEqual(after.lastID, id, fail("its id is the last given"))
                         if following {
                             XCTAssertEqual(after.noteInk, before.noteInk, fail("a follow-up leaves the note's ink to it"))
                             let reply = after.ask(id)?.say?.id
@@ -1257,6 +1284,7 @@ final class LiveAsksTests: XCTestCase {
                         XCTAssertEqual(after.ask(withReply: reply)?.phase, .answered, fail("the answer put back is an answer"))
                     } else {
                         let reopens = !after.noteInk.subtracting(before.noteInk).isEmpty
+                        XCTAssertFalse(reopens && ask.spot != nil, fail("Esc on an ask about a window opens no note"))
                         XCTAssertEqual(ending, [.removeAnswer(id, before.answerMarks(of: id).union(env.aside(of: id)))]
                                            + (reopens ? [.reopenNote(words: ask.words)] : []),
                                        fail("Esc takes its reply off, with what was set aside, and the note opens on ink given back to it"))
@@ -1342,543 +1370,7 @@ final class LiveAsksTests: XCTestCase {
         XCTAssertGreaterThan(closed, 100, "answers Esc closes are part of the mix")
         XCTAssertGreaterThan(sharedInk, 50, "ink two asks are about is part of the mix")
         XCTAssertGreaterThan(withdrawals, 0, "withdrawn notes are part of the mix")
-    }
-}
-
-/// Plays what `LiveInk` sends `LiveAsks`, in a random order, against a fake screen, and runs the
-/// effects each event answers as `LiveInk` runs them. Each event goes to `observe` with the state
-/// before and after it. What comes back for an ask is sent whether the ask takes it or not, so the
-/// reducer's own check is what drops it.
-private final class LiveAsksEnvironment {
-    enum Step {
-        /// `begin`, with the marks on the screen it was given, and whether it followed a reply.
-        case begun(LiveAsks.Begun, shown: [Mark], following: Bool)
-        case event(LiveAsks.Event)
-    }
-
-    struct Sent {
-        let step: Step
-        let before: LiveAsks
-        let after: LiveAsks
-        let effects: [LiveAsks.Effect]
-    }
-
-    private enum Owed {
-        case packet(LiveAsks.Ask.ID)
-        case captureFailed(LiveAsks.Ask.ID)
-        case picture(LiveAsks.Ask.ID)
-        case say(LiveAsks.Ask.ID)
-        case answer(LiveAsks.Ask.ID)
-        case failure(LiveAsks.Ask.ID)
-        case sent(LiveAsks.Ask.ID, ink: Set<Mark.ID>, refused: Bool)
-        case timer(Set<Mark.ID>)
-        case focus([Mark], LiveAsks.Ask.ID)
-
-        /// Held by the responder, which fails it when it stops.
-        var heldBy: LiveAsks.Ask.ID? {
-            switch self {
-            case .say(let id), .answer(let id), .failure(let id): id
-            default: nil
-            }
-        }
-
-        var isFocus: Bool { if case .focus = self { true } else { false } }
-    }
-
-    /// What `LiveInk.ask` says when the packet could not be captured.
-    static let couldNotSee = "Vignette couldn't see the screen."
-
-    private(set) var asks = LiveAsks()
-    private(set) var trace: [String] = []
-    /// Every mark made.
-    private(set) var made: [Mark] = []
-    private var screen: [Mark] = []
-    /// The marks set aside, by the ask from a picked button whose reply set them aside.
-    private var aside: [LiveAsks.Ask.ID: [Mark]] = [:]
-    func aside(of id: LiveAsks.Ask.ID) -> Set<Mark.ID> { Set((aside[id] ?? []).map(\.id)) }
-    private var rng: SeededGenerator
-    private var owed: [(due: Int, owed: Owed)] = []
-    private var step = 0
-    private var names: [Mark.ID: String] = [:]
-    private var focusShown: (stop: [Mark], ask: LiveAsks.Ask.ID)?
-    private let observe: (LiveAsksEnvironment, Sent) -> Void
-
-    init(seed: Int, observe: @escaping (LiveAsksEnvironment, Sent) -> Void) {
-        rng = SeededGenerator(seed: UInt64(seed))
-        self.observe = observe
-    }
-
-    func play(steps: Int = 40) {
-        for step in 0..<steps {
-            self.step = step
-            deliverDue()
-            act()
-            for (id, marks) in aside where !marks.isEmpty && asks.ask(id)?.isUnderWay != true {
-                XCTFail("marks stay set aside only while their ask is under way #\(id)\n" + trace.suffix(30).joined(separator: "\n"))
-            }
-        }
-        // Drain: a clear, then every answer and timer still owed.
-        step = steps
-        clear()
-        for step in steps..<(steps + 20) {
-            self.step = step
-            deliverDue()
-        }
-    }
-
-    private func act() {
-        switch Int.random(in: 0..<22, using: &rng) {
-        case 0...3: draw()
-        case 4...7: ask()
-        case 8...9: respond()
-        case 10...11: dismissAnswer()
-        case 12: erase()
-        case 13: windowGone()
-        case 14: pick()
-        case 15: draw()
-        case 16: discardNote()
-        case 17: letGoOfFocus()
-        case 18: clear()
-        case 19: cancel()
-        case 20: closeAnswer()
-        default: break
-        }
-    }
-
-    private func deliverDue() {
-        let due = owed.filter { $0.due <= step }
-        owed.removeAll { $0.due <= step }
-        for item in due {
-            switch item.owed {
-            case .packet(let id): packet(for: id)
-            case .captureFailed(let id): failed(Self.couldNotSee, for: id)
-            case .picture(let id): _ = send(.pictureSent(fresh: chance(2), for: id))
-            case .say(let id): showSay(for: id)
-            case .answer(let id): answered(for: id)
-            case .failure(let id): failed("Claude stopped.", for: id)
-            case .sent(let id, let ink, let refused): sessionAnswered(for: id, ink: ink, refused: refused)
-            case .timer(let ids): finished(ids)
-            case .focus(let stop, let id): nextFocus(stop, for: id)
-            }
-        }
-    }
-
-    // MARK: Plumbing
-
-    private func send(_ event: LiveAsks.Event) -> [LiveAsks.Effect] {
-        let before = asks
-        let effects = asks.reduce(event)
-        trace.append("\(step): \(describe(event)) -> \(effects.map { describe($0) }) asks=\(asks.asks.map(describe).joined(separator: ", "))")
-        observe(self, Sent(step: .event(event), before: before, after: asks, effects: effects))
-        return effects
-    }
-
-    private func chance(_ n: Int) -> Bool { Int.random(in: 0..<n, using: &rng) == 0 }
-
-    private func owe(_ item: Owed, in steps: ClosedRange<Int> = 1...3) {
-        owed.append((step + Int.random(in: steps, using: &rng), item))
-    }
-
-    private func make(_ geometry: Mark.Geometry, agent: Bool, _ prefix: String) -> Mark {
-        let mark = Mark(geometry: geometry, agent: agent)
-        names[mark.id] = "\(prefix)\(names.count)"
-        made.append(mark)
-        return mark
-    }
-
-    private func shape(agent: Bool) -> Mark {
-        let origin = CGPoint(x: CGFloat(Int.random(in: 0..<800, using: &rng)), y: CGFloat(Int.random(in: 0..<600, using: &rng)))
-        return make(.ellipse(CGRect(origin: origin, size: CGSize(width: 40, height: 30))), agent: agent, agent ? "s" : "i")
-    }
-
-    private func note(_ words: String, agent: Bool) -> Mark {
-        make(.text(Mark.Text(origin: .zero, text: words, wrap: nil, size: 14)), agent: agent, agent ? "r" : "n")
-    }
-
-    private var shown: Set<Mark.ID> { Set(screen.map(\.id)) }
-
-    /// `put`: on the screen, in place of a mark of the same id, which keeps its part in the asks.
-    private func put(_ marks: [Mark]) {
-        for mark in marks {
-            takeOff([mark.id])
-            screen.append(mark)
-        }
-    }
-
-    /// `remove`: off the screen, and out of the asks.
-    private func remove(_ ids: Set<Mark.ID>) {
-        takeOff(ids)
-        run(send(.removed(ids)))
-    }
-
-    /// `takeOff`: off the screen, with no word to the asks.
-    private func takeOff(_ ids: Set<Mark.ID>) {
-        screen.removeAll { ids.contains($0.id) }
-        for id in aside.keys { aside[id]?.removeAll { ids.contains($0.id) } }
-    }
-
-    // MARK: Ink
-
-    private func draw() {
-        let mark = shape(agent: false)
-        _ = send(.drew(mark.id))
-        put([mark])
-    }
-
-    private func erase() {
-        guard let mark = screen.randomElement(using: &rng) else { return }
-        remove([mark.id])
-    }
-
-    /// The window's marks go with it, which `LiveWindows` does without `remove`.
-    private func windowGone() {
-        let ids = Set((screen + aside.values.joined()).filter { _ in chance(3) }.map(\.id))
-        guard !ids.isEmpty else { return }
-        takeOff(ids)
-        run(send(.windowGone(ids)))
-    }
-
-    private func pick() {
-        guard let hit = screen.filter({ $0.agent && $0.kind != .text && asks.isAnswer($0.id) }).randomElement(using: &rng) else { return }
-        let own = make(hit.geometry, agent: false, "p")
-        _ = send(.drew(own.id))
-        put([own])
-        remove([hit.id])
-    }
-
-    private func discardNote() {
-        run(send(.noteDiscarded))
-    }
-
-    // MARK: Asking
-
-    @discardableResult
-    private func ask(following reply: Mark? = nil, picked: LiveAnswerActions.Pick = .reply) -> Bool {
-        let before = asks
-        let given = screen
-        let toSession = reply == nil && chance(5)
-        let begun = asks.begin(among: given, following: reply.map { LiveAsks.Following(reply: $0, pick: picked, words: "and this?") },
-                               toSession: toSession)
-        let effects: [LiveAsks.Effect]
-        switch begun {
-        case .began(let id, let about, _, let ended):
-            effects = ended
-            trace.append("\(step): began #\(id) about=\(list(Set(about.map(\.id)))) following=\(name(reply?.id)) session=\(toSession) -> \(effects.map { describe($0) })")
-        case .refused(let refusal, let refused):
-            effects = refused
-            trace.append("\(step): refused \(refusal) following=\(name(reply?.id)) -> \(effects.map { describe($0) })")
-        }
-        observe(self, Sent(step: .begun(begun, shown: given, following: reply != nil), before: before, after: asks, effects: effects))
-        run(effects)
-        guard case .began(let id, _, _, _) = begun else { return false }
-        if let reply {
-            put([reply])
-        } else if chance(2) {
-            var conversation = note("", agent: true)
-            conversation.quote = "What is this?"
-            _ = send(.conversed(conversation, for: id))
-            put([conversation])
-        }
-        // A capture that fails can take a while, and `ask`'s task then fails the ask it began, whatever
-        // has happened since.
-        if chance(10) { owe(.captureFailed(id), in: 2...12) } else { owe(.packet(id)) }
-        return true
-    }
-
-    private func packet(for id: LiveAsks.Ask.ID) {
-        let effects = send(.arrived(.packetCame, for: id))
-        if effects.contains(where: { if case .share = $0 { true } else { false } }) {
-            let ink = Set(asks.ink(among: screen).filter { _ in chance(2) }.map(\.id))
-            owe(.sent(id, ink: ink, refused: chance(4)))
-        }
-        run(effects)
-    }
-
-    /// `LiveResponder` takes the ask: the picture goes, the reply streams, and the answer or a failure comes.
-    private func responderTakes(_ id: LiveAsks.Ask.ID) {
-        if chance(2) { _ = send(.pictureSent(fresh: chance(2), for: id)) } else { owe(.picture(id), in: 1...2) }
-        // The responder can shut down as it is asked, which fails the ask in the same turn.
-        if chance(8) { return failed("The responder ended.", for: id) }
-        let says = Int.random(in: 0...3, using: &rng)
-        for n in 0..<says { owe(.say(id), in: (n + 1)...(n + 1)) }
-        owe(chance(4) ? .failure(id) : .answer(id), in: (says + 1)...(says + 3))
-    }
-
-    private func sessionAnswered(for id: LiveAsks.Ask.ID, ink: Set<Mark.ID>, refused: Bool) {
-        if refused { return failed("Not sent.", for: id) }
-        run(send(.arrived(.sentToSession(ink: ink), for: id)))
-    }
-
-    /// A press on an answer's panel. Its buttons are enabled only on an answer, and the panel shows
-    /// only while the reply does (`shownReply`).
-    private func respond() {
-        let answers = asks.asks.filter { ask in
-            guard ask.phase == .answered, let said = ask.say else { return false }
-            return screen.contains { $0.id == said.id } && asks.answer(of: said.id) == ask.id && !asks.isFinishing(said.id)
-        }
-        guard let answer = answers.randomElement(using: &rng), let said = answer.say else { return }
-        let pick: LiveAnswerActions.Pick = chance(2) ? .reply : .action("Fix it")
-        guard var reply = screen.first(where: { $0.id == said.id }) else { return }
-        reply.quote = "and this?"
-        reply.notice = nil
-        ask(following: reply, picked: pick)
-    }
-
-    // MARK: Answering
-
-    private func showSay(for id: LiveAsks.Ask.ID) {
-        let effects = send(.arrived(.replyCame, for: id))
-        guard effects.contains(.showReply) else { return }
-        run(effects)
-        let reply: Mark
-        if var shown = asks.ask(id)?.say, case .text(var words) = shown.geometry {
-            words.text += " more"
-            shown.geometry = .text(words)
-            reply = shown
-        } else {
-            reply = note("It's", agent: true)
-        }
-        _ = send(.streamed(reply, for: id))
-        put([reply])
-    }
-
-    private func answered(for id: LiveAsks.Ask.ID) {
-        let effects = send(.arrived(.answerCame, for: id))
-        guard effects.contains(.drawAnswer) else { return }
-        run(effects)
-        let reply = asks.ask(id)?.say ?? note("It's a button.", agent: true)
-        let shapes = (0..<Int.random(in: 0...3, using: &rng)).map { _ in shape(agent: true) }
-        let held = shapes.filter { _ in chance(3) }
-        let shown = [reply] + shapes.filter { shape in !held.contains { $0.id == shape.id } }
-        _ = send(.answered(reply: reply, actions: chance(2) ? [] : [LiveAnswer.Action("Fix it")], findings: shapes.map { [$0.id] },
-                           shown: Set(shown.map(\.id)), for: id))
-        put(shown)
-        // `pullFocus`
-        if !held.isEmpty {
-            letGoOfFocus()
-            if chance(4) {
-                _ = send(.answerShown(Set(held.map(\.id)), for: id))
-                put(held)
-            } else {
-                for (n, stop) in held.enumerated() { owe(.focus([stop], id), in: (n + 1)...(n + 1)) }
-            }
-        }
-    }
-
-    private func nextFocus(_ stop: [Mark], for id: LiveAsks.Ask.ID) {
-        if let previous = focusShown { dropFocus(previous.stop) }
-        focusShown = (stop, id)
-        _ = send(.answerShown(Set(stop.map(\.id)), for: id))
-        if chance(2), var reply = asks.ask(id)?.say, case .text(var words) = reply.geometry, asks.answer(of: reply.id) == id {
-            words.origin.y += 40
-            reply.geometry = .text(words)
-            _ = send(.replyRedrawn(reply))
-            put(stop + [reply])
-        } else {
-            put(stop)
-        }
-    }
-
-    private func letGoOfFocus() {
-        owed.removeAll { $0.owed.isFocus }
-        guard let shown = focusShown else { return }
-        focusShown = nil
-        dropFocus(shown.stop)
-    }
-
-    /// `letGoOfTour(of:)`: the focus goes only when it is that ask's.
-    private func letGoOfFocus(of id: LiveAsks.Ask.ID) {
-        let ours = owed.contains { if case .focus(_, let owner) = $0.owed { owner == id } else { false } } || focusShown?.ask == id
-        if ours { letGoOfFocus() }
-    }
-
-    private func dropFocus(_ stop: [Mark]) {
-        let ids = Set(stop.map(\.id)).intersection(asks.answerMarks)
-        guard !ids.isEmpty else { return }
-        remove(ids)
-    }
-
-    private func failed(_ reason: String, for id: LiveAsks.Ask.ID) {
-        run(send(.arrived(.failed(reason: reason, shown: shown), for: id)))
-    }
-
-    private func run(_ effects: [LiveAsks.Effect]) {
-        for effect in effects {
-            switch effect {
-            case .ended(let id): release(id)
-            case .send(let id): responderTakes(id)
-            case .interrupt: break
-            case .removeAnswer(let id, let gone): removeAnswer(gone, of: id)
-            case .setAside(let id, let ids): setAside(ids, of: id)
-            case .restore(let reply, let reason, let brought):
-                if !brought.isEmpty { bringBack(brought) }
-                restoreAnswer(reply, saying: reason)
-            case .say(let id, let reason): say(reason, for: id)
-            case .notice(let reply, let reason): notice(reason, in: reply)
-            case .remove(let ids): remove(ids)
-            case .finish(let ids, _): owe(.timer(ids), in: 1...3)
-            case .showReply, .drawAnswer, .share, .withdraw, .reopenNote: break
-            }
-        }
-    }
-
-    /// `release`: the focus and the buttons go when they are that ask's.
-    private func release(_ id: LiveAsks.Ask.ID) {
-        letGoOfFocus(of: id)
-        hideActions(of: id)
-    }
-
-    private func notice(_ reason: String, in replyID: Mark.ID) {
-        guard var reply = asks.ask(withReply: replyID)?.say else { return }
-        reply.notice = reason
-        _ = send(.replyRedrawn(reply))
-        put([reply])
-    }
-
-    private func restoreAnswer(_ replyID: Mark.ID, saying reason: String?) {
-        guard let ask = asks.ask(withReply: replyID), var reply = ask.say else { return }
-        reply.notice = reason
-        _ = send(.replyRedrawn(reply))
-        hideActions(of: ask.id)
-        put([reply])
-    }
-
-    /// Reply's field, when it is open, reports its words as it hides, for the reply it was made for.
-    private func hideActions(of id: LiveAsks.Ask.ID) {
-        guard chance(3) else { return }
-        let reply = chance(4) ? made.filter { $0.agent && $0.kind == .text }.randomElement(using: &rng)?.id : asks.ask(id)?.say?.id
-        _ = send(.drafted("half typed", reply: reply))
-    }
-
-    private func say(_ words: String, for id: LiveAsks.Ask.ID) {
-        guard let about = asks.ask(id)?.about else { return }
-        guard screen.contains(where: { about.contains($0.id) && $0.shapeExtent != nil }) else { return }
-        let note = note(words, agent: false)
-        _ = send(.conversed(note, for: id))
-        put([note])
-    }
-
-    private func removeAnswer(_ gone: Set<Mark.ID>, of id: LiveAsks.Ask.ID) {
-        letGoOfFocus(of: id)
-        hideActions(of: id)
-        if !gone.isEmpty { remove(gone) }
-    }
-
-    private func setAside(_ ids: Set<Mark.ID>, of id: LiveAsks.Ask.ID) {
-        letGoOfFocus(of: id)
-        hideActions(of: id)
-        aside[id, default: []] += screen.filter { ids.contains($0.id) }
-        screen.removeAll { ids.contains($0.id) }
-    }
-
-    private func bringBack(_ ids: Set<Mark.ID>) {
-        for id in aside.keys {
-            screen += (aside[id] ?? []).filter { ids.contains($0.id) }
-            aside[id]?.removeAll { ids.contains($0.id) }
-        }
-    }
-
-    // MARK: Exits
-
-    /// Esc on the newest ask Esc can stop.
-    private func cancel() {
-        guard let id = asks.cancellable(sendsWait: chance(2)) else { return }
-        owed.removeAll { $0.owed.heldBy == id && asks.ask(id)?.phase == .asking }
-        run(send(.cancelled(id, shown: shown)))
-    }
-
-    /// The × over an answer's reply, which shows on any ask with its reply up, while it offers one.
-    private func dismissAnswer() {
-        let replies = asks.asks.filter { ask in
-            guard asks.offersDismiss(ask.id), let said = ask.say else { return false }
-            return screen.contains { $0.id == said.id } && asks.answer(of: said.id) == ask.id && !asks.isFinishing(said.id)
-        }
-        guard let ask = replies.randomElement(using: &rng) else { return }
-        if ask.phase == .asking { owed.removeAll { $0.owed.heldBy == ask.id } }
-        run(send(.dismissed(ask.id)))
-    }
-
-    /// Esc with no ask to stop.
-    private func closeAnswer() {
-        guard asks.cancellable(sendsWait: false) == nil else { return }
-        run(send(.answerClosed))
-    }
-
-    private func finished(_ ids: Set<Mark.ID>) {
-        run(send(.finished(ids)))
-    }
-
-    /// `clear()`, which takes the marks off first, or `setOn(false)`, which takes them off after.
-    private func clear() {
-        let marksFirst = chance(2)
-        if marksFirst { screen = [] }
-        letGoOfFocus()
-        run(send(.cleared))
-        // `responder.stop()` drops the ask it holds, with no answer and no failure.
-        owed.removeAll { $0.owed.heldBy != nil }
-        screen = []
-        aside = [:]
-    }
-
-    // MARK: Trace
-
-    private func name(_ id: Mark.ID?) -> String { id.map { names[$0] ?? "?" } ?? "nil" }
-
-    private func list(_ ids: Set<Mark.ID>) -> String { "[" + ids.map { name($0) }.sorted().joined(separator: " ") + "]" }
-
-    private func describe(_ ask: LiveAsks.Ask) -> String {
-        "#\(ask.id) \(ask.phase)\(ask.toSession ? " session" : "") about=\(list(ask.about)) say=\(name(ask.say?.id))\(ask.picked == nil ? "" : " picked")"
-    }
-
-    private func describe(_ event: LiveAsks.Event) -> String {
-        switch event {
-        case .drew(let id): "drew \(name(id))"
-        case .noteDiscarded: "noteDiscarded"
-        case .removed(let ids): "removed \(list(ids))"
-        case .windowGone(let ids): "windowGone \(list(ids))"
-        case .arrived(let arrival, let id): "\(describe(arrival)) #\(id)"
-        case .conversed(let mark, let id): "conversed \(name(mark.id)) #\(id)"
-        case .pictureSent(let fresh, let id): "pictureSent \(fresh) #\(id)"
-        case .streamed(let mark, let id): "streamed \(name(mark.id)) #\(id)"
-        case .answered(let reply, _, _, let shown, let id): "answered \(name(reply?.id)) shown=\(list(shown)) #\(id)"
-        case .drafted(_, let reply): "drafted \(name(reply))"
-        case .replyRedrawn(let reply): "replyRedrawn \(name(reply.id))"
-        case .answerShown(let ids, let id): "answerShown \(list(ids)) #\(id)"
-        case .dismissed(let id): "dismissed #\(id)"
-        case .cancelled(let id, _): "cancelled #\(id)"
-        case .answerClosed: "answerClosed"
-        case .finished(let ids): "finished \(list(ids))"
-        case .cleared: "cleared"
-        }
-    }
-
-    private func describe(_ arrival: LiveAsks.Arrival) -> String {
-        switch arrival {
-        case .packetCame: "packetCame"
-        case .replyCame: "replyCame"
-        case .answerCame: "answerCame"
-        case .failed(let reason, _): "failed \"\(reason)\""
-        case .sentToSession(let ink): "sentToSession ink=\(list(ink))"
-        }
-    }
-
-    private func describe(_ effect: LiveAsks.Effect) -> String {
-        switch effect {
-        case .ended(let id): "ended #\(id)"
-        case .send(let id): "send #\(id)"
-        case .interrupt: "interrupt"
-        case .share(let about): "share \(list(about))"
-        case .showReply: "showReply"
-        case .drawAnswer: "drawAnswer"
-        case .restore(let reply, _, let aside): "restore \(name(reply)) aside=\(list(aside))"
-        case .say(let id, _): "say #\(id)"
-        case .notice(let reply, _): "notice \(name(reply))"
-        case .remove(let ids): "remove \(list(ids))"
-        case .withdraw: "withdraw"
-        case .reopenNote(let words): "reopenNote \"\(words)\""
-        case .removeAnswer(let id, let gone): "removeAnswer #\(id) \(list(gone))"
-        case .setAside(let id, let ids): "setAside #\(id) \(list(ids))"
-        case .finish(let ids, let how): "finish \(list(ids)) \(how)"
-        }
+        XCTAssertGreaterThan(aboutWindows, 100, "asks about a window are part of the mix")
+        XCTAssertGreaterThan(followingWindows, 10, "follow-ups to them are part of the mix")
     }
 }

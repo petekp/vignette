@@ -133,7 +133,7 @@ extension LiveInk {
     func keepEscapeAfterRelease() {
         guard note != nil else { return }
         escapeAfterRelease = LiveEscapeAfterRelease(
-            returningTo: FocusReturn.shared.previousApp, asksBefore: asks.newest?.id ?? 0,
+            returningTo: FocusReturn.shared.previousApp, asksBefore: asks.lastID,
             isOnInk: { [weak self] in self?.pointerIsOnInk() ?? false },
             ended: { [weak self] reason in self?.endEscapeAfterRelease(because: reason) })
     }
@@ -148,7 +148,7 @@ extension LiveInk {
     /// An ask from before the release does not keep Esc.
     private func endEscapeAfterReleaseWhenDone() {
         guard let window = escapeAfterRelease, note == nil,
-              (asks.cancellable(sendsWait: sendsWait) ?? 0) <= window.asksBefore else { return }
+              asks.cancellable(sendsWait: sendsWait, after: window.asksBefore) == nil else { return }
         endEscapeAfterRelease(because: "nothing left to stop")
     }
 }

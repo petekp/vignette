@@ -14,7 +14,7 @@ final class LiveInk {
     /// One per screen per Space that has marks, and the active Space's while inking.
     var surfaces: [Surface] = []
     /// The surfaces taking presses: the active Space's when the chord went down.
-    private var inking: [Surface] = []
+    private(set) var inking: [Surface] = []
     var chord: ModifierChord?
     private var observers: [(NotificationCenter, Any)] = []
     /// Runs out the pointer field's delay after the chord goes down.
@@ -639,7 +639,6 @@ final class LiveInk {
         // The words as they were said, unless the person changed them in the note.
         let said = reply != nil ? nil : spoken.flatMap { LiveListening.text(of: $0.words).trimmingCharacters(in: .whitespacesAndNewlines) == trimmed ? $0 : nil }
         if reply == nil { spoken = nil }
-        let person = pointer != nil ? [] : ink.filter { !noteIDs.contains($0.id) }
         let fresh = reply == nil && pointer == nil ? newInk : []
         let following = reply.map { LiveAsks.Following(reply: $0, pick: picked ?? .reply, words: words) }
         let id: LiveAsks.Ask.ID
@@ -657,6 +656,7 @@ final class LiveInk {
             answerers[id] = (agent, session?.title)
             run(effects)
         }
+        let person = asks.drawnInk(ink.filter { !noteIDs.contains($0.id) }, for: id)
         if let note { handing[id] = note.panel }
         if let reply {
             put([reply], window: windows.window(of: reply.id), for: id)
@@ -708,9 +708,8 @@ final class LiveInk {
                       new: Set<Mark.ID>, started: Date, to agent: AgentClient, for id: LiveAsks.Ask.ID) {
         guard asks.ask(id)?.phase == .looking else { return }
         let note = numberedNote(spoken, packet: packet) ?? words
-        let spot = asks.ask(id)?.spot
-        let person = spot != nil ? [] : ink.filter { packet.holds($0) }
-        let asked = Self.askedBox(about, spot: spot)
+        let person = asks.drawnInk(ink.filter { packet.holds($0) }, for: id)
+        let asked = Self.askedBox(about, spot: asks.ask(id)?.spot)
         let near = packet.lines(near: asked)
         Log.write("[live-ink] packet ms=\(Int(Date().timeIntervalSince(started) * 1000)) app=\(packet.app ?? "none") lines=\(packet.lines.count) near=\(near.count) bytes=\(packet.picture.count)\(packet.detail == nil ? "" : " detail")"
                   + packet.areaForLog)
@@ -780,7 +779,7 @@ final class LiveInk {
             message += " On the screen, a window in front covers the ink numbered \(covered.map(String.init).joined(separator: ", "))."
         }
         // The same ink the picture has, so the card holds what the session sees and what leaves the window.
-        let person = pointer != nil ? [] : ink.filter { packet.frame.intersects($0.shapeExtent ?? .null) }
+        let person = asks.drawnInk(ink.filter { packet.frame.intersects($0.shapeExtent ?? .null) }, for: id)
         let note = noteMark(words, about: about, packet: packet, at: spot)
         let shapes = person.filter { about.contains($0.id) && $0.kind != .text }.compactMap(\.shapeExtent)
         let inkBox = pointer.map { Self.askedBox([], spot: $0) }
@@ -1728,7 +1727,7 @@ final class LiveInk {
             return settleInking(opensNote: opensNote)
         }
         let inking = inkings
-        menusWaiting = inking
+        menusWaiting = (inking, note != nil)
         // The glance comes once the window is captured, the menu with it.
         if let glance = prepared?.glance {
             Task { @MainActor [weak self] in
@@ -1742,11 +1741,11 @@ final class LiveInk {
     /// Counts the inkings, so what one that ended still waits for is dropped once another starts: the
     /// chord let go again then opens the note.
     private(set) var inkings = 0
-    /// The inking whose note waits for the capture before the menus close.
-    private var menusWaiting: Int?
+    /// The inking whose note waits for the capture before the menus close, and whether a note was up.
+    private var menusWaiting: (inking: Int, noteWasUp: Bool)?
 
     private func closeMenus(_ menus: [LiveMenus.Window], after inking: Int) {
-        guard menusWaiting == inking, inkings == inking, !isInking else { return }
+        guard let waiting = menusWaiting, waiting.inking == inking, inkings == inking, !isInking else { return }
         menusWaiting = nil
         LiveMenus.close(menus) { [weak self] closed in
             // Inking again keeps the ink above the menus, and its end pins it.
@@ -1754,7 +1753,8 @@ final class LiveInk {
             self.pinOverMenus()
             guard self.isOn else { return }
             guard self.mayInk() else { return Log.write("[live-ink] no note: the stack or the annotator came up") }
-            self.settleInking(opensNote: true, takingKeys: closed)
+            // A note asked from or closed while the menus closed stays closed.
+            self.settleInking(opensNote: !waiting.noteWasUp || self.note != nil, takingKeys: closed)
         }
     }
 
@@ -1870,64 +1870,6 @@ final class LiveInk {
         } else {
             stopWatchingPointer()
         }
-    }
-
-    /// Inking stops, since its surfaces are on the Space just left.
-    private func spaceChanged() {
-        guard isInking else { return }
-        cutInkingShort(because: "the Space changed")
-    }
-
-    /// Inking ends with no release to come, so listening, which a release would end, ends too.
-    private func cutInkingShort(because reason: String) {
-        // A note by the pointer waits for the release; with none coming, it has no ink to stay with.
-        if noteHangsAtPointer { closeNote() }
-        stopListening()
-        stopInking(because: reason)
-    }
-
-    /// Each surface covers its screen again; one whose screen is gone closes with its marks.
-    private func screensChanged() {
-        let screens = Dictionary(NSScreen.screens.compactMap { screen in Self.display(of: screen).map { ($0, screen) } },
-                                 uniquingKeysWith: { first, _ in first })
-        // The Dock changing size posts this too, and leaves every screen where it was: inking goes on.
-        if isInking, inking.contains(where: { screens[$0.overlay.display]?.frame != $0.overlay.frame }) {
-            cutInkingShort(because: "the screens changed")
-        }
-        var dropped = Set<Mark.ID>()
-        for surface in surfaces {
-            if let screen = screens[surface.overlay.display] {
-                surface.overlay.fit(to: screen)
-            } else {
-                if surface.overlay.marks.holdsNote, noteHangsAtPointer { closeNote() }
-                dropped.formUnion(surface.marks.map(\.id))
-                surface.marks = []
-            }
-        }
-        // A mark that reaches onto a screen still here stays, with its part in the asks.
-        let gone = dropped.subtracting(marks.map(\.id))
-        if !gone.isEmpty { run(asks.reduce(.removed(gone))) }
-        bringOntoScreens()
-        closeEmpty(fade: 0)
-        showMarks()
-    }
-
-    /// A mark on no window that a smaller screen left with no part on any screen moves the least way
-    /// back onto the screen of the first surface it is on, as macOS moves a window.
-    private func bringOntoScreens() {
-        let frames = StateReport.screenFrames
-        var moves: [Mark.ID: CGVector] = [:]
-        for surface in surfaces {
-            for mark in surface.marks where moves[mark.id] == nil {
-                guard let extent = Self.drawnExtent(of: mark, sizes: answerSizes), !frames.contains(where: { $0.intersects(extent) }) else { continue }
-                moves[mark.id] = Self.offset(moving: extent, into: surface.overlay.globalFrame)
-            }
-        }
-        guard !moves.isEmpty else { return }
-        for surface in surfaces {
-            surface.marks = surface.marks.map { mark in moves[mark.id].map { LiveWindows.translated(mark, by: $0) } ?? mark }
-        }
-        Log.write("[live-ink] moved \(moves.count) onto the screen")
     }
 
     /// How much line the pen keeps: `ui.inkLengthDiagonals` diagonals of the stroke's screen.

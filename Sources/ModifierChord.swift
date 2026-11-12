@@ -113,12 +113,12 @@ final class ModifierChord {
     }
 
     private func checkKeys() {
+        let held = NSEvent.ModifierFlags(rawValue: UInt(CGEventSource.flagsState(.hidSystemState).rawValue))
         let sinceKey = CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown)
         if sinceKey < ProcessInfo.processInfo.systemUptime - beganAt {
-            if keyRead, let change = chord.keyDown() { return apply(change) }
+            if keyRead, let change = chord.keyDown() { _ = chord.flagsChanged(held); return apply(change) }
             keyRead = true
         }
-        let held = NSEvent.ModifierFlags(rawValue: UInt(CGEventSource.flagsState(.hidSystemState).rawValue))
         if let change = chord.flagsChanged(held) { apply(change) }
     }
 }

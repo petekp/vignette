@@ -44,9 +44,11 @@ final class LiveAsksWithoutInkTests: XCTestCase {
         let asked = Mark(geometry: .ellipse(CGRect(x: 0, y: 0, width: 40, height: 30)))
         let answer = reply("A window.")
         _ = a.reduce(.drew(asked.id))
-        _ = a.begin(among: [asked], following: nil, words: "what is this")
-        guard case .began(let first, _, _, _) = a.begin(among: [asked], following: nil, words: "and this window?", at: pointer)
-        else { return XCTFail("the ask was refused") }
+        guard case .began(let inkAsk, _, _, _) = a.begin(among: [asked], following: nil, words: "what is this"),
+              case .began(let first, _, _, _) = a.begin(among: [asked], following: nil, words: "and this window?", at: pointer)
+        else { return XCTFail("an ask was refused") }
+        XCTAssertEqual(a.drawnInk([asked], for: inkAsk), [asked])
+        XCTAssertEqual(a.drawnInk([asked], for: first), [])
         _ = a.reduce(.arrived(.packetCame, for: first))
         _ = a.reduce(.arrived(.answerCame, for: first))
         _ = a.reduce(.answered(reply: answer, actions: [], findings: [], shown: [answer.id], for: first))
@@ -56,5 +58,6 @@ final class LiveAsksWithoutInkTests: XCTestCase {
         XCTAssertEqual(about, [])
         XCTAssertEqual(point, pointer)
         XCTAssertEqual(a.ask(follow)?.spot, pointer)
+        XCTAssertEqual(a.drawnInk([asked], for: follow), [])
     }
 }

@@ -16,7 +16,7 @@ Tracks every ask from the moment ink is sent until its answer is closed. `LiveIn
 
 Per ask also: `toSession` (never waits and is never sent to the responder; its phase stays `looking` from `begin` until `sentToSession`, `failed`, `cancelled` or `cleared`), `fresh`, `sentOnRelease` (sent by `liveInkSendWhenQuiet`; never on a follow-up), `spot` (the pointer, for an ask with no ink; `[state]` `atPointer`), `about`, `say`, `leader`, `actions`, `picked`, `draft`, `findings`, `reason`, `picture`.
 Per mark (`Record`, line 77): `roles` (`asked`, `noteInk`), `answer: Ask.ID?`, `finishing`. A record with no roles is deleted.
-Side tables: `picks[askID]` (the answer a picked button was picked under, plus `aside`), `withdrawn` (session asks Esc stopped before their send was stored), `lastID` (never reset, so ids are never reused, not even after `cleared`).
+Side tables: `picks[askID]` (the answer a picked button was picked under, plus `aside`), `withdrawn` (session asks Esc stopped before their send was stored), `lastID` (never reset, so ids are never reused, not even after `cleared`; above every ask's id, though a stopped follow-up puts its answer back after newer asks, so `newest` can have a lower id. Checked by: `testAStoppedFollowUpPutsItsAnswerLastAndNoEarlierAskIsAfterTheLastIdGiven` and the random-sequence test).
 
 **Events** (`Event`, line 257) and senders:
 - `begin` (218): `LiveInk.ask` (`LiveInk.swift:794`).
@@ -56,7 +56,7 @@ Side tables: `picks[askID]` (the answer a picked button was picked under, plus `
 - What comes back for an ask no longer under way changes nothing. Checked by: the same test, `testAReplyAndAnAnswerFromADismissedAskAreDropped`, `testAPacketFromAClearedAskIsDroppedAndTheNextAskTakesItsOwn`.
 - `interrupt` is emitted only for the ask the responder has. Checked by: the same test, `testEscStopsTheNewestAskFirstAndTheResponderOnlyForTheOneItHas`.
 - Esc on an ask sent on release gives no ink back to the note: its new ink is removed. Checked by: `LiveAsksSentOnReleaseTests`.
-- An ask with no ink has a `spot`, the point its picture is taken under, and an ask following its answer keeps it and takes no ink, even with other ink asked about on screen. Esc on it opens no note. Without a pointer, no ink is still refused. Checked by: `LiveAsksWithoutInkTests`.
+- An ask with no ink has a `spot`, the point its picture is taken under, and an ask following its answer keeps it and takes no ink, even with other ink asked about on screen. `drawnInk` gives its picture and message none of the person's ink, which `LiveInk.ask`, `send` and `share` all go through. Esc on it opens no note. Without a pointer, no ink is still refused. Checked by: `LiveAsksWithoutInkTests`.
 - A session ask Esc stopped has its first arrival swallowed and a stored note withdrawn. Checked by: `testStoppingASessionAskWithdrawsItsNoteIfItIsStoredAfterAll`, `testStoppingASessionAskBeforeItsPacketSendsNothing`.
 - An erased mark loses its roles and its finish; asks under way are unchanged. Checked by: `testAnErasedMarkLosesItsRolesAndItsFinish`.
 - Overlapping finish timers: the first ends the marks. Checked by: `testAnOverlappingFinishIsEndedByTheFirstTimer`, `testAFinishAfterAClearDoesNothing`.

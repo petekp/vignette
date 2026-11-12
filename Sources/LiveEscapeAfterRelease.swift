@@ -11,7 +11,7 @@ final class LiveEscapeAfterRelease {
     private var pressWatch: Any?
     private var activationWatch: NSObjectProtocol?
     private let ended: (String) -> Void
-    /// The newest ask when the chord was let go. Esc stops only asks after it.
+    /// The last ask id given when the chord was let go. Esc stops only asks after it.
     let asksBefore: LiveAsks.Ask.ID
 
     /// `returningTo` is the app the keys go back to; `isOnInk` says whether the pointer is on live ink.
