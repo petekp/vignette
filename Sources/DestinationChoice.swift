@@ -3,14 +3,15 @@ import Foundation
 /// Which agent session Send, or a live ink note, starts on before the person picks one, and the
 /// order Send's menu lists the sessions in. Every rule for that pick is here, so a new one changes
 /// this file and its tests. It takes facts and answers the pick. Send's facts are the sessions listed
-/// so far, herdr's focus and the agent's app that was in front, and it marks the session you came
-/// from. A note's fact is its own pick, and it reads neither herdr's focus nor an agent's app.
+/// so far, herdr's focus, the agent's app that was in front and the kept pick, and it marks why it
+/// starts where it does. A note's fact is its own pick, and it reads neither herdr's focus nor an agent's app.
 enum DestinationChoice {
     /// Who is asking, and the facts only that asker uses.
     enum Asker {
         /// Send, on the annotator's toolbar. `cameFrom` is the agent's own app that was in front
-        /// before Vignette, such as the Codex app, and the thread it shows.
-        case send(cameFrom: (client: AgentClient, shown: String?)?)
+        /// before Vignette, such as the Codex app, and the thread it shows. `kept` is the session of
+        /// the kept pick while it holds (`KeptPick`).
+        case send(cameFrom: (client: AgentClient, shown: String?)?, kept: AgentDestination? = nil)
         /// The live ink note. It reads neither herdr's focus nor an agent's app.
         case liveNote(LiveNotePick)
     }
@@ -21,6 +22,17 @@ enum DestinationChoice {
         case remembered(AgentDestination?)
         /// The person picked on this note.
         case byHand(AgentDestination?)
+    }
+
+    /// A session the person picked by hand in Send's menu and then sent to. Send starts on it, before
+    /// every other rule, until `lasts` passes with no send to it.
+    struct KeptPick: Equatable {
+        static let lasts: TimeInterval = 10 * 60
+        let session: AgentDestination
+        /// The send that set it, or the last send to it.
+        let sentAt: Date
+
+        func holds(at now: Date) -> Bool { now.timeIntervalSince(sentAt) < Self.lasts }
     }
 
     /// One answer from the listing, and the pick made from it.
@@ -40,6 +52,8 @@ enum DestinationChoice {
         /// The sessions Vignette can start, as the listing found them. Only a person's pick starts a
         /// process, so they are never picked and only the menus show them.
         var startable: [AgentDestination] = []
+        /// Every client answered afresh without the kept pick's session, so the kept pick has ended.
+        var keptIsGone = false
     }
 
     /// What a listing has found so far: the candidate destinations and the facts that came with them.
@@ -72,8 +86,8 @@ enum DestinationChoice {
     /// The pick `asker` starts on from the candidates found so far.
     static func choose(_ candidates: Candidates, for asker: Asker) -> Answer {
         switch asker {
-        case .send(let cameFrom):
-            return choose(forSend: candidates, cameFrom: cameFrom)
+        case .send(let cameFrom, let kept):
+            return choose(forSend: candidates, cameFrom: cameFrom, kept: kept)
         case .liveNote(let pick):
             let list = unmarked(candidates)
             return Answer(list: list, complete: candidates.complete, decided: true,
@@ -111,11 +125,13 @@ enum DestinationChoice {
     }
 
     /// Send's pick from the candidates found so far. `cameFrom` is the agent's own app that was in
-    /// front before Vignette, such as the Codex app, and the thread it shows.
-    private static func choose(forSend candidates: Candidates, cameFrom: (client: AgentClient, shown: String?)?) -> Answer {
+    /// front before Vignette, such as the Codex app, and the thread it shows. `kept` is the kept
+    /// pick's session.
+    private static func choose(forSend candidates: Candidates, cameFrom: (client: AgentClient, shown: String?)?,
+                               kept: AgentDestination?) -> Answer {
         let unmarked = Self.unmarked(candidates)
         var complete = candidates.complete
-        let list: [AgentDestination]
+        var list: [AgentDestination]
         if let cameFrom {
             list = marked(cameFrom.client, shown: cameFrom.shown, in: unmarked, fresh: candidates.fresh)
             // Nothing marked from a kept list means the shown thread may be newer than it, so the
@@ -124,18 +140,30 @@ enum DestinationChoice {
         } else {
             list = marked(unmarked, herdr: candidates.herdr)
         }
+        var keptIsGone = false
+        if let kept {
+            let everyAnswerIsFresh = candidates.complete && candidates.fresh
+            if let index = list.firstIndex(where: { $0.id == kept.id }) {
+                list[index].focus = .kept
+            } else if everyAnswerIsFresh {
+                keptIsGone = true
+            } else {
+                // A later answer may still list it, so nothing settles on another session meanwhile.
+                return Answer(list: list, complete: false, decided: false, pick: nil, startable: candidates.startable)
+            }
+        }
         let decided = complete || list.contains { $0.focus != nil }
         return Answer(list: list, complete: complete, decided: decided, pick: decided ? pick(in: list) : nil,
-                      startable: candidates.startable)
+                      startable: candidates.startable, keptIsGone: keptIsGone)
     }
 
-    /// Where Send goes when nobody has chosen: the session you came from, which is where a paste
-    /// would have gone. The session an agent's app showed first, then herdr's focused pane, then the
-    /// one session beside it, then the session used last. `list` is in Send's order, the session used
-    /// last first.
+    /// Where Send goes when nobody has chosen. The kept pick first. Then the session you came from,
+    /// which is where a paste would have gone: the session an agent's app showed, then herdr's
+    /// focused pane, then the one session beside it. Then the session used last. `list` is in Send's
+    /// order, the session used last first.
     private static func pick(in list: [AgentDestination]) -> AgentDestination? {
-        list.first { $0.focus == .app } ?? list.first { $0.focus == .pane } ?? list.first { $0.focus == .tab }
-            ?? list.first
+        list.first { $0.focus == .kept } ?? list.first { $0.focus == .app } ?? list.first { $0.focus == .pane }
+            ?? list.first { $0.focus == .tab } ?? list.first
     }
 
     /// The sessions as they stand when you came from `client`'s own app, such as the Codex app.
@@ -190,5 +218,20 @@ enum DestinationChoice {
         case (nil, _?): return false
         default: return a.name < b.name
         }
+    }
+}
+
+extension AgentDestination {
+    enum Focus: String, Equatable {
+        /// The person picked it by hand in Send's menu and sent to it in the last 10 minutes
+        /// (`DestinationChoice.KeptPick`).
+        case kept
+        /// Its agent's own app was the app in front, showing this session (`DestinationChoice`).
+        case app
+        /// herdr's focused pane runs this session (`DestinationChoice`, from `HerdrFocus`).
+        case pane
+        /// herdr's focused pane runs no agent, and this is the one session in that pane's tab
+        /// (`DestinationChoice`, from `HerdrFocus`).
+        case tab
     }
 }

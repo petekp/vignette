@@ -35,6 +35,8 @@ final class AnnotationController {
     /// The editor, the whole content of the frame. The state report reads its core.
     let editor = EditorView()
     let toolbar = AnnotatorToolbar()
+    /// The session Send keeps after a send to a hand pick, kept in memory only.
+    var keptPick: DestinationChoice.KeptPick?
     let titleView = AgentTitleView()
     var window: AnnotationWindow?
     /// The window spans the screen's visible frame and stays put. The visible frame is `frameView`

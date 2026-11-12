@@ -84,9 +84,9 @@ struct AgentDestination: Equatable, Identifiable {
     /// When the session was last used, which is the order Send lists sessions in. Nil when its
     /// client could not say.
     var lastUsed: Date? = nil
-    /// Why this is the session you came from, when it is: its agent's own app was in front, or
-    /// herdr's focus is on its pane or beside it. Set only by `DestinationChoice` on the list it
-    /// answers. Nil for every other session.
+    /// Why Send starts on this session, when it does for a reason other than its last use: the kept
+    /// pick, its agent's own app in front, or herdr's focus on its pane or beside it. Set only by
+    /// `DestinationChoice` on the list it answers. Nil for every other session.
     var focus: Focus? = nil
     /// Where the session works: its repository, or else its folder. Filled by the client's listing.
     var place: Place = .none
@@ -116,16 +116,6 @@ struct AgentDestination: Equatable, Identifiable {
     /// Continue last session and New session rows, which are not running (`StartableSessions`).
     /// Nil for a session that is running and can receive now.
     var start: SessionStart? = nil
-
-    enum Focus: String, Equatable {
-        /// Its agent's own app was the app in front, showing this session (`DestinationChoice`).
-        case app
-        /// herdr's focused pane runs this session (`DestinationChoice`, from `HerdrFocus`).
-        case pane
-        /// herdr's focused pane runs no agent, and this is the one session in that pane's tab
-        /// (`DestinationChoice`, from `HerdrFocus`).
-        case tab
-    }
 
     var client: AgentClient { address.client }
     /// Its project folder's name, or the client's name when it has none.

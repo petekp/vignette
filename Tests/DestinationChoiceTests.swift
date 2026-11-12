@@ -69,6 +69,49 @@ final class DestinationChoiceTests: XCTestCase {
                        "the note's list carries no focus")
     }
 
+    private static func codex(_ id: String) -> AgentDestination {
+        AgentDestination(id: id, name: "x", detail: project, address: .codexThread(uuid: id))
+    }
+
+    private func send(_ list: [AgentDestination], kept: AgentDestination?, complete: Bool = true, fresh: Bool = true,
+                      herdr: HerdrFocus? = nil, cameFrom: (client: AgentClient, shown: String?)? = nil) -> DestinationChoice.Answer {
+        DestinationChoice.choose(.init(destinations: list, complete: complete, fresh: fresh, herdr: herdr),
+                                 for: .send(cameFrom: cameFrom, kept: kept))
+    }
+
+    private static let focusOnB = HerdrFocus(pane: "p", tab: "t", agents: [.init(pane: "p", session: "b", tab: "t")])
+
+    func testSendStartsOnTheKeptPickBeforeTheAgentsAppAndHerdrsFocus() {
+        let a = Self.claude("a"), b = Self.claude("b"), shown = Self.codex("shown"), thread = Self.codex("t")
+        let overHerdr = send([b, a], kept: a, herdr: Self.focusOnB)
+        XCTAssertEqual(overHerdr.pick?.id, "a")
+        XCTAssertEqual(overHerdr.pick?.focus, .kept)
+        XCTAssertEqual(send([shown, thread, a], kept: thread, cameFrom: (.codex, "shown")).pick?.id, "t",
+                       "the kept pick comes before the thread the Codex app shows")
+        XCTAssertEqual(send([b, a], kept: nil, herdr: Self.focusOnB).pick?.id, "b", "with no kept pick, herdr's focus")
+    }
+
+    func testSendSettlesOnNothingElseUntilTheKeptPickIsListedOrEveryClientHasAnsweredAfresh() {
+        let b = Self.claude("b"), thread = Self.codex("t"), other = Self.codex("u")
+        let partial = send([b], kept: thread, complete: false, herdr: Self.focusOnB)
+        XCTAssertFalse(partial.decided, "herdr's focus does not put another session on the bar first")
+        let keptList = send([b, other], kept: thread, complete: true, fresh: false, herdr: Self.focusOnB)
+        XCTAssertFalse(keptList.decided, "a kept Codex list may lack a thread the fresh one has")
+        XCTAssertFalse(keptList.keptIsGone)
+        XCTAssertTrue(send([thread], kept: thread, complete: false, fresh: false).decided,
+                      "a kept list that has it settles at once")
+        let gone = send([b, other], kept: thread, herdr: Self.focusOnB)
+        XCTAssertTrue(gone.keptIsGone)
+        XCTAssertEqual(gone.pick?.id, "b", "a gone kept pick gives way to the usual choice")
+    }
+
+    func testAKeptPickClearedToANewIdIsNotFoundAgainByItsProject() {
+        let cleared = Self.claude("a"), sameProject = Self.claude("a2")
+        let answer = send([sameProject], kept: cleared)
+        XCTAssertTrue(answer.keptIsGone)
+        XCTAssertNil(answer.pick?.focus)
+    }
+
     func testTheResponderIsTheAgentUsedLastAmongThoseThatCanAnswer() {
         let session = Self.claude("a")
         let thread = AgentDestination(id: "t", name: "x", detail: Self.project, address: .codexThread(uuid: "t"))
