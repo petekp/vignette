@@ -82,10 +82,13 @@ extension ThumbnailController {
     /// Lets the pictures of cards far from the view go and asks for the ones coming near
     /// (`CardPictures.plan`). A card in the annotator, in a stitch, selected, pressed, dragged,
     /// hovered or focused keeps its own, since a flight out of the column carries the card's picture.
-    /// So do the newest `recentCount`, which a capture or a stitch springs the column back to.
+    /// So do the newest `recentCount`, which a capture or a stitch springs the column back to. A
+    /// column that removals made too short to let pictures go still takes back the ones it let go.
     func keepPictures() {
         let recentCount = Settings.shared.data.recentCount
-        guard visible, model.cards.count > max(CardPictures.keptAlways, recentCount) else { return }
+        pictures.dropped.formIntersection(model.cards.map(\.id))
+        let letsPicturesGo = model.cards.count > max(CardPictures.keptAlways, recentCount)
+        guard visible, letsPicturesGo || !pictures.dropped.isEmpty else { return }
         let held: Set<UUID> = model.outCards.union(model.forming).union(model.selection)
             .union([model.pressedCard, model.draggedCard, model.hoveredCard, model.focused].compactMap { $0 })
         let cards = model.cards
@@ -96,6 +99,7 @@ extension ThumbnailController {
         for index in plan.want where !pictures.asked.contains(cards[index].id) { askPicture(of: cards[index]) }
         guard !plan.drop.isEmpty else { return }
         let dropped = Set(plan.drop.map { cards[$0].id })
+        pictures.dropped.formUnion(dropped)
         model.cards = model.cards.map { dropped.contains($0.id) ? $0.with(image: nil) : $0 }
     }
 
@@ -120,6 +124,7 @@ extension ThumbnailController {
                 guard let self else { return }
                 let arrived = self.pictures.arrived
                 self.pictures.arrived = [:]
+                self.pictures.dropped.subtract(arrived.keys)
                 self.model.cards = self.model.cards.map { card in arrived[card.id].map { card.with(image: $0) } ?? card }
             }
         }

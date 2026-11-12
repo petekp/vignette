@@ -73,7 +73,7 @@ Takes cards out of the visible column and keeps built every card whose slot pass
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| any | `removeCards(where:)` | `carried` = the cards that stay and whose slots meet the band from `scroll - reach` to the built range's top plus the height that leaves (`fall`) | `model.removeCards` runs (the focus moves to the newest card if its card left); a timer starts |
+| any | `removeCards(where:)` | `carried` = the cards that stay and whose slots meet the band from `scroll - reach` to the built range's top plus the height that leaves (`fall`) | `model.removeCards` runs (the focus moves to the newest card if its card left), then `keepPictures`; a timer starts |
 | `carried` set | the timer fires, `carried` equals the set it set | `carried = []` | — |
 | `carried` set | the timer fires, `carried` differs | — | a later removal's timer clears it |
 

@@ -49,18 +49,20 @@ Reads the screenshots older than the column's oldest card, one chunk of `recentC
 
 ### CardPictures (implicit)
 
-Owner: `CardPictures.swift:9`, held as `ThumbnailController.pictures` (`ThumbnailController.swift:49`); the controller's `keepPictures` (`ThumbnailController+Older.swift:86`), `askPicture` (`ThumbnailController+Older.swift:105`) and `arrive` (`ThumbnailController+Older.swift:117`) run it. Tests: `CardPicturesTests`, which covers `CardPictures.plan` and nothing of the controller's side.
+Owner: `CardPictures.swift:9`, held as `ThumbnailController.pictures` (`ThumbnailController.swift:49`); the controller's `keepPictures` (`ThumbnailController+Older.swift:87`), `askPicture` (`ThumbnailController+Older.swift:109`) and `arrive` (`ThumbnailController+Older.swift:121`) run it. Tests: `CardPicturesTests`, which covers `CardPictures.plan`, and of the controller's side only a column that shrank taking its pictures back.
 
 Lets the cards far from the view drop their pictures and takes them back as the view comes near, so a column as long as the folder does not hold every picture. A card holds a picture when `image != nil` or its picture is waiting in `arrived`.
 
-**States**, per card: holding, dropped, asked (`asked`, `CardPictures.swift:39`: the picture is being decoded, or failed to decode) and arrived (`arrived`, `CardPictures.swift:41`: decoded, and waiting for the arrival window to end). Per column: `asked` and `arrived` are emptied by `reset` (`CardPictures.swift:46`).
+**States**, per card: holding, dropped, asked (`asked`, `CardPictures.swift:39`: the picture is being decoded, or failed to decode) and arrived (`arrived`, `CardPictures.swift:41`: decoded, and waiting for the arrival window to end). Per column: `dropped` (`CardPictures.swift:43`) holds the cards in the column that are dropped. `asked`, `dropped` and `arrived` are emptied by `reset` (`CardPictures.swift:50`).
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| any | `keepPictures`, the stack not `visible`, or the column no longer than `keptAlways` (100) or `recentCount`, whichever is larger | — | returns at once: every picture is kept (`ThumbnailController+Older.swift:88`, `CardPictures.plan`, `CardPictures.swift:25`) |
-| holding | `keepPictures`, more than `keptAlways` and `recentCount` cards, the card more than `far` (4) viewports from the view, not in `recentCount` newest, not held, and 30 or more cards qualify | dropped | `image = nil` for all of them in one update (`ThumbnailController+Older.swift:99`) |
+| any | `keepPictures` | — | `dropped` loses the cards no longer in the column (`ThumbnailController+Older.swift:89`) |
+| any | `keepPictures`, the stack not `visible`, or the column no longer than `keptAlways` (100) or `recentCount`, whichever is larger, and `dropped` empty | — | returns at once: every picture is kept (`ThumbnailController+Older.swift:91`) |
+| holding | `keepPictures`, the column no longer than `max(keptAlways, recentCount)`, `dropped` not empty | — | none drops (`CardPictures.plan`, `dropsAny`, `CardPictures.swift:26`); the dropped rows below still run |
+| holding | `keepPictures`, more than `keptAlways` and `recentCount` cards, the card more than `far` (4) viewports from the view, not in `recentCount` newest, not held, and 30 or more cards qualify | dropped | `image = nil` for all of them in one update, and they join `dropped` (`ThumbnailController+Older.swift:102-103`) |
 | holding | the same, fewer than `batch` (30) cards qualify | — | none drops |
 | dropped | `keepPictures`, the card less than `near` (2) viewports from the view, not in `asked` | asked or arrived | `askPicture`, as the next two rows |
 | dropped, in `Thumbnailer`'s cache | `askPicture` | arrived | `arrive` at once, with the cached picture |
@@ -68,14 +70,15 @@ Lets the cards far from the view drop their pictures and takes them back as the 
 | asked | the decode answers with a picture, `asked` still has the card | arrived | `asked` loses the card |
 | asked | the decode answers with no picture | asked | stays asked, so it is not asked for again in this column |
 | asked | the decode answers after `reset` | — | dropped at the `asked` check |
-| arrived | `arrivalWindow` (0.05 s) ends | holding | every picture that arrived in the window goes to its card in one update; `arrived` is emptied |
-| any | `reset` | `asked = []`, `arrived = [:]` | — |
+| arrived | `arrivalWindow` (0.05 s) ends | holding | every picture that arrived in the window goes to its card in one update; `arrived` is emptied and `dropped` loses those cards |
+| any | `reset` | `asked = []`, `dropped = []`, `arrived = [:]` | — |
 
-The cards a person is using keep their pictures wherever they are: the newest `recentCount`, those in the annotator or a stitch (`outCards`, `forming`), the selection, and the pressed, dragged, hovered and focused card (`held`, `ThumbnailController+Older.swift:89-95`). A flight out of the column carries the card's picture.
+The cards a person is using keep their pictures wherever they are: the newest `recentCount`, those in the annotator or a stitch (`outCards`, `forming`), the selection, and the pressed, dragged, hovered and focused card (`held`, `ThumbnailController+Older.swift:92-98`). A flight out of the column carries the card's picture.
 
 **Invariants**
 
-- A column of at most `max(keptAlways, recentCount)` cards holds every picture. Checked by: `CardPicturesTests.testAColumnNoLongerThanKeptAlwaysKeepsEveryPicture`, `testAColumnNoLongerThanALargerRecentCountKeepsEveryPicture`.
+- A column of at most `max(keptAlways, recentCount)` cards lets no picture go. Checked by: `CardPicturesTests.testAColumnNoLongerThanKeptAlwaysKeepsEveryPicture`, `testAColumnNoLongerThanALargerRecentCountKeepsEveryPicture`.
+- A column that removals made that short still takes back, near the view, the pictures it let go. Checked by: `testAColumnThatShrankTakesBackThePicturesItLetGo` (the plan), `testACardInViewGetsItsPictureBackAfterTheColumnShrinks` (the controller).
 - Pictures go only in a batch of 30 or more. Checked by: `testPicturesFarFromTheViewGoInABatchAndThoseInViewStay`, `testAFewFarPicturesWaitForAWholeBatch`.
 - A card the controller holds keeps its picture at any distance. Checked by: `testACardTheControllerHoldsKeepsItsPictureAnywhere`.
 - A card within `near` viewports of the view asks for a missing picture. Checked by: `testCardsComingNearTheViewAskForTheirPicturesBack`.
@@ -84,8 +87,7 @@ The cards a person is using keep their pictures wherever they are: the newest `r
 
 **Late and concurrent answers**
 
-- A decode that answers after the card left the column still reaches `arrive`; the window's update ignores an id with no card (`ThumbnailController+Older.swift:123`).
-- `keepPictures` also runs on every `columnMoved`, and at the end of `addOlder` when the chunk made cards.
+- A decode that answers after the card left the column still reaches `arrive`; the window's update ignores an id with no card (`ThumbnailController+Older.swift:128`).
+- `keepPictures` also runs on every `columnMoved`, at the end of `addOlder` when the chunk made cards, and after every removal from a visible column (`ThumbnailController.removeCards(where:)`), whose cards above slide down with no scroll.
 - A card from a new chunk has no picture while its first decode (`makeCard`, `ThumbnailController.swift:1255`) is pending, and is not in `asked`. In a column longer than `max(keptAlways, recentCount)`, `keepPictures` at the end of `addOlder` finds it within `near` and asks again, so it is decoded twice.
 - A card in `arrived` counts as holding. If it is in a dropped batch, the drop does nothing to it, and the arrival window then gives it its picture far from the view.
-- Once the column shrinks to `max(keptAlways, recentCount)` or fewer, `keepPictures` returns at once and cards that already dropped their pictures are not asked for them until the next `present`.
