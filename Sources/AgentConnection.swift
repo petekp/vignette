@@ -146,9 +146,9 @@ protocol AgentConnection: Sendable {
     var keepsList: Bool { get }
     /// The sessions this route can address right now. Empty when the route cannot enumerate.
     func destinations() -> [AgentDestination]
-    /// The same, together with the session `id` when the route can find it though it is not among
-    /// the ones it lists, such as a Codex thread used weeks ago that the Codex app shows.
-    func destinations(including id: String) -> [AgentDestination]
+    /// The same, with each session in `ids` the route finds though it lists only recent ones, such
+    /// as a Codex thread used weeks ago that the Codex app shows.
+    func destinations(including ids: [String]) -> [AgentDestination]
     func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome
     /// The same, answering `completion` off the main thread. The default runs `submit` on a pool
     /// thread; a route that waits on something it can poll answers when that comes. `watchingTurn`
@@ -172,7 +172,7 @@ enum SessionTurn: Equatable {
 
 extension AgentConnection {
     var keepsList: Bool { false }
-    func destinations(including id: String) -> [AgentDestination] { destinations() }
+    func destinations(including ids: [String]) -> [AgentDestination] { destinations() }
     func turn(of destination: AgentDestination) -> SessionTurn? { nil }
     var reportsTurns: Bool { false }
 

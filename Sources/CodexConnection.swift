@@ -47,19 +47,20 @@ struct CodexConnection: AgentConnection {
     /// share, so an app-server started for the length of this one call answers for every session,
     /// including the ones the ChatGPT desktop app owns. No codex on the machine means no Codex
     /// destinations, which is not an error.
-    func destinations() -> [AgentDestination] { discover(shown: nil) }
+    func destinations() -> [AgentDestination] { discover(reading: []) }
 
-    /// The threads used last, and the thread `id`, such as the one the Codex app shows, whatever its
-    /// age.
-    func destinations(including id: String) -> [AgentDestination] { discover(shown: id) }
+    /// The threads used last, and each thread in `ids` whatever its age, such as the one the Codex
+    /// app shows. All of them are read in one app-server.
+    func destinations(including ids: [String]) -> [AgentDestination] { discover(reading: ids) }
 
-    private func discover(shown: String?) -> [AgentDestination] {
+    private func discover(reading ids: [String]) -> [AgentDestination] {
         guard let codex = binary() else { return [] }
-        let lines = converse(codex, ["app-server"], AppServer.discoveryRequests(shown: shown))
-        let listed = AppServer.threads(in: lines).map { Self.destination($0) }
-        guard let shown, let thread = AppServer.read(in: lines), thread.id == shown,
-              !listed.contains(where: { $0.id == shown }) else { return listed }
-        return listed + [Self.destination(thread)]
+        let lines = converse(codex, ["app-server"], AppServer.discoveryRequests(reading: ids))
+        var found = AppServer.threads(in: lines).map { Self.destination($0) }
+        for thread in AppServer.reads(of: ids, in: lines) where !found.contains(where: { $0.id == thread.id }) {
+            found.append(Self.destination(thread))
+        }
+        return found
     }
 
     static func destination(_ thread: AppServer.Thread, home: String = NSHomeDirectory()) -> AgentDestination {

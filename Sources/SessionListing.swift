@@ -35,11 +35,11 @@ final class SessionListing {
     /// client whose list is kept (`AgentConnection.keepsList`) answers from its last list at once.
     /// Every client is also asked afresh, off the main thread, and the candidates are answered on the
     /// main thread again as each fresh answer arrives. Claude Code's answer, with herdr's focus read in
-    /// the same job, comes about 60 to 70 ms after the editor opens. `shown` asks that client for the
-    /// session with that id too, such as the thread the Codex app shows. The sessions Vignette can
+    /// the same job, comes about 60 to 70 ms after the editor opens. `including` asks a client for
+    /// sessions it may not list too, by id, such as the thread the Codex app shows. The sessions Vignette can
     /// start come with the answers, apart; the list counts as complete and fresh by the clients alone,
     /// since nothing picks one of them.
-    func list(shown: (client: AgentClient, id: String)? = nil,
+    func list(including: [AgentClient: [String]] = [:],
               _ completion: @escaping @MainActor (DestinationChoice.Candidates) -> Void) {
         let clients = Array(connections.keys)
         guard !clients.isEmpty else { return completion(DestinationChoice.Candidates(destinations: [], complete: true, fresh: true)) }
@@ -64,15 +64,28 @@ final class SessionListing {
         // A kept list of sessions to start alone has no session to pick, so it waits for a client's.
         if clients.contains(where: { answers.lists[.client($0)] != nil }) { deliver() }
         for source in sources {
-            var including: String?
-            if case .client(let client) = source, client == shown?.client { including = shown?.id }
-            ask(source, including: including) { listed in
+            var ids: [String] = []
+            if case .client(let client) = source { ids = including[client] ?? [] }
+            ask(source, including: ids) { listed in
                 answers.lists[source] = listed.destinations
                 if let herdr = listed.herdr { answers.herdr = herdr }
                 answers.fresh.insert(source)
                 deliver()
             }
         }
+    }
+
+    /// The sessions Send asks each client for by id. Codex lists only the threads used last, so a
+    /// kept Codex thread and the thread the Codex app shows are each read by id, in the same
+    /// listing. Claude Code lists every session it runs, so a kept one needs no read.
+    nonisolated static func readByID(kept: AgentDestination?,
+                                     cameFrom: (client: AgentClient, shown: String?)?) -> [AgentClient: [String]] {
+        var including: [AgentClient: [String]] = [:]
+        if let kept, kept.client == .codex { including[.codex] = [kept.id] }
+        if let cameFrom, let shown = cameFrom.shown, including[cameFrom.client]?.contains(shown) != true {
+            including[cameFrom.client, default: []].append(shown)
+        }
+        return including
     }
 
     /// Asks again every source whose list is kept, so the next editor opens on a current list. Run
@@ -118,20 +131,20 @@ final class SessionListing {
         }
     }
 
-    /// Asks one source for its sessions off the main thread. An ask that includes a session runs on
-    /// its own, and its answer is not kept: it holds a session found for one editor.
-    private func ask(_ source: Source, including id: String? = nil, then answer: @escaping @MainActor (Listed) -> Void) {
+    /// Asks one source for its sessions off the main thread. An ask that includes sessions runs on
+    /// its own, and its answer is not kept: it holds sessions found for one editor.
+    private func ask(_ source: Source, including ids: [String] = [], then answer: @escaping @MainActor (Listed) -> Void) {
         let job: @Sendable () -> Listed
         switch source {
         case .client(let client):
             guard let connection = connections[client] else { return }
             let readHerdr = readHerdr
-            job = { Self.job(connection, including: id, readHerdr: readHerdr) }
+            job = { Self.job(connection, including: ids, readHerdr: readHerdr) }
         case .startable:
             guard let startable else { return }
             job = { Listed(destinations: startable(), herdr: nil) }
         }
-        if id != nil {
+        if !ids.isEmpty {
             DispatchQueue.global(qos: .userInitiated).async {
                 let listed = job()
                 DispatchQueue.main.async { MainActor.assumeIsolated { answer(listed) } }
@@ -155,11 +168,12 @@ final class SessionListing {
     }
 
     /// What one ask of a client does off the main thread. It blocks on the client's subprocesses and on herdr's.
-    private nonisolated static func job(_ connection: any AgentConnection, including id: String?,
+    private nonisolated static func job(_ connection: any AgentConnection, including ids: [String],
                                         readHerdr: @Sendable () -> HerdrFocus?) -> Listed {
-        let destinations = id.map { connection.destinations(including: $0) } ?? connection.destinations()
+        let destinations = ids.isEmpty ? connection.destinations() : connection.destinations(including: ids)
         // In the same job, so the focus arrives with the answer that can settle the target.
-        let herdr = DestinationChoice.readsHerdr(beside: connection.client, listed: destinations) ? readHerdr() : nil
+        let herdr = DestinationChoice.readsHerdr(beside: connection.client, listed: destinations)
+            ? readHerdr()?.sessions(from: destinations) : nil
         return Listed(destinations: destinations, herdr: herdr)
     }
 }

@@ -430,7 +430,7 @@ folder would take the skill from every running agent at once.
   the session was cleared or resumed in that terminal.
 - **The send** writes the line file. It is accepted once it is in a live inbox, as `codex queue`
   accepts a message for a busy thread. A busy session reads it when its turn ends.
-- **herdr's focus** stays as a read-only hint for the default target, when herdr is there. It
+- **herdr's focus** stays a read-only hint for the default target, from the Herdr app. It
   sends nothing.
 - **The request line** stays one line, since the monitor prints one event per line.
 

@@ -155,7 +155,7 @@ window does not make it a different conversation.
 _Avoid_: Session without qualification, pane, tab, thread when Claude Code is included
 
 **Terminal host**:
-The application or multiplexer holding terminal panes, such as herdr. A pane can show different
+The application or multiplexer holding terminal panes, such as the Herdr app. A pane can show different
 agent sessions over time, so a pane is never a destination.
 
 **Agent plugin**:

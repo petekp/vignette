@@ -156,10 +156,11 @@ Before you drive the app:
   path into `Library` with the bundle id built outside `Identity.swift`. It neither registers nor removes a login item. It runs no updater, and logs
   `[update] test launch: no updater`, unless `VIGNETTE_FEED` names a feed. With one, it checks that
   feed in place of the release feed. Each of these gates reads `Launch.isTest`. To test the plugin, also launch with
-  `CFFIXED_USER_HOME=<scratch home>` (`docs/test-isolation-2026-09-29.md`). It runs no codex, herdr
-  or claude unless `VIGNETTE_CODEX`, `VIGNETTE_HERDR` or `VIGNETTE_CLAUDE` names one
+  `CFFIXED_USER_HOME=<scratch home>` (`docs/test-isolation-2026-09-29.md`). It runs no codex, herdr,
+  claude, herdr-app or hc unless `VIGNETTE_CODEX`, `VIGNETTE_HERDR`, `VIGNETTE_CLAUDE`,
+  `VIGNETTE_HERDR_APP` or `VIGNETTE_HC` names one
   (`AgentTools.forSessions`), since any other found on the Mac reaches the person's own sessions or
-  account; the launch logs `[tools] test launch: codex=… herdr=… claude=…`. The plugin's skill names the copy's own URL scheme and log
+  account; the launch logs `[tools] test launch: codex=… herdr=… claude=… herdr-app=… hc=…`. The plugin's skill names the copy's own URL scheme and log
   (`AgentPlugin.stage`), and every `open` in it names that copy's path with `-a`, so an agent's
   command never starts another build of the same bundle id on the person's settings.
 - Stop a test copy by its PID before you launch another copy of the same bundle id. On 2026-09-26,

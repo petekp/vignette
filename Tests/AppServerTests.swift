@@ -46,12 +46,13 @@ final class AppServerTests: XCTestCase {
         XCTAssertTrue(requests[2].contains("\"sortKey\":\"recency_at\""), "the threads asked for are the ones used last")
         XCTAssertTrue(requests[2].contains("\"useStateDbOnly\":true"), "a scan of every rollout took 3 s for a search")
 
-        let shown = AppServer.discoveryRequests(limit: 7, shown: "01a0f064-1706-76e2-8312-bebefa67f004")
-        XCTAssertEqual(shown.count, 4)
-        let read = try? JSONSerialization.jsonObject(with: Data(shown[3].utf8)) as? [String: Any]
-        XCTAssertEqual(read?["id"] as? Int, AppServer.readID)
-        XCTAssertEqual(read?["method"] as? String, "thread/read")
-        XCTAssertEqual((read?["params"] as? [String: Any])?["threadId"] as? String, "01a0f064-1706-76e2-8312-bebefa67f004")
+        let reading = AppServer.discoveryRequests(limit: 7, reading: ["01a0f064-1706-76e2-8312-bebefa67f004", "01a1c6ad-0000-7000-8000-000000000001"])
+        XCTAssertEqual(reading.count, 5)
+        let reads = reading[3...].map { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
+        XCTAssertEqual(reads.map { $0?["id"] as? Int }, [AppServer.readID, AppServer.readID + 1], "each read is answered under its own id")
+        XCTAssertEqual(reads.map { $0?["method"] as? String }, ["thread/read", "thread/read"])
+        XCTAssertEqual(reads.map { ($0?["params"] as? [String: Any])?["threadId"] as? String },
+                       ["01a0f064-1706-76e2-8312-bebefa67f004", "01a1c6ad-0000-7000-8000-000000000001"])
     }
 
     /// The read's thread is apart from the listing's, and a refused read is no thread.
@@ -59,11 +60,12 @@ final class AppServerTests: XCTestCase {
         let listing = #"{"id":2,"result":{"data":[{"id":"a","cwd":"/x","recencyAt":300}]}}"#
         let read = #"{"id":3,"result":{"thread":{"id":"old","name":"Investigate","cwd":"/y","recencyAt":1,"status":{"type":"notLoaded"}}}}"#
         XCTAssertEqual(AppServer.threads(in: [read, listing]).map(\.id), ["a"])
-        XCTAssertEqual(AppServer.read(in: [read, listing])?.id, "old")
-        XCTAssertEqual(AppServer.read(in: [read])?.cwd, "/y")
-        XCTAssertNil(AppServer.read(in: [listing, #"{"id":3,"error":{"code":-32600,"message":"thread not loaded: x"}}"#]))
-        XCTAssertNil(AppServer.read(in: [#"{"id":3,"result":{"thread":{"id":"s","cwd":"/y","parentThreadId":"old"}}}"#]),
-                     "a sub-agent's thread is nobody's conversation")
+        XCTAssertEqual(AppServer.reads(of: ["old"], in: [read, listing]).map(\.id), ["old"])
+        XCTAssertEqual(AppServer.reads(of: ["old"], in: [read]).first?.cwd, "/y")
+        XCTAssertEqual(AppServer.reads(of: ["x"], in: [listing, #"{"id":3,"error":{"code":-32600,"message":"thread not loaded: x"}}"#]).count, 0)
+        XCTAssertEqual(AppServer.reads(of: ["other"], in: [read]).count, 0, "a read that answered another thread finds none")
+        XCTAssertEqual(AppServer.reads(of: ["s"], in: [#"{"id":3,"result":{"thread":{"id":"s","cwd":"/y","parentThreadId":"old"}}}"#]).count, 0,
+                       "a sub-agent's thread is nobody's conversation")
     }
 
     /// An error answers a request too. A Codex that refused the read would otherwise hold every
@@ -79,7 +81,7 @@ final class AppServerTests: XCTestCase {
         """
         let started = Date()
         let lines = AppServer.converse("/bin/sh", ["-c", responder],
-                                       AppServer.discoveryRequests(shown: "x"), timeout: 20)
+                                       AppServer.discoveryRequests(reading: ["x"]), timeout: 20)
         XCTAssertLessThan(Date().timeIntervalSince(started), 15)
         XCTAssertEqual(lines.count, 3)
     }

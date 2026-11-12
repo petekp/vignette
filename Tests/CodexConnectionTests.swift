@@ -29,21 +29,31 @@ final class CodexConnectionTests: XCTestCase {
         XCTAssertEqual(name("", " \n "), "Codex 01a0ab02")
     }
 
-    /// The thread the Codex app shows joins the threads used last when it is older than them, and
-    /// only when the store has it.
-    func testTheShownThreadJoinsTheListingWhateverItsAge() {
+    func testSendReadsTheKeptCodexThreadAndTheShownOneByIdEachOnce() {
+        let kept = AgentDestination(id: "k", name: "k", address: .codexThread(uuid: "k"))
+        XCTAssertEqual(SessionListing.readByID(kept: kept, cameFrom: (.codex, "s")), [.codex: ["k", "s"]])
+        XCTAssertEqual(SessionListing.readByID(kept: kept, cameFrom: (.codex, "k")), [.codex: ["k"]])
+        XCTAssertEqual(SessionListing.readByID(kept: kept, cameFrom: nil), [.codex: ["k"]])
+        let claude = AgentDestination(id: "c", name: "c", address: .claudeSession("c"))
+        XCTAssertEqual(SessionListing.readByID(kept: claude, cameFrom: (.codex, "s")), [.codex: ["s"]],
+                       "Claude Code lists every session it runs")
+        XCTAssertEqual(SessionListing.readByID(kept: nil, cameFrom: nil), [:])
+    }
+
+    func testThreadsReadByIdJoinTheListingWhateverTheirAgeOnlyWhenTheStoreHasThem() {
         let listing = #"{"id":2,"result":{"data":[{"id":"a","name":"Recent","cwd":"/x","recencyAt":300}]}}"#
-        let read = #"{"id":3,"result":{"thread":{"id":"old","name":"Investigate appointments","cwd":"/y","recencyAt":1}}}"#
+        let kept = #"{"id":3,"result":{"thread":{"id":"kept","name":"Older","cwd":"/z","recencyAt":2}}}"#
+        let shown = #"{"id":4,"result":{"thread":{"id":"old","name":"Investigate appointments","cwd":"/y","recencyAt":1}}}"#
         var connection = CodexConnection()
         connection.binary = { "/bin/codex" }
-        connection.converse = { _, _, _ in [listing, read] }
-        XCTAssertEqual(connection.destinations(including: "old").map(\.id), ["a", "old"])
+        connection.converse = { _, _, _ in [listing, shown, kept] }
+        XCTAssertEqual(connection.destinations(including: ["kept", "old"]).map(\.id), ["a", "kept", "old"])
         XCTAssertEqual(connection.destinations().map(\.id), ["a"], "without an id, no read is used")
-        let refused = #"{"id":3,"error":{"code":-32600,"message":"thread not loaded: old"}}"#
-        connection.converse = { _, _, _ in [listing, refused] }
-        XCTAssertEqual(connection.destinations(including: "old").map(\.id), ["a"])
+        let refused = #"{"id":3,"error":{"code":-32600,"message":"thread not loaded: kept"}}"#
+        connection.converse = { _, _, _ in [listing, refused, shown] }
+        XCTAssertEqual(connection.destinations(including: ["kept", "old"]).map(\.id), ["a", "old"], "a refused read leaves the other")
         connection.converse = { _, _, _ in [listing, #"{"id":3,"result":{"thread":{"id":"a","cwd":"/x"}}}"#] }
-        XCTAssertEqual(connection.destinations(including: "a").map(\.id), ["a"], "a listed thread is listed once")
+        XCTAssertEqual(connection.destinations(including: ["a"]).map(\.id), ["a"], "a listed thread is listed once")
     }
 
     func testTheQueueCallIsOneArgvElementPerPart() {
