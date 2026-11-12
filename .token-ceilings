@@ -5,6 +5,3 @@
 # the annotation run, the column's presentation and the notices on cards all read the same model,
 # flights, run and open card. Moving a section out would make that state visible to the whole module.
 Sources/ThumbnailController.swift 21666
-
-# docs/state-machines.md is one file because Pete asked for every state machine to be mapped in one place.
-docs/state-machines.md 86000
