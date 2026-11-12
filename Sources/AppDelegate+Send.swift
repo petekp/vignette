@@ -71,8 +71,48 @@ extension AppDelegate {
         // carries on. `sending` stays on, so the button keeps its plane while the bar leaves;
         // the next `prepare` resets it.
         sentShots[record.id] = shot
+        annotator.sent(to: destination)
         thumbnail.showSending(shot, request: record.id, to: destination, titled: title, grace: requests.grace(of: record.id))
         thumbnail.annotationSent()
+    }
+
+    /// Where the bar can send while this image is open, and the session it came from: an agent's
+    /// reply to a request, or a push that named its session. Reading the sessions runs
+    /// subprocesses, so it answers later; the bar offers Send once it has a session to send to.
+    func refreshDestinations(for shot: Screenshot) {
+        guard let opening = annotator.opening else { return }
+        let kept = annotator.beginDestinations(replyTo: requests.origin(of: shot.url))
+        let asked = CACurrentMediaTime()
+        let app = FocusReturn.shared.previousApp
+        guard let client = AgentApp.client(of: app), let pid = app?.processIdentifier else {
+            return listDestinations(for: shot, opening: opening, asked: asked, cameFrom: nil, kept: kept)
+        }
+        // The thread the agent's app shows is read before anything is listed: Claude Code's list
+        // comes first and would settle the target on the session in herdr's focus, which you were not in.
+        let launched = app?.launchDate
+        DispatchQueue.global(qos: .userInitiated).async {
+            let shown = AgentApp.shownThread(pid: pid, launched: launched)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.annotator.opening == opening else { return }
+                Log.write("[send] came from the \(client.label) app, showing \(shown ?? "no thread") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms")
+                self.listDestinations(for: shot, opening: opening, asked: asked, cameFrom: (client, shown), kept: kept)
+            }
+        }
+    }
+
+    private func listDestinations(for shot: Screenshot, opening: Opening, asked: CFTimeInterval,
+                                  cameFrom: (client: AgentClient, shown: String?)?, kept: AgentDestination?) {
+        let shown = cameFrom.flatMap { from in from.shown.map { (from.client, $0) } }
+        // Codex lists only the threads used last, so a kept thread is asked for by its id. Send
+        // starts on it before the thread the Codex app shows.
+        let keptThread = kept.flatMap { $0.client == .codex ? (AgentClient.codex, $0.id) : nil }
+        sessions.list(shown: keptThread ?? shown) { [weak self] candidates in
+            guard let self else { return }
+            Log.write("[send] sessions \(candidates.destinations.count)\(candidates.complete ? " complete" : "")\(candidates.fresh ? "" : " kept") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms \(shot.url.lastPathComponent)")
+            // A file can reopen while its earlier destination listing is still running.
+            guard self.annotator.opening == opening else { return }
+            self.annotator.destinationsAnswered(DestinationChoice.choose(candidates, for: .send(cameFrom: cameFrom, kept: kept)))
+        }
     }
 
     /// A screenshot's drawing as the editor opens it (`AnnotationController.storedDrawing`).

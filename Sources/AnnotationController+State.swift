@@ -23,6 +23,10 @@ extension AnnotationController {
             "toolbarKey": toolbar.panel.isKeyWindow,
             "tool": toolbar.model.tool?.rawValue as Any,
             "offer": (current == nil ? nil : offerJSON) as Any,
+            "keptPick": keptPick.map { kept -> [String: Any] in
+                ["session": kept.session.id, "client": kept.session.client.rawValue,
+                 "secondsLeft": max(0, Int(DestinationChoice.KeptPick.lasts - Date().timeIntervalSince(kept.sentAt)))]
+            } as Any,
         ]
     }
 

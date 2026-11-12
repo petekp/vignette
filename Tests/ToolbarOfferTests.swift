@@ -154,6 +154,37 @@ final class ToolbarOfferTests: XCTestCase {
         XCTAssertEqual(model.offer, .reply(gone), "a new bar has no list yet, so the session may only be late")
     }
 
+    private func answer(_ list: [AgentDestination], complete: Bool, kept: AgentDestination,
+                        herdr: HerdrFocus? = nil) -> DestinationChoice.Answer {
+        DestinationChoice.choose(.init(destinations: list, complete: complete, fresh: true, herdr: herdr),
+                                 for: .send(cameFrom: nil, kept: kept))
+    }
+
+    func testOnlyTheTargetPickedInTheMenuIsAHandPick() {
+        let model = AnnotatorToolbar.Model()
+        let a = session("a"), b = session("b")
+        model.begin(replyTo: nil, carryingTarget: false)
+        model.answered(answer([a, b], complete: true, kept: b, herdr: inPane("a")))
+        XCTAssertFalse(model.isHandPick(b), "a start Vignette chose, the kept pick included, is not one")
+        model.pick(a)
+        XCTAssertTrue(model.isHandPick(a))
+        XCTAssertFalse(model.isHandPick(b))
+        model.begin(replyTo: nil, carryingTarget: true)
+        XCTAssertFalse(model.isHandPick(a), "a pick belongs to its own image")
+    }
+
+    func testAKeptPickSettlesASwappedBarWithoutShowingAnotherSessionFirst() {
+        let model = AnnotatorToolbar.Model()
+        let before = session("before"), focused = session("focused"), kept = session("kept", .codex)
+        model.begin(replyTo: nil, carryingTarget: false)
+        model.answered(answer([before], complete: true, herdr: inPane("before")))
+        model.begin(replyTo: nil, carryingTarget: true)
+        model.answered(answer([focused], complete: false, kept: kept, herdr: inPane("focused")))
+        XCTAssertEqual(model.target?.id, "before")
+        model.answered(answer([focused, kept], complete: true, kept: kept, herdr: inPane("focused")))
+        XCTAssertEqual(model.target?.id, "kept")
+    }
+
     func testAToolLetterTypedFirstPicksItsToolUntilAWordShowsItBeganOne() {
         var held = HeldToolLetter()
         XCTAssertEqual(held.key("a", isRepeat: false, fieldUntouched: true, tool: .rectangle), .hold(.arrow))
