@@ -80,6 +80,15 @@ final class HerdrFocusTests: XCTestCase {
         XCTAssertEqual(marked(focus("pA1"), listing: [claude(session, pid: 42)]), [.pane],
                        "a terminal whose process runs no listed session keeps its label's session")
         XCTAssertEqual(marked(focus("pC2", tab: "tbC"), listing: [claude("c5", pid: 900)]), [.pane], "no label, found by process")
+        XCTAssertEqual(marked(focus("pB1", tab: "tbB"), listing: [claude(other, pid: 501)]), [nil],
+                       "a label naming a session another terminal runs is not that session")
+    }
+
+    func testAClaudeCodeHerdrShowsNoAgentForIsFoundByItsProcess() {
+        let unreported = "2f0f0f0f-0000-4000-8000-000000000000"
+        XCTAssertEqual(marked(focus("pA2"), listing: [claude(session, pid: 501), claude(unreported, pid: 600)]), [nil, .pane],
+                       "the terminal Herdr shows as running nothing runs a listed Claude Code, which has the focus")
+        XCTAssertEqual(marked(focus("pA2"), listing: [claude(session, pid: 501)]), [.tab], "a shell is still no agent")
     }
 
     func testEveryFailureMarksNothingAndSaysWhy() {

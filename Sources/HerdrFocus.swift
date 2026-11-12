@@ -15,6 +15,10 @@ struct HerdrFocus: Equatable, Sendable {
     /// Each tab's name, by tab id. A name that is only a number is left out: Herdr numbers a tab
     /// nobody named (observed 2026-11-12), and the number says nothing about the session.
     var tabLabels: [String: String] = [:]
+    /// The terminals Herdr shows running no agent. Herdr names a terminal's agent only once the
+    /// program reports its status, and a Claude Code that hc started may never report (observed
+    /// 2026-11-12), so `sessions(from:)` adds one whose process is a listed Claude Code session.
+    var unreported: [AgentPane] = []
 
     /// One terminal running an agent, of any kind.
     struct AgentPane: Equatable, Sendable {
@@ -130,11 +134,12 @@ struct HerdrFocus: Equatable, Sendable {
         if let focusedTerminal, focusedTerminal.tab != tab {
             return .failure(Unread(reason: "status's tab \(tab) is not the focused terminal's \(focusedTerminal.tab)"))
         }
-        let agents = placed.filter(\.isAgent).map { terminal in
-            AgentPane(pane: terminal.pane, session: core[terminal.terminal]?.labels["inbox.session"], tab: terminal.tab,
-                      pid: core[terminal.terminal]?.pid)
+        func pane(_ terminal: (terminal: String, pane: String, tab: String, isAgent: Bool)) -> AgentPane {
+            AgentPane(pane: terminal.pane, session: terminal.isAgent ? core[terminal.terminal]?.labels["inbox.session"] : nil,
+                      tab: terminal.tab, pid: core[terminal.terminal]?.pid)
         }
-        return .success(HerdrFocus(pane: focusedTerminal?.pane ?? focused, tab: tab, agents: agents, tabLabels: labels))
+        return .success(HerdrFocus(pane: focusedTerminal?.pane ?? focused, tab: tab, agents: placed.filter(\.isAgent).map(pane),
+                                   tabLabels: labels, unreported: placed.filter { !$0.isAgent }.map(pane)))
     }
 
     /// Each live terminal in `hc`'s answer to `terminalListRequest`, by address: its foreground
@@ -151,16 +156,27 @@ struct HerdrFocus: Equatable, Sendable {
         return records
     }
 
-    /// The same focus with each agent's session found among Claude Code's `listed` sessions by its
+    /// The same focus with each terminal's session found among Claude Code's `listed` sessions by its
     /// process: the session whose plugin inbox belongs to the terminal's foreground process. That
-    /// follows `/clear`, as the inbox does. A terminal no listed session runs keeps the session the
-    /// inbox mod labelled it with, if any.
+    /// follows `/clear`, as the inbox does. An unreported terminal found this way is an agent. An agent
+    /// no listed session runs keeps the session the inbox mod labelled it with, unless another
+    /// terminal runs that session: a label can outlast the Claude Code it named.
     func sessions(from listed: [AgentDestination]) -> HerdrFocus {
-        HerdrFocus(pane: pane, tab: tab, agents: agents.map { agent in
-            var resolved = agent
-            if let pid = agent.pid, let session = listed.first(where: { $0.inbox == pid }) { resolved.session = session.id }
+        func byProcess(_ terminal: AgentPane) -> String? {
+            terminal.pid.flatMap { pid in listed.first { $0.inbox == pid }?.id }
+        }
+        let found = unreported.filter { byProcess($0) != nil }
+        let claimed = Set((agents + found).compactMap(byProcess))
+        let resolved = (agents + found).map { terminal in
+            var resolved = terminal
+            if let session = byProcess(terminal) {
+                resolved.session = session
+            } else if let label = terminal.session, claimed.contains(label) {
+                resolved.session = nil
+            }
             return resolved
-        }, tabLabels: tabLabels)
+        }
+        return HerdrFocus(pane: pane, tab: tab, agents: resolved, tabLabels: tabLabels)
     }
 
     /// The label of the tab whose terminal runs `session`, if Herdr names it.

@@ -29,6 +29,17 @@ final class CodexConnectionTests: XCTestCase {
         XCTAssertEqual(name("", " \n "), "Codex 01a0ab02")
     }
 
+    func testSendReadsTheKeptCodexThreadAndTheShownOneByIdEachOnce() {
+        let kept = AgentDestination(id: "k", name: "k", address: .codexThread(uuid: "k"))
+        XCTAssertEqual(SessionListing.readByID(kept: kept, cameFrom: (.codex, "s")), [.codex: ["k", "s"]])
+        XCTAssertEqual(SessionListing.readByID(kept: kept, cameFrom: (.codex, "k")), [.codex: ["k"]])
+        XCTAssertEqual(SessionListing.readByID(kept: kept, cameFrom: nil), [.codex: ["k"]])
+        let claude = AgentDestination(id: "c", name: "c", address: .claudeSession("c"))
+        XCTAssertEqual(SessionListing.readByID(kept: claude, cameFrom: (.codex, "s")), [.codex: ["s"]],
+                       "Claude Code lists every session it runs")
+        XCTAssertEqual(SessionListing.readByID(kept: nil, cameFrom: nil), [:])
+    }
+
     func testThreadsReadByIdJoinTheListingWhateverTheirAgeOnlyWhenTheStoreHasThem() {
         let listing = #"{"id":2,"result":{"data":[{"id":"a","name":"Recent","cwd":"/x","recencyAt":300}]}}"#
         let kept = #"{"id":3,"result":{"thread":{"id":"kept","name":"Older","cwd":"/z","recencyAt":2}}}"#

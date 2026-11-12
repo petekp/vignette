@@ -75,6 +75,19 @@ final class SessionListing {
         }
     }
 
+    /// The sessions Send asks each client for by id. Codex lists only the threads used last, so a
+    /// kept Codex thread and the thread the Codex app shows are each read by id, in the same
+    /// listing. Claude Code lists every session it runs, so a kept one needs no read.
+    nonisolated static func readByID(kept: AgentDestination?,
+                                     cameFrom: (client: AgentClient, shown: String?)?) -> [AgentClient: [String]] {
+        var including: [AgentClient: [String]] = [:]
+        if let kept, kept.client == .codex { including[.codex] = [kept.id] }
+        if let cameFrom, let shown = cameFrom.shown, including[cameFrom.client]?.contains(shown) != true {
+            including[cameFrom.client, default: []].append(shown)
+        }
+        return including
+    }
+
     /// Asks again every source whose list is kept, so the next editor opens on a current list. Run
     /// when an editor is likely to open soon: at launch, on a capture, and when the stack opens.
     func refreshKeptLists() {

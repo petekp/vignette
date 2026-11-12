@@ -58,7 +58,10 @@
   terminal is the one in the focused pane. When the focus is on the inbox mod's panel, it is the
   terminal whose `inbox.panel` label names that panel. A terminal's session is the listed Claude
   Code session whose plugin inbox belongs to its foreground process, which follows `/clear`. When
-  none does, the inbox mod's `inbox.session` label names it. A closed Herdr window, a timeout, an
+  none does, the inbox mod's `inbox.session` label names it, unless another terminal runs that
+  session. Herdr names a terminal's agent only once its program reports a status, and a Claude Code
+  that `hc` started may never report, so a terminal Herdr shows running nothing still counts when
+  its process is a listed Claude Code session. A closed Herdr window, a timeout, an
   answer that does not parse, or a status whose tab is not the focused terminal's marks nothing,
   and logs `[herdr] no focus: <reason>` when the reason changes, then `[herdr] focus read again`.
   The target shows the agent's logo and the session's title, cut in the middle past 132 pt, with

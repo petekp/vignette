@@ -102,14 +102,7 @@ extension AppDelegate {
 
     private func listDestinations(for shot: Screenshot, opening: Opening, asked: CFTimeInterval,
                                   cameFrom: (client: AgentClient, shown: String?)?, kept: AgentDestination?) {
-        // Codex lists only the threads used last, so a kept thread and the thread the Codex app
-        // shows are each read by id, in the same listing.
-        var including: [AgentClient: [String]] = [:]
-        if let kept, kept.client == .codex { including[.codex] = [kept.id] }
-        if let cameFrom, let shown = cameFrom.shown, including[cameFrom.client]?.contains(shown) != true {
-            including[cameFrom.client, default: []].append(shown)
-        }
-        sessions.list(including: including) { [weak self] candidates in
+        sessions.list(including: SessionListing.readByID(kept: kept, cameFrom: cameFrom)) { [weak self] candidates in
             guard let self else { return }
             Log.write("[send] sessions \(candidates.destinations.count)\(candidates.complete ? " complete" : "")\(candidates.fresh ? "" : " kept") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms \(shot.url.lastPathComponent)")
             // A file can reopen while its earlier destination listing is still running.
