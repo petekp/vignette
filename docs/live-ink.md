@@ -334,15 +334,14 @@ The names in brackets are `// MARK:` sections.
   its way to a shortcut never turns the microphone on, and a press of the chord while it listens goes
   on with the same listening, so "this" and "that" in two strokes are one note. The first word heard
   opens the note by the pointer, and ink moves it there (`docs/live-ink-voice.md`). A key typed in it ends
-  listening and keeps the words; Esc, an ask and clearing drop them. Standing aside stops listening,
-  and the note keeps what it heard. Words already in the note when listening starts stay, and what is
-  said then does not replace them. `ListeningEnd`
+  listening and keeps the words; Esc, an ask and clearing drop them. Standing aside stops listening;
+  the note keeps what it heard. Words already in the note when listening starts stay, and speech
+  then adds nothing. `ListeningEnd`
   decides the end: listening stops 0.3 s after the chord is let go, and never past 60 s; words heard
-  by then wait for the note. A release with no ink or note keeps that tail; its words open the note by the pointer (`tailMayOpenNote`). With `liveInkSendWhenQuiet` and ink, the final words are sent as Return sends them. Speech is
-  turned into words on the Mac only: `Transcriber` is the interface every engine conforms to,
-  `SpeechEngine.make` picks one, and `AppleTranscriber` refuses to run without an on-device model
-  rather than send audio to Apple. The Settings switch asks for the microphone and speech
-  recognition; nothing else does. `[speech]` lines log listening, and `[state] liveInk.listening`
+  by then wait for the note. A release with no ink or note keeps that tail; its words open the note by the pointer. With `liveInkSendWhenQuiet` and ink, the final words are sent as Return sends them. Speech is
+  turned into words on the Mac only: `SpeechEngine.make` picks a `Transcriber`, and `AppleTranscriber` refuses to run without an on-device model
+  rather than send audio to Apple. Only the Settings switch asks for the microphone and speech
+  recognition. `[speech]` lines log listening, and `[state] liveInk.listening`
   says whether it is.
 - Every ask's picture numbers the person's strokes in the order drawn, with a badge beside each
   (`LivePacket.numbers`), and the responder's ink carries the same `n`. A spoken note sent as it was
@@ -600,7 +599,8 @@ The names in brackets are `// MARK:` sections.
   An ask with no conversation says it in a reply of its own hung from its ink, which is that ask's
   answer, with its own ×. It is not ink: the next ask is not about it.
 - A session picked in the note's target gets the picture through `ScreenshotRequests.send`, as Send
-  sends a drawing, with the words and where the ink is in the line. The client's answer goes to the
+  sends a drawing, with the words and where the ink is in the line, or with no ink the pointer
+  in percent of the picture when on it (`LivePacket.sessionLine`). The client's answer goes to the
   note's card, as a send's does.
 - `live-ink-ask?message=` (debug) asks as Return does, and `&session=<id>` sends to that session.
   `[state] liveInk` adds `new` (ink not yet asked about), `note`, `reply` (the newest ask's reply

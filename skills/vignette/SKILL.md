@@ -2,7 +2,7 @@
 name: vignette
 description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "27"
+  version: "28"
 ---
 
 # Vignette
@@ -158,8 +158,13 @@ says where the ink is:
 Move these under the title, smaller. Drawn with Vignette's live ink on Google Chrome, "Postcard", http://localhost:5173/. [From Vignette: "<folder>/image.png". …]
 ```
 
-The image is the whole window with their ink drawn in, each stroke numbered. Once the note is
-sent, the ink leaves the user's screen and becomes a card in Vignette's corner. When your turn
+When they asked without drawing, the message says so and there is no ink; a line such as "The pointer
+was at 74% across and 32% down the picture", when present, marks the spot they asked about, from the
+image's top-left corner.
+
+The image is the whole window, or the screen when no window is under the point, with their ink
+drawn in, each stroke numbered; an ask without drawing has no ink in it. Once the note is sent,
+the ink leaves the user's screen and becomes a card in Vignette's corner. When your turn
 ends, Vignette looks at the window again. If it changed under the ink, that window becomes a card
 from you, and Reply on it comes back to you as a new drawing. If nothing changed there, their card
 says you are done. So you do not need to confirm a change on the window. Answer in your session as
