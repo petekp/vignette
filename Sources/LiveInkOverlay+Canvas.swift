@@ -109,9 +109,15 @@ extension LiveInkOverlay {
             onStroke?(finished)
         }
 
+        /// When the last stroke faded by `fadePen` has gone, in `CACurrentMediaTime`.
+        private var penFadesUntil: CFTimeInterval = 0
+        /// How long the last stroke faded by `fadePen` still takes to go.
+        var penFadeLeft: CFTimeInterval { max(0, penFadesUntil - CACurrentMediaTime()) }
+
         /// Fades out the stroke shown, which no mark takes over, under a fresh pen for the next.
         func fadePen() {
             guard !pen.isHidden else { return }
+            penFadesUntil = CACurrentMediaTime() + LiveMarksLayer.removalFade
             let fading = pen
             CATransaction.begin()
             CATransaction.setDisableActions(true)

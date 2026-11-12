@@ -99,7 +99,7 @@ final class LiveInkOverlay: NSPanel {
     func close(after fade: TimeInterval) {
         let noticeUp = notice?.superview != nil
         notice?.hide()
-        let fade = noticeUp ? max(fade, LiveNotice.fade) : fade
+        let fade = max(fade, noticeUp ? LiveNotice.fade : 0, canvas.penFadeLeft)
         let closeWhenHidden = { [weak self] in self?.canvas.field.whenHidden { [weak self] in self?.close() } }
         guard fade > 0 else { closeWhenHidden(); return }
         DispatchQueue.main.asyncAfter(deadline: .now() + fade) { closeWhenHidden() }
@@ -114,7 +114,7 @@ final class LiveInkOverlay: NSPanel {
         ignoresMouseEvents = !inking
     }
 
-    /// Fades out the stroke under way's part on this screen, which no mark will take over.
+    /// Fades out this screen's part of a stroke no mark takes over.
     func fadePen() { canvas.fadePen() }
 
     /// Finishes the stroke under way with the points it has, as its release would.

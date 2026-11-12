@@ -1557,8 +1557,7 @@ final class LiveInk {
         case .ended, .interrupted:
             chordInterrupted = change == .interrupted
             guard isInking else { return }
-            // Esc the hotkey did not hear, as when macOS takes ⌘⌥Esc for Force Quit, still cancels.
-            if chordInterrupted, Self.escapeIsDown { return escape() }
+            if chordInterrupted, cancelForMissedEscape() { return }
             if inking.contains(where: \.overlay.isTracking) { watchRelease() } else { finishInking() }
         }
     }

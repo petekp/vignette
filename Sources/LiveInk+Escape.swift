@@ -22,7 +22,7 @@ extension LiveInk {
             menuOpen: note?.menuOpen == true,
             inking: isInking,
             justLetGo: escapeAfterRelease != nil,
-            listeningAfterRelease: tailMayOpenNote && listening != nil,
+            listeningAfterRelease: tailMayOpenNote && !(listening?.words.isEmpty ?? true),
             note: note.map { $0.hasKeys ? .hasKeys : .withoutKeys } ?? LiveEscape.Note.none,
             replyFieldOpen: actionsPanels.values.contains(where: \.isTyping),
             askCanBeCancelled: cancellable != nil,
@@ -48,18 +48,32 @@ extension LiveInk {
     /// Holds Esc exactly while `LiveEscape` has a step for it, so with nothing to back out of it is the
     /// frontmost app's. While the chord is held the key is Esc with the chord's modifiers, the only Esc
     /// that can come then. The main run loop asks before each wait, so the key follows every change to
-    /// what the snapshot reads, whatever made it.
+    /// what the snapshot reads, whatever made it. Until the Esc that cancelled the hold comes up, the
+    /// key is Esc with the chord's modifiers still down, which its repeats come with.
     func holdEscape() {
         endEscapeAfterReleaseWhenDone()
-        guard escapeRepeats == nil else { return }
-        let step = LiveEscape.next(escapeSnapshot)
-        let modifiers = step == .cancelHold && chord?.isHeld == true
-            ? HotKeySpec.carbonModifiers(Settings.shared.data.liveInkChordChoice.flags) : 0
-        let wanted = step.map { _ in modifiers }
+        let chordFlags = Settings.shared.data.liveInkChordChoice.flags
+        let wanted: UInt32?
+        if escapeRepeats != nil {
+            wanted = HotKeySpec.carbonModifiers(NSEvent.modifierFlags.intersection(chordFlags))
+        } else {
+            let step = LiveEscape.next(escapeSnapshot)
+            let modifiers = step == .cancelHold && chord?.isHeld == true ? HotKeySpec.carbonModifiers(chordFlags) : 0
+            wanted = step.map { _ in modifiers }
+        }
         guard wanted != escapeKey?.modifiers else { return }
         escapeKey = wanted.map { modifiers in
             (HotKey(keyCode: LiveEscape.keyCode, modifiers: modifiers, action: { [weak self] in self?.escape() }), modifiers)
         }
+    }
+
+    /// Esc held down as a key cut the chord short, which the hotkey did not hear, as when macOS takes
+    /// ⌘⌥Esc for Force Quit: it cancels the hold, unless it is the Esc that already did. Answers
+    /// whether the hold ended.
+    func cancelForMissedEscape() -> Bool {
+        guard Self.escapeIsDown, escapeRepeats == nil else { return false }
+        escape()
+        return !isInking
     }
 
     /// Esc: the first step that applies, one per press. The hotkey takes the press while it is held;

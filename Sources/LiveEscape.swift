@@ -45,7 +45,8 @@ enum LiveEscape {
         /// The chord was let go and the person has not gone anywhere since: no press off the ink, no
         /// switch to another app, and the answer has not come (`LiveEscapeAfterRelease`).
         var justLetGo = false
-        /// The chord was let go with no ink and no note, and listening goes on for the last words.
+        /// The chord was let go with no ink and no note, and listening goes on for the last words, and
+        /// has heard some. A silent release leaves Esc to the app the keys went back to.
         var listeningAfterRelease = false
         var note: Note = .none
         var replyFieldOpen = false

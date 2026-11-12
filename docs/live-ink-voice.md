@@ -43,7 +43,7 @@ window. To an agent session, Return sends a card of that window with the words a
 no words left, Return closes the note. A stroke drawn on a later hold moves the note to it, and
 Return then asks about the ink. Esc closes the note, and one Esc stops its ask with no note to reopen.
 With no ink and no note, listening runs 0.3 s past the release, and words heard by then open the
-note by the pointer; Esc in that time stops it. With nothing heard and no ink, nothing opens. When inking is cut short, by sleep or a screen
+note by the pointer; once words are heard, Esc in that time stops it. With nothing heard and no ink, nothing opens. When inking is cut short, by sleep or a screen
 change, or the stack or the annotator comes up, a note by the pointer closes.
 
 ## The waveform
