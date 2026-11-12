@@ -136,7 +136,7 @@ The names in brackets are `// MARK:` sections.
 - Esc backs out of live ink one step per press, the first of these that applies (`LiveEscape.next`,
   a pure function of what is up; `LiveEscapeTests`):
   0. Cancel the hold (`cancel-hold`, `LiveInk.cancelHold`), while the chord is held or a stroke
-     outlives it: nothing is sent, this hold's ink fades as a discarded note's does, listening and
+     outlives it: nothing is sent, this hold's ink fades as a discarded note's, listening and
      the microphone stop, and a note opened in the hold closes. One from before stays as it was.
      An erase or a pick in the hold is not undone.
   1. Discard the note (`discard-note`), while it has the keys or right after the release: listening
@@ -146,11 +146,11 @@ The names in brackets are `// MARK:` sections.
      ink that was new is new again, and the note opens on it with the keys and the ask's words; a note up already takes the keys and keeps
      its words. An ask `liveInkSendWhenQuiet` sent (`discard-ask`,
      `LiveAsks.Ask.sentOnRelease`), or one with no ink, takes its ink and words with it: no note opens. A follow-up
-     from a button puts the earlier answer back as it was, even once its reply has started to stream.
-     Nothing says the ask failed. Stopping the ask the responder is answering interrupts its turn
+     from a button puts the earlier answer back as it was, even once its reply streams.
+     Nothing says it failed. Stopping the ask the responder is answering interrupts its turn
      (`LiveResponder.cancel`), and the next ask waiting goes. An ask to a session is a step only with a
      send grace, until its send is stored: one stored after all is withdrawn with Don't send
-     (`LiveNoteCards.unsend`). Once stored, Don't send on the card is the way back.
+     (`LiveNoteCards.unsend`). Once stored, Don't send on the card takes it back.
   3. End the tour: the focus run, and the steps still to show.
   4. Close the newest answer, one per press: its reply, buttons and the agent's marks leave
      (`LiveAsks.Event.answerClosed`). A failure's reply counts as an answer. The person's ink stays,
@@ -159,7 +159,7 @@ The names in brackets are `// MARK:` sections.
 
   After a release that opens or keeps the note, steps 1 and 2 apply wherever the pointer is, to a
   note without the keys too (`LiveEscapeAfterRelease`), until a press off the ink, a switch to
-  another app (not the one the keys return to), or no note or ask from it is left. Otherwise steps 2 to 5 apply only
+  an app (not Vignette handing the keys back), or no note or ask from it is left. Otherwise steps 2 to 5 apply only
   while the pointer is on a mark or a reply on the active Space (`LiveInk.pointerIsOnInk`), and none
   while the note is up without the keys, as the keys are elsewhere.
 
@@ -167,9 +167,9 @@ The names in brackets are `// MARK:` sections.
   and nothing else has Esc (the stack, the annotator, the note's target menu), with the chord's
   modifiers while it is held. `ModifierChord`'s poll cannot tell which key went down, so it ends the
   chord one poll later, after the hotkey. An Esc the hotkey misses, as ⌘⌥Esc (Force Quit), cancels
-  only if still down as the chord ends. `LiveInk.holdEscape` decides before each wait of the main run
-  loop. The note's and Reply's `cancelOperation:` reach `LiveInk.escape` only for a press the held
-  key misses. Each press logs `[live-ink] esc <step>`.
+  only if still down as the chord ends. After `cancel-hold` the chord's Esc stays held until Esc
+  comes up, and its repeats do nothing. The note's and Reply's `cancelOperation:` reach
+  `LiveInk.escape` only for a press the held key misses. Each press logs `[live-ink] esc <step>`.
   `[state] liveInk.escape` is the next step or null, `escapeHeld` whether the key is held, and
   `escapeAfterRelease` whether Esc is live ink's after the release.
 - Inking never covers the stack or the annotator. The chord does nothing while

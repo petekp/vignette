@@ -18,9 +18,9 @@ final class LiveInk {
     var chord: ModifierChord?
     private var observers: [(NotificationCenter, Any)] = []
     /// Runs out the pointer field's delay after the chord goes down.
-    private var fieldTimer: Timer?
+    private(set) var fieldTimer: Timer?
     /// The chord shows the pointer field on the surfaces taking ink: its delay passed, or a press came.
-    private var chordShowsField = false
+    var chordShowsField = false
     /// Runs while a stroke outlives the chord, until the button is up: inking ends then.
     private(set) var releaseWatch: Timer?
     /// Takes the pointer's events while inking, so no app hears them (`LiveInkTap`).
@@ -108,6 +108,8 @@ final class LiveInk {
     private var held: [LiveAsks.Ask.ID: LiveResponder.Ask] = [:]
     /// Esc, held while `LiveEscape` has a step for it, with the chord's modifiers while it is held.
     var escapeKey: (key: HotKey, modifiers: UInt32)?
+    /// Watches for the Esc that cancelled the hold to come up. Until it does, its repeats go nowhere.
+    var escapeRepeats: Timer?
     /// Keeps Esc live ink's from the chord's release until the person goes elsewhere.
     var escapeAfterRelease: LiveEscapeAfterRelease?
     /// The marks drawn or picked since the chord last went down, and the note up then with its words
@@ -369,7 +371,7 @@ final class LiveInk {
             "noteTarget": note.map { panel -> Any in panel.target.responder.map { "responder \($0.rawValue)" } ?? "session" } ?? NSNull(),
             "responders": responders.stateJSON,
             "pair": Settings.shared.data.liveInkChordChoice.glyphs,
-            "escape": LiveEscape.next(escapeSnapshot)?.rawValue ?? NSNull(),
+            "escape": (escapeRepeats == nil ? LiveEscape.next(escapeSnapshot)?.rawValue : nil) ?? NSNull(),
             "escapeHeld": escapeKey != nil,
             "escapeAfterRelease": escapeAfterRelease != nil,
             "ask": asks.newest.map(\.stateJSON) ?? NSNull(),
@@ -1283,7 +1285,7 @@ final class LiveInk {
     }
 
     /// Lets the focus go: the stop on the screen fades out, and the rest of the tour is dropped.
-    private func letGoOfFocus(because reason: String) {
+    func letGoOfFocus(because reason: String) {
         guard let run = focusRun else { return }
         focusRun = nil
         run.timer?.invalidate()
@@ -1781,38 +1783,6 @@ final class LiveInk {
                 self.inking.forEach { $0.overlay.endStroke() }
                 self.finishInking()
             }
-        }
-    }
-
-    // MARK: The pointer field
-
-    /// The pointer field's delay passed, or a press came first: the field shows, and listening starts.
-    private func showFieldForChord() {
-        fieldTimer?.invalidate()
-        guard !chordShowsField else { return }
-        chordShowsField = true
-        holdField()
-        // Not before the field, so a chord on its way to a shortcut ends no tour, captures nothing and
-        // says nothing. Screen Recording is what a note reads the window with, so say so before any ink.
-        letGoOfFocus(because: "ink")
-        InkBackdrop.shared.refresh()
-        if !ScreenRecording.granted {
-            let mouse = NSEvent.mouseLocation
-            let pointer = CGPoint(x: mouse.x, y: StateReport.primaryHeight - mouse.y)
-            (inking.first { $0.overlay.globalFrame.contains(pointer) } ?? inking.first)?.overlay.showNotice(Self.screenRecordingNotice, at: pointer)
-        }
-        // The field goes to the screen first, so making the recognizer on this thread never holds it back.
-        CATransaction.flush()
-        listen()
-    }
-
-    /// Holds the pointer field up, in the current settings, on the surfaces taking ink while the chord
-    /// shows it, and lets it go on every other surface.
-    private func holdField() {
-        let ui = Settings.shared.motionUI
-        let held = chordShowsField ? inking : []
-        for surface in surfaces {
-            surface.overlay.holdField(held.contains { $0 === surface }, ui: ui)
         }
     }
 

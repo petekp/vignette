@@ -6,6 +6,9 @@ import AppKit
 final class FocusReturn {
     static let shared = FocusReturn()
     private(set) var previousApp: NSRunningApplication?
+    /// When `restore` last handed the keys to `previousApp`, in seconds of system uptime. The app's
+    /// activation follows, and tells nobody it was not the person's.
+    private(set) var handedBackAt: TimeInterval?
     /// Vignette's own titled window (Settings, setup, the tweaks) that was key when the stack or the
     /// annotator came up. Closing those goes back to it; going to another app forgets it.
     private weak var ownWindow: NSWindow?
@@ -50,6 +53,7 @@ final class FocusReturn {
         // A non-activating panel takes the keys while that app stays frontmost, and activating a
         // frontmost app leaves the keys with Vignette; letting go hands them back.
         if NSWorkspace.shared.frontmostApplication == app { NSApp.deactivate() } else { app.activate() }
+        handedBackAt = ProcessInfo.processInfo.systemUptime
         Log.write("[focus] \(reason): returned to \(app.localizedName ?? "?")")
     }
 }

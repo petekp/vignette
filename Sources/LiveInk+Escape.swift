@@ -50,6 +50,7 @@ extension LiveInk {
     /// what the snapshot reads, whatever made it.
     func holdEscape() {
         endEscapeAfterReleaseWhenDone()
+        guard escapeRepeats == nil else { return }
         let step = LiveEscape.next(escapeSnapshot)
         let modifiers = step == .cancelHold && chord?.isHeld == true
             ? HotKeySpec.carbonModifiers(Settings.shared.data.liveInkChordChoice.flags) : 0
@@ -63,7 +64,7 @@ extension LiveInk {
     /// Esc: the first step that applies, one per press. The hotkey takes the press while it is held;
     /// the note and the Reply field come here for a press before it is.
     func escape() {
-        guard let step = LiveEscape.next(escapeSnapshot) else { return }
+        guard escapeRepeats == nil, let step = LiveEscape.next(escapeSnapshot) else { return }
         Log.write("[live-ink] esc \(step.rawValue)")
         switch step {
         case .cancelHold:
@@ -123,6 +124,21 @@ extension LiveInk {
         closeEmpty(fade: LiveMarksLayer.removalFade)
         if note?.hasKeys != true { FocusReturn.shared.restore(reason: "live ink hold cancelled") }
         Log.write("[live-ink] hold cancelled marks=\(ink.count)")
+        swallowEscapeRepeats()
+    }
+
+    /// The Esc that cancelled the hold may still be down, repeating. Until it comes up, the key held
+    /// stays as it is, with the chord's modifiers, and every Esc does nothing, so the repeats neither
+    /// reach the front app nor back out of more.
+    private func swallowEscapeRepeats() {
+        escapeRepeats?.invalidate()
+        escapeRepeats = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !Self.escapeIsDown else { return }
+                self.escapeRepeats?.invalidate()
+                self.escapeRepeats = nil
+            }
+        }
     }
 
     // MARK: Right after the release
