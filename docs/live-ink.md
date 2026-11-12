@@ -136,8 +136,8 @@ The names in brackets are `// MARK:` sections.
 - Esc backs out of live ink one step per press, the first of these that applies (`LiveEscape.next`,
   a pure function of what is up; `LiveEscapeTests`):
   0. Cancel the hold (`cancel-hold`, `LiveInk.cancelHold`), while the chord is held or a stroke
-     outlives it: nothing is sent, this hold's ink fades as a discarded note's, listening and
-     the microphone stop, and a note opened in the hold closes. One from before stays as it was.
+     outlives it: nothing is sent, this hold's ink and stroke fade as a discarded note's, listening and
+     the microphone stop, and a note opened in the hold closes. One from before stays.
      An erase or a pick in the hold is not undone.
   1. Discard the note (`discard-note`), while it has the keys or right after the release: listening
      stops and its ink, which no ask has been about, goes. Or close Reply's field, keeping its draft.

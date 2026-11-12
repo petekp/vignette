@@ -24,10 +24,10 @@ final class LiveInk {
     /// Runs while a stroke outlives the chord, until the button is up: inking ends then.
     private(set) var releaseWatch: Timer?
     /// Takes the pointer's events while inking, so no app hears them (`LiveInkTap`).
-    private var tap: LiveInkTap?
+    var tap: LiveInkTap?
     /// The surface the press under way began on, which takes its drags and its release, as the window
     /// server sends them to the window that took the press.
-    private var pressedSurface: Surface?
+    var pressedSurface: Surface?
     /// Runs after ⌘⇧ while there are marks, looking for macOS's window picker.
     var pickerWatch: Timer?
     var pickerWatchUntil = Date.distantPast
@@ -1598,6 +1598,8 @@ final class LiveInk {
         chordShowsField = false
         holdField()
         stopTap()
+        // Every screen's part of a stroke under way fades before any screen hides its pen.
+        inking.forEach { $0.overlay.fadePen() }
         inking.forEach { $0.overlay.setInking(false) }
         let raised = inking
         inking = []
@@ -1608,46 +1610,6 @@ final class LiveInk {
         }
         closeEmpty(fade: 0)
         Log.write("[live-ink] stopped: \(reason)")
-    }
-
-    /// Takes the pointer's events while inking lasts, or leaves them to the overlays when macOS refuses.
-    private func startTap(since began: Date) {
-        guard tap == nil else { return }
-        tap = LiveInkTap.start { [weak self] input in self?.tapped(input) }
-        tap?.onTurnedOff = { [weak self] in self?.inking.forEach { $0.overlay.tapTakesPresses = false } }
-        inking.forEach { $0.overlay.tapTakesPresses = tap != nil }
-        let ms = Int(Date().timeIntervalSince(began) * 1000)
-        Log.write(tap == nil ? "[live-ink] error tap refused by macOS; the overlay takes the presses" : "[live-ink] tap on ms=\(ms)")
-    }
-
-    private func stopTap() {
-        pressedSurface = nil
-        inking.forEach { $0.overlay.tapTakesPresses = false }
-        guard let tap else { return }
-        tap.stop()
-        self.tap = nil
-        Log.write("[live-ink] tap off")
-    }
-
-    /// An event the tap took: a press goes to the surface under it, and that surface takes the rest of
-    /// the stroke, wherever the pointer goes; a move goes to the surface under the pointer.
-    private func tapped(_ input: LiveInkOverlay.Input) {
-        // The gel is lit from the pointer, and its own watch hears no move the tap takes.
-        if InkClock.shared.showsInk { InkClock.shared.wake() }
-        let under = { (point: CGPoint) in self.inking.first { $0.overlay.globalFrame.contains(point) } }
-        switch input {
-        case .pressed(let point):
-            pressedSurface = under(point)
-            pressedSurface?.overlay.take(input)
-        case .dragged:
-            pressedSurface?.overlay.take(input)
-        case .released:
-            let surface = pressedSurface
-            pressedSurface = nil
-            surface?.overlay.take(input)
-        case .moved(let point):
-            under(point)?.overlay.take(input)
-        }
     }
 
     private func strokeMoved(_ points: [CGPoint]) {
