@@ -425,7 +425,6 @@ final class AnnotatorToolbar {
         let menu = NSMenu()
         menu.autoenablesItems = false
         let sessions = SessionMenu.menu(model.destinations + model.startable, destination: target)
-        targetMenuActions.open = (menu, sessions)
         let search = SessionMenu.add(sessions, to: menu) { row in
             let item = SessionMenu.item(for: row, selected: row.id == target?.id)
             item.target = self.targetMenuActions
@@ -433,8 +432,9 @@ final class AnnotatorToolbar {
             item.representedObject = row.destination
             return item
         }
+        targetMenuActions.open = (menu, sessions, search)
         let below = hosting.isFlipped ? frame.maxY + 4 : hosting.bounds.height - frame.maxY - 4
-        withExtendedLifetime(search) { _ = menu.popUp(positioning: nil, at: NSPoint(x: frame.minX, y: below), in: hosting) }
+        _ = menu.popUp(positioning: nil, at: NSPoint(x: frame.minX, y: below), in: hosting)
     }
 
     /// Centers the toolbar under `frame`, `gap` points below it. A bar that is already up — one

@@ -79,6 +79,8 @@ final class SessionMenuSearch: NSObject, NSSearchFieldDelegate {
     private let field = NSSearchField()
     /// Where the rows start: after the search row and whatever the menu held before it.
     private var start = 0
+    /// Whether a query is typed, so the rows below are its matches.
+    var isSearching: Bool { !field.stringValue.trimmingCharacters(in: .whitespaces).isEmpty }
 
     init(sessions: SessionMenu.Menu, menu: NSMenu, make: @escaping (SessionMenu.Row) -> NSMenuItem) {
         self.sessions = sessions

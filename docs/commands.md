@@ -125,7 +125,7 @@ line, `[send] menu top=<rows> list=top|project|search [submenu=<n>] [rows=<rows>
 row=<n>`, says where the pick was made:
 
 - `top` holds the menu's first rows, up to five, and is empty with no session running.
-- `list=top` means the pick came from those rows, with or without a search that left the same rows.
+- `list=top` means the pick came from those rows, with no search typed.
 - `list=project` is the `submenu`-th project submenu, counted from the top.
 - `list=search` is the rows a search left.
 - `rows` is that list when it is not `top`, and `row` is the picked row's place in it, from 1.

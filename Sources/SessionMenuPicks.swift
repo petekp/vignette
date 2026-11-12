@@ -4,8 +4,8 @@ import AppKit
 @MainActor
 final class TargetMenuActions: NSObject {
     var onPick: ((AgentDestination, _ menuLine: String?) -> Void)?
-    /// The menu open now and the rows it was built from.
-    var open: (root: NSMenu, sessions: SessionMenu.Menu)?
+    /// The menu open now, the rows it was built from, and its search, which must live while it is open.
+    var open: (root: NSMenu, sessions: SessionMenu.Menu, search: SessionMenuSearch)?
 
     @objc func pick(_ item: NSMenuItem) {
         if let destination = item.representedObject as? AgentDestination { onPick?(destination, menuLine(picking: item)) }
@@ -24,7 +24,7 @@ final class TargetMenuActions: NSObject {
         if list !== open.root {
             let submenus = open.root.items.compactMap(\.submenu)
             line += " list=project submenu=\((submenus.firstIndex { $0 === list } ?? -1) + 1) rows=\(names(rows))"
-        } else if rows.map(\.id) == top.map(\.id) {
+        } else if !open.search.isSearching {
             line += " list=top"
         } else {
             line += " list=search rows=\(names(rows))"
