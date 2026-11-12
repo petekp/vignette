@@ -86,7 +86,7 @@ extension ThumbnailController {
     /// column that removals made too short to let pictures go still takes back the ones it let go.
     func keepPictures() {
         let recentCount = Settings.shared.data.recentCount
-        pictures.dropped.formIntersection(model.cards.map(\.id))
+        if !pictures.dropped.isEmpty { pictures.dropped.formIntersection(model.cards.map(\.id)) }
         let letsPicturesGo = model.cards.count > max(CardPictures.keptAlways, recentCount)
         guard visible, letsPicturesGo || !pictures.dropped.isEmpty else { return }
         let held: Set<UUID> = model.outCards.union(model.forming).union(model.selection)
@@ -112,7 +112,8 @@ extension ThumbnailController {
         if let image = Thumbnailer.cached(at: url, maxPixel: maxPixel, space: screenSpace) { return arrive(image, for: card.id) }
         pictures.asked.insert(card.id)
         Thumbnailer.loadCard(at: url, maxPixel: maxPixel, space: screenSpace, caches: false) { [weak self] image, _ in
-            guard let self, self.pictures.asked.contains(card.id), let image else { return }
+            guard let self, self.pictures.asked.contains(card.id) else { return }
+            guard let image else { self.pictures.dropped.remove(card.id); return }
             self.pictures.asked.remove(card.id)
             self.arrive(image, for: card.id)
         }

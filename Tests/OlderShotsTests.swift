@@ -86,8 +86,9 @@ final class CardPicturesTests: XCTestCase {
         let controller = ThumbnailController()
         let layout = StackLayout.current
         let point = NSSize(width: 1512, height: 982)
+        let short = max(CardPictures.keptAlways, Settings.shared.data.recentCount)
         var cards: [Card] = []
-        for i in 0..<130 {
+        for i in 0..<(short + 31) {
             let name = "Screenshot \(i).png"
             let url = folder.appendingPathComponent(name)
             try png(CGFloat(i % 10) / 10).write(to: url)
@@ -100,13 +101,16 @@ final class CardPicturesTests: XCTestCase {
         controller.keepPictures()
         let dropped = Set(controller.model.cards.filter { $0.image == nil }.map(\.id))
         XCTAssertGreaterThanOrEqual(dropped.count, 30)
-        let newest = Set(controller.model.cards.prefix(31).map(\.id))
+        let newest = Set(controller.model.cards.prefix(32).map(\.id))
         XCTAssertTrue(newest.isDisjoint(with: dropped))
-        controller.model.removeCards { newest.contains($0.id) }
-        XCTAssertEqual(controller.model.cards.count, 99)
-        guard let index = controller.model.cards.firstIndex(where: { dropped.contains($0.id) }) else { return XCTFail("no dropped card") }
-        controller.model.scroll = layout.cardSpan(index: index, cards: controller.cardSizes).bottom
-        let id = controller.model.cards[index].id
+        let staying = controller.model.cards.filter { !newest.contains($0.id) }
+        guard let index = staying.firstIndex(where: { dropped.contains($0.id) }) else { return XCTFail("no dropped card") }
+        let id = staying[index].id
+        controller.model.scroll = layout.cardSpan(index: index, cards: staying.map { layout.drawn($0.size) }).bottom
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        XCTAssertNil(controller.model.cards.first(where: { $0.id == id })?.image)
+        controller.removeCards { newest.contains($0.id) }
+        XCTAssertEqual(controller.model.cards.count, short - 1)
         let deadline = Date().addingTimeInterval(3)
         while Date() < deadline, controller.model.cards.first(where: { $0.id == id })?.image == nil {
             RunLoop.main.run(until: Date().addingTimeInterval(0.02))

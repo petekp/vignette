@@ -49,11 +49,11 @@ Reads the screenshots older than the column's oldest card, one chunk of `recentC
 
 ### CardPictures (implicit)
 
-Owner: `CardPictures.swift:9`, held as `ThumbnailController.pictures` (`ThumbnailController.swift:49`); the controller's `keepPictures` (`ThumbnailController+Older.swift:87`), `askPicture` (`ThumbnailController+Older.swift:109`) and `arrive` (`ThumbnailController+Older.swift:121`) run it. Tests: `CardPicturesTests`, which covers `CardPictures.plan`, and of the controller's side only a column that shrank taking its pictures back.
+Owner: `CardPictures.swift:9`, held as `ThumbnailController.pictures` (`ThumbnailController.swift:49`); the controller's `keepPictures` (`ThumbnailController+Older.swift:87`), `askPicture` (`ThumbnailController+Older.swift:109`) and `arrive` (`ThumbnailController+Older.swift:122`) run it. Tests: `CardPicturesTests`, which covers `CardPictures.plan`, and of the controller's side only a column that shrank taking its pictures back.
 
 Lets the cards far from the view drop their pictures and takes them back as the view comes near, so a column as long as the folder does not hold every picture. A card holds a picture when `image != nil` or its picture is waiting in `arrived`.
 
-**States**, per card: holding, dropped, asked (`asked`, `CardPictures.swift:39`: the picture is being decoded, or failed to decode) and arrived (`arrived`, `CardPictures.swift:41`: decoded, and waiting for the arrival window to end). Per column: `dropped` (`CardPictures.swift:43`) holds the cards in the column that are dropped. `asked`, `dropped` and `arrived` are emptied by `reset` (`CardPictures.swift:50`).
+**States**, per card: holding, dropped, asked (`asked`, `CardPictures.swift:39`: the picture is being decoded, or failed to decode) and arrived (`arrived`, `CardPictures.swift:41`: decoded, and waiting for the arrival window to end). Per column: `dropped` (`CardPictures.swift:45`) holds the cards in the column that are dropped. `asked` and `arrived` are emptied by `reset` (`CardPictures.swift:52`). `dropped` outlasts it, since `present` keeps the cards on screen by id, a reversed dismissal the whole column, and `keepPictures` trims it to the column's cards.
 
 **Transitions**
 
@@ -68,10 +68,10 @@ Lets the cards far from the view drop their pictures and takes them back as the 
 | dropped, in `Thumbnailer`'s cache | `askPicture` | arrived | `arrive` at once, with the cached picture |
 | dropped, not cached | `askPicture` | asked | decodes off the main thread (`Thumbnailer.loadCard`, `caches: false`) |
 | asked | the decode answers with a picture, `asked` still has the card | arrived | `asked` loses the card |
-| asked | the decode answers with no picture | asked | stays asked, so it is not asked for again in this column |
+| asked | the decode answers with no picture | asked | stays asked, so it is not asked for again in this column; `dropped` loses the card (`ThumbnailController+Older.swift:116`) |
 | asked | the decode answers after `reset` | — | dropped at the `asked` check |
 | arrived | `arrivalWindow` (0.05 s) ends | holding | every picture that arrived in the window goes to its card in one update; `arrived` is emptied and `dropped` loses those cards |
-| any | `reset` | `asked = []`, `dropped = []`, `arrived = [:]` | — |
+| any | `reset` | `asked = []`, `arrived = [:]` | `dropped` is kept |
 
 The cards a person is using keep their pictures wherever they are: the newest `recentCount`, those in the annotator or a stitch (`outCards`, `forming`), the selection, and the pressed, dragged, hovered and focused card (`held`, `ThumbnailController+Older.swift:92-98`). A flight out of the column carries the card's picture.
 
@@ -87,7 +87,7 @@ The cards a person is using keep their pictures wherever they are: the newest `r
 
 **Late and concurrent answers**
 
-- A decode that answers after the card left the column still reaches `arrive`; the window's update ignores an id with no card (`ThumbnailController+Older.swift:128`).
-- `keepPictures` also runs on every `columnMoved`, at the end of `addOlder` when the chunk made cards, and after every removal from a visible column (`ThumbnailController.removeCards(where:)`), whose cards above slide down with no scroll.
+- A decode that answers after the card left the column still reaches `arrive`; the window's update ignores an id with no card (`ThumbnailController+Older.swift:129`).
+- `keepPictures` also runs at the end of `present` once the panel is laid out (`ThumbnailController.swift:1361`), on every `columnMoved`, at the end of `addOlder` when the chunk made cards, and after every removal from a visible column (`ThumbnailController.removeCards(where:)`), whose cards above slide down with no scroll.
 - A card from a new chunk has no picture while its first decode (`makeCard`, `ThumbnailController.swift:1255`) is pending, and is not in `asked`. In a column longer than `max(keptAlways, recentCount)`, `keepPictures` at the end of `addOlder` finds it within `near` and asks again, so it is decoded twice.
 - A card in `arrived` counts as holding. If it is in a dropped batch, the drop does nothing to it, and the arrival window then gives it its picture far from the view.

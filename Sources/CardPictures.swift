@@ -39,7 +39,9 @@ final class CardPictures {
     /// Cards whose picture is being decoded, or failed to decode, so the next plan does not ask again.
     var asked: Set<UUID> = []
     /// Cards in the column that let their picture go and have not had it back. While there are any,
-    /// a column too short to let pictures go is still planned, so it takes them back.
+    /// a column too short to let pictures go is still planned, so it takes them back. It outlasts
+    /// `reset`, since a new column keeps the cards on screen by id, and a plan trims it to the
+    /// column's cards. A card whose picture does not decode leaves it, as it is not asked again.
     var dropped: Set<UUID> = []
     /// Pictures decoded in the last `arrivalWindow`, given to the cards in one change.
     var arrived: [UUID: NSImage] = [:]
@@ -49,7 +51,6 @@ final class CardPictures {
 
     func reset() {
         asked = []
-        dropped = []
         arrived = [:]
     }
 }
