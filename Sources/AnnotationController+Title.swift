@@ -18,22 +18,6 @@ extension AnnotationController {
         titleView.place(above: frame.offsetBy(dx: -win.frame.minX, dy: -win.frame.minY), wrap: wrap, ui: ui)
     }
 
-    /// Plays the title with a zoom step on layers: above each keyframe's frame, where `placeTitle`
-    /// puts it, wrapped as it is at the step's end.
-    func playTitle(_ step: ZoomKeyframes, frameRate: Float) {
-        guard titleView.title != nil, let win = window, let layer = titleView.layer else { return }
-        let ui = Settings.shared.data.ui, size = titleView.frame.size
-        let positions = step.frames.map { frame -> NSValue in
-            let origin = AgentTitleView.origin(above: frame.offsetBy(dx: -win.frame.minX, dy: -win.frame.minY), ui: ui)
-            return NSValue(point: NSPoint(x: origin.x + layer.anchorPoint.x * size.width, y: origin.y + layer.anchorPoint.y * size.height))
-        }
-        layer.add(step.animation("position", positions, on: layer, frameRate: frameRate), forKey: ZoomKeyframes.key("position"))
-    }
-
-    func stopTitle() {
-        titleView.layer?.removeAnimation(forKey: ZoomKeyframes.key("position"))
-    }
-
     /// Picks the title's ink for where the block is now. With Screen Recording, from the screen
     /// behind the block, read off the main thread, under the dim. Without it, from the system
     /// appearance: Vignette cannot see other apps' windows then, and a light appearance mostly

@@ -43,11 +43,6 @@ final class AnnotationController {
     /// not land on the same display frame, and the picture would drift from the frame between them.
     var frameView: NSView?
     var container: NSView?
-    /// The thin white line round the frame (`FrameRing`).
-    var ring: FrameRing?
-    /// The zoom step Core Animation is playing, from its start until the spring arrives or another
-    /// input takes the zoom back to the ticks (`AnnotationController+LayerZoom.swift`).
-    var layerStep: ZoomKeyframes?
     var zoomScreen: NSScreen?
     /// The shot in the editor, from `prepare` until `hide` parks it. Not the session: see AnnotatorTransition.
     var current: Screenshot?
@@ -171,7 +166,6 @@ final class AnnotationController {
         titleView.set(titleView.title, ui: ui)
         if let frame = frameOnScreen { placeTitle(frame: frame) }
         applyRing()
-        if !ui.coreAnimationPlaysZoomSteps { stopPlayingOnLayers() }
         measureTitleInk()
         editor.noteSettleDuration = Settings.shared.motionUI.noteSettleDuration
     }

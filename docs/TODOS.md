@@ -182,8 +182,3 @@ Waits on two things, either way:
 - A stitch draws a piece with an orientation flag unturned, and skips that piece's marks, because
   the drawing's size is the turned one. `Rendering` applies the flag; `Stitch` does not. Only an
   image pushed through `add` can carry one: screenshots never do. Pete, 2026-09-23: left for now.
-- The stack's narrowing for the editor, and its widening back, lay out every card on every frame,
-  though only about six are in view. Measured on 2026-09-26: a Release build drops at most one frame
-  per narrowing, and a Debug build up to four. Holding the hover still made no difference. Laying
-  out only the cards in view is what is left (`docs/stack-narrowing-2026-09-23.md`, option B, and
-  `docs/prerelease-fixes-2026-09-26.md`).

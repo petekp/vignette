@@ -70,6 +70,19 @@ final class MotionTests: XCTestCase {
                                     Anim.settle(duration, bounce: 0, distance: 1138, within: 0.5),
                                     "a spring that does not overshoot never covers early")
         XCTAssertEqual(Anim.passesTarget(0, bounce: bounce), 0, "motion off covers and arrives in the same turn")
+        let springCovers = FlightTiming.spring.covers(duration, distance: 1138, within: 0.5)
+        XCTAssertLessThanOrEqual(FlightTiming.quickSpring.covers(duration, distance: 1138, within: 0.5), springCovers + 1.0 / 120,
+                                 "the quick spring brings the editor's window up no later than the spring")
+        XCTAssertLessThanOrEqual(FlightTiming.quickSpring.settles(duration, distance: 1138, within: 0.5),
+                                 FlightTiming.spring.settles(duration, distance: 1138, within: 0.5),
+                                 "and lands no later")
+        for timing in FlightTiming.allCases {
+            let covered = timing.covers(duration, distance: 1138, within: 0.5)
+            XCTAssertGreaterThanOrEqual(timing.settles(duration, distance: 1138, within: 0.5), covered + 0.05 - 1e-9,
+                                        "\(timing) lands at least three refreshes after it covers, so the stack's panel is up")
+            XCTAssertEqual(timing.covers(0, distance: 1138, within: 0.5), 0)
+            XCTAssertEqual(timing.settles(0, distance: 1138, within: 0.5), 0)
+        }
     }
 
     // MARK: The flight curve

@@ -84,6 +84,7 @@ struct UITweaks: Codable, Equatable {
     var flightArc = 0.15             // how far the path bows, as a fraction of its length
     var flightArcMax = 240.0         // the bow never exceeds this many points
     var flightDepth = 0.07           // how much larger the card is in the middle of the path
+    var flightTiming = "quickSpring" // quickSpring, spring, springNoBounce: how a flight moves and comes to rest (FlightTiming)
     var motion = 1.0                 // multiplier on every animation, 0 to 1; Reduce Motion forces 0
     // Backdrop
     var backdropWidth = 180.0
@@ -114,10 +115,6 @@ struct UITweaks: Codable, Equatable {
     var agentTitleFade = 0.15        // in after the flight lands, out as it flies home
     var zoomEdgeBandPoints = 250.0   // how far from each edge of the picture a zoom holds that edge
     var zoomEdgePull = 0.6           // the part of that band in which the edge is held exactly
-    // The frame's ring while a zoom resizes the frame (`FrameRing`, `ZoomKeyframes`)
-    var ringFadesWhileZooming = false
-    var ringOutsideImage = false     // cards and flights draw theirs outside too, so each handover matches
-    var coreAnimationPlaysZoomSteps = false   // the zoom keys and the double-click; a pinch or a scroll keeps the tween
     // The editor (`EditorMetrics`): screen pt, the same size at any zoom, unless it says otherwise
     var dragDistance = 4.0           // how far a press travels before it is a drag
     var hitMargin = 4.0              // added to a stroke's half-width to make its hit band
