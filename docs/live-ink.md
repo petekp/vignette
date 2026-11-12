@@ -137,16 +137,15 @@ The names in brackets are `// MARK:` sections.
   a pure function of what is up; `LiveEscapeTests`):
   0. Cancel the hold (`cancel-hold`, `LiveInk.cancelHold`), while the chord is held or a stroke
      outlives it: nothing is sent, this hold's ink fades as a discarded note's does, listening and
-     the microphone stop, and a note opened in the hold closes. A note from before stays as it was.
+     the microphone stop, and a note opened in the hold closes. One from before stays as it was.
      An erase or a pick in the hold is not undone.
   1. Discard the note (`discard-note`), while it has the keys or right after the release: listening
      stops and its ink, which no ask has been about, goes. Or close Reply's field, keeping its draft.
   2. Stop the newest ask under way or waiting its turn (`LiveInk.cancelAsk`, `LiveAsks.cancellable`),
-     one per press. Its sent note and any reply leave. After an ask sent with Return (`cancel-ask`)
-     ink that was new is new again (`LiveAsks.Event.cancelled`), and the note opens on it with the keys
-     and the ask's words (`LiveAsks.Effect.reopenNote`); a note up already takes the keys and keeps
+     one per press. Its note and any reply leave. After an ask sent with Return (`cancel-ask`)
+     ink that was new is new again, and the note opens on it with the keys and the ask's words; a note up already takes the keys and keeps
      its words. An ask `liveInkSendWhenQuiet` sent (`discard-ask`,
-     `LiveAsks.Ask.sentOnRelease`) takes its new ink and words with it, and no note opens. A follow-up
+     `LiveAsks.Ask.sentOnRelease`), or one with no ink, takes its ink and words with it: no note opens. A follow-up
      from a button puts the earlier answer back as it was, even once its reply has started to stream.
      Nothing says the ask failed. Stopping the ask the responder is answering interrupts its turn
      (`LiveResponder.cancel`), and the next ask waiting goes. An ask to a session is a step only with a
@@ -159,8 +158,8 @@ The names in brackets are `// MARK:` sections.
   5. Clear what is left, as `clear()` does, which also ends the conversation.
 
   After a release that opens or keeps the note, steps 1 and 2 apply wherever the pointer is, to a
-  note without the keys too (`LiveEscapeAfterRelease`), until a mouse press off the ink, another
-  app becoming active (not the app the keys go back to), or no note or stoppable ask is left. Otherwise steps 2 to 5 apply only
+  note without the keys too (`LiveEscapeAfterRelease`), until a press off the ink, a switch to
+  another app (not the one the keys return to), or nothing is left to stop. Otherwise steps 2 to 5 apply only
   while the pointer is on a mark or a reply on the active Space (`LiveInk.pointerIsOnInk`), and none
   while the note is up without the keys, since the keys are in another app.
 
@@ -294,7 +293,8 @@ The names in brackets are `// MARK:` sections.
   does it when the chord is let go (`[focus] live ink …: returned to …`). Under the words
   is its target: the agent's logo and the project, on a button that opens the list of targets, as
   Down does. Return asks about the ink no ask has been about, or, with none, about the
-  ink asked about last. A follow-up from an answer's button or its Reply field is about the ink asked
+  ink asked about last, or by the pointer, about the window under
+  it. A follow-up from an answer's button or its Reply field is about what its ask was
   about, never the note's ink, and the note stays with its words. ⌘⌫ deletes the typed line, as in any text field. Its target starts on the one picked last, else a
   responder (`docs/live-ink-responders.md` says which), and lists the sessions Send lists after the
   responders. Tab picks the next target in that list and
@@ -332,13 +332,13 @@ The names in brackets are `// MARK:` sections.
 - With `liveInkSpeech` on, live ink listens while the person draws
   (`docs/live-ink-speech-input-2026-10-06.md`). Listening starts when the pointer field shows, so the chord on
   its way to a shortcut never turns the microphone on, and a press of the chord while it listens goes
-  on with the same listening, so "this" and "that" in two strokes are one note. Ink drawn
-  then opens the note, with the words as said (`docs/live-ink-voice.md`). A key typed in it ends
+  on with the same listening, so "this" and "that" in two strokes are one note. The first word heard
+  opens the note by the pointer, and ink moves it there (`docs/live-ink-voice.md`). A key typed in it ends
   listening and keeps the words; Esc, an ask and clearing drop them. Standing aside stops listening,
   and the note keeps what it heard. Words already in the note when listening starts stay, and what is
   said then does not replace them. `ListeningEnd`
   decides the end: listening stops 0.3 s after the chord is let go, and never past 60 s; words heard
-  by then wait for the note. With `liveInkSendWhenQuiet`, the final words are sent as Return sends them. Speech is
+  by then wait for the note. With `liveInkSendWhenQuiet` and ink, the final words are sent as Return sends them. Speech is
   turned into words on the Mac only: `Transcriber` is the interface every engine conforms to,
   `SpeechEngine.make` picks one, and `AppleTranscriber` refuses to run without an on-device model
   rather than send audio to Apple. The Settings switch asks for the microphone and speech

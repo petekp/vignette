@@ -26,6 +26,8 @@ extension LiveResponder {
     means ink 2. The numbers are Vignette's; never mention them.
 
     Answer what they asked about the thing their ink points at. With no note, say what matters about it. \
+    When `ink` is empty, they asked without drawing, with their pointer on this window: answer their \
+    note about the window in the picture. \
     Be specific and brief: one to three short sentences in `say`, plain text, no Markdown. `say` takes \
     the place of their note as the reply to it, beside your first mark; with labelled marks, it ties them \
     together and does not repeat the labels. List marks in reading order, top to bottom. Point with \

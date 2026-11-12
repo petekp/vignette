@@ -34,8 +34,13 @@ Esc while the chord is held cancels the hold: the microphone stops, the words he
 opened in this hold closes with the ink drawn in it (`docs/live-ink.md`, the Esc rule).
 
 Let go with words and no ink, and the note stays by the pointer with the keys and the words. It
-sends nothing on its own, and `liveInkSendWhenQuiet` waits for ink. An ask is about ink, so Return
-there beeps and keeps the note; a stroke drawn on a later hold moves the note to it. Esc closes it.
+sends nothing on its own: `liveInkSendWhenQuiet` waits for ink. Return asks about the window under
+the pointer where the chord was let go, with that window's picture and no strokes. Vignette's own
+windows never count, so with the pointer on the note it is the window under the note, and with no
+window there, the desktop. The answer's conversation takes the note's place, and its marks go on that
+window. To an agent session, Return sends a card of that window with the words and no strokes. With
+no words left, Return closes the note. A stroke drawn on a later hold moves the note to it, and
+Return then asks about the ink. Esc closes the note, and one Esc stops its ask with no note to reopen.
 With nothing heard and no ink, nothing opens. When inking is cut short, by sleep or a screen
 change, or the stack or the annotator comes up, a note by the pointer closes.
 

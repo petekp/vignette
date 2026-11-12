@@ -26,6 +26,7 @@ extension LiveAsks.Ask {
     var stateJSON: [String: Any] {
         var json: [String: Any] = ["id": id, "phase": phase.rawValue, "about": about.count, "picture": picture, "toSession": toSession]
         if let reason { json["reason"] = reason }
+        if spot != nil { json["atPointer"] = true }
         if let say, case .text(let text) = say.geometry { json["sayLength"] = text.text.count }
         return json
     }

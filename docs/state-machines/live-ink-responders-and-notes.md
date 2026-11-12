@@ -253,7 +253,7 @@ The note panel a person types into. Created at `showNote` (`LiveInk.swift:616`).
 | created | `reveal` | `revealed` | fade in |
 | `revealed` | `send` (Return) with words | `sent` | letter fades, keys returned |
 | `revealed` | `send` with empty words | `closing` | `dismiss` |
-| `revealed` | `send` with words, no ink (`mayAsk`) | `revealed` | beep |
+| `revealed` | `send` with words, no ink, not by the pointer (`mayAsk`) | `revealed` | beep |
 | `sent` | `handOver(when:)` | `closing`, `handingOver` | delayed `ready`, then close |
 | `handingOver` | `fadeAway` | `closing`, `handingOver = false` | closes; the delayed `ready` does not run (392, `guard handingOver` at 380) |
 | any | `dismiss` | `closing` | closes |

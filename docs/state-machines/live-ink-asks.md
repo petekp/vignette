@@ -14,7 +14,7 @@ Tracks every ask from the moment ink is sent until its answer is closed. `LiveIn
 - `asking`: with the responder, or pending in it.
 - `answered`, `failed`: settled. They stay until closed. `isUnderWay` (line 54) is the first three.
 
-Per ask also: `toSession` (never waits and is never sent to the responder; its phase stays `looking` from `begin` until `sentToSession`, `failed`, `cancelled` or `cleared`), `fresh`, `sentOnRelease` (sent by `liveInkSendWhenQuiet`; never on a follow-up), `about`, `say`, `leader`, `actions`, `picked`, `draft`, `findings`, `reason`, `picture`.
+Per ask also: `toSession` (never waits and is never sent to the responder; its phase stays `looking` from `begin` until `sentToSession`, `failed`, `cancelled` or `cleared`), `fresh`, `sentOnRelease` (sent by `liveInkSendWhenQuiet`; never on a follow-up), `spot` (the pointer, for an ask with no ink; `[state]` `atPointer`), `about`, `say`, `leader`, `actions`, `picked`, `draft`, `findings`, `reason`, `picture`.
 Per mark (`Record`, line 77): `roles` (`asked`, `noteInk`), `answer: Ask.ID?`, `finishing`. A record with no roles is deleted.
 Side tables: `picks[askID]` (the answer a picked button was picked under, plus `aside`), `withdrawn` (session asks Esc stopped before their send was stored), `lastID` (never reset, so ids are never reused, not even after `cleared`).
 
@@ -32,7 +32,7 @@ Side tables: `picks[askID]` (the answer a picked button was picked under, plus `
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| (new) | `begin` | `looking` | `ended(...)` for a follow-up's replaced answer (`began`); `refused(.noInk)` with `restore` when following |
+| (new) | `begin` | `looking` | `ended(...)` for a follow-up's replaced answer (`began`); with `at` a pointer, or following an answer to such an ask, `began` with no ink and `spot` set; `refused(.noInk)` with `restore` when following |
 | `looking`, responder ask | `packetCame` | `waiting` | `sendNext` may then make it `asking` with `send(id)` |
 | `looking`, session ask | `packetCame` | `looking` | `share(about)` |
 | `waiting`, `asking`, `answered`, `failed`, ended | `packetCame` | — (ignored, line 403) | — |
@@ -56,6 +56,7 @@ Side tables: `picks[askID]` (the answer a picked button was picked under, plus `
 - What comes back for an ask no longer under way changes nothing. Checked by: the same test, `testAReplyAndAnAnswerFromADismissedAskAreDropped`, `testAPacketFromAClearedAskIsDroppedAndTheNextAskTakesItsOwn`.
 - `interrupt` is emitted only for the ask the responder has. Checked by: the same test, `testEscStopsTheNewestAskFirstAndTheResponderOnlyForTheOneItHas`.
 - Esc on an ask sent on release gives no ink back to the note: its new ink is removed. Checked by: `LiveAsksSentOnReleaseTests`.
+- An ask with no ink has a `spot`, the point its picture is taken under, and an ask following its answer keeps it. Esc on it opens no note. Without a pointer, no ink is still refused. Checked by: `LiveAsksWithoutInkTests`.
 - A session ask Esc stopped has its first arrival swallowed and a stored note withdrawn. Checked by: `testStoppingASessionAskWithdrawsItsNoteIfItIsStoredAfterAll`, `testStoppingASessionAskBeforeItsPacketSendsNothing`.
 - An erased mark loses its roles and its finish; asks under way are unchanged. Checked by: `testAnErasedMarkLosesItsRolesAndItsFinish`.
 - Overlapping finish timers: the first ends the marks. Checked by: `testAnOverlappingFinishIsEndedByTheFirstTimer`, `testAFinishAfterAClearDoesNothing`.

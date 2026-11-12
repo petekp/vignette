@@ -96,7 +96,7 @@ Esc backs out of live ink one step per press. `LiveEscape.next(Snapshot)` is pur
 | note has keys, or note without keys and `justLetGo` | Esc | step `discardNote` | note discarded |
 | note without keys, not `justLetGo` | any | no step | Esc goes to the app |
 | Reply field open | Esc | step `closeReplyField` | field closed |
-| the pointer is on ink or `justLetGo`, and an ask is out | Esc | step `cancelAsk`, or `discardAsk` when that ask was sent on release | ask stopped; `discardAsk` takes its new ink away and opens no note |
+| the pointer is on ink or `justLetGo`, and an ask is out | Esc | step `cancelAsk`, or `discardAsk` when that ask was sent on release | ask stopped; `discardAsk` takes its new ink away and opens no note, as stopping an ask with no ink does |
 | the pointer is on ink, a tour is running | Esc | step `endTour` | tour let go |
 | the pointer is on ink, an answer is up | Esc | step `closeAnswer` | answer closed |
 | the pointer is on ink, ink exists | Esc | step `clearInk` | ink cleared |

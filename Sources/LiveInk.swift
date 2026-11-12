@@ -88,6 +88,8 @@ final class LiveInk {
     var heardBeforeNote: (words: [SpokenWord], began: Date)?
     /// When the chord last went down, which the log counts the first sound from.
     var keysDown = Date()
+    /// Where the pointer was when the chord was last let go, which a note with no ink asks about.
+    var releasedAt: CGPoint?
     /// When the stroke under way began.
     private var strokeBegan: Date?
     /// The diagonal of the screen the stroke under way began on, which sets how much line it keeps.
@@ -624,11 +626,12 @@ final class LiveInk {
     /// place, and a card draws the words there. `following` is the reply the person answered with `picked`: it stays, with
     /// their words as its question, and it and the answer's marks carry the thinking light until the
     /// next answer replaces them. A follow-up is about the ink asked about, and the note, with its new
-    /// ink and its words, stays. Answers whether an ask started, and why not.
+    /// ink and its words, stays. With `pointer`, the ask has no ink: it is about the window under it.
+    /// Answers whether an ask started, and why not.
     @discardableResult
     func ask(_ words: String, to agent: AgentClient, sendingTo session: (destination: AgentDestination, title: String)? = nil,
              from note: (panel: LiveNotePopover, place: PopoverPlace, tag: CGRect?)? = nil,
-             following reply: Mark? = nil, picked: LiveAnswerActions.Pick? = nil) -> Result<Void, LiveResponder.Failure> {
+             following reply: Mark? = nil, picked: LiveAnswerActions.Pick? = nil, at pointer: CGPoint? = nil) -> Result<Void, LiveResponder.Failure> {
         let trimmed = words.trimmingCharacters(in: .whitespacesAndNewlines)
         // A follow-up is not about the note's ink, and leaves the note, its words and what was said for it.
         let noteIDs = reply == nil ? [] : asks.noteInk
@@ -636,13 +639,14 @@ final class LiveInk {
         // The words as they were said, unless the person changed them in the note.
         let said = reply != nil ? nil : spoken.flatMap { LiveListening.text(of: $0.words).trimmingCharacters(in: .whitespacesAndNewlines) == trimmed ? $0 : nil }
         if reply == nil { spoken = nil }
-        let person = ink.filter { !noteIDs.contains($0.id) }
-        let fresh = reply == nil ? newInk : []
+        let person = pointer != nil ? [] : ink.filter { !noteIDs.contains($0.id) }
+        let fresh = reply == nil && pointer == nil ? newInk : []
         let following = reply.map { LiveAsks.Following(reply: $0, pick: picked ?? .reply, words: words) }
         let id: LiveAsks.Ask.ID
         let about: [Mark]
         let point: CGPoint
-        switch asks.begin(among: shownMarks, following: following, words: trimmed, toSession: session != nil, sentOnRelease: sendingOnRelease) {
+        switch asks.begin(among: shownMarks, following: following, words: trimmed, toSession: session != nil, sentOnRelease: sendingOnRelease,
+                          at: pointer) {
         case .refused(let refusal, let effects):
             run(effects)
             return .failure(LiveResponder.Failure(reason: refusal.rawValue, detail: refusal.detail))
@@ -668,7 +672,7 @@ final class LiveInk {
         let ui = Settings.shared.data.ui
         // The note's ink was planned and captured as its last stroke ended, while a menu drawn on was
         // still open; planned now, the menu would be gone from the picture.
-        let captured = reply == nil ? prepared.flatMap { $0.ink == Set(person.map(\.id)) ? $0 : nil } : nil
+        let captured = reply == nil && pointer == nil ? prepared.flatMap { $0.ink == Set(person.map(\.id)) ? $0 : nil } : nil
         let plan = captured?.plan ?? picturePlan(for: about)
         Log.write("[live-ink] asking id=\(id) new=\(fresh.count) about=\(about.count) words=\(trimmed.split(whereSeparator: \.isWhitespace).count) queued=\(asks.queued.count) picture=\(plan.forLog)")
         let early = captured?.packet
@@ -705,7 +709,7 @@ final class LiveInk {
         guard asks.ask(id)?.phase == .looking else { return }
         let note = numberedNote(spoken, packet: packet) ?? words
         let person = ink.filter { packet.holds($0) }
-        let asked = about.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
+        let asked = Self.askedBox(about, spot: asks.ask(id)?.spot)
         let near = packet.lines(near: asked)
         Log.write("[live-ink] packet ms=\(Int(Date().timeIntervalSince(started) * 1000)) app=\(packet.app ?? "none") lines=\(packet.lines.count) near=\(near.count) bytes=\(packet.picture.count)\(packet.detail == nil ? "" : " detail")"
                   + packet.areaForLog)
@@ -766,17 +770,20 @@ final class LiveInk {
         var said = (numbered ?? words).components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }.joined(separator: " ")
         if let last = said.last, !".?!]".contains(last) { said += "." }
-        var message = (said.isEmpty ? "" : said + " ") + "Drawn with Vignette's live ink on \(place)."
+        let pointer = asks.ask(id)?.spot
+        let how = pointer == nil ? "Drawn with Vignette's live ink on" : "Asked with Vignette's live ink, without drawing, about"
+        var message = (said.isEmpty ? "" : said + " ") + "\(how) \(place)."
         if numbered != nil { message += " Each [n] in the words is where the ink numbered n in the picture was drawn as they were said." }
         let covered = packet.alone.flatMap(\.covered).compactMap { packet.numbers[$0] }.sorted()
         if !covered.isEmpty {
             message += " On the screen, a window in front covers the ink numbered \(covered.map(String.init).joined(separator: ", "))."
         }
         // The same ink the picture has, so the card holds what the session sees and what leaves the window.
-        let person = ink.filter { packet.frame.intersects($0.shapeExtent ?? .null) }
+        let person = pointer != nil ? [] : ink.filter { packet.frame.intersects($0.shapeExtent ?? .null) }
         let note = noteMark(words, about: about, packet: packet, at: spot)
         let shapes = person.filter { about.contains($0.id) && $0.kind != .text }.compactMap(\.shapeExtent)
-        let inkBox = (shapes.isEmpty ? person.compactMap(\.shapeExtent) : shapes).reduce(CGRect.null) { $0.union($1) }
+        let inkBox = pointer.map { Self.askedBox([], spot: $0) }
+            ?? (shapes.isEmpty ? person.compactMap(\.shapeExtent) : shapes).reduce(CGRect.null) { $0.union($1) }
         let card = NoteCard(picture: packet.picture, capture: packet.capture,
                             marks: packet.drawingMarks(person + (note.map { [$0] } ?? [])), pointScale: packet.scale,
                             window: packet.windowID, ink: inkBox, before: LiveNoteCards.before(packet, ink: inkBox))
@@ -802,18 +809,6 @@ final class LiveInk {
                 self.failed(LiveResponder.Failure(reason: "Not sent. " + refusal.reason, detail: "send refused"), for: id)
             }
         }
-    }
-
-    /// The person's words as a note beside the ink `about`, at the note panel's tag, `spot`, or clear
-    /// of the window's text, in global top-left points. Nil for no words.
-    private func noteMark(_ words: String, about: Set<Mark.ID>, packet: LivePacket, at spot: CGRect?) -> Mark? {
-        let words = words.trimmingCharacters(in: .whitespacesAndNewlines)
-        let near = marks.filter { about.contains($0.id) }.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
-        guard !words.isEmpty, !near.isNull else { return nil }
-        let scene = scene(for: packet)
-        return spot.map { LiveAnswerLayout.note(words, at: $0, sizes: answerSizes) }
-            ?? LiveAnswerLayout.note(words, near: near, scene: scene, obstacles: LiveAnswerLayout.obstacles(in: scene), sizes: answerSizes,
-                                     agent: nil)
     }
 
     /// Shows marks the ask has set leaving (`LiveAsks.finishing`) going, and removes them once they have.
@@ -1033,8 +1028,8 @@ final class LiveInk {
     /// Vignette says why ask `id`, with no conversation, failed: in a reply hung from the ink it asked
     /// about, named for who the ask went to. The reply is the ask's, with its own ×.
     private func say(_ reason: String, for id: LiveAsks.Ask.ID) {
-        guard let about = asks.ask(id)?.about, let answerer = answerers[id] else { return }
-        let near = shownMarks.filter { about.contains($0.id) }.compactMap(\.shapeExtent).reduce(CGRect.null) { $0.union($1) }
+        guard let ask = asks.ask(id), let answerer = answerers[id] else { return }
+        let near = Self.askedBox(shownMarks.filter { ask.about.contains($0.id) }, spot: ask.spot)
         guard !near.isNull else { showMarks(); return }
         let screen = StateReport.screenFrames.first { $0.intersects(near) } ?? near
         let scene = LiveAnswerLayout.Scene(room: screen.insetBy(dx: 8, dy: 8), ink: ink, text: [], notes: answerBoxes(except: id),
@@ -1047,7 +1042,7 @@ final class LiveInk {
         put([reply], window: nil, for: id)
     }
 
-    private func scene(for packet: LivePacket, answering id: LiveAsks.Ask.ID? = nil) -> LiveAnswerLayout.Scene {
+    func scene(for packet: LivePacket, answering id: LiveAsks.Ask.ID? = nil) -> LiveAnswerLayout.Scene {
         scene(frame: packet.frame, page: packet.page, text: packet.lines.map { packet.global($0.box) }, answering: id)
     }
 
@@ -1744,6 +1739,7 @@ final class LiveInk {
     /// picture of the ink drawn on it is captured, and the note opens after. When it does not close, the
     /// note opens without the keys.
     private func finishInking() {
+        releasedAt = Self.pointer
         stopInking(because: chordInterrupted ? "a key cut the chord short" : "the chord was let go", keepingInkAboveMenus: true)
         let opensNote = newInk.isEmpty ? noteHangsAtPointer || heardWords
             : drewWhileInking || listening != nil || heardBeforeNote != nil || !chordInterrupted
