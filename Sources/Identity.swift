@@ -28,7 +28,8 @@ enum Identity {
     /// does where it would otherwise share the person's own app's.
     static let keepsItsOwnData = dataHome.standardizedFileURL.path != FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
     /// The defaults domain for the app's own records: the bundle id's, or `<bundle id>.test-launch`
-    /// for a launch that keeps its own data, so it never reads or changes the person's own app's.
+    /// for a launch that keeps its own data, so it never reads or changes the person's own app's
+    /// records. AppKit's status item position is the exception (`statusItemAutosaveName`).
     static let defaultsDomain = keepsItsOwnData ? "\(bundleID).test-launch" : bundleID
     /// A suite named for the app's own bundle id would be nil; `defaultsDomain` names another.
     static let defaults = keepsItsOwnData ? UserDefaults(suiteName: defaultsDomain)! : .standard

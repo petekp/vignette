@@ -24,7 +24,8 @@ final class AgentPluginTests: XCTestCase {
                   to: template.appendingPathComponent("plugins/vignette/.claude-plugin/plugin.json"))
         try write("#!/bin/sh\n", to: template.appendingPathComponent("plugins/vignette/scripts/inbox.sh"))
         try write("---\nname: vignette\n---\n", to: skill.appendingPathComponent("SKILL.md"))
-        try write("#!/bin/sh\n", to: skill.appendingPathComponent("scripts/reply"))
+        try write("#!/bin/sh\nrequests_root=\n", to: skill.appendingPathComponent("scripts/reply"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: skill.appendingPathComponent("scripts/reply").path)
     }
 
     override func tearDownWithError() throws {
@@ -53,7 +54,9 @@ final class AgentPluginTests: XCTestCase {
         let plugin = AgentPlugin.pluginFolder(in: staged)
         XCTAssertEqual(try read(plugin.appendingPathComponent("skills/vignette/SKILL.md")), "---\nname: vignette\n---\n")
         XCTAssertEqual(try read(plugin.appendingPathComponent("scripts/inbox-root")), inboxes.path + "\n")
-        XCTAssertEqual(try read(plugin.appendingPathComponent("skills/vignette/scripts/requests-root")), requests.path + "\n")
+        let reply = plugin.appendingPathComponent("skills/vignette/scripts/reply")
+        XCTAssertEqual(try read(reply), "#!/bin/sh\nrequests_root='\(requests.path)'\n")
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: reply.path))
         XCTAssertEqual(AgentPlugin.version(inMarketplace: staged), "6.0.0")
     }
 

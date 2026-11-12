@@ -56,17 +56,17 @@ info=$app/Contents/Info.plist
   fail "the Vignette that sent this request is older than this skill; ask the user to update Vignette, then run this again"
 
 # Only a ticket where Vignette writes them names the app to run: <requests>/<request id>/ticket.json,
-# where <requests> is the folder the app named in requests-root beside this script when it staged
-# its plugin, or ~/Library/Application Support/<that app's bundle id>/requests. Either way it ends in
+# where <requests> is the requests folder the app wrote into the next line when it staged its
+# plugin, or ~/Library/Application Support/<that app's bundle id>/requests. Either way it ends in
 # <that app's bundle id>/requests. Anything that can put a file in either place can already run
 # code as the user.
+requests_root=
 request=$(plutil -extract requestId raw -o - "$ticket" 2>/dev/null)
 bundle=$(plutil -extract CFBundleIdentifier raw -o - "$info" 2>/dev/null)
 name=$(plutil -extract CFBundleExecutable raw -o - "$info" 2>/dev/null)
 folder=$(cd "$(dirname "$ticket")" 2>/dev/null && pwd -P)
-named=$(cat "$(dirname "$0")/requests-root" 2>/dev/null)
 staged=
-case $named in /?*) staged=$(cd "$named" 2>/dev/null && pwd -P) ;; esac
+case $requests_root in /?*) staged=$(cd "$requests_root" 2>/dev/null && pwd -P) ;; esac
 support=
 case $HOME in /?*) support=$(cd "$HOME/Library/Application Support" 2>/dev/null && pwd -P) ;; esac
 [ -n "$staged" ] || [ -n "$support" ] ||

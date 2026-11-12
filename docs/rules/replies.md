@@ -67,14 +67,15 @@
   `VignetteReplyCommand` (project.yml): a binary without the command would start the app and
   replace the running instance. The ticket decides what runs, so the script takes only a ticket in
   `<requests>/<request id>/`, where `<requests>` ends in `<that app's bundle id>/requests` and is
-  either the folder named in `requests-root` beside the script or
-  `$HOME/Library/Application Support/<bundle id>/requests`. `AgentPlugin.stage` writes
-  `requests-root` with the copy's own requests folder (`ScreenshotRequests.defaultRoot`), so the
+  either the folder in the script's own `requests_root=` line or
+  `$HOME/Library/Application Support/<bundle id>/requests`. `AgentPlugin.stage` writes the copy's
+  own requests folder (`ScreenshotRequests.defaultRoot`) into that line of the staged script, so the
   helper in a copy's plugin takes that copy's tickets wherever `Launch.dataHome` put them, whatever
-  the agent's `HOME`. The script reads the folder only from that file, never from an argument or the
-  environment. It refuses one that is not an absolute path, so a missing or empty file never makes
-  the caller's working folder count. A skill linked from the repo has no `requests-root` and
-  takes only the `HOME` one. It finds
+  the agent's `HOME`. The folder is in the script itself because a file read from beside the
+  script follows `$0`, which the caller chooses: a link to the helper, or `sh reply` found on
+  `PATH`, would read a file the caller wrote. The script refuses a folder that is not an absolute
+  path. The repo's copy leaves the line empty, so a skill linked from the repo takes only the `HOME`
+  folder. It finds
   `--ticket` the way `ReplyCommand.Options` does, and the command refuses a ticket another app
   issued (`checkIssuer`); change the two parsers together. The file is also Python that hands
   itself to sh, for agents that still hold the version 3 instructions. The command checks the marks

@@ -21,7 +21,7 @@ extension AgentPlugin {
             let skills = plugin.appendingPathComponent("skills")
             try fileManager.createDirectory(at: skills, withIntermediateDirectories: true)
             try fileManager.copyItem(at: skill, to: skills.appendingPathComponent(name))
-            try Data((requestsRoot.path + "\n").utf8).write(to: skills.appendingPathComponent("\(name)/scripts/requests-root"))
+            try write(requestsRoot: requestsRoot, into: skills.appendingPathComponent("\(name)/scripts/reply"))
             try retarget(skill: skills.appendingPathComponent(name).appendingPathComponent("SKILL.md"), scheme: marketplace, appName: appName,
                          app: app)
             try Data((inboxRoot.path + "\n").utf8).write(to: plugin.appendingPathComponent("scripts/inbox-root"))
@@ -57,6 +57,19 @@ extension AgentPlugin {
         try aimed.replacingOccurrences(of: "vignette://", with: "\(scheme)://")
             .replacingOccurrences(of: "Logs/Vignette.log", with: "Logs/\(appName).log")
             .write(to: skill, atomically: true, encoding: .utf8)
+    }
+
+    /// Writes the requests folder into the reply helper's `requests_root=` line. A folder the helper
+    /// read from beside itself would follow `$0`, which the caller chooses. Written in place, the file
+    /// keeps its executable bit.
+    private static func write(requestsRoot: URL, into reply: URL) throws {
+        let text = try String(contentsOf: reply, encoding: .utf8)
+        let line = "\nrequests_root=\n"
+        guard text.contains(line) else {
+            throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: "the reply helper has no requests_root line"])
+        }
+        let quoted = "'" + requestsRoot.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        try text.replacingOccurrences(of: line, with: "\nrequests_root=\(quoted)\n").write(to: reply, atomically: false, encoding: .utf8)
     }
 
     /// Sets a marketplace list's top-level `name`.

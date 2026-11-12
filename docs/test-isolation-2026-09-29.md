@@ -171,8 +171,8 @@ the person's own app's data, so this copy stores its data under <folder>/Library
 Every store follows: the inboxes, the marketplace and its `scripts/inbox-root`, the old-skill record,
 the drawings, the requests and replies, live ink's folder and the leftovers a launch removes. A test
 launch on the person's own home still has no Codex home (`CodexSignIn.defaultHome`), since it runs no
-agent tool there. The reply helper in a copy's staged plugin takes a ticket in the requests folder that copy named in
-`requests-root` beside it, so an agent answering such a copy needs no `HOME` of its own. Such a launch keeps the app's own defaults (`ThisMac`, `setupDoneOnThisMac`,
+agent tool there. The reply helper in a copy's staged plugin takes a ticket in the requests folder that copy wrote
+into the helper when it staged it, so an agent answering such a copy needs no `HOME` of its own. Such a launch keeps the app's own defaults (`ThisMac`, `setupDoneOnThisMac`,
 `returnsToLiveInkSetup`, the login item's path) in `<bundle id>.test-launch` (`Identity.defaults`),
 and its status item's autosave name is that domain's name, so it never moves the person's own icon.
 AppKit still writes that position into the app's standard domain, under the test launch's own key. The log (`~/Library/Logs/<name>.log`) does not move.
