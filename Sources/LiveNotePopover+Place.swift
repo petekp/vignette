@@ -26,6 +26,11 @@ extension LiveNotePopover {
         return places.first { room.contains($0.body) } ?? places[0]
     }
 
+    /// The pointer a note by the pointer was placed at by `pointerPlace`.
+    nonisolated static func pointer(hungFrom place: PopoverPlace) -> CGPoint {
+        CGPoint(x: place.at.midX - PointerFieldMotion.ringOffset.dx, y: place.at.midY - PointerFieldMotion.ringOffset.dy)
+    }
+
     /// Whether `pointer` has come within half of `clearance` of a note whose body is `body`, so the
     /// note moves out of its way.
     nonisolated static func pointer(_ pointer: CGPoint, crowds body: CGRect, clearance: CGFloat) -> Bool {

@@ -41,7 +41,7 @@ extension LiveInk {
         if let listed = held?.candidates { panel.setSessions(listed) }
         panel.speechProblem = speechProblem
         if !responders.unable.isEmpty { checkResponder(responders.unable) }
-        // Words by the pointer ask about the window under the pointer where the chord was let go.
+        // Words by the pointer ask about the window under the point the note hangs from.
         panel.mayAsk = { [weak self] in self.map { !$0.asks.noteInk.isEmpty || $0.noteHangsAtPointer } ?? false }
         panel.onAsk = { [weak self, weak panel] words, target, title in
             guard let self else { return }
@@ -53,7 +53,7 @@ extension LiveInk {
             let session = target.session.map { (destination: $0, title: title) }
             let note = panel.flatMap { panel in panel.shownPlace.map { (panel: panel, place: $0, tag: panel.tagFrame) } }
             // A note by the pointer with no words has nothing to ask, and only closes.
-            let pointer = byThePointer ? self.releasedAt ?? Self.pointer : nil
+            let pointer = byThePointer ? self.notePlace.map(LiveNotePopover.pointer(hungFrom:)) : nil
             if !(byThePointer && words.isEmpty),
                case .failure = self.ask(words, to: target.agent, sendingTo: session, from: note, at: pointer) { panel?.fadeAway() }
             if byThePointer { self.closeEmpty(fade: LiveMarksLayer.removalFade) }

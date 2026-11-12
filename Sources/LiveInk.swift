@@ -91,8 +91,6 @@ final class LiveInk {
     var tailMayOpenNote = false
     /// When the chord last went down, which the log counts the first sound from.
     var keysDown = Date()
-    /// Where the pointer was when the chord was last let go, which a note with no ink asks about.
-    var releasedAt: CGPoint?
     /// When the stroke under way began.
     private var strokeBegan: Date?
     /// The diagonal of the screen the stroke under way began on, which sets how much line it keeps.
@@ -714,14 +712,16 @@ final class LiveInk {
         guard asks.ask(id)?.phase == .looking else { return }
         let note = numberedNote(spoken, packet: packet) ?? words
         let person = asks.drawnInk(ink.filter { packet.holds($0) }, for: id)
-        let asked = Self.askedBox(about, spot: asks.ask(id)?.spot)
+        let spot = asks.ask(id)?.spot
+        let asked = Self.askedBox(about, spot: spot)
         let near = packet.lines(near: asked)
         Log.write("[live-ink] packet ms=\(Int(Date().timeIntervalSince(started) * 1000)) app=\(packet.app ?? "none") lines=\(packet.lines.count) near=\(near.count) bytes=\(packet.picture.count)\(packet.detail == nil ? "" : " detail")"
                   + packet.areaForLog)
         held[id] = LiveResponder.Ask(
             content: { [weak self] conversation in
                 guard let self else { return [] }
-                let content = responders.content(of: packet, note: note, ink: person, new: new, near: near, to: agent, conversation: conversation)
+                let content = responders.content(of: packet, note: note, ink: person, new: new, near: near, pointer: spot, to: agent,
+                                                 conversation: conversation)
                 _ = asks.reduce(.pictureSent(fresh: content.fresh, for: id))
                 return content.parts
             },
@@ -1683,7 +1683,6 @@ final class LiveInk {
     /// picture of the ink drawn on it is captured, and the note opens after. When it does not close, the
     /// note opens without the keys.
     private func finishInking() {
-        releasedAt = Self.pointer
         stopInking(because: chordInterrupted ? "a key cut the chord short" : "the chord was let go", keepingInkAboveMenus: true)
         let opensNote = newInk.isEmpty ? noteHangsAtPointer || heardWords
             : drewWhileInking || listening != nil || heardBeforeNote != nil || !chordInterrupted
