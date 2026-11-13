@@ -1,41 +1,71 @@
-"""A stand-in for the herdr CLI in the end-to-end tests, run as `fake_herdr.py <folder> <herdr args>`.
+"""A stand-in for Herdr's two tools in the end-to-end tests, run as `fake_herdr.py <folder> <tool> <args>`,
+where `<tool>` is `herdr-app` or `hc`.
 
-`App.fake_herdr` writes the `herdr` that `VIGNETTE_HERDR` names, which runs this with its own
-folder. `<folder>/calls.jsonl` gets one line per call, with its arguments.
+`install` writes the `herdr-app` and `hc` that `VIGNETTE_HERDR_APP` and `VIGNETTE_HC` name,
+which run this with its folder. `<folder>/calls.jsonl` gets one line per call, with the tool and
+its arguments.
 
-It speaks only what Vignette asks of herdr: `pane list` and `tab list` answer with no panes and no
-tabs, so herdr's focus marks nothing (`HerdrFocus`), and `tab create` answers a new tab and its
-pane (`HerdrLauncher`). `pane run <pane> <command>` stands for the person's shell running
-`claude --resume <id>` or `claude --session-id <id>`: unless `<folder>/stays-down` exists, it starts
-a process that keeps a plugin inbox for that session under the folder `<folder>/inboxes` names, as
-the plugin's monitor would, and records its pid in `<folder>/pids` for the runner to stop.
+It speaks only what Vignette asks, as the real tools print it. `herdr-app status` answers a window on one space and one tab, and
+`herdr-app ls` that tab with no terminals, and `hc connect` answers `terminal.list` with no
+terminals, so Herdr's focus marks nothing (`HerdrFocus`). `herdr-app do tab.rename` succeeds.
+`hc run … -- <shell> -lic <line> <shell> claude --resume|--session-id <id>` stands for herdr-core
+running `claude` in a new terminal (`HerdrLauncher`): unless `<folder>/stays-down` exists, it starts a
+process that keeps a plugin inbox for that session under the folder `<folder>/inboxes` names, as the
+plugin's monitor would, and records its pid in `<folder>/pids` for the runner to stop.
 """
 import json
 import os
-import shlex
 import subprocess
 import sys
 import time
 
+SPACE = 'sp' + 'e2e0' * 8
+TAB = 'tb' + 'e2e1' * 8
+
 
 def main():
-    folder, args = sys.argv[1], sys.argv[2:]
-    record(folder, {'args': args})
-    if args[:2] == ['pane', 'list']:
-        answer({'id': 'cli:pane:list', 'result': {'type': 'pane_list', 'panes': []}})
-    elif args[:2] == ['tab', 'list']:
-        answer({'id': 'cli:tab:list', 'result': {'tabs': []}})
-    elif args[:2] == ['tab', 'create']:
-        n = len([c for c in calls(folder) if c['args'][:2] == ['tab', 'create']])
+    folder, tool, args = sys.argv[1], sys.argv[2], sys.argv[3:]
+    record(folder, {'args': [tool] + args})
+    if tool == 'herdr-app' and args == ['status']:
+        answer({'space': SPACE, 'tab': TAB, 'focused_pane': 'p' + 'e2e2' * 8, 'agent': None, 'errors': []}, indent=2)
+    elif tool == 'herdr-app' and args == ['ls']:
+        answer({'spaces': [{'id': SPACE, 'name': 'e2e', 'active': True,
+                            'tabs': [{'id': TAB, 'name': 'e2e', 'active': True, 'terminals': []}]}], 'recent': []}, indent=2)
+    elif tool == 'herdr-app' and args[:2] == ['do', 'tab.rename']:
+        answer({'ok': True})
+    elif tool == 'hc' and args == ['connect']:
+        for line in sys.stdin:
+            request = json.loads(line)
+            if 'id' in request:
+                answer({'id': request['id'], 'jsonrpc': '2.0', 'result': {'hidden_finished': 0, 'machines': [], 'terminals': []}})
+    elif tool == 'hc' and args[:1] == ['run']:
+        n = len([c for c in calls(folder) if c['args'][:2] == ['hc', 'run']])
+        program = args[args.index('--') + 1:]
+        session = next((program[i + 1] for i, w in enumerate(program[:-1]) if w in ('--resume', '--session-id')), None)
         cwd = args[args.index('--cwd') + 1] if '--cwd' in args else os.getcwd()
-        with open(os.path.join(folder, f'pane-w1:p{n}.cwd'), 'w') as f:
-            f.write(cwd)
-        answer({'id': 'cli:tab:create', 'result': {'tab': {'tab_id': f'w1:t{n}'}, 'root_pane': {'pane_id': f'w1:p{n}'}}})
-    elif args[:2] == ['pane', 'run']:
-        pane, words = args[2], shlex.split(args[3])
-        session = next((words[i + 1] for i, w in enumerate(words[:-1]) if w in ('--resume', '--session-id')), None)
         if session and not os.path.exists(os.path.join(folder, 'stays-down')):
-            come_up(folder, session, open(os.path.join(folder, f'pane-{pane}.cwd')).read())
+            come_up(folder, session, cwd)
+        answer({'address': f't{n}', 'argv': program, 'cwd': cwd})
+    else:
+        print(f'fake_herdr: {tool} {" ".join(args)} is not faked', file=sys.stderr)
+        sys.exit(2)
+
+
+def install(folder, inboxes):
+    """Writes the two tools into `folder`, with `inboxes` as the plugin's inbox root. Returns the env
+    that points a launch at them."""
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, 'inboxes'), 'w') as f:
+        f.write(inboxes)
+    tools = {}
+    for tool, variable in [('herdr-app', 'VIGNETTE_HERDR_APP'), ('hc', 'VIGNETTE_HC')]:
+        path = os.path.join(folder, tool)
+        # This Python, by path: the app runs tools with launchd's PATH, where python3 can be Apple's stub.
+        with open(path, 'w') as f:
+            f.write(f"#!/bin/sh\nexec '{sys.executable}' '{os.path.abspath(__file__)}' '{folder}' {tool} \"$@\"\n")
+        os.chmod(path, 0o755)
+        tools[variable] = path
+    return tools
 
 
 def come_up(folder, session, cwd):
@@ -48,8 +78,8 @@ def come_up(folder, session, cwd):
         f.write(f'{holder.pid}\n')
 
 
-def answer(message):
-    print(json.dumps(message))
+def answer(message, indent=None):
+    print(json.dumps(message, indent=indent), flush=True)
 
 
 def calls(folder):

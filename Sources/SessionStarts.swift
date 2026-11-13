@@ -65,7 +65,7 @@ struct StartableSessions: Sendable {
     var history = AgentPlugin.claudeRoot?.appendingPathComponent("history.jsonl")
     var transcripts = AgentPlugin.claudeRoot?.appendingPathComponent("projects")
     /// Whether Vignette can start a session at all. Without a launcher no row is offered.
-    var canStart: @Sendable () -> Bool = { HerdrFocus.binaryToRun() != nil }
+    var canStart: @Sendable () -> Bool = { HerdrFocus.appToRun() != nil && HerdrFocus.coreToRun() != nil }
     var now: @Sendable () -> Date = { Date() }
     var home = NSHomeDirectory()
 
@@ -185,45 +185,88 @@ final class FileMemo<Value>: @unchecked Sendable {
 
 // MARK: Where it runs
 
-/// Starts a Claude Code session in a new herdr tab in its folder. herdr is the terminal host
-/// Vignette already reads the focus of (`HerdrFocus`); the person's own shell in the tab runs
-/// `claude`, so it is found as it is in any of their terminals.
+/// Starts a Claude Code session in a new tab of the Herdr window, in the space it shows, without
+/// moving what it shows. herdr-core (`hc`) runs the terminal, labelled into that space and a new tab,
+/// and the Herdr app names the tab with the project, as the session menu reads it (`HerdrFocus`).
 struct HerdrLauncher: Sendable {
-    var binary: @Sendable () -> String? = { HerdrFocus.binaryToRun() }
-    var run: @Sendable (String, [String], TimeInterval) -> (status: Int32, output: String, timedOut: Bool)? = {
-        Subprocess.run($0, $1, timeout: $2)
+    var app: @Sendable () -> String? = { HerdrFocus.appToRun() }
+    var core: @Sendable () -> String? = { HerdrFocus.coreToRun() }
+    var run: @Sendable (String, [String], TimeInterval) -> HerdrFocus.Answer? = { Subprocess.run($0, $1, timeout: $2) }
+    /// The person's login shell, which runs `claude` (`wrapped`).
+    var loginShell: @Sendable () -> String? = { getpwuid(getuid())?.pointee.pw_shell.map { String(cString: $0) } }
+    var newTab: @Sendable () -> String = { "tb" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased() }
+    var now: @Sendable () -> Date = { Date() }
+    var later: @Sendable (TimeInterval, @escaping @Sendable () -> Void) -> Void = {
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + $0, execute: $1)
     }
 
-    /// What a start did: the tab and pane it made, or why it made none.
+    /// How long `herdr-app status` and `hc run` may take.
+    static let timeout: TimeInterval = 10
+    /// The Herdr app renames only a tab it shows, and it shows a new terminal's tab a moment after
+    /// `hc run`, so the rename is tried every `renameStep` for up to `renameWait`.
+    static let renameStep: TimeInterval = 0.5
+    static let renameWait: TimeInterval = 5
+
+    /// What a start did: the tab and terminal it made, or why it made none.
     enum Started: Equatable {
-        case started(tab: String, pane: String)
+        case started(tab: String, terminal: String)
         case failed(detail: String)
     }
 
-    /// Opens a tab in `start`'s folder, labelled with its project, without moving herdr's focus, and
-    /// types the command that starts session `id` into its shell. It blocks on herdr.
+    /// Runs session `id` in a new terminal in `start`'s folder, in the space the Herdr window shows
+    /// and a tab of its own, and names the tab with the project in the background. It blocks on
+    /// `herdr-app status` and `hc run`. A terminal without the `herdr.space` label would be hidden from
+    /// the window, so with no space nothing is started.
     func start(_ start: SessionStart, session id: String) -> Started {
-        guard let herdr = binary() else { return .failed(detail: "no herdr") }
-        var create = ["tab", "create", "--cwd", start.folder, "--no-focus"]
-        if !start.label.isEmpty { create += ["--label", start.label] }
-        guard let made = run(herdr, create, HerdrFocus.timeout) else { return .failed(detail: "herdr tab create did not run") }
-        guard made.status == 0, !made.timedOut, let (tab, pane) = Self.created(in: Data(made.output.utf8)) else {
-            return .failed(detail: "herdr tab create: \(Subprocess.detail(made.output) ?? "exit \(made.status)")")
+        guard let app = app() else { return .failed(detail: "no Herdr app") }
+        guard let core = core() else { return .failed(detail: "no hc") }
+        guard let status = run(app, ["status"], Self.timeout) else { return .failed(detail: "herdr-app status did not run") }
+        guard status.status == 0, !status.timedOut else {
+            return .failed(detail: "herdr-app status: \(Subprocess.detail(status.output) ?? "exit \(status.status)")")
         }
-        let command = (["claude"] + start.arguments(session: id)).map(ReplyCommand.quoted).joined(separator: " ")
-        guard let typed = run(herdr, ["pane", "run", pane, command], HerdrFocus.timeout), typed.status == 0, !typed.timedOut else {
-            return .failed(detail: "herdr pane run \(pane) failed")
+        guard let space = Self.object(in: status.output)?["space"] as? String, !space.isEmpty else {
+            return .failed(detail: "herdr-app status names no space")
         }
-        return .started(tab: tab, pane: pane)
+        let tab = newTab()
+        let arguments = ["run", "--bg", "--json", "--cwd", start.folder, "--no-parent",
+                         "--label", "herdr.space=\(space)", "--label", "herdr.tab=\(tab)", "--"]
+            + Self.wrapped(["claude"] + start.arguments(session: id), loginShell: loginShell())
+        guard let ran = run(core, arguments, Self.timeout) else { return .failed(detail: "hc run did not run") }
+        guard ran.status == 0, !ran.timedOut, let terminal = Self.object(in: ran.output)?["address"] as? String else {
+            return .failed(detail: "hc run: \(Subprocess.detail(ran.output) ?? "exit \(ran.status)")")
+        }
+        if !start.label.isEmpty { name(tab, start.label, app: app, since: now()) }
+        return .started(tab: tab, terminal: terminal)
     }
 
-    /// The tab and its first pane from a `herdr tab create` answer.
-    static func created(in data: Data) -> (tab: String, pane: String)? {
-        let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let result = root?["result"] as? [String: Any]
-        guard let tab = (result?["tab"] as? [String: Any])?["tab_id"] as? String,
-              let pane = (result?["root_pane"] as? [String: Any])?["pane_id"] as? String else { return nil }
-        return (tab, pane)
+    /// `program` run by the person's login shell, as a tab they opened would run it: login and
+    /// interactive, so it reads their startup files and finds `claude` on their own `PATH`, then a
+    /// shell of the same kind once `claude` exits. zsh and bash run the line; any other login shell,
+    /// such as fish, gets `/bin/zsh`. Each word stays its own argument, and no shell parses one.
+    static func wrapped(_ program: [String], loginShell: String?) -> [String] {
+        let shell = loginShell.flatMap { ["zsh", "bash"].contains(($0 as NSString).lastPathComponent) ? $0 : nil } ?? "/bin/zsh"
+        return [shell, "-lic", #""$@"; exec "$0" -li"#, shell] + program
+    }
+
+    private func name(_ tab: String, _ label: String, app: String, since began: Date) {
+        later(Self.renameStep) { [self] in
+            let request = (try? JSONSerialization.data(withJSONObject: ["id": tab, "name": label], options: [.sortedKeys]))
+                .flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            let renamed = run(app, ["do", "tab.rename", request], Self.timeout)
+            if let renamed, renamed.status == 0, !renamed.timedOut { return }
+            guard now().timeIntervalSince(began) < Self.renameWait else {
+                let detail = renamed.map { Subprocess.detail($0.output) ?? ($0.timedOut ? "timed out" : "exit \($0.status)") }
+                return Log.write("[send] tab \(tab) not named: \(detail ?? "herdr-app did not run")")
+            }
+            name(tab, label, app: app, since: began)
+        }
+    }
+
+    /// The JSON object in `output`, from its first `{` to its last `}`: `herdr-app status` prints
+    /// one over several lines, and a warning on standard error may come before or after it.
+    private static func object(in output: String) -> [String: Any]? {
+        guard let open = output.firstIndex(of: "{"), let close = output.lastIndex(of: "}"), open < close else { return nil }
+        return try? JSONSerialization.jsonObject(with: Data(output[open...close].utf8)) as? [String: Any]
     }
 }
 

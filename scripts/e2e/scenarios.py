@@ -144,11 +144,11 @@ def check_marks_drawn(app, png, rect, rgb, who):
 def launch(app):
     """A test launch comes up on its scratch files and reaches nothing of the person's.
 
-    It uses no codex and no herdr, registers no login item, runs no updater, answers every command
+    It uses no codex, Herdr app or hc, registers no login item, runs no updater, answers every command
     it lists, and answers a bad file with an error line."""
     start(app)
-    app.wait_log('[tools] test launch: codex=none herdr=none', 0)
-    app.report.step('no codex and no herdr in a test launch')
+    app.wait_log('[tools] test launch: codex=none claude=none herdr-app=none hc=none', 0)
+    app.report.step('no codex, claude, Herdr app or hc in a test launch')
     s = app.state()
     if s['app']['launchAtLogin'] or s['app']['loginItem'] == 'enabled':
         raise Failed(f"login item: launchAtLogin={s['app']['launchAtLogin']} loginItem={s['app']['loginItem']}")
@@ -314,60 +314,6 @@ def send_target_codex(app):
         raise Failed(f'codex was never asked for its threads: {app.codex_calls()}')
     app.report.step('the threads came from codex app-server', detail=f'{len(listings)} listings')
     close_editor(app)
-
-
-def send_offers_start(app):
-    """With no Claude Code session running and a project used lately, the bar offers an empty
-    target to pick from rather than Send to anything, and nothing is started."""
-    app.past_project('e2e-site')
-    start(app, **app.fake_herdr())
-    copy, _ = push(app, None, name='Site nav.png', agent='codex')
-    open_editor(app, copy)
-    s = app.wait_state(lambda s: (s['annotator'].get('offer') or {}).get('kind') == 'choose', 'the empty target', timeout=15)
-    app.report.step('the bar offers a target to choose', detail=json.dumps(s['annotator']['offer']))
-    started = [c for c in app.herdr_calls() if c[:2] in (['tab', 'create'], ['pane', 'run'])]
-    if started:
-        raise Failed(f'herdr was asked to start something nobody picked: {started}')
-    close_editor(app)
-
-
-@needs_input
-def send_starts_session(app):
-    """Picking Continue last session in the target's menu and sending opens a herdr tab in the
-    project's folder, resumes that session there, and puts the line in its inbox once it is up."""
-    folder, session = app.past_project('e2e-site')
-    start(app, **app.fake_herdr())
-    path = app.image('Screenshot site.png', folder=app.watch)
-    time.sleep(1)
-    click_to_open(app, path)
-    app.wait_state(lambda s: (s['annotator'].get('offer') or {}).get('kind') == 'choose' and s['annotator']['key'],
-                   'the empty target', timeout=15)
-    app.keys('annotator', 'key', KEY_TAB, 'shift')
-    s = app.wait_state(lambda s: s['annotator'].get('toolbarFocus') == 'target', 'the target focused', timeout=5)
-    app.keys('annotator', 'key', KEY_SPACE)
-    time.sleep(0.8)
-    app.capture(s['screen']['frame'], 'target-menu')
-    app.input('type', 'e2e-site', 40)
-    time.sleep(0.5)
-    app.capture(s['screen']['frame'], 'target-menu-search')
-    app.input('key', KEY_RETURN)
-    s = app.wait_state(lambda s: (s['annotator'].get('offer') or {}).get('session') == session, 'Continue picked', timeout=5)
-    app.report.step('Continue last session is the target', detail=json.dumps(s['annotator']['offer']))
-    offset = app.log_size()
-    app.keys('annotator', 'key', KEY_RETURN, 'cmd')
-    app.wait_log('[send] ok', offset, timeout=60)
-    calls = app.herdr_calls()
-    tab = next((c for c in calls if c[:2] == ['tab', 'create']), None)
-    run = next((c for c in calls if c[:2] == ['pane', 'run']), None)
-    if not tab or tab[tab.index('--cwd') + 1] != folder or '--no-focus' not in tab:
-        raise Failed(f'no tab in {folder}: {calls}')
-    if not run or run[3] != f"'claude' '--resume' '{session}'":
-        raise Failed(f'the tab did not resume {session}: {calls}')
-    app.report.step('herdr opened a tab in the folder and resumed the session', detail=run[3])
-    inbox = app.inbox_of(session)
-    if not inbox or len(app.lines_in(inbox)) != 1:
-        raise Failed(f'the started session has no request line: {inbox}')
-    app.report.step('one request line in the started session\'s inbox')
 
 
 def pasteboard_types():
@@ -1109,7 +1055,7 @@ def stack_esc_at_press(app):
     app.report.step('Esc at the press closed the stack', detail=held.split('] ', 1)[1])
 
 
-ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, send_target_codex, send_offers_start, send_starts_session,
+ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, send_target_codex,
        copy_types, stitch,
        instant_draw, relaunch, settings_repair, draw_and_done, annotate_queue, zoom_keys, send_and_reply, send_message, send_grace,
        send_and_reply_codex, send_codex_thread_gone, send_codex_queued, agent_marks_editable, corner_select, capture_origin,

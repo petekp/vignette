@@ -43,22 +43,6 @@ struct HerdrFocus: Equatable, Sendable {
         return isName ? label : "other"
     }
 
-    /// How long the herdr command line tool may take, for `HerdrLauncher`.
-    static let timeout: TimeInterval = 10
-
-    /// Where the herdr command line tool may be, which `HerdrLauncher` starts sessions with. The app
-    /// is launched by LaunchServices, so it inherits no shell PATH.
-    private static let paths = ["\(NSHomeDirectory())/.local/bin/herdr", "/opt/homebrew/bin/herdr", "/usr/local/bin/herdr"]
-
-    static func binary() -> String? {
-        paths.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
-
-    /// The herdr command line tool Vignette runs: none in a test launch unless VIGNETTE_HERDR names one.
-    static func binaryToRun() -> String? {
-        AgentTools.forSessions("VIGNETTE_HERDR") { binary() }
-    }
-
     /// How long each read may take. Each answered in 5 to 20 ms (measured 2026-11-12). The focus is
     /// read in Claude Code's listing job, so a read that hangs holds back Send's target.
     static let readTimeout: TimeInterval = 1

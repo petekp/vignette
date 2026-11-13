@@ -3,7 +3,7 @@
 Both session menus, the editor toolbar's and live ink's note's, now offer projects that have no
 running Claude Code session. Each such project has two rows. **Continue last session** resumes the
 project's most recent session. **New session** starts a fresh one. Sending to either row opens a
-herdr tab in the project's folder, starts `claude` there, waits until the session can receive, and
+tab in the Herdr window, starts `claude` there in the project's folder, waits until the session can receive, and
 then delivers the drawing as Send does to a running session.
 
 Terms used below:
@@ -11,7 +11,8 @@ Terms used below:
 - **Inbox:** the folder the Vignette plugin keeps for each running Claude Code process, under
   Application Support (`claude-sessions/<pid>/`). It names the session the process runs. A send
   writes its line there, and the plugin's monitor hands it to the session.
-- **herdr:** the terminal host that runs agent sessions in tabs and panes.
+- **Herdr:** the terminal host. herdr-core (`hc`) runs its terminals, and the Herdr app's window
+  shows them in spaces, tabs and panes.
 - **Startable row:** a menu row whose `AgentDestination.start` is set. It is not running.
 
 ## The problem
@@ -42,11 +43,19 @@ Starting answers a `SubmissionOutcome`, the same as any send, so the card, the r
 the log need no second path. `ClaudeCodeConnection.submit(_:to:completion:)`:
 
 1. If a live inbox already holds the session (resumed by hand since it was listed), skips the start.
-2. Otherwise runs `HerdrLauncher.start`: `herdr tab create --cwd <folder> --no-focus --label
-   <project>`, then `herdr pane run <pane> "'claude' '--resume' '<id>'"`. Only a UUID reaches the
-   command, and each word is single-quoted.
-   The tab opens in herdr's focused workspace, unfocused, labelled with the project. `pane run`
-   types the command before the new shell's prompt is up, and the shell runs it once it is.
+2. Otherwise runs `HerdrLauncher.start`. It reads the space the Herdr window shows from
+   `herdr-app status`, then runs `hc run --bg --json --cwd <folder> --no-parent --label
+   herdr.space=<space> --label herdr.tab=tb<32 hex> -- <shell> -lic '"$@"; exec "$0" -li' <shell>
+   claude --resume <id>`. Only a UUID and the folder reach the command, each as its own argument.
+   The labels put the terminal in a new tab of that space without moving what the window shows. A
+   terminal without `herdr.space` would be hidden, so with no window or no space nothing starts.
+   `<shell>` is the person's login shell when it is zsh or bash, else `/bin/zsh`. It runs as a
+   login, interactive shell, so it reads their startup files and finds `claude` on their `PATH`, and
+   it becomes a shell when `claude` exits. A function named `claude` runs; an alias does not, since
+   a shell expands aliases only in words it reads, not in `"$@"`.
+   The tab is named with the project by `herdr-app do tab.rename`, tried every 0.5 s for up to 5 s
+   in the background, since the app renames a tab only once it shows it. A rename that never takes
+   logs `[send] tab <id> not named` and is not a failed start.
 3. Looks every 0.25 s for up to 45 s (`startTimeout`) for a live inbox holding the session. Each
    look reads only the inbox folders made since the launch, and only their `session` file until one
    names it. The looks are scheduled with `asyncAfter`, so no thread waits through the 45 s.
@@ -114,16 +123,17 @@ last answer is kept and shown until a fresh one comes.
 - During the grace: "Sending to *place*", with Don't send.
 - While the session starts and the line waits for its inbox: "Starting in *place*".
 - Delivered: "Sent to *place*".
-- herdr refused the tab: "Not sent", "Vignette couldn't open a herdr tab for Claude Code. The log
+- No Herdr window, no space, or `hc run` refused: "Not sent", "Vignette couldn't open a herdr tab for Claude Code. The log
   has details."
 - No inbox after 45 s: "Not sent", "Claude Code didn't open in time. You can send again once it's
   running." The tab stays, and the session may still come up there; the next Send finds it running.
 
 ## Test isolation
 
-Rows are offered only when a launcher exists. The launcher is herdr through
-`AgentTools.forSessions("VIGNETTE_HERDR")`, so a test launch without `VIGNETTE_HERDR` offers none
-and starts nothing. Vignette never runs `claude` itself: the person's shell in the herdr tab does.
+Rows are offered only when a launcher exists: both the Herdr app and `hc` are found
+(`HerdrFocus.appToRun`, `coreToRun`, through `AgentTools.forSessions`). A test launch without
+`VIGNETTE_HERDR_APP` and `VIGNETTE_HC` offers none and starts nothing. Vignette never runs `claude`
+itself: herdr-core runs the person's login shell, which runs it.
 A test launch with `CFFIXED_USER_HOME` reads only the scratch home's history and transcripts.
 
 On 2026-10-26 both rows were sent to in the `vignette-e2e` VM through herdr 0.9.5 itself, with a
@@ -134,10 +144,11 @@ listing took 219 ms on its first call and about 50 ms on later ones, which read 
 transcripts. It listed 68 rows, more than the app would: the test host most likely reads another
 app's inboxes, so projects with a running session were not left out.
 
-The e2e runner has a fake herdr (`scripts/e2e/fake_herdr.py`, `App.fake_herdr`). For a `claude`
-typed into one of its panes it brings up a plugin inbox for that session. `send_offers_start`
-checks the empty target and that nothing starts. `send_starts_session` picks Continue through the
-menu's search and checks the tab, the resume command and the line in the inbox.
+The e2e runner has a fake Herdr app and a fake `hc` (`scripts/e2e/fake_herdr.py`,
+`App.fake_herdr`). For an `hc run` of `claude` it brings up a plugin inbox for that session.
+In `scripts/e2e/session_starts.py`, `send_offers_start` checks the empty target and that nothing starts. `send_starts_session` picks
+Continue through the menu's search and checks the terminal's folder, space and resume command, the
+tab's name and the line in the inbox.
 
 ## Without herdr (proposed, not built)
 
@@ -145,7 +156,7 @@ Write the command to a `.command` file in Application Support and open it with `
 Mac's handler for `.command` files, Terminal unless the person chose another, opens a window in the
 folder and runs it. It needs no Automation permission, which AppleScript to Terminal would. Ghostty
 and iTerm2 each have their own way to open a window with a command, and they could come later. The
-window would take the focus, unlike herdr's `--no-focus` tab.
+window would take the focus, unlike a Herdr tab started through `hc`.
 
 ## Follow-ups
 
