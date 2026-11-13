@@ -67,7 +67,7 @@ Owner: `DestinationChoice.swift`. Tests: `DestinationChoiceTests`; Send's rules 
 
 Owner: `AgentConnection.swift:195`; inbox reads `ClaudeInbox.swift:23-52`. Tests: `SessionStartsTests.testASendToASessionThatIsNotRunningStartsItThenWritesTheLineIntoItsInbox`, `SessionStartsTests.testAStartThatFailsOrNeverComesUpSendsNothing`, `AgentConnectionTests+Started`.
 
-Takes a line for a Claude Code session. A running session is listed, checked by a preflight (`:405`), then written (`:443`). A startable row is started in a herdr tab, polled for its inbox, then written. A Claude Code process has an inbox folder; its monitor touches an `alive` file, and `isLive` means touched within 10 s.
+Takes a line for a Claude Code session. A running session is listed, checked by a preflight (`:405`), then written (`:443`). A startable row is started in a new Herdr tab, polled for its inbox, then written. A Claude Code process has an inbox folder; its monitor touches an `alive` file, and `isLive` means touched within 10 s.
 
 **States**: for a running session: listed, preflighted, written. For a startable row: requested, joined (waiting on a start of the same session already under way), launched, polling, then up, failed or timed out (45 s), then written. The start code is in `ClaudeSessionStart.swift`, and the starts under way are in `SessionStartsUnderWay`, which every copy of the connection shares.
 
@@ -81,7 +81,7 @@ Takes a line for a Claude Code session. A running session is listed, checked by 
 | requested | `startSession` (`:270`), id not a UUID | failed | nothing reaches the shell (`new:<folder>` rows) |
 | requested | `startSession`, a start of this session under way | joined | no launch; waits for that start's answer (**fixed**, [toolbar-3](findings.md#toolbar-3)) |
 | requested | `startSession`, none under way, `liveInbox(holding:)` already live | up | no launch |
-| requested | `startSession` otherwise | launched | `before` = inbox folder names now; `launch` (herdr `tab create`, `pane run`) |
+| requested | `startSession` otherwise | launched | `before` = inbox folder names now; `launch` (`herdr-app status`, `hc run`) |
 | launched | launch returns `.failed` | `.notStarted` | — |
 | launched | launch started | polling | `look` (`:288`) every 0.25 s via `later` |
 | polling | `look` finds the first folder not in `before` whose `session` equals the id and which `isLive` | up, then written | every joined send gets the same inbox and writes its own line |
@@ -100,28 +100,33 @@ Takes a line for a Claude Code session. A running session is listed, checked by 
 - A session resumed by hand after it was listed: caught at `:274`.
 - Only folders created since the launch are polled (`:293`).
 - Open windows by design (comment on `AddressGuard.preflight`, `:26`): `/clear` between the preflight and `write`, and between `look` success and `write`.
-- Left behind: a tab when `pane run` fails after `tab create` (`SessionStarts.swift:213`), and a started `claude` after the 45 s timeout.
+- Left behind: a started `claude` after the 45 s timeout, in its tab.
 
 ### HerdrLauncher.start (implicit)
 
-Owner: `SessionStarts.swift:190-216` (`start` at `:204`). Tests: `SessionStartsTests` (about lines 153-195).
+Owner: `SessionStarts.swift:191-271` (`start` at `:220`, the rename at `:251`). Tests: `SessionStartsTests` (from line 241).
 
-Opens a herdr tab in the project's folder and runs `claude` there. It runs on a pool thread only.
+Runs `claude` in a new terminal in the project's folder, in a new tab of the space the Herdr window shows, and names the tab. It runs on a pool thread only; the rename runs later, on its own.
 
-**States**: not started; tab created; pane running; failed.
+**States**: not started; space read; running; failed. Apart from these, the tab: unnamed, then named or given up.
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| not started | `tab create` (10 s timeout) fails | failed | — |
-| not started | `tab create` succeeds | tab created | ids parsed |
-| tab created | `pane run` fails | failed | the tab stays; no retry |
-| tab created | `pane run` succeeds | pane running | — |
+| not started | no Herdr app or no `hc` | failed | — |
+| not started | `herdr-app status` (10 s timeout) fails, or names no `space` | failed | nothing started |
+| not started | `status` names a space | space read | a new `tb<32 hex>` tab id |
+| space read | `hc run --bg` fails or answers no `address` | failed | — |
+| space read | `hc run` answers a terminal | running | the rename is scheduled |
+| unnamed | `herdr-app do tab.rename` succeeds | named | — |
+| unnamed | it fails, under 5 s since the start | unnamed | tried again in 0.5 s |
+| unnamed | it fails at 5 s | given up | `[send] tab <id> not named`; the start still counts |
 
 **Invariants**
 
-- A failed run leaves no tab. Checked by: nothing; the tab stays on failure after `tab create`.
+- No terminal is started without `herdr.space`, which would hide it. Checked by: `SessionStartsTests.testWithoutASpaceOrWhenHcRefusesNothingStartsAndAFailedRenameIsNoFailedStart`.
+- Every word of the command is its own argument. Checked by: `SessionStartsTests.testTheSessionRunsInANewTabOfTheSpaceTheWindowShowsWithEveryWordItsOwnArgument`.
 
 **Late and concurrent answers**
 

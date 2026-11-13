@@ -34,7 +34,7 @@ extension ClaudeCodeConnection {
         case failed(SubmissionOutcome)
     }
 
-    /// Starts session `session` in a new herdr tab and answers once a live inbox holds it, looking
+    /// Starts session `session` in a new Herdr tab and answers once a live inbox holds it, looking
     /// every `startPoll` for up to `startTimeout`. Only the inbox folders made since the launch are
     /// looked at, and only their `session` file until one names it. It blocks on herdr to launch.
     /// A send for a session already starting waits for that start's answer instead.
@@ -53,8 +53,8 @@ extension ClaudeCodeConnection {
         case .failed(let detail):
             return answer(.failed(.notSubmitted(code: .sendFailed, detail: "could not start \(session) in \(start.folder): \(detail)",
                                                 reason: Self.notStarted)))
-        case .started(let tab, let pane):
-            Log.write("[send] started claude \(start.arguments(session: session).joined(separator: " ")) in \(start.folder) tab=\(tab) pane=\(pane)")
+        case .started(let tab, let terminal):
+            Log.write("[send] started claude \(start.arguments(session: session).joined(separator: " ")) in \(start.folder) tab=\(tab) terminal=\(terminal)")
         }
         look(for: session, in: start, besides: before, since: began, answer: answer)
     }

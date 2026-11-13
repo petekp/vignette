@@ -13,8 +13,8 @@ launches it on a fresh scratch home (`CFFIXED_USER_HOME`), settings file (`VIGNE
 watch folder, so it never reads or writes the person's own. Preferences ignore that home, so the
 copy's two domains are cleared before each scenario. A launch with no environment, such as
 macOS's Quit & Reopen, takes the home the copy's Info.plist names (build.sh), which the runner links
-to the scenario's. A test launch uses no codex and no herdr unless `VIGNETTE_CODEX` or
-`VIGNETTE_HERDR` names one, and every agent session is a fake.
+to the scenario's. A test launch uses no codex, Herdr app or hc unless `VIGNETTE_CODEX`,
+`VIGNETTE_HERDR_APP` or `VIGNETTE_HC` names one, and every agent session is a fake.
 A Claude Code session is an inbox folder held by a `sleep` process, which is all Send looks for. A
 Codex thread is listed by a fake codex (`fake_codex.py`) that `VIGNETTE_CODEX` names.
 A scenario whose `copy` is 'fresh' runs on a second copy, `build.sh fresh`, granted nothing and
@@ -359,18 +359,9 @@ class App:
         return thread, {'VIGNETTE_CODEX': codex}
 
     def fake_herdr(self):
-        """A herdr that opens tabs and, for `claude` typed into one, brings up a plugin inbox for that
-        session (`fake_herdr.py`). Returns the env that points the launch at it."""
-        folder = os.path.join(self.folder, 'herdr')
-        os.makedirs(folder, exist_ok=True)
-        with open(os.path.join(folder, 'inboxes'), 'w') as f:
-            f.write(os.path.join(self.support, 'claude-sessions'))
-        herdr = os.path.join(folder, 'herdr')
-        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fake_herdr.py')
-        with open(herdr, 'w') as f:
-            f.write(f"#!/bin/sh\nexec '{sys.executable}' '{script}' '{folder}' \"$@\"\n")
-        os.chmod(herdr, 0o755)
-        return {'VIGNETTE_HERDR': herdr}
+        """A Herdr app and an hc that start fake sessions (`fake_herdr.install`). Returns the env for the launch."""
+        import fake_herdr
+        return fake_herdr.install(os.path.join(self.folder, 'herdr'), os.path.join(self.support, 'claude-sessions'))
 
     def herdr_calls(self):
         path = os.path.join(self.folder, 'herdr', 'calls.jsonl')
@@ -501,7 +492,8 @@ def restore_pasteboard():
 def all_scenarios():
     import live_ink
     import scenarios
-    return scenarios.ALL + live_ink.ALL
+    import session_starts
+    return scenarios.ALL + session_starts.ALL + live_ink.ALL
 
 
 def run(names, with_input, build):

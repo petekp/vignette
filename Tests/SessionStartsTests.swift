@@ -156,7 +156,7 @@ final class SessionStartsTests: XCTestCase {
         let clock = Clock()
         let up = connection(root, clock: clock) { _, session in
             try? Self.inbox(root, pid: 301, session: session)
-            return .started(tab: "w1:t9", pane: "w1:p9")
+            return .started(tab: "tb9", terminal: "t9")
         }
         let destination = AgentDestination(id: past, name: "x", address: .claudeSession(past), start: .resume(folder: "/site"))
         guard case .accepted(let detail) = await submit("From Vignette: look", to: destination, through: up) else { return XCTFail("started and delivered") }
@@ -178,7 +178,7 @@ final class SessionStartsTests: XCTestCase {
         guard case .notSubmitted(_, _, let reason) = await submit("x", to: destination, through: refused) else { return XCTFail("a failed start sends nothing") }
         XCTAssertEqual(reason, ClaudeCodeConnection.notStarted)
 
-        let silent = connection(root, clock: clock) { _, _ in .started(tab: "t", pane: "p") }
+        let silent = connection(root, clock: clock) { _, _ in .started(tab: "tb", terminal: "t") }
         let began = clock.now
         guard case .notSubmitted(_, _, let late) = await submit("x", to: destination, through: silent) else { return XCTFail("a session that never came up got nothing") }
         XCTAssertEqual(late, ClaudeCodeConnection.notUpInTime)
@@ -193,7 +193,7 @@ final class SessionStartsTests: XCTestCase {
     func testASecondSendWhileItsSessionIsStillStartingJoinsThatStart() async throws {
         let root = temporaryFolder()
         let clock = Clock()
-        var starting = connection(root, clock: clock) { _, _ in .started(tab: "t", pane: "p") }
+        var starting = connection(root, clock: clock) { _, _ in .started(tab: "tb", terminal: "t") }
         starting.later = { delay, look in
             clock.advance(delay)
             DispatchQueue.global().asyncAfter(deadline: .now() + 0.02, execute: look)
@@ -210,25 +210,85 @@ final class SessionStartsTests: XCTestCase {
         XCTAssertEqual(lines(in: root.appendingPathComponent("301")).count, 2)
     }
 
-    func testHerdrOpensATabInTheFolderAndTypesTheCommandIntoItsShell() {
-        final class Calls: @unchecked Sendable { var all: [[String]] = []; let lock = NSLock() }
-        let calls = Calls()
+    private final class Calls: @unchecked Sendable {
+        private let lock = NSLock()
+        private var made: [[String]] = []
+        var all: [[String]] { lock.withLock { made } }
+        func add(_ call: [String]) { lock.withLock { made.append(call) } }
+    }
+
+    private func launcher(_ calls: Calls, shell: String? = "/bin/zsh",
+                          answer: @escaping @Sendable ([String]) -> HerdrFocus.Answer?) -> HerdrLauncher {
         var launcher = HerdrLauncher()
-        launcher.binary = { "/fake/herdr" }
-        launcher.run = { _, arguments, _ in
-            calls.lock.withLock { calls.all.append(arguments) }
-            if arguments.first == "tab" {
-                return (0, #"{"id":"cli:tab:create","result":{"tab":{"tab_id":"w1:t4","label":"site"},"root_pane":{"pane_id":"w1:p7"}}}"#, false)
-            }
-            return (0, "", false)
+        launcher.app = { "/fake/herdr-app" }
+        launcher.core = { "/fake/hc" }
+        launcher.loginShell = { shell }
+        launcher.newTab = { "tb00112233445566778899aabbccddeeff" }
+        let clock = Clock()
+        launcher.now = { clock.now }
+        launcher.later = { delay, next in clock.advance(delay); next() }
+        launcher.run = { binary, arguments, _ in
+            let call = [binary] + arguments
+            calls.add(call)
+            return answer(call)
         }
-        XCTAssertEqual(launcher.start(.resume(folder: "/Users/p/it's here"), session: past), .started(tab: "w1:t4", pane: "w1:p7"))
+        return launcher
+    }
+
+    private static let status: HerdrFocus.Answer = (0, """
+        {
+          "zoom": 0.9,
+          "space": "sp4fe76ace6023eaa0977d3a274c249faf",
+          "tab": "tbA",
+          "focused_pane": "pA"
+        }
+        """, false)
+    private static let ran: HerdrFocus.Answer = (0, #"{"address":"t42","argv":["/bin/zsh"],"labels":{}}"#, false)
+
+    func testTheSessionRunsInANewTabOfTheSpaceTheWindowShowsWithEveryWordItsOwnArgument() {
+        let calls = Calls()
+        let renames = Calls()
+        let start = launcher(calls) { call in
+            if call[1] == "status" { return Self.status }
+            if call[1] == "run" { return Self.ran }
+            renames.add(call)
+            return renames.all.count < 3 ? (1, "no tab tb00112233445566778899aabbccddeeff", false) : (0, "", false)
+        }
+        XCTAssertEqual(start.start(.resume(folder: "/Users/p/it's here"), session: past),
+                       .started(tab: "tb00112233445566778899aabbccddeeff", terminal: "t42"))
+        let rename = ["/fake/herdr-app", "do", "tab.rename", #"{"id":"tb00112233445566778899aabbccddeeff","name":"it's here"}"#]
         XCTAssertEqual(calls.all, [
-            ["tab", "create", "--cwd", "/Users/p/it's here", "--no-focus", "--label", "it's here"],
-            ["pane", "run", "w1:p7", "'claude' '--resume' '\(past)'"],
-        ])
-        launcher.run = { _, _, _ in (1, #"{"error":"no server"}"#, false) }
-        guard case .failed(let detail) = launcher.start(.new(folder: "/f"), session: past) else { return XCTFail("herdr refused") }
-        XCTAssertTrue(detail.contains("no server"), detail)
+            ["/fake/herdr-app", "status"],
+            ["/fake/hc", "run", "--bg", "--json", "--cwd", "/Users/p/it's here", "--no-parent",
+             "--label", "herdr.space=sp4fe76ace6023eaa0977d3a274c249faf", "--label", "herdr.tab=tb00112233445566778899aabbccddeeff", "--",
+             "/bin/zsh", "-lic", #""$@"; exec "$0" -li"#, "/bin/zsh", "claude", "--resume", past],
+            rename, rename, rename,
+        ], "a terminal without herdr.space is hidden, a folder joined into a shell line is parsed, and the rename waits for the tab")
+    }
+
+    func testClaudeRunsInTheLoginShellWhenItIsZshOrBashAndInZshOtherwise() {
+        let program = ["claude", "--session-id", past]
+        XCTAssertEqual(HerdrLauncher.wrapped(program, loginShell: "/opt/homebrew/bin/bash"),
+                       ["/opt/homebrew/bin/bash", "-lic", #""$@"; exec "$0" -li"#, "/opt/homebrew/bin/bash"] + program)
+        XCTAssertEqual(HerdrLauncher.wrapped(program, loginShell: "/opt/homebrew/bin/fish").first, "/bin/zsh", "fish cannot run the line")
+        XCTAssertEqual(HerdrLauncher.wrapped(program, loginShell: nil).first, "/bin/zsh")
+    }
+
+    func testWithoutASpaceOrWhenHcRefusesNothingStartsAndAFailedRenameIsNoFailedStart() {
+        let calls = Calls()
+        let closed = launcher(calls) { call in call[1] == "status" ? (1, "no Herdr window", false) : Self.ran }
+        XCTAssertEqual(closed.start(.new(folder: "/f"), session: past), .failed(detail: "herdr-app status: no Herdr window"))
+        let spaceless = launcher(calls) { call in call[1] == "status" ? (0, #"{"space":"","tab":"tbA"}"#, false) : Self.ran }
+        XCTAssertEqual(spaceless.start(.new(folder: "/f"), session: past), .failed(detail: "herdr-app status names no space"))
+        XCTAssertFalse(calls.all.contains { $0[1] == "run" }, "a terminal without its space would be hidden")
+
+        let refused = launcher(calls) { call in call[1] == "status" ? Self.status : (1, "core not running", false) }
+        XCTAssertEqual(refused.start(.new(folder: "/f"), session: past), .failed(detail: "hc run: core not running"))
+
+        let unnamed = Calls()
+        let never = launcher(unnamed) { call in call[1] == "status" ? Self.status : call[1] == "run" ? Self.ran : (1, "no such tab", false) }
+        XCTAssertEqual(never.start(.new(folder: "/f"), session: past), .started(tab: "tb00112233445566778899aabbccddeeff", terminal: "t42"))
+        XCTAssertEqual(unnamed.all.filter { $0[1] == "do" }.count, Int(HerdrLauncher.renameWait / HerdrLauncher.renameStep),
+                       "the rename gives up after renameWait")
     }
 }

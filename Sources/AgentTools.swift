@@ -33,8 +33,8 @@ enum AgentTools {
     }
 
     /// A tool that reaches the person's agent sessions or account: codex, which lists and queues to
-    /// their threads, herdr, which starts sessions in their tabs, the Herdr app and hc, which read
-    /// their terminals, and claude, which answers live ink. In a test launch (`VIGNETTE_SETTINGS` set) it is
+    /// their threads, the Herdr app and hc, which read their terminals and start sessions in them,
+    /// and claude, which answers live ink. In a test launch (`VIGNETTE_SETTINGS` set) it is
     /// only the one the environment names in `variable`, and none without it, since any other found
     /// on this Mac is the person's own.
     static func forSessions(_ variable: String, environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -71,9 +71,9 @@ enum AgentTools {
         guard !lock.withLock({ let was = started; started = true; return was }) else { return }
         if Launch.isTest {
             let env = ProcessInfo.processInfo.environment
-            let named = ["codex": "VIGNETTE_CODEX", "herdr": "VIGNETTE_HERDR", "claude": "VIGNETTE_CLAUDE",
+            let named = ["codex": "VIGNETTE_CODEX", "claude": "VIGNETTE_CLAUDE",
                          "herdr-app": "VIGNETTE_HERDR_APP", "hc": "VIGNETTE_HC"]
-            let tools = ["codex", "herdr", "claude", "herdr-app", "hc"].map { "\($0)=\(env[named[$0]!] ?? "none")" }
+            let tools = ["codex", "claude", "herdr-app", "hc"].map { "\($0)=\(env[named[$0]!] ?? "none")" }
             Log.write("[tools] test launch: \(tools.joined(separator: " ")), from \(named.values.sorted().joined(separator: ", "))")
         }
         DispatchQueue.global(qos: .utility).async {

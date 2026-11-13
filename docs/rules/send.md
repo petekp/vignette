@@ -53,11 +53,11 @@
   are recorded on every request and reported in `[state] requests`; `docs/closed-agent-loop-implementation-2026-09-20.md` says why the weaker one
   is still allowed to submit.
 - A project with past Claude Code sessions and none running offers Continue last session and New
-  session in both session menus (`StartableSessions`, `SessionStart`). Sending to one opens a herdr
-  tab in its folder, starts `claude --resume <id>` or `claude --session-id <id>` there, waits up to
+  session in both session menus (`StartableSessions`, `SessionStart`). Sending to one opens a tab in
+  the space the Herdr window shows (`HerdrLauncher`, through `hc run`), starts `claude --resume <id>` or `claude --session-id <id>` there, waits up to
   45 s for its inbox, then writes the line as any send does. Only a person's pick starts a process:
   the rows travel apart from the running sessions (`Candidates.startable`), so `DestinationChoice`
-  never sees them, and only the menus join the two. Without herdr no row is offered.
+  never sees them, and only the menus join the two. Without the Herdr app and `hc` no row is offered.
   `docs/session-starts-2026-10-25.md` has the design.
 - Send never reuses Done. It renders the drawing on `RenderingQueue` and closes nothing while it
   waits. The request is stored before the image leaves the editor, so a failure anywhere before then
