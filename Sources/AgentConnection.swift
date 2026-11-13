@@ -226,7 +226,7 @@ struct ClaudeCodeConnection: AgentConnection {
 
     static let closed = "This session has ended. You can send it to another one."
     static let cleared = "This session was cleared. You can send it to another one."
-    static let notStarted = "Vignette couldn't open a herdr tab for Claude Code. The log has details."
+    static let notStarted = "Vignette couldn't open a Herdr tab for Claude Code. The log has details."
     static let notUpInTime = "Claude Code didn't open in time. You can send again once it's running."
 
     /// From the inbox the session was listed from, or for a session Vignette started, the live one

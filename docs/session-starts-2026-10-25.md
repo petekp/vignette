@@ -123,7 +123,7 @@ last answer is kept and shown until a fresh one comes.
 - During the grace: "Sending to *place*", with Don't send.
 - While the session starts and the line waits for its inbox: "Starting in *place*".
 - Delivered: "Sent to *place*".
-- No Herdr window, no space, or `hc run` refused: "Not sent", "Vignette couldn't open a herdr tab for Claude Code. The log
+- No Herdr window, no space, or `hc run` refused: "Not sent", "Vignette couldn't open a Herdr tab for Claude Code. The log
   has details."
 - No inbox after 45 s: "Not sent", "Claude Code didn't open in time. You can send again once it's
   running." The tab stays, and the session may still come up there; the next Send finds it running.
