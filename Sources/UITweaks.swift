@@ -87,17 +87,17 @@ struct UITweaks: Codable, Equatable {
     var flightTiming = "quickSpring" // quickSpring, spring, springNoBounce: how a flight moves and comes to rest (FlightTiming)
     var motion = 1.0                 // multiplier on every animation, 0 to 1; Reduce Motion forces 0
     // Backdrop
-    var backdropWidth = 180.0
+    var backdropWidth = 160.0
     var backdropTint = 0.65          // darkness at the right edge, 0 to 1
     var backdropTintStart = 0.0      // where the tint begins, 0 = left edge, 1 = right edge
-    var backdropBlurRadius = 25.0    // at the right edge
-    var backdropBands = 7            // effect views in the blur ramp
-    var backdropRampPower = 1.2      // 1 = linear radius growth, higher keeps the left sharper
+    var backdropBlurRadius = 20.0    // the rightmost band's radius; with one band, the whole strip's
+    var backdropBands = 1            // effect views in the blur ramp; one is a single blur that fades in from the strip's left edge
+    var backdropRampPower = 0.5      // how the bands' radii grow to the right: 1 = linear, higher keeps the left sharper; no effect with one band
     var backdropFadeIn = 0.25
-    var backdropFadeOut = 0.25
+    var backdropFadeOut = 0.3
     var backdropSlideIn = 0.3           // the strip slides in from the screen edge while it fades
     var backdropSlideOut = 0.2
-    var backdropTopFadeHeight = 17.0 // the strip fades in over this many points below the menu bar; 0 leaves it unmasked
+    var backdropTopFadeHeight = 0.0  // the strip fades in over this many points below the menu bar; 0 leaves it unmasked, with a crisp top edge
     var dimOpacity = 0.3             // screen darkening behind the annotator
     var dimBlurRadius = 17.0
     var dimFade = 0.4                // the spring settles within this
