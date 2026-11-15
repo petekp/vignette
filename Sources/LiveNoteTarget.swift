@@ -84,7 +84,7 @@ extension LiveNotePopover {
     static func item(for responder: Responder, selected: Bool, action: Selector, target: AnyObject) -> NSMenuItem {
         // A menu enables any item with an action, so a row that cannot be picked has none.
         let item = NSMenuItem(title: "\(responder.name), on the screen", action: responder.canPick ? action : nil, keyEquivalent: "")
-        item.image = SessionMenu.logo(for: responder.client)
+        SessionMenu.showLogo(of: responder.client, on: item)
         item.state = selected ? .on : .off
         item.representedObject = responder.client.rawValue
         item.target = target
