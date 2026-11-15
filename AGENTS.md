@@ -116,6 +116,7 @@ These files hold code for several areas. Read the file for the part you change:
   --test` also runs the unit tests in `Tests/` (the `VignetteTests` target compiles `Sources/`
   itself; it never launches the app). A build into another `-derivedDataPath` leaves `build/`,
   and an instance running from it, untouched.
+  `scripts/build.sh --test` fails when a file in `Sources/` has no filename or glob in this map.
 - `media/trailer/trailer.py all` records the trailer from the current source: it builds a stage copy
   of the app with its own bundle id, sets up a desktop with the game in Chrome and the trailer's own
   Claude Code in Ghostty, with the stage copy's plugin, drives every beat while it records the
