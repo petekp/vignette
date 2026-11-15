@@ -179,7 +179,7 @@ extension SessionMenu {
         static let glowPad: CGFloat = 3.5
         static let glowSteps = 24
         /// The glow's opacity at its brightest, at the dot's edge.
-        static let glowOpacity: CGFloat = 0.45
+        static let glowOpacity: CGFloat = 0.225
         private static var dots: [Int: NSTextAttachment] = [:]
 
         static func dot(glow: Int, lit: Bool) -> NSTextAttachment {
