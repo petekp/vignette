@@ -21,9 +21,10 @@ final class MotionTests: XCTestCase {
         // with the pointer, and the lamp's breath and drift.
         let motion: Set<String> = ["flightArc", "flightDepth", "liveInkDrawOn", "inkSettle", "inkSettleStagger", "liveInkFieldFollow",
                                    "liveInkLampBreath", "liveInkLampDrift"]
-        // A motion word without motion: a press's wait before a drag, a share of the funnel's travel, and how
-        // long the live ink chord is held before the pointer field shows.
-        let notMotion: Set<String> = ["textDragDelay", "introFunnelFade", "liveInkFieldDelay"]
+        // A motion word without motion: a press's wait before a drag, a share of the funnel's travel, how
+        // long the live ink chord is held before the pointer field shows, and how tall the backdrop's fade
+        // below the menu bar is.
+        let notMotion: Set<String> = ["textDragDelay", "introFunnelFade", "liveInkFieldDelay", "backdropTopFadeHeight"]
         for bound in UITweaks.bounds {
             let named = ["Duration", "Fade", "Slide", "Delay", "stagger"].contains { bound.name.contains($0) }
             if motion.contains(bound.name) || (named && !notMotion.contains(bound.name)) {
