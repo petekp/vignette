@@ -120,8 +120,8 @@ final class SessionStartsTests: XCTestCase {
         let rows = SessionMenu.menu([new, resume], destination: nil, now: now).topRows
         XCTAssertEqual(rows.map(\.title), [SessionMenu.continueLast, SessionMenu.newSession], "with none running they are what the menu offers")
         XCTAssertTrue(rows[0].subtitle.contains(past), rows[0].subtitle)
-        XCTAssertNotNil(rows[0].badge, "Continue says when the session it continues was last active")
-        XCTAssertNil(rows[1].badge, "New has no time of its own")
+        XCTAssertNotNil(rows[0].activity, "Continue says when the session it continues was last active")
+        XCTAssertNil(rows[1].activity, "New has no time of its own")
         XCTAssertEqual(SessionMenu.row(of: resume, among: [running], now: now).title, SessionMenu.lastSession(in: "site"))
         XCTAssertEqual(SessionMenu.row(of: new, among: [running], now: now).title, SessionMenu.newSession(in: "site"))
         XCTAssertTrue(SessionMenu.row(of: resume, among: [running], now: now).tooltip.hasPrefix(SessionMenu.continueLast))

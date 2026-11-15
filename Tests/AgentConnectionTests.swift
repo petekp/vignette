@@ -561,7 +561,7 @@ final class AgentConnectionTests: XCTestCase {
         let fallback = row(s, now: now)
         XCTAssertEqual(fallback.title, "Codex thread")
         XCTAssertEqual(fallback.subtitle, "Codex worktree · apps/ui · codex/selector")
-        XCTAssertEqual(fallback.badge, "2 hr ago", "the badge says when it was last active")
+        XCTAssertEqual(fallback.activity, .lastActive("2 hr ago"))
         XCTAssertEqual(fallback.tooltip, "Codex thread\nCodex worktree · apps/ui · codex/selector · 2 hr ago\nevercars")
     }
 
