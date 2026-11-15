@@ -24,6 +24,15 @@ extension SessionMenu {
         if #available(macOS 27.0, *) { item.preferredImageVisibility = .visible }
     }
 
+    /// Puts a clear image of a logo's size on `item`. macOS 27 starts the title of an item with no
+    /// image at the menu's left, yet measures it from where the others' titles start, so its words
+    /// after a tab stop end short of theirs.
+    @MainActor
+    static func showSpace(on item: NSMenuItem) {
+        item.image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { _ in true }
+        if #available(macOS 27.0, *) { item.preferredImageVisibility = .visible }
+    }
+
     /// The widest a row's title is drawn. A menu with less room on screen than a title needs measures
     /// it as two lines and draws its first, cut mid-sentence on a row a line too tall. 400 pt keeps a
     /// row with its logo and the words at its right inside a menu about 530 pt wide.
@@ -100,6 +109,7 @@ extension SessionMenu {
         menu.addItem(.separator())
         for project in sessions.projects {
             let item = IndicatorItem(title: project.header, indicator: .count(project.rows.count))
+            showSpace(on: item)
             let submenu = NSMenu()
             submenu.autoenablesItems = false
             for row in project.rows { submenu.addItem(make(row)) }

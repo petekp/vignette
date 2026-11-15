@@ -32,15 +32,15 @@ extension SessionMenu {
     }
 
     /// How "working" shimmers: a soft band crosses the word in `passBeats`, then the word rests for
-    /// `restBeats`. Both count beats of live ink's thinking light, on its clock
+    /// `restBeats`. Its dot's glow is brightest as each pass starts and faintest as it ends. Both count beats of live ink's thinking light, on its clock
     /// (`LiveMarksLayer.thinkingPeriod`, `thinkingEpoch`), so the menu keeps time with the ink.
     struct Shimmer {
         let passBeats: Double
         let restBeats: Double
-        /// The band's width, about three letters of the word.
-        static let bandWidth: CGFloat = 24
+        /// The band's width, a little wider than the word, so the fade spreads across most of it.
+        static let bandWidth: CGFloat = 52
         /// The word's opacity at the band's centre, as a share of its own.
-        static let dip: CGFloat = 0.35
+        static let dip: CGFloat = 0.3
 
         /// Where the band's centre is at `time` on live ink's clock, from the word's left edge: from
         /// wholly before the word to wholly past it, or nil while the word rests.
@@ -51,6 +51,12 @@ extension SessionMenu {
             guard into < pass else { return nil }
             let progress = CGFloat(into / pass)
             return -Self.bandWidth / 2 + (wordWidth + Self.bandWidth) * progress
+        }
+
+        /// 0 to 1: how bright the dot's glow is at `time`, along a cosine over one pass and its rest.
+        func glow(at time: CFTimeInterval) -> CGFloat {
+            let cycle = (passBeats + restBeats) * LiveMarksLayer.thinkingPeriod
+            return CGFloat(0.5 + 0.5 * cos(2 * .pi * time / cycle))
         }
 
         /// A letter's opacity, as a share of its own, when its centre is at `x` and the band's at
@@ -83,6 +89,8 @@ extension SessionMenu {
         var drawsHighlighted = false
         /// The shimmer's band over "working", from the word's left edge, or nil while it rests.
         var band: CGFloat?
+        /// How bright the dot's glow is, in steps up to `glowSteps`. 0 under Reduce Motion.
+        var glow = 0
 
         init(title: String, indicator: Indicator) {
             self.indicator = indicator
@@ -101,7 +109,7 @@ extension SessionMenu {
 
         var indicatorWidth: CGFloat {
             switch indicator {
-            case .working: Self.dotWidth + Self.dotGap + Self.wordWidth
+            case .working: Self.glowPad + Self.dotWidth + Self.dotGap + Self.wordWidth
             case .lastActive(let text): (text as NSString).size(withAttributes: [.font: SessionMenu.indicatorFont]).width
             case .count(let count): ("\(count)" as NSString).size(withAttributes: [.font: SessionMenu.indicatorFont]).width
             }
@@ -115,7 +123,7 @@ extension SessionMenu {
             let lit = NSColor.selectedMenuItemTextColor
             switch indicator {
             case .working:
-                title.append(NSAttributedString(attachment: drawsHighlighted ? Self.litDot : Self.dot))
+                title.append(NSAttributedString(attachment: Self.dot(glow: glow, lit: drawsHighlighted)))
                 let color = drawsHighlighted ? lit.withAlphaComponent(0.8) : .secondaryLabelColor
                 for (letter, centre) in zip(SessionMenu.working, Self.letterCentres) {
                     let opacity = band.map { Shimmer.opacity(at: centre, bandCentre: $0) } ?? 1
@@ -154,22 +162,46 @@ extension SessionMenu {
             let through = (String(SessionMenu.working[...index]) as NSString).size(withAttributes: [.font: SessionMenu.indicatorFont]).width
             return (before + through) / 2
         }
-        static let dot = dotAttachment(color: .systemGreen)
-        static let litDot = dotAttachment(color: .selectedMenuItemTextColor)
+        /// The glow's reach past the dot's edge, and the steps its brightness takes.
+        static let glowPad: CGFloat = 3.5
+        static let glowSteps = 24
+        /// The glow's opacity at its brightest, at the dot's edge.
+        static let glowOpacity: CGFloat = 0.45
+        private static var dots: [Int: NSTextAttachment] = [:]
 
-        /// The green dot before "working", with the space after it, since text drawing ignores kerning
-        /// on an attachment. Its centre sits on the middle of the word's x-height, where the eye centres
-        /// a lower-case word with no capitals.
-        private static func dotAttachment(color: NSColor) -> NSTextAttachment {
-            let size = NSSize(width: dotWidth + dotGap, height: dotWidth)
+        static func dot(glow: Int, lit: Bool) -> NSTextAttachment {
+            let key = glow * 2 + (lit ? 1 : 0)
+            if let dot = dots[key] { return dot }
+            let dot = dotAttachment(color: lit ? .selectedMenuItemTextColor : .systemGreen,
+                                    glow: glowOpacity * CGFloat(glow) / CGFloat(glowSteps))
+            dots[key] = dot
+            return dot
+        }
+
+        /// The green dot before "working", in a soft glow of `glow` opacity, with room for the glow
+        /// around it and the space after it, since text drawing ignores kerning on an attachment. Its
+        /// centre sits on the middle of the word's x-height, where the eye centres a lower-case word
+        /// with no capitals.
+        private static func dotAttachment(color: NSColor, glow: CGFloat) -> NSTextAttachment {
+            let size = NSSize(width: glowPad + dotWidth + dotGap, height: dotWidth + 2 * glowPad)
+            let dot = CGRect(x: glowPad, y: glowPad, width: dotWidth, height: dotWidth)
             let image = NSImage(size: size, flipped: false) { _ in
+                let rgb = color.usingColorSpace(.sRGB) ?? color
+                if glow > 0, let context = NSGraphicsContext.current?.cgContext,
+                   let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+                                             colors: [rgb.withAlphaComponent(glow).cgColor, rgb.withAlphaComponent(0).cgColor] as CFArray,
+                                             locations: [dotWidth / 2 / (dotWidth / 2 + glowPad), 1]) {
+                    let centre = CGPoint(x: dot.midX, y: dot.midY)
+                    context.drawRadialGradient(gradient, startCenter: centre, startRadius: 0, endCenter: centre,
+                                               endRadius: dotWidth / 2 + glowPad, options: [])
+                }
                 color.setFill()
-                NSBezierPath(ovalIn: CGRect(x: 0, y: 0, width: dotWidth, height: dotWidth)).fill()
+                NSBezierPath(ovalIn: dot).fill()
                 return true
             }
             let attachment = NSTextAttachment()
             attachment.image = image
-            attachment.bounds = CGRect(origin: CGPoint(x: 0, y: SessionMenu.indicatorFont.xHeight / 2 - dotWidth / 2), size: size)
+            attachment.bounds = CGRect(origin: CGPoint(x: 0, y: SessionMenu.indicatorFont.xHeight / 2 - size.height / 2), size: size)
             return attachment
         }
     }
@@ -222,7 +254,7 @@ final class SessionMenuIndicators: NSObject, NSMenuDelegate {
         for case let submenu? in menu.items.map(\.submenu) { align(submenu) }
     }
 
-    /// Under Reduce Motion or `ui.motion` 0 the word stays still.
+    /// Under Reduce Motion or `ui.motion` 0 the word and its dot stay still, with no glow.
     private func startShimmer() {
         guard timer == nil, !working.isEmpty, Settings.shared.motionScale > 0 else { return }
         let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
@@ -239,8 +271,11 @@ final class SessionMenuIndicators: NSObject, NSMenuDelegate {
     private func tick() {
         let time = CACurrentMediaTime() - LiveMarksLayer.thinkingEpoch
         let band = SessionMenu.shimmer.bandCentre(at: time, wordWidth: SessionMenu.IndicatorItem.wordWidth)
-        for row in working where band != nil || row.band != nil {
+        let steps = SessionMenu.IndicatorItem.glowSteps
+        let glow = Int((SessionMenu.shimmer.glow(at: time) * CGFloat(steps)).rounded())
+        for row in working where band != nil || row.band != nil || row.glow != glow {
             row.band = band
+            row.glow = glow
             row.render()
         }
     }
