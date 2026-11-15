@@ -10,7 +10,6 @@ struct UITweaks: Codable, Equatable {
     var panelInset = 19.0            // room for shadows inside the panel
     var screenMargin = 17.0          // distance from the screen corner
     var stackMinScale = 0.5          // how narrow the stack goes to make room for the annotator
-    var stackGap = 24.0              // the stack keeps this much between itself and the annotator
     var cardCornerRadius = 16.0
     var cardBorderWidth = 0.5
     var cardBorderOpacity = 0.4
@@ -105,7 +104,7 @@ struct UITweaks: Codable, Equatable {
     var annotationMinWidth = 770.0
     var annotationMinHeight = 320.0
     var annotationCornerRadius = 16.0
-    var annotationToolbarGap = 9.0
+    var annotationToolbarGap = 9.0   // the frame to the toolbar, the toolbar to the screen's bottom, and the frame to the stack
     var annotationScreenInset = 60.0
     // An agent's title above the image (`AgentTitleView`): screen pt, the same size at any zoom
     var agentTitleSize = 17.0

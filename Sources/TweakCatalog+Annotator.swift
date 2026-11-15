@@ -8,7 +8,7 @@ extension TweakCatalog {
                 .number("annotationMinHeight", "Min height", \.annotationMinHeight, 100...900, step: 10, safe: 1...100_000),
                 .number("annotationScreenInset", "Screen inset", \.annotationScreenInset, 0...200, step: 5, safe: 0...10_000),
                 .number("annotationCornerRadius", "Corner radius", \.annotationCornerRadius, 0...30, safe: 0...1000),
-                .number("annotationToolbarGap", "Toolbar gap", \.annotationToolbarGap, 0...40, safe: 0...1000),
+                .number("annotationToolbarGap", "Annotator margin", \.annotationToolbarGap, 0...40, safe: 0...1000),
                 // `Zoom.pulledToEdges` caps the band at half a side, so any value past a frame's own size
                 // behaves the same; this is that, not a design limit. 0...400 is the slider's range.
                 .number("zoomEdgeBandPoints", "Zoom edge band", \.zoomEdgeBandPoints, 0...400, step: 5, unit: "pt", safe: 0...2000),
