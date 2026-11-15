@@ -202,8 +202,8 @@ or off in Settings → General, or with Live Ink in the menu bar menu.
 Hold Control and Option and draw. To use another pair, pick it under Hold to draw in Settings →
 General. A glowing ring follows the pointer while you hold the keys. A loop becomes an ellipse
 round what you circled, and any other stroke becomes an arrow, in your red. To erase a mark, click
-on it or inside its circle with the keys held. Clear Live Ink in the menu erases them all, and so
-does turning live ink off.
+on it or inside its circle with the keys held. With no note, ask or answer open, Esc with the
+pointer on a mark erases them all, and so does turning live ink off.
 
 Marks you draw on a window move with it, hide behind windows in front of it, and go when it closes.
 Ink on no window stays where it is on the screen, on the Space you drew it on. All your marks are
@@ -232,7 +232,8 @@ closes it and erases the ink you have not asked about. Each Esc after that goes 
 cancels the ask under way, then closes the answer, then erases every mark.
 
 Ask again with no new ink and it's a follow-up about the same thing. A new question replaces the
-last answer, and Clear Live Ink starts over. Erase an answer's mark or note as you erase your own.
+last answer. Esc with the pointer on the ink goes back a step at a time, and its last step erases every
+mark and starts over. Erase an answer's mark or note as you erase your own.
 
 The note's target starts on the agent you used last, Claude or Codex. Click it, or press the Down
 arrow, to ask the other agent or to send your ink to one of your coding agent sessions instead: the

@@ -1009,9 +1009,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         liveInkItem.state = settings.data.liveInk ? .on : .off
         liveInkItem.badge = NSMenuItemBadge(string: "Hold \(settings.data.liveInkChordChoice.glyphs)")
         menu.addItem(liveInkItem)
-        if settings.data.liveInk {
-            menu.addItem(NSMenuItem(title: "Clear Live Ink", action: #selector(clearLiveInk), keyEquivalent: ""))
-        }
 
         // The same two switches, under the same heading, as the Settings window's Screenshots tab.
         menu.addItem(.separator())
@@ -1184,8 +1181,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if settings.data.liveInk { ScreenRecording.request() }
         Log.write("[settings] liveInk=\(settings.data.liveInk)")
     }
-
-    @objc private func clearLiveInk() { liveInk.clear() }
 
     @objc private func toggleAnnotateOnCapture() {
         settings.update { $0.annotateOnCapture.toggle() }
@@ -1361,12 +1356,10 @@ extension AppDelegate: NSMenuDelegate, NSMenuItemValidation {
     func menuNeedsUpdate(_ menu: NSMenu) { rebuildMenu(menu) }
 
     /// Showing and drawing act on a screenshot, and with an empty folder they did nothing and said
-    /// so only in the log. Greyed out is what a Mac user already reads as nothing to act on, and the
-    /// same goes for clearing live ink with no marks on the screen.
+    /// so only in the log. Greyed out is what a Mac user already reads as nothing to act on.
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
         case #selector(toggleRecent), #selector(annotateLast): return hasScreenshots
-        case #selector(clearLiveInk): return !liveInk.marks.isEmpty
         case #selector(checkForUpdates): return updater?.canCheck ?? false
         default: return true
         }
