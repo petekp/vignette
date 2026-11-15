@@ -3,12 +3,12 @@ import AppKit
 /// Animates one value on a critically damped spring from wherever it is now, so a new target
 /// mid-flight retargets instead of jumping. Used for window alpha, which NSAnimationContext
 /// restarts from the model value. The spring keeps its velocity across retargets, so a reversal
-/// mid-flight slows and turns instead of restarting from rest. Ticks come from the screen's display link, so a
-/// 120 Hz display gets a step per refresh; a fixed timer would step at 60 Hz on it.
+/// mid-flight slows and turns instead of restarting from rest. Ticks come from the main screen's display link
+/// (`ScreenLink`), so a 120 Hz display gets a step per refresh; a fixed timer would step at 60 Hz on it.
 @MainActor
 final class Tween: NSObject {
     private(set) var value: CGFloat
-    private var link: CADisplayLink?
+    private var link: ScreenLink?
     private var timer: Timer?   // only when no screen can provide a display link
     /// A critically damped spring: no overshoot, and `omega` sized so it settles within the duration.
     private var spring: (target: CGFloat, omega: Double, lastTick: CFTimeInterval)?
@@ -23,10 +23,8 @@ final class Tween: NSObject {
 
     private func startTicking() {
         stopTicking()
-        if let screen = NSScreen.main {
-            let link = screen.displayLink(target: self, selector: #selector(linkTick))
-            link.add(to: .main, forMode: .common)
-            self.link = link
+        if !NSScreen.screens.isEmpty {
+            link = ScreenLink(self, #selector(linkTick))
         } else {
             // Runs on the main run loop (added to it with .common below).
             timer = Timer.scheduledTimer(withTimeInterval: 1 / 60, repeats: true) { [weak self] _ in
