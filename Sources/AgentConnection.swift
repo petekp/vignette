@@ -104,9 +104,8 @@ struct AgentDestination: Equatable, Identifiable {
     /// The process whose Claude Code inbox held the session when it was listed, which names the
     /// inbox's folder. Nil for a Codex thread and for a session not listed from an inbox.
     var inbox: Int32? = nil
-    /// The goal the inbox mod wrote for the session, and whether it has an open question for the person.
+    /// The goal the inbox mod wrote for the session.
     var goal: String? = nil
-    var needsYou = false
     /// Whether `name` is the session's own (its custom or AI title) rather than a stand-in.
     var hasOwnName = true
     /// When a drawing was last handed to this session, from the request records. Stamped by
@@ -293,7 +292,7 @@ struct ClaudeCodeConnection: AgentConnection {
     func destinations() -> [AgentDestination] { destinations(of: liveInboxes(), withMenuFields: true) }
 
     /// The sessions of `inboxes`. `withMenuFields` adds what only the menus show: the place and
-    /// branch, the turn, and the inbox mod's goal and open question. Without it, a record that only
+    /// branch, the turn, and the inbox mod's goal. Without it, a record that only
     /// needs the name, the folder and when the session was last used reads no `.git` and no store.
     /// One session can run in two processes at once, as when it is resumed in a second terminal; it
     /// is listed once, from the first inbox holding it, and a send writes to that inbox.
@@ -342,7 +341,6 @@ struct ClaudeCodeConnection: AgentConnection {
             turn: inbox.flatMap { turn(of: $0) },
             inbox: inbox?.pid,
             goal: mod?.goal,
-            needsYou: mod?.needsYou ?? false,
             hasOwnName: transcript.title != nil,
             folder: cwd)
     }

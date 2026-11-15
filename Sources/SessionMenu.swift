@@ -17,7 +17,6 @@ enum SessionMenu {
     static let newSession = "New session"
     static func lastSession(in project: String) -> String { "Last session in \(project)" }
     static func newSession(in project: String) -> String { "New session in \(project)" }
-    static let needsYou = "Needs you"
     static let working = "Working"
 
     /// What one session's row says.
@@ -29,7 +28,7 @@ enum SessionMenu {
         let title: String
         /// Worktree, branch and goal, or the path from home and goal, joined by " · ".
         let subtitle: String
-        /// "Needs you" or "Working", or none.
+        /// "Working" while the session is busy, else when it was last active ("2 hr ago"), or none.
         let badge: String?
         /// The title, the second line, then the repository.
         let tooltip: String
@@ -296,39 +295,47 @@ enum SessionMenu {
             let title = titleSuffix.map { "\(baseTitle) (\($0))" } ?? baseTitle
             let named = session.hasOwnName && session.name.lowercased() != baseTitle.lowercased() ? session.name : nil
             let purpose = session.goal ?? named
+            let lastActive = session.lastUsed.map { age(since: $0, now: now) }
             var parts: [String?]
+            // The time the badge shows, which the tooltip keeps on the second line.
+            var tooltipAge: String?
             if let start = session.start {
-                // Where it would run, then which session it continues and when that was last used.
-                parts = placeParts(session, now: now, withSubfolder: true, withAge: false)
+                // Where it would run, then which session it continues.
+                parts = placeParts(session, withSubfolder: true)
                 if case .resume = start {
                     parts.append(session.hasOwnName ? session.name : nil)
-                    parts.append(session.lastUsed.map { age(since: $0, now: now) })
+                    tooltipAge = lastActive
                 }
             } else if tab == nil && purpose == nil {
-                // No herdr tab and nothing from the inbox mod: the session's name leads, and its place and age follow.
-                parts = placeParts(session, now: now, withSubfolder: true)
+                // No herdr tab and nothing from the inbox mod: the session's name leads, and its place follows.
+                parts = placeParts(session, withSubfolder: true)
+                tooltipAge = lastActive
             } else {
-                parts = placeParts(session, now: now, withSubfolder: false)
+                parts = placeParts(session, withSubfolder: false)
                 parts.append(purpose)
             }
             let line = distinct(parts).joined(separator: " · ")
-            let badge = session.needsYou ? SessionMenu.needsYou : (session.turn == .busy ? SessionMenu.working : nil)
-            let tooltip = [title, line, header].filter { !$0.isEmpty }.joined(separator: "\n")
-            return Row(destination: session, title: title, subtitle: line, badge: badge, tooltip: tooltip)
+            let tooltip = [title, distinct(parts + [tooltipAge]).joined(separator: " · "), header].filter { !$0.isEmpty }.joined(separator: "\n")
+            return Row(destination: session, title: title, subtitle: line, badge: badge(for: session, lastActive: lastActive), tooltip: tooltip)
         }
 
-        /// Worktree and branch, or the path from home; with the subfolder and the age when no
-        /// herdr tab or goal says more.
-        private static func placeParts(_ session: AgentDestination, now: Date, withSubfolder: Bool, withAge: Bool = true) -> [String?] {
-            var parts: [String?]
+        /// "Working" while the session is busy, else when it was last active. A New session row has
+        /// none: its time would be the project's last session's, not its own.
+        static func badge(for session: AgentDestination, lastActive: String?) -> String? {
+            if session.turn == .busy { return SessionMenu.working }
+            if case .new? = session.start { return nil }
+            return lastActive
+        }
+
+        /// Worktree and branch, or the path from home, with the subfolder when no herdr tab or goal
+        /// says more.
+        private static func placeParts(_ session: AgentDestination, withSubfolder: Bool) -> [String?] {
             switch session.place {
             case .repository(_, _, let worktree, let subfolder):
-                parts = [worktree] + (withSubfolder ? [subfolder] : []) + [session.branch]
-            case .folder(let path): parts = [path]
-            case .none: parts = []
+                return [worktree] + (withSubfolder ? [subfolder] : []) + [session.branch]
+            case .folder(let path): return [path]
+            case .none: return []
             }
-            if withSubfolder, withAge, let used = session.lastUsed { parts.append(age(since: used, now: now)) }
-            return parts
         }
 
         /// Parts without the empty ones and without one that repeats an earlier one.

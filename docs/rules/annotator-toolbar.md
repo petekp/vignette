@@ -75,8 +75,13 @@
   the target always among them, grouped under a header for each repository with Other folders last, then, after a separator, one submenu per project, titled as its header, with its count as a badge and every
   running session of that project in it, the top rows too (live ink's Tab steps through the five only).
   The rows that start a session are in neither part unless no session is running (`docs/rules/send.md`). The menu's first row is a search field that has the keyboard: typing lists the matching sessions from every project, the rows that start one after the running ones, Return picks the first, and Esc closes the menu (`SessionMenuSearch`). A row starts with its agent's logo, which macOS 27 shows only when the item asks for it (`SessionMenu.item`, `preferredImageVisibility`). A row's title is the name of the Herdr tab its terminal is in, unless Herdr numbered it, else
-  the session's name; its second line is the worktree, the branch and the inbox mod's goal; a badge says Needs you or Working
-  (`InboxModStore` reads the mod's private file and may find nothing). A Claude Code session is active while the plugin's monitor runs in it,
+  the session's name; its second line is the worktree, the branch and the inbox mod's goal
+  (`InboxModStore` reads the mod's private file and may find nothing); a badge says Working while a
+  turn runs, else when the session was last active (`SessionMenu.badge`). AppKit measures an item's
+  second line as two lines once it is wider than both its title and about 282 pt, yet draws it on
+  one, which left a blank line under it and the logo below the text. So the item cuts the second
+  line to fit, and the title to `SessionMenu.titleWidth`, which a menu with little room on screen
+  also wrapped and drew as its first line (`SessionMenu.item`, `fitted`). The tooltip keeps both whole. A Claude Code session is active while the plugin's monitor runs in it,
   and a Codex thread when it was used in the last day, since nothing says which threads the Codex
   app has open. The target settles once, from the first answer that names a focus (herdr's comes in
   about 60 ms, before the bar is up), or else from the whole list (`Model.answered`). With a kept
