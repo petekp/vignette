@@ -34,8 +34,8 @@
   shading a drawing-handler image at the strip's full height on every show was measurably slow.
   The strip ends at the menu
   bar's bottom edge, `visibleFrame.maxY` of its screen, which is also the column's top, and the
-  blur and tint fade in over its first `backdropTopFade` points. With the menu bar hidden the strip
-  reaches the screen's top, and the menu bar slides down over it.
+  blur and tint fade in over its first `backdropTopFadeHeight` points. With the menu bar hidden the
+  strip reaches the screen's top, and the menu bar slides down over it.
 - Stitching from the stack is one motion, not a file appearing later. `ThumbnailController.stitched`
   takes the cards the image was made from out of the column, holds a slot for the new card at the
   bottom, and hands both to `TransitionLayer.converge`: the pieces fly into that slot while the

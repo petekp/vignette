@@ -3,8 +3,8 @@ import QuartzCore
 
 /// A progressively blurred strip along the right edge of the screen behind the recent stack.
 /// It runs from the screen's bottom edge to the menu bar's bottom edge, the top the stack's column
-/// uses, and fades in over its first `backdropTopFade` points, so nothing behind the menu bar is
-/// blurred and the strip has no hard top edge. Mouse-transparent.
+/// uses, and fades in over its first `backdropTopFadeHeight` points, so nothing behind the menu bar
+/// is blurred and the strip has no hard top edge. Mouse-transparent.
 ///
 /// macOS has no public variable blur, and the private variableBlur filter ignores its mask when the
 /// backdrop renders in the window server (tried; it blurs uniformly). So the ramp is built from
@@ -83,7 +83,7 @@ final class BackdropPanel: NSPanel {
         // screen's top when the menu bar hides.
         let top = min(full.maxY, screen.visibleFrame.maxY)
         strip = NSRect(x: full.maxX - width, y: full.minY, width: width, height: top - full.minY)
-        let fade = min(CGFloat(max(0, ui.backdropTopFade)), strip.height)
+        let fade = min(CGFloat(max(0, ui.backdropTopFadeHeight)), strip.height)
         setFrame(strip, display: false)
         applySlide(slide.value)
         let bounds = contentView!.bounds

@@ -97,7 +97,7 @@ struct UITweaks: Codable, Equatable {
     var backdropFadeOut = 0.25
     var backdropSlideIn = 0.3           // the strip slides in from the screen edge while it fades
     var backdropSlideOut = 0.2
-    var backdropTopFade = 17.0       // the strip fades in over this many points below the menu bar
+    var backdropTopFadeHeight = 17.0 // the strip fades in over this many points below the menu bar
     var dimOpacity = 0.3             // screen darkening behind the annotator
     var dimBlurRadius = 17.0
     var dimFade = 0.4                // the spring settles within this

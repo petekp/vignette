@@ -87,7 +87,7 @@ extension TweakCatalog {
                 .number("backdropFadeOut", "Fade out", \.backdropFadeOut, 0...1.5, step: 0.05, unit: "s", safe: 0...60),
                 .number("backdropSlideIn", "Slide in", \.backdropSlideIn, 0...1.5, step: 0.05, unit: "s", safe: 0...60),
                 .number("backdropSlideOut", "Slide out", \.backdropSlideOut, 0...1.5, step: 0.05, unit: "s", safe: 0...60),
-                .number("backdropTopFade", "Top fade", \.backdropTopFade, 0...60, step: 1, unit: "pt", safe: 0...1000),
+                .number("backdropTopFadeHeight", "Top fade height", \.backdropTopFadeHeight, 0...60, step: 1, unit: "pt", safe: 0...1000),
                 .number("dimOpacity", "Dim behind annotator", \.dimOpacity, 0...0.9, step: 0.05, safe: 0...1),
                 .number("dimBlurRadius", "Dim blur", \.dimBlurRadius, 0...60, step: 1, unit: "pt", safe: 0...1000),
                 .number("dimFade", "Dim fade", \.dimFade, 0...1, step: 0.05, unit: "s", safe: 0...60),
