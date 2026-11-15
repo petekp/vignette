@@ -189,9 +189,12 @@ moves the script on only while its line shows on the shortcut page.
 
 ### The menu bar menu's shortcuts (`HotKeySpec.glyphs`, `HotKeySpec.holdLabel`)
 
+A shortcut no key equivalent can say is gray text at the right of its item (`ShortcutHintItem`).
+
 | Item | With a double tap | With a key combination |
 | --- | --- | --- |
-| Show Recent Screenshots | Right Shift ×2 | ⇧⌘6, in the menu's shortcut column |
+| Live Ink | Hold *pair* | Hold *pair* |
+| Show Recent Screenshots | Right Shift ×2 | ⇧⌘6, as the item's key equivalent |
 | Draw on Newest Screenshot | Right Shift ×2 and Hold | Hold ⇧⌘6 |
 
 ### Live ink
