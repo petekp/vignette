@@ -166,7 +166,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         startRequests(clearingUnsent: !replacing)
         // A first launch leaves a folder macOS protects alone until setup has said why Vignette
         // needs it: the watcher's first read is what raises macOS's prompt.
-        watcherWaitsForSetup = setupWindow.isUnasked && ScreenshotWatcher.protectedArea(of: watchFolder) != nil
+        let protectedArea = setupWindow.asksForFolder ? ScreenshotWatcher.protectedArea(of: watchFolder) : nil
+        watcherWaitsForSetup = protectedArea != nil
         if watcherWaitsForSetup {
             Log.write("[watcher] waiting for setup to ask for \(watchFolder.path)")
         } else {
@@ -181,7 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             // The login item and the plugin wait for the window to close, which applies the
             // switches it shows.
             setupWindow.applyLoginItem = { [weak self] in self?.applyLoginItem() }
-            setupWindow.show(callbacks: setupCallbacks(protectedArea: watcherWaitsForSetup ? ScreenshotWatcher.protectedArea(of: watchFolder) : nil))
+            setupWindow.show(callbacks: setupCallbacks(protectedArea: protectedArea))
         } else {
             // The setting is the user's wish; macOS may have lost the registration (the app moved) or kept one the file no longer asks for.
             // A removal in System Settings is a wish too, and turns the setting off instead.

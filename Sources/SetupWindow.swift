@@ -81,11 +81,15 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         // macOS asks to quit and reopen, and the next launch's setup opens on live ink's permissions.
         callbacks.askedForScreenRecording = { SetupModel.returnsToLiveInkSetup = true }
         callbacks.closed = { [weak self] model in self?.record(model) }
-        let data = settings.data
-        let reopened = data.liveInk && SetupModel.returnsToLiveInkSetup
-        if reopened { Log.write("[setup] reopened on live ink's permissions") }
-        open(callbacks: callbacks, scope: .whole, start: reopened ? .liveInkSetup : .welcome)
+        if reopensOnLiveInk { Log.write("[setup] reopened on live ink's permissions") }
+        open(callbacks: callbacks, scope: .whole, start: reopensOnLiveInk ? .liveInkSetup : .welcome)
     }
+
+    /// Setup opens on live ink's permissions, after Screen Recording's Quit & Reopen.
+    var reopensOnLiveInk: Bool { settings.data.liveInk && SetupModel.returnsToLiveInkSetup }
+
+    /// Setup will ask for the watch folder: the welcome page, which asks, shows before any later page.
+    var asksForFolder: Bool { isUnasked && !reopensOnLiveInk }
 
     /// Setup as a new person sees it, for the Setup Lab (`vignette://setup-lab`, needs `debug`), in
     /// the window it answers. The lab's callbacks record nothing. `place` puts the window where it
@@ -399,13 +403,6 @@ final class SetupModel: ObservableObject {
             if target == .agents { self.sawAgents = true }
         }
     }
-
-    /// Set until setup is done, so a quit and reopen part way through comes back to live ink's permissions.
-    static var returnsToLiveInkSetup: Bool {
-        get { Identity.defaults.bool(forKey: returnsToLiveInkSetupKey) }
-        set { Identity.defaults.set(newValue, forKey: returnsToLiveInkSetupKey) }
-    }
-    private static let returnsToLiveInkSetupKey = "setupReturnsToLiveInkPermissions"
 }
 
 @MainActor
