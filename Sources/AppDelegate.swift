@@ -973,7 +973,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         menu.removeAllItems()
         let shortcut = HotKeySpec.parse(settings.data.recentHotkey)
 
-        // What stops Vignette working comes first, as the way to fix it.
+        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        let liveInkItem = NSMenuItem(title: "Live Ink", action: #selector(toggleLiveInk), keyEquivalent: "")
+        liveInkItem.state = settings.data.liveInk ? .on : .off
+        liveInkItem.badge = NSMenuItemBadge(string: "Hold \(settings.data.liveInkChordChoice.glyphs)")
+        menu.addItem(liveInkItem)
+        // The same two switches, under the same heading, as the Settings window's Screenshots tab.
+        menu.addItem(.sectionHeader(title: "After a Screenshot"))
+        let copyItem = NSMenuItem(title: "Copy to Clipboard", action: #selector(toggleCopyOnCapture), keyEquivalent: "")
+        copyItem.state = settings.data.copyOnCapture ? .on : .off
+        menu.addItem(copyItem)
+        let captureItem = NSMenuItem(title: "Instant Draw", action: #selector(toggleAnnotateOnCapture), keyEquivalent: "")
+        captureItem.state = settings.data.annotateOnCapture ? .on : .off
+        menu.addItem(captureItem)
+        menu.addItem(.separator())
+
         let blocked = blockers()
         for item in blocked {
             item.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Needs permission")?
@@ -982,9 +996,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         if !blocked.isEmpty { menu.addItem(.separator()) }
 
-        if let version = updater?.waiting {
+        let waitingUpdate = updater?.waiting
+        if let waitingUpdate {
             let updateItem = NSMenuItem(title: "Update Available…", action: #selector(checkForUpdates), keyEquivalent: "")
-            updateItem.badge = NSMenuItemBadge(string: version)
+            updateItem.badge = NSMenuItemBadge(string: waitingUpdate)
             menu.addItem(updateItem)
             menu.addItem(.separator())
         }
@@ -996,43 +1011,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             recentItem.keyEquivalent = equivalent.key
             recentItem.keyEquivalentModifierMask = equivalent.modifiers
         } else if let shortcut {
-            recentItem.badge = NSMenuItemBadge(string: shortcut.label)
+            recentItem.badge = NSMenuItemBadge(string: shortcut.glyphs)
         }
         menu.addItem(recentItem)
-
         let drawItem = NSMenuItem(title: "Draw on Newest Screenshot", action: #selector(annotateLast), keyEquivalent: "")
         if let shortcut { drawItem.badge = NSMenuItemBadge(string: shortcut.holdLabel) }
         menu.addItem(drawItem)
-
-        menu.addItem(.separator())
-        let liveInkItem = NSMenuItem(title: "Live Ink", action: #selector(toggleLiveInk), keyEquivalent: "")
-        liveInkItem.state = settings.data.liveInk ? .on : .off
-        liveInkItem.badge = NSMenuItemBadge(string: "Hold \(settings.data.liveInkChordChoice.glyphs)")
-        menu.addItem(liveInkItem)
-
-        // The same two switches, under the same heading, as the Settings window's Screenshots tab.
-        menu.addItem(.separator())
-        menu.addItem(.sectionHeader(title: "After a Screenshot"))
-        let copyItem = NSMenuItem(title: "Copy to Clipboard", action: #selector(toggleCopyOnCapture), keyEquivalent: "")
-        copyItem.state = settings.data.copyOnCapture ? .on : .off
-        menu.addItem(copyItem)
-        let captureItem = NSMenuItem(title: "Instant Draw", action: #selector(toggleAnnotateOnCapture), keyEquivalent: "")
-        captureItem.state = settings.data.annotateOnCapture ? .on : .off
-        menu.addItem(captureItem)
-
-        menu.addItem(.separator())
         let folderItem = NSMenuItem(title: "Open Screenshots Folder", action: #selector(openScreenshotsFolder), keyEquivalent: "")
         folderItem.toolTip = (settings.data.folderURL.path as NSString).abbreviatingWithTildeInPath
         menu.addItem(folderItem)
-        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
-
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
-        if ProblemReport.issuesURL != nil {
-            menu.addItem(withTitle: "Report a Problem…", action: #selector(reportProblem), keyEquivalent: "")
-        }
 
-        menu.addItem(.separator())
         if settings.data.debug {
             menu.addItem(.sectionHeader(title: "Developer"))
             menu.addItem(withTitle: "Tweak UI…", action: #selector(openTweaks), keyEquivalent: "")
@@ -1040,6 +1029,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             menu.addItem(withTitle: "Reveal settings.json", action: #selector(revealSettings), keyEquivalent: "")
             menu.addItem(.separator())
         }
+
+        if waitingUpdate == nil {
+            menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        }
+        if ProblemReport.issuesURL != nil {
+            menu.addItem(withTitle: "Report a Problem…", action: #selector(reportProblem), keyEquivalent: "")
+        }
+        if menu.items.last?.isSeparatorItem == false { menu.addItem(.separator()) }
 
         menu.addItem(withTitle: "Quit Vignette", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         for item in menu.items where item.action != #selector(NSApplication.terminate(_:)) { item.target = self }

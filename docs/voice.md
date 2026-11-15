@@ -187,6 +187,13 @@ moves the script on only while its line shows on the shortcut page.
 | 34 | I'm out. ✌️ |
 | 35 and after | *The setup assistant has peaced out.* In muted italics, and it stays. |
 
+### The menu bar menu's shortcuts (`HotKeySpec.glyphs`, `HotKeySpec.holdLabel`)
+
+| Item | With a double tap | With a key combination |
+| --- | --- | --- |
+| Show Recent Screenshots | Right Shift ×2 | ⇧⌘6, in the menu's shortcut column |
+| Draw on Newest Screenshot | Right Shift ×2 and Hold | Hold ⇧⌘6 |
+
 ### Live ink
 
 Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).

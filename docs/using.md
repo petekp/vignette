@@ -17,12 +17,12 @@ If your screenshots save to the Desktop, Documents or Downloads, macOS asks once
 may read that folder. The welcome page asks for it, with Allow…, and says why. If you answered
 Don't Allow, the row says so, and its Allow… opens Privacy & Security → Files and Folders. Switch
 Vignette on there, and it starts watching the folder without a relaunch. Settings → Screenshots
-says so too, under Save to, and the menu bar menu starts with Allow Access to Your Screenshots….
+says so too, under Save to, and the menu bar menu offers Allow Access to Your Screenshots….
 
 Vignette watches the folder macOS saves screenshots to. Pick another in the Options menu of
 Cmd+Shift+5, or with Save to in Settings → Screenshots, and both change to it. If Cmd+Shift+5 is
 set to save to the Clipboard, Mail or Preview, no screenshot reaches the folder. The menu bar menu
-then starts with Save Screenshots to a Folder, and setup and Settings → Screenshots offer Save to
+then offers Save Screenshots to a Folder, and setup and Settings → Screenshots offer Save to
 Folder.
 
 Report a Problem…, in the menu bar menu, opens a new GitHub issue with Vignette's version and
@@ -184,7 +184,7 @@ the box.
 The double tap needs Vignette trusted for Accessibility, and a key combination needs no permission.
 Allow… brings up macOS's request, and its Open System Settings button opens Privacy & Security →
 Accessibility with Vignette listed. Switch it on, and the setup window comes back and waits for you
-to press the keys once. Until the double tap has the permission, the menu bar menu starts with
+to press the keys once. Until the double tap has the permission, the menu bar menu offers
 Allow Accessibility for the Shortcut….
 
 Hold the key, or the second tap, and the newest screenshot lifts out of the stack into the
@@ -217,10 +217,10 @@ works: pressing its key ends the drawing. Live ink doesn't draw while the stack 
 open. Esc while you hold the keys cancels the hold. What you drew and said in it goes, and nothing
 is sent.
 
-Like the double tap, live ink needs Accessibility. Until it has it, the menu bar menu starts with
+Like the double tap, live ink needs Accessibility. Until it has it, the menu bar menu offers
 Allow Accessibility for Live Ink…. It also needs Screen Recording to see the window under your
 ink. Until that is allowed, holding the keys says so beside the pointer, and the menu bar menu
-starts with Allow Screen Recording for Live Ink….
+offers Allow Screen Recording for Live Ink….
 
 ### Asking about your ink
 
