@@ -26,7 +26,7 @@ extension SessionMenu {
 
     /// The widest a row's title is drawn. A menu with less room on screen than a title needs measures
     /// it as two lines and draws its first, cut mid-sentence on a row a line too tall. 400 pt keeps a
-    /// row with its logo and badge inside a menu about 530 pt wide.
+    /// row with its logo and the words at its right inside a menu about 530 pt wide.
     static let titleWidth: CGFloat = 400
     /// AppKit measures an item's subtitle as two lines once it is wider than its title or than this,
     /// whichever is wider, then draws it on one line across the menu: the row keeps an empty line
@@ -55,16 +55,20 @@ extension SessionMenu {
         item.subtitle = fitted(text, width: max(titleDrawn, subtitleWidth), font: .systemFont(ofSize: NSFont.smallSystemFontSize))
     }
 
-    /// One row as an item: the agent's logo, its title, a second line, and a badge, each on one line.
+    /// One row as an item: the agent's logo, its title, a second line, each on one line, and at its
+    /// right what the session is doing.
     @MainActor
     static func item(for row: Row, selected: Bool) -> NSMenuItem {
         let title = fitted(row.title, width: titleWidth, font: .menuFont(ofSize: 0))
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let item = switch row.activity {
+        case .working: IndicatorItem(title: title, indicator: .working)
+        case .lastActive(let ago): IndicatorItem(title: title, indicator: .lastActive(ago))
+        case nil: NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        }
         showLogo(of: row.destination.client, on: item)
         item.state = selected ? .on : .off
         item.toolTip = row.tooltip
         if !row.subtitle.isEmpty { setSubtitle(row.subtitle, on: item) }
-        if let badge = row.badge { item.badge = NSMenuItemBadge(string: badge) }
         return item
     }
 
@@ -72,13 +76,13 @@ extension SessionMenu {
     @MainActor
     static func add(_ groups: [Group], to menu: NSMenu, make: (Row) -> NSMenuItem) {
         for group in groups {
-            menu.addItem(.sectionHeader(title: group.header))
+            menu.addItem(header(group.header))
             for row in group.rows { menu.addItem(make(row)) }
         }
     }
 
     /// Adds a search field as the menu's first row, then the top groups and, after a separator, one
-    /// submenu per project holding all of its running sessions, with their count as a badge. Typing in
+    /// submenu per project holding all of its running sessions, with their count at its right. Typing in
     /// the field replaces everything the menu holds from here on with the sessions that match, the
     /// rows that start a session included. The returned search must stay alive while the menu is open.
     @MainActor
@@ -95,8 +99,7 @@ extension SessionMenu {
         guard !sessions.projects.isEmpty else { return }
         menu.addItem(.separator())
         for project in sessions.projects {
-            let item = NSMenuItem(title: project.header, action: nil, keyEquivalent: "")
-            item.badge = NSMenuItemBadge(count: project.rows.count)
+            let item = IndicatorItem(title: project.header, indicator: .count(project.rows.count))
             let submenu = NSMenu()
             submenu.autoenablesItems = false
             for row in project.rows { submenu.addItem(make(row)) }
@@ -116,6 +119,7 @@ final class SessionMenuSearch: NSObject, NSSearchFieldDelegate {
     private let menu: NSMenu
     private let make: (SessionMenu.Row) -> NSMenuItem
     private let field = NSSearchField()
+    private let indicators: SessionMenuIndicators
     /// Where the rows start: after the search row and whatever the menu held before it.
     private var start = 0
     /// Whether a query is typed, so the rows below are its matches.
@@ -125,6 +129,7 @@ final class SessionMenuSearch: NSObject, NSSearchFieldDelegate {
         self.sessions = sessions
         self.menu = menu
         self.make = make
+        indicators = SessionMenuIndicators(menu: menu)
     }
 
     func install() {
@@ -141,6 +146,7 @@ final class SessionMenuSearch: NSObject, NSSearchFieldDelegate {
         menu.insertItem(item, at: 0)
         start = menu.numberOfItems
         SessionMenu.addAll(sessions, to: menu, make: make)
+        indicators.refresh()
         holder.field = field
     }
 
@@ -157,6 +163,11 @@ final class SessionMenuSearch: NSObject, NSSearchFieldDelegate {
     }
 
     func controlTextDidChange(_ note: Notification) {
+        rebuild()
+        indicators.refresh()
+    }
+
+    private func rebuild() {
         while menu.numberOfItems > start { menu.removeItem(at: start) }
         let query = field.stringValue
         if query.trimmingCharacters(in: .whitespaces).isEmpty {

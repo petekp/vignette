@@ -17,7 +17,6 @@ enum SessionMenu {
     static let newSession = "New session"
     static func lastSession(in project: String) -> String { "Last session in \(project)" }
     static func newSession(in project: String) -> String { "New session in \(project)" }
-    static let working = "Working"
 
     /// What one session's row says.
     struct Row: Equatable, Identifiable {
@@ -28,8 +27,8 @@ enum SessionMenu {
         let title: String
         /// Worktree, branch and goal, or the path from home and goal, joined by " · ".
         let subtitle: String
-        /// "Working" while the session is busy, else when it was last active ("2 hr ago"), or none.
-        let badge: String?
+        /// What the row says at its right edge: working, or when the session was last active, or none.
+        let activity: Activity?
         /// The title, the second line, then the repository.
         let tooltip: String
     }
@@ -149,7 +148,7 @@ enum SessionMenu {
         case .new: title = newSession(in: destination.project)
         case nil: return row
         }
-        return Row(destination: row.destination, title: title, subtitle: row.subtitle, badge: row.badge, tooltip: row.tooltip)
+        return Row(destination: row.destination, title: title, subtitle: row.subtitle, activity: row.activity, tooltip: row.tooltip)
     }
 
     /// The sessions every row is worded over: the active ones, and `destination` when it is not among them.
@@ -297,7 +296,7 @@ enum SessionMenu {
             let purpose = session.goal ?? named
             let lastActive = session.lastUsed.map { age(since: $0, now: now) }
             var parts: [String?]
-            // The time the badge shows, which the tooltip keeps on the second line.
+            // The time at the row's right, which the tooltip keeps on the second line.
             var tooltipAge: String?
             if let start = session.start {
                 // Where it would run, then which session it continues.
@@ -316,15 +315,15 @@ enum SessionMenu {
             }
             let line = distinct(parts).joined(separator: " · ")
             let tooltip = [title, distinct(parts + [tooltipAge]).joined(separator: " · "), header].filter { !$0.isEmpty }.joined(separator: "\n")
-            return Row(destination: session, title: title, subtitle: line, badge: badge(for: session, lastActive: lastActive), tooltip: tooltip)
+            return Row(destination: session, title: title, subtitle: line, activity: activity(for: session, lastActive: lastActive), tooltip: tooltip)
         }
 
-        /// "Working" while the session is busy, else when it was last active. A New session row has
+        /// Working while the session is busy, else when it was last active. A New session row has
         /// none: its time would be the project's last session's, not its own.
-        static func badge(for session: AgentDestination, lastActive: String?) -> String? {
-            if session.turn == .busy { return SessionMenu.working }
+        static func activity(for session: AgentDestination, lastActive: String?) -> Activity? {
+            if session.turn == .busy { return .working }
             if case .new? = session.start { return nil }
-            return lastActive
+            return lastActive.map(Activity.lastActive)
         }
 
         /// Worktree and branch, or the path from home, with the subfolder when no herdr tab or goal

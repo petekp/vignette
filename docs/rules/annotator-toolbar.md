@@ -73,12 +73,23 @@
   pick from its menu is applied a turn later, after the menu's own event loop ends, since a change
   made inside it jumped instead of animating. Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
   sessions the person sent to in the last 4 hours, newest send first, then the rest by when the agent last worked; five of them, with
-  the target always among them, grouped under a header for each repository with Other folders last, then, after a separator, one submenu per project, titled as its header, with its count as a badge and every
+  the target always among them, grouped under a header for each repository with Other folders last, then, after a separator, one submenu per project, titled as its header, with its count at its right and every
   running session of that project in it, the top rows too (live ink's Tab steps through the five only).
   The rows that start a session are in neither part unless no session is running (`docs/rules/send.md`). The menu's first row is a search field that has the keyboard: typing lists the matching sessions from every project, the rows that start one after the running ones, Return picks the first, and Esc closes the menu (`SessionMenuSearch`). A row starts with its agent's logo, which macOS 27 shows only when the item asks for it (`SessionMenu.item`, `preferredImageVisibility`). A row's title is the name of the Herdr tab its terminal is in, unless Herdr numbered it, else
   the session's name; its second line is the worktree, the branch and the inbox mod's goal
-  (`InboxModStore` reads the mod's private file and may find nothing); a badge says Working while a
-  turn runs, else when the session was last active (`SessionMenu.badge`). AppKit measures an item's
+  (`InboxModStore` reads the mod's private file and may find nothing). At its right the row says
+  working, after a green dot, while a turn runs, else when the session was last active
+  (`SessionMenu.Activity`). Those words, and a project's count, follow the title after a right tab
+  stop in its attributed title, with no `NSMenuItemBadge`, which has no API for its look or its
+  distance from the chevron. `SessionMenuIndicators` sets one tab stop for each menu and
+  submenu, past the widest row's text, its words and `SessionMenu.indicatorGap`, so the words end
+  in one column; the search sets it again after each rebuild. The dot's centre sits on the middle of
+  the word's x-height (`IndicatorItem.dotAttachment`). As the menu's delegate it redraws the
+  highlighted row's words in `selectedMenuItemTextColor`, since they carry colours of their own. While a row says working, a soft band crosses the word letter by letter, one opacity per
+  letter, on live ink's thinking clock (`SessionMenu.shimmer`, one beat across and one at rest), from
+  a timer in the common run loop modes, which include the menu's tracking; the word is still under
+  Reduce Motion or `ui.motion` 0, and the timer stops when the menu closes or no row says working. Headers are section
+  headers with an attributed title in SF's small capitals (`SessionMenu.header`). AppKit measures an item's
   second line as two lines once it is wider than both its title and about 282 pt, yet draws it on
   one, which left a blank line under it and the logo below the text. So the item cuts the second
   line to fit, and the title to `SessionMenu.titleWidth`, which a menu with little room on screen
