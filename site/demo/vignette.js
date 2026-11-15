@@ -7,7 +7,7 @@ import { reducedMotion, motion, Spring, Motion } from "./springs.js";
 const SCREEN = { w: 1440, h: 900, menu: 25 };
 const UI = {
   cardMaxWidth: 188, cardMaxHeight: 153, cardMinSide: 120, cardSpacing: 10, screenMargin: 17,
-  cardCorner: 16, hoverScale: 1.06, stackMinScale: 0.5, stackGap: 24,
+  cardCorner: 16, hoverScale: 1.06, stackMinScale: 0.5, stackGap: 9,
   slideIn: 0.3, slideOut: 0.15, stagger: 0.07, staggerMax: 0.3, relayout: 0.25, shiftUp: 0.3,
   expand: 0.35, flightBounce: 0.15, flightArc: 0.15, flightArcMax: 64, flightDepth: 0.07,
   backdropWidth: 180, backdropFade: 0.25, dimFade: 0.4,
