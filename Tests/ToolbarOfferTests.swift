@@ -38,7 +38,7 @@ final class ToolbarOfferTests: XCTestCase {
 
     /// The message field takes the keys as the image opens. Until something is typed in it, Return
     /// and Esc there are the image's, so opening and pressing Return copies rather than sending.
-    func testAFieldThatTookTheKeysOnItsOwnSendsOnlyOnceSomethingIsTyped() {
+    func testAFieldThatTookTheKeysOnItsOwnSendsOnlyOnceSomethingIsTypedOrASessionIsPicked() {
         let model = AnnotatorToolbar.Model()
         let mew = session("mew")
         model.begin(replyTo: nil, carryingTarget: false)
@@ -51,6 +51,12 @@ final class ToolbarOfferTests: XCTestCase {
         model.message = "fix this"
         XCTAssertEqual(model.fieldReturn, .send)
         XCTAssertFalse(model.fieldEscCloses, "Esc keeps the words and hands the keys back")
+
+        model.message = ""
+        model.tookKeysOnOpen = true
+        model.pick(session("other"))
+        XCTAssertEqual(model.fieldReturn, .send, "a pick chooses the session to write to")
+        XCTAssertFalse(model.fieldEscCloses, "Esc after a pick hands the keys back to the image")
 
         model.begin(replyTo: nil, carryingTarget: true)
         XCTAssertFalse(model.tookKeysOnOpen, "each image starts over")

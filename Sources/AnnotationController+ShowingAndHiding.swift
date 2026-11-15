@@ -28,8 +28,9 @@ extension AnnotationController {
     }
 
     /// Typing goes to the agent: once the window is up, the bar's message field takes the keys, when
-    /// the bar has one and no key or press has reached the editor. Once per image, so a field the
-    /// keys left is not given them again when the session list answers.
+    /// the bar has one, no key or press has reached the editor and no session was picked in the
+    /// target's menu. Once per image, so a field the keys left is not given them again when the
+    /// session list answers.
     func offerTyping() {
         guard windowUp, editorUntouched, current != nil, toolbar.typeOnOpen() else { return }
         editorUntouched = false
