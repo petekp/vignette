@@ -209,6 +209,10 @@ Before you drive the app:
   velocity and blends into the new target instead of jumping. `Tween.spring` is the closed form of
   a critically damped spring, so a late tick lands where the spring really is by then. Do not step
   it forward by hand: integrating it overshoots by hundreds of points after one late tick.
+- A display link comes from `ScreenLink`, which moves it to the main screen when the screens change.
+  A link made on one display stops when that display is unplugged, and what it drives freezes.
+  `scripts/check-display-links.py`, run by `build.sh --test`, fails any other `displayLink(target:)`.
+  Its `ALLOWED` list names the links tied to one screen on purpose, each with why.
 - `docs/glossary.md` is Vignette's vocabulary: screenshots and the corner, drawing, and the agent
   loop. It says what each word means and what not to call it. Use its words in code, docs and
   labels. The distinction it guards most is that an agent session is a conversation and a pane is
