@@ -216,11 +216,15 @@ final class AnnotatorToolbar {
     private var targetFrame: CGRect?
     private let targetMenuActions = TargetMenuActions()
     private var hosting: NSHostingView<ToolbarView>!
+    /// The panel's size for the bar as SwiftUI lays it out now, with `padding` on every side.
+    var fittingSize: NSSize { hosting.fittingSize }
     private var keyObservers: [NSObjectProtocol] = []
     /// The key `model.toolLetter` holds, replayed into the field when a character follows it.
     private var heldLetter: NSEvent?
     /// Where `place` last put the bar, so a bar whose contents change width can centre again.
-    private var placedBelow: (frame: NSRect, gap: CGFloat)?
+    var placedBelow: (frame: NSRect, gap: CGFloat)?
+    /// The top edge a zoomed frame has carried the bar down to (`follow`), or nil at its place.
+    var carriedTop: CGFloat?
 
     static let height: CGFloat = 44
     /// Room around the bar inside its panel for the shadow and the entrance motion.
@@ -234,7 +238,7 @@ final class AnnotatorToolbar {
     var barFrame: NSRect {
         panel.frame.insetBy(dx: 0, dy: Self.messageRoom)
     }
-    private var hideGeneration = 0
+    var hideGeneration = 0
 
     init() {
         let panel = ToolbarPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: false)
@@ -457,16 +461,6 @@ final class AnnotatorToolbar {
         _ = menu.popUp(positioning: nil, at: NSPoint(x: frame.minX, y: below), in: hosting)
     }
 
-    /// Centers the toolbar under `frame`, `gap` points below it. A bar that is already up — one
-    /// image following another with no gap between them — slides to the new place instead of being
-    /// taken down and raised again, so the controls stay where the hand left them and only move
-    /// with the image's height. It also cancels a `hideSoon` waiting its turn: this bar is wanted.
-    func place(below frame: NSRect, gap: CGFloat) {
-        placedBelow = (frame, gap)
-        hideGeneration += 1
-        position(slide: true)
-    }
-
     /// Makes room for the bar, about its centre, when its width changed: Send and the target arrive
     /// with the session list, a pick in the menu renames the target, and Reply can give way to
     /// Send. It waits a turn, since SwiftUI reports the change from inside its layout.
@@ -480,64 +474,13 @@ final class AnnotatorToolbar {
         }
     }
 
-    private func position(slide: Bool) {
-        guard let (frame, gap) = placedBelow else { return }
-        let fit = hosting.fittingSize   // includes `padding` on every side
-        // While the bar is up the panel never narrows, so a bar springing narrower keeps the room it
-        // is animating in. The bar is centred in the panel and the rest is clear, which passes
-        // presses through. A new session starts at the bar's own width.
-        let up = model.shown && panel.isVisible
-        let size = NSSize(width: up ? max(fit.width, panel.frame.width) : fit.width, height: fit.height)
-        let barTop = frame.minY - gap
-        let center = frame.midX, top = barTop + Self.padding + Self.messageRoom
-        let screen = NSScreen.screens.first { $0.frame.contains(NSPoint(x: frame.midX, y: barTop)) } ?? NSScreen.main
-        if let visible = screen?.visibleFrame {
-            let room = barTop - Self.height - visible.minY
-            if model.roomBelow != room { model.roomBelow = room }
-        }
-        guard slide, up else {
-            sliding = false
-            slideX.stop(); slideY.stop()
-            panel.setFrame(Self.rect(center: center, top: top, size: size), display: true)
-            return
-        }
-        if !sliding {
-            // The springs start from where the bar really is, not from the last value they carried.
-            slideX.set(panel.frame.midX)
-            slideY.set(panel.frame.maxY)
-            sliding = true
-        }
-        // The window server may give the panel a frame a fraction off the size asked for, so the
-        // size is compared with a point of tolerance. A new size keeps the slide's centre and top.
-        if abs(panel.frame.width - size.width) >= 1 || abs(panel.frame.height - size.height) >= 1 {
-            panel.setFrame(Self.rect(center: slideX.value, top: slideY.value, size: size), display: true)
-        }
-        // As long as the incoming card's flight takes to cover `frame`, when that window comes up.
-        let seconds = FlightTiming.covers(frame)
-        slideX.animate(to: center, duration: seconds)
-        slideY.animate(to: top, duration: seconds)
-    }
-
-    /// The panel's frame from its centre and top edge, which is what the springs move, so a change of
-    /// size never moves the bar.
-    private static func rect(center: CGFloat, top: CGFloat, size: NSSize) -> NSRect {
-        NSRect(x: (center - size.width / 2).rounded(), y: top - size.height, width: size.width, height: size.height)
-    }
-
     /// The bar's own move, one spring per direction (the panel's centre and its top edge), so a move
     /// retargeted part way through keeps its velocity into the new place instead of restarting.
-    private lazy var slideX = Tween(initial: 0) { [weak self] _ in self?.applySlide() }
-    private lazy var slideY = Tween(initial: 0) { [weak self] _ in self?.applySlide() }
+    lazy var slideX = Tween(initial: 0) { [weak self] _ in self?.applySlide() }
+    lazy var slideY = Tween(initial: 0) { [weak self] _ in self?.applySlide() }
     /// Whether the two springs are the ones placing the panel. False while they are being seeded,
     /// so the half-seeded pair never reaches the panel.
-    private var sliding = false
-
-    private func applySlide() {
-        guard sliding else { return }
-        let origin = Self.rect(center: slideX.value, top: slideY.value, size: panel.frame.size).origin
-        guard origin != panel.frame.origin else { return }
-        panel.setFrameOrigin(origin)
-    }
+    var sliding = false
 
     /// Orders the panel in hidden and lets the bar rise into place a turn later, so the
     /// entrance animates from the hidden state instead of appearing already in place.

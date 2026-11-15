@@ -3,17 +3,19 @@ import AppKit
 // MARK: The frame
 
 extension AnnotationController {
-    /// The one place the frame's rect is set: the frame view, the clip, the shadow's path and the
-    /// editor inside it all take it from here, in the same tick, so nothing can be a frame behind.
-    /// `frameOnScreen` reads the result back for anyone who needs the rect. `picture` is where the
-    /// whole picture sits in the editor, in its coordinates, which run down from the top.
-    func moveFrame(to frame: NSRect, picture: CGRect) {
+    /// The one place the frame's rect is set: the frame view, the clip, the shadow's path, the
+    /// editor inside it and the bar under it all take it from here, in the same tick, so nothing can
+    /// be a frame behind. `frameOnScreen` reads the result back for anyone who needs the rect.
+    /// `picture` is where the whole picture sits in the editor, in its coordinates, which run down
+    /// from the top. `barTop` is where the bar's top edge goes (`AnnotatorZoom.barTop`).
+    func moveFrame(to frame: NSRect, picture: CGRect, barTop: CGFloat) {
         guard let win = window, let frameView, let container else { return }
         frameView.frame = NSRect(x: frame.minX - win.frame.minX, y: frame.minY - win.frame.minY, width: frame.width, height: frame.height)
         container.frame = frameView.bounds
         let r = Settings.shared.data.ui.annotationCornerRadius
         frameView.layer?.shadowPath = CGPath(roundedRect: frameView.bounds, cornerWidth: r, cornerHeight: r, transform: nil)
         editor.setSize(container.bounds.size, picture: picture)
+        toolbar.follow(top: barTop)
         placeTitle(frame: frame)
         onFrame?(frame)
     }

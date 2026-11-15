@@ -3,17 +3,20 @@ import XCTest
 final class AnnotatorZoomTests: XCTestCase {
     typealias Effect = AnnotatorZoom.Effect
 
-    /// A 400x300 frame in a room with 30 points above it and 110 below, so the height fills first:
-    /// each side reaches the room at its own level, 2.5 across and 1.47 down.
+    /// A 400x300 frame in a room with 30 points above it and 110 below, 48 of them left once the bar
+    /// and its margins are kept, so the height fills first: each side reaches the room at its own
+    /// level, 2.5 across and 1.26 down.
     private let fitted = CGRect(x: 300, y: 250, width: 400, height: 300)
     private let room = CGRect(x: 0, y: 140, width: 1000, height: 440)
+    private let bar = ZoomBar(height: 44, margin: 9)
+    private var frameRoom: CGRect { CGRect(x: 0, y: 202, width: 1000, height: 378) }
     private let edge = AnnotatorZoom.EdgePull(band: 120, pull: 0.5)
 
     /// An image opened in `fitted` whose flight has landed.
     private func landed() -> AnnotatorZoom {
         var zoom = AnnotatorZoom()
         zoom.edge = edge
-        XCTAssertNil(zoom.reduce(.prepare(fitted: fitted, room: room)))
+        XCTAssertNil(zoom.reduce(.prepare(fitted: fitted, room: room, bar: bar)))
         _ = zoom.reduce(.tick(1))
         XCTAssertNil(zoom.reduce(.landed))
         return zoom
@@ -47,7 +50,7 @@ final class AnnotatorZoomTests: XCTestCase {
 
     func testNothingZoomsBeforeTheFlightLands() {
         var zoom = AnnotatorZoom()
-        _ = zoom.reduce(.prepare(fitted: fitted, room: room))
+        _ = zoom.reduce(.prepare(fitted: fitted, room: room, bar: bar))
         let inputs: [AnnotatorZoom.Input] = [
             .zoomIn, .fit, .smart(at: nil), .smart(at: CGPoint(x: 0.2, y: 0.2)), .pinch(by: 0.5, at: nil),
             .wheel(points: 50, at: nil, fingers: true), .wheel(points: 50, at: nil, fingers: false),
@@ -106,8 +109,9 @@ final class AnnotatorZoomTests: XCTestCase {
         var zoom = landed()
         for _ in 0..<40 { settle(&zoom, zoom.reduce(.zoomIn)) }
         XCTAssertNil(zoom.reduce(.zoomIn))
-        XCTAssertEqual(zoom.level, room.height / fitted.height * AnnotatorZoom.maxCanvasZoom, accuracy: 1e-9)
-        assertEqual(zoom.frame, room)
+        XCTAssertEqual(zoom.room, frameRoom)
+        XCTAssertEqual(zoom.level, frameRoom.height / fitted.height * AnnotatorZoom.maxCanvasZoom, accuracy: 1e-9)
+        assertEqual(zoom.frame, frameRoom)
     }
 
     func testADoubleTapZoomsInTwiceAndThenBackToTheFit() {
@@ -185,7 +189,7 @@ final class AnnotatorZoomTests: XCTestCase {
         settle(&zoom, zoom.reduce(.smart(at: CGPoint(x: 0.1, y: 0.1))))
         _ = zoom.reduce(.close)
         let next = CGRect(x: 100, y: 200, width: 300, height: 200)
-        XCTAssertNil(zoom.reduce(.prepare(fitted: next, room: room)))
+        XCTAssertNil(zoom.reduce(.prepare(fitted: next, room: room, bar: bar)))
         XCTAssertEqual(zoom.phase, .flying)
         XCTAssertEqual(zoom.level, 1)
         XCTAssertEqual(zoom.frame, next)
@@ -205,6 +209,7 @@ final class AnnotatorZoomTests: XCTestCase {
             zoom.edge = AnnotatorZoom.EdgePull(band: .random(in: 0...400, using: &rng), pull: .random(in: 0...1, using: &rng))
             zoom.pixelScale = [nil, 1, 2, 3].randomElement(using: &rng)!
             var fitted = CGRect.zero
+            var bar = ZoomBar.none
             /// The level the spring is carrying the level to, if it is moving.
             var spring: CGFloat?
             var trace: [String] = []
@@ -213,6 +218,16 @@ final class AnnotatorZoomTests: XCTestCase {
             }
             func cap() -> CGFloat {
                 min(max(1, room.width / fitted.width), max(1, room.height / fitted.height)) * AnnotatorZoom.maxCanvasZoom
+            }
+            func checkBar(_ barTop: CGFloat, under frame: CGRect) {
+                let placed = fitted.minY - bar.margin
+                if barTop > frame.minY - bar.margin + 1e-6 { fail("the bar at \(barTop) is within a margin of \(frame)") }
+                if barTop > placed + 1e-6 { fail("the bar at \(barTop) rose above its place at \(placed)") }
+                if barTop - bar.height < room.minY - 1e-6 { fail("the bar at \(barTop) left the room") }
+                if barTop < placed - 1e-6, barTop - bar.height < room.minY + bar.margin - 1e-6 {
+                    fail("the bar was carried to \(barTop), within a margin of the room's bottom")
+                }
+                if zoom.level == 1, abs(barTop - placed) > 1e-6 { fail("the bar at \(barTop) at the fit is not at \(placed)") }
             }
             func cursor() -> CGPoint? {
                 Bool.random(using: &rng) ? nil : CGPoint(x: .random(in: -0.2...1.2, using: &rng), y: .random(in: -0.2...1.2, using: &rng))
@@ -241,8 +256,9 @@ final class AnnotatorZoomTests: XCTestCase {
                     if [.lift, .arrived].contains(input), to != 1 { fail("\(input) springs to \(to), not the fit") }
                     if to < 1 { pulls += 1 }
                     spring = to
-                case .place(let frame, let picture)?:
+                case .place(let frame, let picture, let barTop)?:
                     if !room.insetBy(dx: -1e-6, dy: -1e-6).contains(frame) { fail("\(frame) left the room") }
+                    checkBar(barTop, under: frame)
                     if let scale = zoom.pixelScale {
                         let edges = [frame.minX, frame.maxX, frame.minY, frame.maxY].map { $0 * scale }
                         if edges.contains(where: { abs($0 - $0.rounded()) > 1e-6 }) { fail("\(frame) is off the \(scale)x pixel grid") }
@@ -274,11 +290,14 @@ final class AnnotatorZoomTests: XCTestCase {
             }
             func prepare() {
                 let w = CGFloat.random(in: 200...1000, using: &rng), h = CGFloat.random(in: 150...600, using: &rng)
+                bar = Bool.random(using: &rng) ? .none : ZoomBar(height: .random(in: 20...60, using: &rng),
+                                                                 margin: .random(in: 0...20, using: &rng))
+                let lowestFittedBottom = room.minY + bar.height + bar.margin + 1
                 fitted = CGRect(x: .random(in: room.minX...(room.maxX - w), using: &rng),
-                                y: .random(in: room.minY...(room.maxY - h), using: &rng), width: w, height: h)
+                                y: .random(in: lowestFittedBottom...(room.maxY - h), using: &rng), width: w, height: h)
                 // `StackLayout.annotationFrame` fits the frame to whole points.
                 if zoom.pixelScale != nil { fitted = fitted.integral }
-                send(.prepare(fitted: fitted, room: room))
+                send(.prepare(fitted: fitted, room: room, bar: bar))
                 spring = nil
                 send(.tick(1))
                 // Most flights land before anything else happens; the rest meet inputs on the way.

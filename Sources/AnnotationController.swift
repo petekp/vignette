@@ -68,7 +68,11 @@ final class AnnotationController {
     var markScaleRule = UITweaks().markScaleRule
 
     /// Room the annotator needs below its window: the toolbar and its gap.
-    var spaceBelow: CGFloat { AnnotatorToolbar.height + Settings.shared.data.ui.annotationToolbarGap }
+    var spaceBelow: CGFloat { bar.height + bar.margin }
+
+    /// The toolbar under the frame, with the gap it keeps from the frame, and from the bottom of the
+    /// room once a zoomed frame has carried it there.
+    var bar: ZoomBar { ZoomBar(height: AnnotatorToolbar.height, margin: Settings.shared.data.ui.annotationToolbarGap) }
 
     /// Room the annotator needs above its window for `shot` when its title wraps at `wrap`
     /// (`StackLayout.titleWrapWidth`): its agent's title and the gap under it, or nothing for a
