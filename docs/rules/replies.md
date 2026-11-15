@@ -33,7 +33,11 @@
   candidate before clearing the oldest of 50 open requests. Failed retirement discards the
   unsubmitted candidate. A pre-existing over-limit store requires explicit clearing before Send.
   Cleared request folders are removed after a week only when no published reply or unfinished
-  output cleanup still needs their records. `docs/request-safety-plan-2026-10-02.md` records the
+  output cleanup still needs their records. Every stack open reconciles the cleared requests on
+  the main thread, so `ClearedRequestFolders` remembers each one's cleared date and its folder's
+  stamp from the last pass that found its sent image and submissions gone. A remembered fact
+  only skips a check: pruning reads the date from disk again before it removes a folder, and a
+  folder whose stamp changed is looked at again. `docs/request-safety-plan-2026-10-02.md` records the
   contracts and verification.
 - A `vignette://` URL has no authenticated sender, so a reply is authorized by a per-request bearer
   secret in the request's own directory. The request line names only the image

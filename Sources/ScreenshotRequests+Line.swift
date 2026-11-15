@@ -110,3 +110,9 @@ extension ScreenshotRequests {
         return message.map { "\($0) [\(note)]" } ?? note
     }
 }
+
+extension String {
+    /// The words with one space between each, whatever line breaks, tabs or spaces were there: what
+    /// the line Send puts in a session can hold, since the plugin's monitor makes each line one message.
+    var asOneLine: String { split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+}

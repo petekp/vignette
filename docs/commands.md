@@ -133,6 +133,10 @@ row=<n>`, says where the pick was made:
 (`docs/glossary.md`), and `[send] kept ended <address> reason=time|gone` is its end.
 `[state] annotator.keptPick` is the kept pick's `session`, `client` and `secondsLeft`, or null.
 
+`[main] slow inventory <n>ms` is a delivery of the screenshots folder's listing that held the main
+thread for more than 8 ms, which costs at least a frame at 120 Hz. Each stack open lists the folder
+again, so one of these during an opening is a frame that opening lost.
+
 ## Input events
 
 `scripts/input.sh` posts real input events for clicks, drags, and the shortcut itself. It needs the
