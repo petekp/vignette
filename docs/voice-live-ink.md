@@ -37,7 +37,7 @@ The menu bar menu names the switch as the General tab does.
 | macOS's microphone prompt (`NSMicrophoneUsageDescription`) | Vignette hears what you say while you draw, and turns it into words on this Mac. |
 | macOS's speech recognition prompt (`NSSpeechRecognitionUsageDescription`) | Vignette turns what you say while you draw into words, on this Mac. |
 | The note's target, and its tooltip | *agent* ⌄, "*agent* answers on the screen.", or why it can't answer / *title* ⌄, whose tooltip is the row's title, its second line and its repository |
-| The target's menu | Claude, on the screen; Codex, on the screen, unless Vignette found no Codex. One that can't answer says why under its name, ending in "…" when the reason is long; its tooltip has the reason whole. Then the sessions under a heading for each repository, in small capitals, "Other folders" last |
+| The target's menu | Claude, on the screen; Codex, on the screen, unless Vignette found no Codex. One that can't answer says why under its name, ending in "…" when the reason is long; its tooltip has the reason whole. Then the sessions under a heading for each repository in mixed case, "Other folders" last |
 | The search field, the first row of both target menus | Search sessions |
 | The row when what was typed matches no session | No session matches |
 | Below the five rows, in both target menus, once more than five sessions are running: one submenu per project, after a separator | The project's header text, with the number of its running sessions at its right, before the chevron |

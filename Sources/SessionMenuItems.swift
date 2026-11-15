@@ -60,8 +60,10 @@ extension SessionMenu {
     @MainActor
     static func setSubtitle(_ text: String, on item: NSMenuItem) {
         guard #available(macOS 14.4, *) else { return }
-        let titleDrawn = (item.title as NSString).size(withAttributes: [.font: NSFont.menuFont(ofSize: 0)]).width
-        item.subtitle = fitted(text, width: max(titleDrawn, subtitleWidth), font: .systemFont(ofSize: NSFont.smallSystemFontSize))
+        let row = item as? IndicatorItem
+        let titleDrawn = ((row?.text ?? item.title) as NSString).size(withAttributes: [.font: NSFont.menuFont(ofSize: 0)]).width
+        let line = fitted(text, width: max(titleDrawn, subtitleWidth), font: IndicatorItem.secondLineFont)
+        if let row { row.secondLine = line } else { item.subtitle = line }
     }
 
     /// One row as an item: the agent's logo, its title, a second line, each on one line, and at its

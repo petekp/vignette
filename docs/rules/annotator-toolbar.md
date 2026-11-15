@@ -93,8 +93,16 @@
   letter, on live ink's thinking clock (`SessionMenu.shimmer`, one beat across and one at rest), and the dot's soft glow is brightest as each
   pass starts and faintest as it ends, from
   a timer in the common run loop modes, which include the menu's tracking; the word and the dot are still under
-  Reduce Motion or `ui.motion` 0, and the timer stops when the menu closes or no row says working. Headers are section
-  headers with an attributed title in SF's small capitals (`SessionMenu.header`). AppKit measures an item's
+  Reduce Motion or `ui.motion` 0, and the timer stops when the menu closes or no row says working. A row with words at its
+  right carries its second line in its attributed title, after a line break, in the font and
+  colour AppKit gives a subtitle (`IndicatorItem.secondLine`): on macOS 27, an attributed title
+  set while the menu is open is drawn without the item's subtitle until the row's highlight
+  changes, and these rows set theirs as the highlight moves and as working shimmers. The time is
+  in the secondary label grey, as the count and working are. Headers are section headers, as
+  written, in AppKit's own section-header font, 11 pt semibold (`SessionMenu.header`). AppKit
+  draws a section header's title in the tertiary grey, which replaces any system label colour or
+  grey set on it, so the header's secondary grey is a colour of the app's own
+  (`SessionMenu.own`). AppKit measures an item's
   second line as two lines once it is wider than both its title and about 282 pt, yet draws it on
   one, which left a blank line under it and the logo below the text. So the item cuts the second
   line to fit, and the title to `SessionMenu.titleWidth`, which a menu with little room on screen

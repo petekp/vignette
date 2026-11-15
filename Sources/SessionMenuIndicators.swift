@@ -15,20 +15,28 @@ extension SessionMenu {
     /// The least space between a row's text and the words at its right.
     static let indicatorGap: CGFloat = 24
     static let indicatorFont = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
-    /// The headers' small capitals: SF's own, from its lower-case-to-small-capitals feature.
-    static let headerFont: NSFont = {
-        let base = NSFont.systemFont(ofSize: 10.5, weight: .semibold)
-        let smallCaps = base.fontDescriptor.addingAttributes([.featureSettings: [
-            [NSFontDescriptor.FeatureKey.typeIdentifier: kLowerCaseType, .selectorIdentifier: kLowerCaseSmallCapsSelector]]])
-        return NSFont(descriptor: smallCaps, size: 10.5) ?? base
-    }()
+    /// A section header's own font in AppKit, as `NSMenuItem.sectionHeader` draws it on macOS 27.
+    static let headerFont = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold)
 
-    /// A group's header, in small capitals.
+    /// A group's header, as written, in the secondary label grey. AppKit draws a section header's
+    /// title in its tertiary grey, which replaces any of the system's label colours and greys set on
+    /// it, but keeps a colour of the app's own.
     @MainActor
     static func header(_ text: String) -> NSMenuItem {
         let item = NSMenuItem.sectionHeader(title: text)
-        item.attributedTitle = NSAttributedString(string: text, attributes: [.font: headerFont, .kern: 1.1, .foregroundColor: NSColor.labelColor])
+        item.attributedTitle = NSAttributedString(string: text, attributes: [.font: headerFont, .foregroundColor: own(.secondaryLabelColor)])
         return item
+    }
+
+    /// `color` at `share` of its own opacity, as a colour of the app's own that resolves it in
+    /// whichever appearance draws it. Reading a system colour's opacity directly fixes it to the
+    /// appearance current at the time.
+    static func own(_ color: NSColor, opacity share: CGFloat = 1) -> NSColor {
+        NSColor(name: nil) { appearance in
+            var resolved = color
+            appearance.performAsCurrentDrawingAppearance { resolved = color.usingColorSpace(.sRGB) ?? color }
+            return resolved.withAlphaComponent(resolved.alphaComponent * share)
+        }
     }
 
     /// How "working" shimmers: a soft band crosses the word in `passBeats`, then the word rests for
@@ -73,6 +81,11 @@ extension SessionMenu {
     /// A row with words at its right edge: a session's activity, or a project's count of running
     /// sessions. They follow its title after a right tab stop, which `SessionMenuIndicators` sets to
     /// one place for every row of a menu, so the words end in one column.
+    ///
+    /// The row's second line is part of its attributed title, not its subtitle. On macOS 27, setting
+    /// an item's attributed title while its menu is open draws the new title without the subtitle,
+    /// until the row's highlight changes, and these rows set theirs as the highlight moves and as
+    /// "working" shimmers.
     @MainActor
     final class IndicatorItem: NSMenuItem {
         enum Indicator: Equatable {
@@ -82,7 +95,11 @@ extension SessionMenu {
         }
 
         let indicator: Indicator
-        private let text: String
+        let text: String
+        /// The line under the title, in the font and colour AppKit gives a subtitle.
+        var secondLine: String? {
+            didSet { render() }
+        }
         var tabStop: CGFloat = 0
         /// Whether the row is drawn as the menu's highlighted row. The words after the tab carry
         /// colours of their own, so the highlight sets them.
@@ -107,6 +124,8 @@ extension SessionMenu {
             return max(title, SessionMenu.subtitleWidth(of: self))
         }
 
+        static let secondLineFont = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+
         var indicatorWidth: CGFloat {
             switch indicator {
             case .working: Self.glowPad + Self.dotWidth + Self.dotGap + Self.wordWidth
@@ -115,7 +134,7 @@ extension SessionMenu {
             }
         }
 
-        /// Sets the title: the row's text, a tab, then its words, as the row is now.
+        /// Sets the title: the row's text, a tab, its words as the row is now, then its second line.
         func render() {
             let title = NSMutableAttributedString(string: text, attributes: [.font: NSFont.menuFont(ofSize: 0)])
             title.append(NSAttributedString(string: "\t"))
@@ -127,11 +146,12 @@ extension SessionMenu {
                 let color = drawsHighlighted ? lit.withAlphaComponent(0.8) : .secondaryLabelColor
                 for (letter, centre) in zip(SessionMenu.working, Self.letterCentres) {
                     let opacity = band.map { Shimmer.opacity(at: centre, bandCentre: $0) } ?? 1
-                    title.append(NSAttributedString(string: String(letter), attributes: [.font: font, .foregroundColor: Self.faded(color, to: opacity)]))
+                    let faded = opacity < 1 ? SessionMenu.own(color, opacity: opacity) : color
+                    title.append(NSAttributedString(string: String(letter), attributes: [.font: font, .foregroundColor: faded]))
                 }
-            case .lastActive(let text):
-                let color = drawsHighlighted ? lit.withAlphaComponent(0.7) : .tertiaryLabelColor
-                title.append(NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color]))
+            case .lastActive(let words):
+                let color = drawsHighlighted ? lit.withAlphaComponent(0.8) : .secondaryLabelColor
+                title.append(NSAttributedString(string: words, attributes: [.font: font, .foregroundColor: color]))
             case .count(let count):
                 let color = drawsHighlighted ? lit.withAlphaComponent(0.8) : .secondaryLabelColor
                 title.append(NSAttributedString(string: "\(count)", attributes: [.font: font, .foregroundColor: color]))
@@ -139,18 +159,11 @@ extension SessionMenu {
             let paragraph = NSMutableParagraphStyle()
             paragraph.tabStops = [NSTextTab(textAlignment: .right, location: tabStop)]
             title.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: title.length))
-            attributedTitle = title
-        }
-
-        /// `color` at `share` of its own opacity, in whichever appearance draws it. Reading a system
-        /// colour's opacity directly fixes it to the appearance current at the time.
-        private static func faded(_ color: NSColor, to share: CGFloat) -> NSColor {
-            guard share < 1 else { return color }
-            return NSColor(name: nil) { appearance in
-                var resolved = color
-                appearance.performAsCurrentDrawingAppearance { resolved = color.usingColorSpace(.sRGB) ?? color }
-                return resolved.withAlphaComponent(resolved.alphaComponent * share)
+            if let secondLine {
+                title.append(NSAttributedString(string: "\n"))
+                title.append(NSAttributedString(string: secondLine, attributes: [.font: Self.secondLineFont, .foregroundColor: NSColor.secondaryLabelColor]))
             }
+            attributedTitle = title
         }
 
         static let dotWidth: CGFloat = 6
@@ -209,8 +222,14 @@ extension SessionMenu {
     /// How wide `item`'s second line is drawn, or 0 without one.
     @MainActor
     static func subtitleWidth(of item: NSMenuItem) -> CGFloat {
-        guard #available(macOS 14.4, *), let subtitle = item.subtitle else { return 0 }
-        return (subtitle as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)]).width
+        let line: String? = if let row = item as? IndicatorItem {
+            row.secondLine
+        } else if #available(macOS 14.4, *) {
+            item.subtitle
+        } else {
+            nil
+        }
+        return line.map { ($0 as NSString).size(withAttributes: [.font: IndicatorItem.secondLineFont]).width } ?? 0
     }
 }
 
