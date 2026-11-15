@@ -552,7 +552,7 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertEqual(row(folder, now: now).subtitle, "~/Code · Plan the week")
     }
 
-    /// With no tab and no goal, a row is the session's name over its worktree, subfolder, branch and age.
+    /// With no tab and no goal, a row is the session's name over its worktree, subfolder and branch.
     func testARowWithNoTabOrGoalFallsBackToTheNameAndPlace() {
         let now = Date()
         let s = AgentDestination(id: "t", name: "Codex thread", address: .codexThread(uuid: "t"), lastUsed: now.addingTimeInterval(-7200),
@@ -560,21 +560,9 @@ final class AgentConnectionTests: XCTestCase {
                                  branch: "codex/selector")
         let fallback = row(s, now: now)
         XCTAssertEqual(fallback.title, "Codex thread")
-        XCTAssertEqual(fallback.subtitle, "Codex worktree · apps/ui · codex/selector · 2 hr ago")
-        XCTAssertNil(fallback.badge)
-    }
-
-    /// An open question for the person wins over a running turn.
-    func testTheBadgeSaysNeedsYouBeforeWorking() {
-        let now = Date()
-        var s = session("a", used: 1, now: now)
-        XCTAssertNil(row(s, now: now).badge)
-        s.turn = .waiting
-        XCTAssertNil(row(s, now: now).badge, "a drawing unread in the inbox is not the agent waiting for the person")
-        s.turn = .busy
-        XCTAssertEqual(row(s, now: now).badge, "Working")
-        s.needsYou = true
-        XCTAssertEqual(row(s, now: now).badge, "Needs you")
+        XCTAssertEqual(fallback.subtitle, "Codex worktree · apps/ui · codex/selector")
+        XCTAssertEqual(fallback.badge, "2 hr ago", "the badge says when it was last active")
+        XCTAssertEqual(fallback.tooltip, "Codex thread\nCodex worktree · apps/ui · codex/selector · 2 hr ago\nevercars")
     }
 
     /// Equal titles in one group take the first of tab, worktree and branch that tells all of them apart, else
@@ -595,7 +583,7 @@ final class AgentConnectionTests: XCTestCase {
 
     // MARK: The inbox mod's store
 
-    func testTheInboxModsGoalAndOpenQuestionsAreReadBySession() throws {
+    func testTheInboxModsGoalIsReadBySession() throws {
         let store: [String: Any] = [
             "s:one": ["ledger": ["card": ["goal": " Ship it "], "items": []]],
             "s:two": ["ledger": ["items": [["ask": "Which branch?"]]]],
@@ -603,7 +591,7 @@ final class AgentConnectionTests: XCTestCase {
             "other": ["ledger": ["card": ["goal": "x"]]],
         ]
         let found = InboxModStore.entries(in: store)
-        XCTAssertEqual(found, ["one": .init(goal: "Ship it", needsYou: false), "two": .init(goal: nil, needsYou: true)])
+        XCTAssertEqual(found, ["one": .init(goal: "Ship it")])
     }
 
     /// The store is found by its name's start, the newest file wins, and a missing or unreadable one is no entries.

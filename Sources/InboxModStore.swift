@@ -1,14 +1,11 @@
 import Foundation
 
-/// What the inbox mod knows about a Claude Code session: the goal it wrote for it and whether it
-/// has an open question for the person. The mod keeps this in a file of its own under
-/// `~/.claude/plugins/store`, which is private to the mod and may change, so this is the one place
-/// that reads it, and a file that is missing, unreadable or different means no goal and no badge.
+/// The goal the inbox mod wrote for a Claude Code session. The mod keeps it in a file of its own
+/// under `~/.claude/plugins/store`, which is private to the mod and may change, so this is the one
+/// place that reads it, and a file that is missing, unreadable or different means no goal.
 enum InboxModStore {
     struct Entry: Equatable, Sendable {
-        var goal: String?
-        /// The mod has an open question for the person in this session.
-        var needsYou: Bool
+        var goal: String
     }
 
     /// The store file's name up to its hash: `inbox_inline-<hash>.json`.
@@ -65,9 +62,8 @@ enum InboxModStore {
         for (key, value) in store where key.hasPrefix("s:") {
             guard let ledger = (value as? [String: Any])?["ledger"] as? [String: Any] else { continue }
             let goal = ((ledger["card"] as? [String: Any])?["goal"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let asks = (ledger["items"] as? [[String: Any]] ?? []).contains { !(($0["ask"] as? String) ?? "").isEmpty }
-            guard goal?.isEmpty == false || asks else { continue }
-            found[String(key.dropFirst(2))] = Entry(goal: goal?.isEmpty == false ? goal : nil, needsYou: asks)
+            guard let goal, !goal.isEmpty else { continue }
+            found[String(key.dropFirst(2))] = Entry(goal: goal)
         }
         return found
     }

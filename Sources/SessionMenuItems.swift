@@ -24,15 +24,46 @@ extension SessionMenu {
         if #available(macOS 27.0, *) { item.preferredImageVisibility = .visible }
     }
 
-    /// One row as an item: the agent's logo, its title, a second line, and a badge. Before macOS 14.4
-    /// an item has no subtitle, so the tooltip, which holds the second line, is all there is.
+    /// The widest a row's title is drawn. A menu with less room on screen than a title needs measures
+    /// it as two lines and draws its first, cut mid-sentence on a row a line too tall. 400 pt keeps a
+    /// row with its logo and badge inside a menu about 530 pt wide.
+    static let titleWidth: CGFloat = 400
+    /// AppKit measures an item's subtitle as two lines once it is wider than its title or than this,
+    /// whichever is wider, then draws it on one line across the menu: the row keeps an empty line
+    /// and its logo sits below its text. Measured on macOS 27.2: between 282 and 288 pt of 11 pt text.
+    static let subtitleWidth: CGFloat = 280
+
+    /// `text`, cut at its end with "…" when it is wider than `width` in `font`.
+    static func fitted(_ text: String, width: CGFloat, font: NSFont) -> String {
+        let fits = { (line: String) in (line as NSString).size(withAttributes: [.font: font]).width <= width }
+        if fits(text) { return text }
+        let cut = { (kept: Int) in String(text.prefix(kept)).trimmingCharacters(in: .whitespaces.union(["·"])) + "…" }
+        var low = 0, high = text.count
+        while low < high {
+            let mid = (low + high + 1) / 2
+            if fits(cut(mid)) { low = mid } else { high = mid - 1 }
+        }
+        return cut(low)
+    }
+
+    /// Sets `text` as the item's second line, cut to the width AppKit draws on one line. Before
+    /// macOS 14.4 an item has no subtitle, and the tooltip is all there is.
+    @MainActor
+    static func setSubtitle(_ text: String, on item: NSMenuItem) {
+        guard #available(macOS 14.4, *) else { return }
+        let titleDrawn = (item.title as NSString).size(withAttributes: [.font: NSFont.menuFont(ofSize: 0)]).width
+        item.subtitle = fitted(text, width: max(titleDrawn, subtitleWidth), font: .systemFont(ofSize: NSFont.smallSystemFontSize))
+    }
+
+    /// One row as an item: the agent's logo, its title, a second line, and a badge, each on one line.
     @MainActor
     static func item(for row: Row, selected: Bool) -> NSMenuItem {
-        let item = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
+        let title = fitted(row.title, width: titleWidth, font: .menuFont(ofSize: 0))
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         showLogo(of: row.destination.client, on: item)
         item.state = selected ? .on : .off
         item.toolTip = row.tooltip
-        if #available(macOS 14.4, *), !row.subtitle.isEmpty { item.subtitle = row.subtitle }
+        if !row.subtitle.isEmpty { setSubtitle(row.subtitle, on: item) }
         if let badge = row.badge { item.badge = NSMenuItemBadge(string: badge) }
         return item
     }

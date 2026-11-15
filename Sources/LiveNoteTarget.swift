@@ -90,7 +90,7 @@ extension LiveNotePopover {
         item.target = target
         if let problem = responder.problem {
             item.toolTip = problem
-            if #available(macOS 14.4, *) { item.subtitle = problem }
+            SessionMenu.setSubtitle(problem, on: item)
         }
         return item
     }
