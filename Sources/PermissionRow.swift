@@ -20,6 +20,7 @@ struct PermissionRow: View {
 
     var body: some View {
         LabeledContent {
+            Group {
             if status == .granted {
                 Image(systemName: "checkmark.circle.fill").font(.title3).foregroundStyle(Color.installed)
                     .accessibilityLabel("Allowed")
@@ -27,6 +28,8 @@ struct PermissionRow: View {
                 Button(button, action: allow).keyboardShortcut(isDefault && !busy ? .defaultAction : nil).disabled(busy)
                     .screenSpot(spot?.button ?? "", in: spot?.spots)
             }
+            }
+            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] }
         } label: {
             Label {
                 VStack(alignment: .leading, spacing: 2) {
@@ -44,6 +47,7 @@ struct PermissionRow: View {
                     Image(systemName: symbol).foregroundStyle(.secondary)
                 }
             }
+            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] }
         }
     }
 }
