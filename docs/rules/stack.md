@@ -28,6 +28,8 @@
   one-pixel edge rows and a shadow up to 7 levels lighter beside the card. The drag image carries no
   hover dim and no buttons, so a press fades both off the card (`CardView.showsButtons`).
 - The backdrop's progressive blur is a stack of masked NSVisualEffectViews with different radii.
+  By default there is one, whose mask fades a single blur in from the strip's left edge, and no top
+  fade, so the strip's top edge is crisp.
   The private CAFilter variableBlur ignores its mask when the backdrop renders in the window
   server on macOS 15, and a bare CABackdropLayer renders black. Do not retry. The band masks are
   one-pixel-tall bitmaps stretched to the strip, cached for the current width and band count;

@@ -3,13 +3,14 @@ import QuartzCore
 
 /// A progressively blurred strip along the right edge of the screen behind the recent stack.
 /// It runs from the screen's bottom edge to the menu bar's bottom edge, the top the stack's column
-/// uses, and fades in over its first `backdropTopFadeHeight` points, so nothing behind the menu bar
-/// is blurred and the strip has no hard top edge. Mouse-transparent.
+/// uses, so nothing behind the menu bar is blurred. A `backdropTopFadeHeight` above 0 fades it in over
+/// that many points below its top; the default, 0, leaves a crisp top edge. Mouse-transparent.
 ///
 /// macOS has no public variable blur, and the private variableBlur filter ignores its mask when the
 /// backdrop renders in the window server (tried; it blurs uniformly). So the ramp is built from
-/// several NSVisualEffectViews, each masked to a feathered vertical band and tuned to a larger blur
-/// radius than the one to its left. Masks are public API; the radius is set through the backdrop
+/// `backdropBands` NSVisualEffectViews, each masked to a feathered vertical band and tuned to a larger
+/// blur radius than the one to its left. The default is one band, whose mask fades a single blur in
+/// from the strip's left edge. Masks are public API; the radius is set through the backdrop
 /// layer's existing gaussianBlur filter by key path.
 @MainActor
 final class BackdropPanel: NSPanel {
