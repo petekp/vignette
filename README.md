@@ -71,7 +71,10 @@ Let go and a note opens beside your ink. Ask a question and Claude or Codex answ
 with marks of its own pointing at what it means. It sees only the windows you drew on. Or send your
 ink to a Claude Code or Codex session, as Send sends a drawing.
 
-Live ink is off until you turn it on in Settings. It needs Accessibility and Screen Recording.
+Live ink is off until you turn it on. Setup offers it, and so does Settings once if you set up an
+earlier version. It needs Accessibility and Screen Recording. An ask to Claude goes through your own
+Claude Code and costs about one to four cents. An ask to Codex counts toward your ChatGPT plan’s
+usage limit.
 
 ### A few more things
 
@@ -97,6 +100,7 @@ The first launch opens a short setup:
 - If macOS saves your screenshots to the Desktop, Documents or Downloads, allow Vignette to read
   that folder. macOS asks once.
 - Pick the shortcut. The double tap needs Accessibility permission. A key combination needs none.
+- Choose whether to use live ink. It needs Accessibility and Screen Recording.
 - If Claude Code or Codex is installed, choose whether to add the Vignette plugin.
 
 While Vignette runs, it turns off macOS’s floating thumbnail and shows its own. Quitting Vignette

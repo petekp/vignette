@@ -39,14 +39,14 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   `DragSourceView.swift`, `CheckCoin.*`, `CheckLab.swift`), read `docs/rules/stack.md`,
   `docs/rules/stack-column.md` for the long column, and `docs/rules/flights-and-presses.md` for the
   matte and the flights in and out of the column.
-- Before changing a flight, a press or an animation (`TransitionLayer.swift`, `Flight*.swift`,
+- Before changing a flight, a press or an animation (`TransitionLayer*.swift`, `Flight*.swift`,
   `OutsideClick.swift`, `Anim.swift`, `Tween.swift`, `Motion.swift`, `WindowRemoval.swift`,
   `Config.matte`), read `docs/rules/flights-and-presses.md`, and
   `docs/rules/stack.md` for the card shadow a flight must match.
 - Before changing `AnnotationRun.swift`, `AnnotatorTransition.swift`, `AnnotationWindow.swift` or
   `DimPanel.swift`, read `docs/rules/annotator.md`.
-- Before changing `AnnotatorToolbar*.swift`, `SessionMenu*.swift`, `DestinationChoice.swift`,
-  `AgentApp.swift`, `InboxModStore.swift` or `HeldToolLetter.swift`, read
+- Before changing `AnnotatorToolbar*.swift`, `ToolbarOffer.swift`, `SessionMenu*.swift`,
+  `DestinationChoice.swift`, `AgentApp.swift`, `InboxModStore.swift` or `HeldToolLetter.swift`, read
   `docs/rules/annotator-toolbar.md`, and `docs/rules/send.md` for what Send does.
 - Before changing `Zoom.swift` or `AnnotatorZoom.swift`, read `docs/rules/zoom.md`.
 - Before changing the editor, a mark or a drawing (`Editor*.swift`, `Drawing.swift`,
@@ -62,13 +62,14 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   `SubmissionOutcome.swift`, `Subprocess.swift`), read `docs/rules/send.md`.
 - `docs/codex-issues.md` tracks the known problems with Codex and the Codex app, with a progress log.
   Read it before changing anything that talks to Codex, and add to it what you find or fix.
-- Before changing `ScreenshotRequests.swift`, read `docs/rules/send.md` and
+- Before changing `ScreenshotRequests*.swift`, read `docs/rules/send.md` and
   `docs/rules/replies.md`. Before changing a reply (`ScreenshotRequestRecords.swift`, `ClearedRequestFolders.swift`,
   `ReplyProtocol.swift`, `ReplyCommand.swift`, `skills/vignette/scripts/reply`), read
   `docs/rules/replies.md`, and `docs/rules/agent-push.md` for a reply's title.
-- Before changing the `add` command, `Agent.swift`, `AgentTitle.swift`, `AgentTitleView.swift`,
-  `TitleBackdrop.swift` or `FlightCaption.swift`, read `docs/rules/agent-push.md`.
-- Before changing `agent-plugin/`, `skills/vignette/`, `AgentPlugin.swift` or `AgentTools.swift`,
+- Before changing the `add` command, `Agent.swift`, `AgentBadge.swift`, `AgentTitle.swift`,
+  `AgentTitleView.swift`, `TitleBackdrop.swift` or `FlightCaption.swift`, read
+  `docs/rules/agent-push.md`.
+- Before changing `agent-plugin/`, `skills/vignette/`, `AgentPlugin*.swift` or `AgentTools.swift`,
   read `docs/rules/agent-plugin.md`.
 - Before changing the states or transitions of a type `docs/state-machines.md` maps, find the
   type in its Index and read the one file in `docs/state-machines/` that the row names. Those files
@@ -81,7 +82,7 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
 - Before changing live ink's other files (`Ink*`, `SetupInk*.swift`, `Note*.swift`,
   `*Driver.swift`, `Responder*.swift`, `JSONLinesProcess.swift`, `CodexIsolation.swift`,
   `CodexRollout.swift`, `CodexSignIn.swift`, `Microphone*.swift`, `*Transcriber.swift`,
-  `HandStroke.swift`, `PointerField.*`, `HangingPopover.swift`, `PopoverPlace.swift`,
+  `HandStroke.swift`, `PointerField*`, `HangingPopover.swift`, `PopoverPlace.swift`,
   `ScreenRecording.swift`, `ScreenSpots.swift`, `ScreenLink.swift`, `ResultCard.swift`,
   `VoiceCaret.swift`, `AppDelegate+LiveInkOffer.swift`), read `docs/live-ink.md`.
 

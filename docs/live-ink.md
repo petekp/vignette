@@ -4,10 +4,10 @@ Live ink is drawing straight on the screen, over any app, while a pair of modifi
 asking an agent about what was drawn. This file has its rules and says where each part of it lives.
 The dated `docs/live-ink-*.md` notes have the measurements.
 
-## Before it ships
+## Releases
 
-Live ink ships from main. What has to happen first, in order, and what waits on Pete is in
-`docs/live-ink-release-plan-2026-10-24.md`.
+Live ink ships from main from 0.2.0 on. `docs/live-ink-release-plan-2026-10-24.md` has the
+decisions and checks for that release.
 
 ## Where the code is
 

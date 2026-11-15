@@ -1,5 +1,7 @@
 # Live ink step 3: marks that stay on their window (2026-10-05)
 
+Superseded in part by ADR 0024: marks keep their offset on the window they were drawn on.
+
 2026-10-24: on Pete's call, marks no longer follow their window's content. A mark keeps its offset
 from its window's top-left through a scroll and a resize, and still moves with the window, fades as
 it minimises and goes when it closes (`docs/live-ink.md`). The content tracking below (`LiveAnchor`,

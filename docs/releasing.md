@@ -17,7 +17,8 @@ update key.
 
 ## Cutting it
 
-Versions go up by one patch number: 0.1.5, then 0.1.6.
+Versions go up by one patch number: 0.1.5, then 0.1.6. A release that adds a new way into Vignette
+moves the minor number instead, as 0.2.0 does for live ink.
 
 Other work is often uncommitted in the main checkout, so cut the release in a worktree of its own at
 the commit that ships:

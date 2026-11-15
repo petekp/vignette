@@ -7,8 +7,8 @@ instead, it offers to move itself to Applications, reopens from there, and eject
 If Applications already holds a newer Vignette, that copy opens instead.
 
 The first launch opens a setup window, one step per page: a welcome, [the shortcut](#the-shortcut),
-and your coding agents when Claude Code or Codex is installed. Open at login starts on, so Vignette
-is running after a restart. The window adds the login item when you close it.
+[live ink](#live-ink), and your coding agents when Claude Code or Codex is installed. Open at login
+starts on, so Vignette is running after a restart. The window adds the login item when you close it.
 
 While Vignette runs, it replaces macOS's floating thumbnail with its own. Quitting Vignette turns
 macOS's thumbnail back on.
@@ -58,9 +58,10 @@ Settings → Screenshots also sets how long the card stays, with Show the thumbn
 
 Press the Vignette shortcut to show your recent screenshots in a column in the corner. This column
 is the recent stack. It holds 30 cards, and How many to show in Settings → General changes that.
-Press the shortcut again, or click outside the stack, to close it. The stack answers your keys and
-the app you were in stays frontmost. Opening the annotator activates Vignette, and closing it hands
-focus back.
+Press the shortcut again, click outside the stack, or swipe it toward the screen's edge with two
+fingers, to close it. Scroll up past the oldest card and older screenshots load, a few at a time.
+The stack answers your keys and the app you were in stays frontmost. Opening the annotator activates
+Vignette, and closing it hands focus back.
 
 Click a card to draw on it. Hover a card to show Copy and Delete in its bottom corners.
 
@@ -146,13 +147,16 @@ Settings → General, Return also closes the stack. [The drawing editor](editor.
 and gesture.
 
 When a coding agent session can take the drawing, the toolbar shows that session, with the agent's
-logo and the project's folder, then a message field and Send. It starts on the session you were
-last in, and a click on it picks another. Type in Add a message to send words with the drawing.
+logo and the project's folder, then a message field and Send. It starts on the session you were last
+in, and a click on it picks another. Type in Add a message to send words with the drawing.
 Cmd+Return sends, and so does Return in the message field. On a card an agent sent you, the toolbar
-has the message field and Reply, and Return sends your drawing back to that session. After a send,
-the card says where the drawing went and whether it arrived. A Claude Code session takes a drawing
-through the Vignette plugin, in any terminal. A Codex thread needs the Codex app or its `codex`
-command-line tool. [For agents](agents.md) covers installing the plugin.
+has the message field and Reply, and Return sends your drawing back to that session. A send waits 3
+seconds before it reaches the session, and Don't send on the card takes it back. After a send, the
+card says where the drawing went and whether it arrived. With the Herdr app, the session menu also
+lists projects whose Claude Code sessions have all ended, with Continue last session and New
+session. Either one starts a session in a new Herdr tab and sends it the drawing. A Claude Code
+session takes a drawing through the Vignette plugin, in any terminal. A Codex thread needs the Codex
+app or its `codex` command-line tool. [For agents](agents.md) covers installing the plugin.
 
 Cmd+C with nothing selected copies the drawing, the same image Return copies, and leaves the editor
 open. With marks selected it copies the marks, which paste into this image or another one.
@@ -190,50 +194,66 @@ covers changing it.
 
 ## Live ink
 
-Live ink lets you draw straight on your screen, over any app, without taking a screenshot. Turn it
-on in Settings → General, or with Live Ink in the menu bar menu.
+Live ink lets you draw straight on your screen, over any app, without taking a screenshot. Setup's
+Live Ink page turns it on with Use Live Ink, then asks for its permissions. If you set up Vignette
+before it had live ink, Settings → General offers it once, with Turn On. You can also turn it on
+or off in Settings → General, or with Live Ink in the menu bar menu.
 
 Hold Control and Option and draw. To use another pair, pick it under Hold to draw in Settings →
-General. A glowing ring follows the pointer while you hold the keys. A loop becomes
-an ellipse round what you circled, and any other stroke becomes an arrow, in your red. To erase a
-mark, click on it or inside its circle with the keys held. Clear Live Ink in the menu erases them all, and so does turning
-live ink off.
+General. A glowing ring follows the pointer while you hold the keys. A loop becomes an ellipse
+round what you circled, and any other stroke becomes an arrow, in your red. To erase a mark, click
+on it or inside its circle with the keys held. Clear Live Ink in the menu erases them all, and so
+does turning live ink off.
 
 Marks you draw on a window move with it, hide behind windows in front of it, and go when it closes.
 Ink on no window stays where it is on the screen, on the Space you drew it on. All your marks are
-gone when Vignette quits. Screenshots leave them out, and they step
-out of sight while you take one, so Cmd+Shift+4 and Space pick the window under a mark. Menus, the Dock and floating windows cover
+gone when Vignette quits. Screenshots leave them out, and they step out of sight while you take one,
+so Cmd+Shift+4 and Space pick the window under a mark. Menus, the Dock and floating windows cover
 them until you hold the keys again.
 
 While you hold the keys, a click draws instead of reaching the app under it. Let go and every click
 works as usual. A shortcut that starts with Control and Option, such as a window manager's, still
 works: pressing its key ends the drawing. Live ink doesn't draw while the stack or the annotator is
-open.
+open. Esc while you hold the keys cancels the hold. What you drew and said in it goes, and nothing
+is sent.
 
 Like the double tap, live ink needs Accessibility. Until it has it, the menu bar menu starts with
-Allow Accessibility for Live Ink….
+Allow Accessibility for Live Ink…. It also needs Screen Recording to see the window under your
+ink. Until that is allowed, holding the keys says so beside the pointer, and the menu bar menu
+starts with Allow Screen Recording for Live Ink….
 
 ### Asking about your ink
 
 When you let go of the keys after drawing, a note opens beside your ink. Type a question, or
 nothing, and press Return: Claude or Codex looks at the windows your ink is on and answers on the
-screen. Its
-reply appears beside your ink as it's written, and its own marks draw themselves on, in its colour,
-pointing at what it means. Esc, or a click anywhere else, closes the note and keeps your ink.
+screen. Its reply appears beside your ink as it's written, and its own marks draw themselves on, in
+its colour, pointing at what it means. A click anywhere else closes the note and keeps your ink. Esc
+closes it and erases the ink you have not asked about. Each Esc after that goes back one step. It
+cancels the ask under way, then closes the answer, then erases every mark.
 
 Ask again with no new ink and it's a follow-up about the same thing. A new question replaces the
 last answer, and Clear Live Ink starts over. Erase an answer's mark or note as you erase your own.
 
 The note's target starts on the agent you used last, Claude or Codex. Click it, or press the Down
-arrow, to ask the other agent or to send your ink to one of your coding agent sessions instead: the picture goes as Send sends a drawing, and the session's
-reply comes back as a card. A note on your ink says whether it went.
+arrow, to ask the other agent or to send your ink to one of your coding agent sessions instead: the
+picture goes as Send sends a drawing, and the session's reply comes back as a card. A note on your
+ink says whether it went.
 
 Claude answers through Claude Code, which must be installed and signed in, on your own Claude
-account, without your settings, plugins or tools. Codex answers on its own ChatGPT sign-in, which
-you make once in Settings → General. It also runs without your settings or tools. Each sees only
-the windows your ink is on, with their titles and URLs. Asking
-needs Screen Recording: turning live ink on asks for it, and until it's allowed the menu bar menu
-starts with Allow Screen Recording for Live Ink….
+account, without your settings, plugins or tools. An ask costs about one to four cents. Without
+Claude Code, or signed out of it, the note starts on Codex or on a session, and Claude's row in its
+menu says why. Codex
+answers on its own ChatGPT sign-in, which you make once in Settings → General, and an ask counts
+toward your ChatGPT plan's usage limit. It also runs without your settings or tools. Each sees only
+the windows your ink is on, with their titles and URLs, and the note says so until your first ask.
+
+### Speaking while you draw
+
+Turn on Speak while you draw, under Live ink in Settings → General, and what you say while you hold
+the keys goes into the note. It needs the microphone and speech recognition, and your voice stays on
+this Mac. With Ask when you let go on, the note asks as you let go of the keys, once you have drawn
+something. Speak without drawing and the note opens by the pointer. Return then asks about the
+window under it.
 
 ## Screen recordings
 
