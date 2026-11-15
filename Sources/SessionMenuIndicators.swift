@@ -269,8 +269,41 @@ final class SessionMenuIndicators: NSObject, NSMenuDelegate {
             row.tabStop = stop
             row.render()
         }
+        let holdsAView = menu.items.contains { $0.view != nil }
+        if holdsAView { menu.minimumWidth = Self.widthWithoutViews(of: menu) }
         working += rows.filter { $0.indicator == .working }
         for case let submenu? in menu.items.map(\.submenu) { align(submenu) }
+    }
+
+    /// How wide AppKit makes `menu` without its rows that are views, such as the search row. A menu
+    /// that holds a view leaves the checkmark's column out of its width (10 pt on macOS 15.7, 14 pt
+    /// on 27.2), so with a checked row the titles get less room than they are measured to need. On
+    /// macOS 15 the words after a row's tab then wrap under its title.
+    private static func widthWithoutViews(of menu: NSMenu) -> CGFloat {
+        let standIn = NSMenu()
+        standIn.font = menu.font
+        standIn.showsStateColumn = menu.showsStateColumn
+        for item in menu.items where item.view == nil {
+            let copy: NSMenuItem
+            if item.isSeparatorItem {
+                copy = .separator()
+            } else if item.isSectionHeader {
+                copy = .sectionHeader(title: item.title)
+            } else {
+                copy = NSMenuItem(title: item.title, action: nil, keyEquivalent: item.keyEquivalent)
+                copy.keyEquivalentModifierMask = item.keyEquivalentModifierMask
+                copy.state = item.state
+                copy.indentationLevel = item.indentationLevel
+                if item.submenu != nil { copy.submenu = NSMenu() }
+                if #available(macOS 14.4, *) { copy.subtitle = item.subtitle }
+            }
+            copy.attributedTitle = item.attributedTitle
+            copy.image = item.image
+            if #available(macOS 27.0, *) { copy.preferredImageVisibility = item.preferredImageVisibility }
+            copy.isHidden = item.isHidden
+            standIn.addItem(copy)
+        }
+        return standIn.size.width
     }
 
     /// Under Reduce Motion or `ui.motion` 0 the word and its dot stay still, with no glow.
