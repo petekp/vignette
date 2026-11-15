@@ -65,6 +65,10 @@ targets:
         # repository, or removes it to leave the menu item out.
         VignetteIssuesURL: https://github.com/petekp/vignette/issues/new
         SUPublicEDKey: JtXFG+vKXdBgyoxLt4sKoNoMHXvy6GQfoQob3W2zfVA=
+        # Sparkle checks a download's EdDSA signature before it opens the disk image, so a corrupt or
+        # forged download is refused before any of it is read. Sparkle reads this from the installed
+        # app, so it protects the updates to a version that carries it (docs/updater-2026-09-27.md).
+        SUVerifyUpdateBeforeExtraction: true
         SUEnableAutomaticChecks: true
         LSUIElement: true
         NSHighResolutionCapable: true
