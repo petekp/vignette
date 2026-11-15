@@ -9,7 +9,7 @@ extension SetupWindowController {
         /// Asked again on every look rather than read once: a grant, or a folder filled while the
         /// window is open, is what the window is asking for.
         var conditions: () -> SetupConditions = {
-            SetupConditions(trusted: true, screenRecording: true, protectedArea: nil, folder: .granted,
+            SetupConditions(trusted: true, screenRecording: true, pickerQuestion: .answered, protectedArea: nil, folder: .granted,
                             hasScreenshots: false, saveTarget: "file", menuBarIconVisible: true)
         }
         /// The agents the last page offers the plugin to.
@@ -26,6 +26,8 @@ extension SetupWindowController {
         var askAccessibility: () -> Void = {}
         var askScreenRecording: () -> Void = {}
         var openScreenRecordingSettings: () -> Void = {}
+        /// Captures the screen once, which raises macOS's window picker question (`PickerQuestion`).
+        var askPickerQuestion: () -> Void = {}
         /// Sets ⌘⇧5's Save to back to a folder.
         var saveToFolder: () -> Void = {}
         /// The Open at login setting as setup opens. The welcome page's switch starts from it.

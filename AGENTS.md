@@ -31,7 +31,7 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   `SettingsWindow.swift`, `MainMenu.swift`, `MenuBarIntro.swift`, `IntroFunnel.metal`,
   `IntroLab.swift`, `FunnelFlight.swift`, `DropLanding.swift`, `PermissionRow.swift`,
   `AppLocation.swift`, `LoginItem.swift`, `Updater.swift`, `BuildInfo.swift`,
-  `ProblemReport.swift`), read `docs/rules/setup-and-updates.md`. The status item's place is in
+  `ProblemReport.swift`, `PickerQuestion.swift`), read `docs/rules/setup-and-updates.md`. The status item's place is in
   `docs/rules/capture.md`.
 - Before changing the stack or the corner (`Stack*.swift`, `OlderShots.swift`, `CardPictures.swift`,
   `CornerPresentation.swift`, `CornerKeys.swift`, `CardView.swift`, `CardState.swift`,

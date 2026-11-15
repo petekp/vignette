@@ -91,7 +91,12 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
   or as the chord is let go. It waits for the field, so a chord on its way to a window manager's
   shortcut says nothing. It is part of the pointer, not a toast, as Pete decided on 2026-10-29.
   On macOS 15, the first capture after Screen Recording is allowed also raises macOS's question
-  about bypassing its private window picker. It is owned by `UserNotificationCenter`.
+  about bypassing its private window picker. It is owned by `UserNotificationCenter`. Setup's
+  Screen Recording row raises it from its Allow… after the reopen (`PickerQuestion`). Measured on
+  macOS 15.7: the capture returns at once, the question comes up 0.2 s later, and after Allow or
+  Open System Settings no capture raises it again, after a relaunch too. macOS records when it
+  asked, not the answer, so the row is done once the question's window has left the screen, or
+  when none came up within 2 s. Asking for Screen Recording again forgets that.
 - **Speech.** When speech cannot listen, for a missing permission, no on-device model, or a
   microphone that will not start, the note's prompt says why (`LiveInk.speechProblem`). It goes once
   speech can listen or is turned off.
