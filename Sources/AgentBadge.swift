@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// Whether a card's agent badge says who it is from or folds to the logo alone. The badge shows its
-/// words only while the whole capsule fits inside the card with `inset` on both sides, so it never
-/// reaches past the card's edge, however narrow the stack or the card's shape makes the card.
+/// words only while the whole capsule fits inside the card with `inset` on both sides and clear of
+/// the selection circle in the other top corner, so it never reaches past the card's edge or under
+/// the circle, however narrow the stack or the card's shape makes the card.
 struct AgentBadgeFit {
     /// The capsule's height, which is also the folded badge's diameter.
     let size: CGFloat
@@ -24,10 +25,12 @@ struct AgentBadgeFit {
     static let foldedPadding: CGFloat = (1 - logoSide) / 2
 
     var fullWidth: CGFloat { size * (Self.padding * 2 + Self.logoSide + Self.gap) + textWidth }
+    /// The narrowest card that shows the words: the capsule, the selection circle, which is `size`
+    /// across, and `inset` at both edges and between the two.
+    var cardWidthForWords: CGFloat { fullWidth + size + Self.inset * 3 }
 
     func folds(cardWidth: CGFloat, wasFolded: Bool) -> Bool {
-        let room = cardWidth - Self.inset * 2
-        return room < fullWidth + (wasFolded ? Self.hysteresis : 0)
+        cardWidth < cardWidthForWords + (wasFolded ? Self.hysteresis : 0)
     }
 
     /// The fit for `label` at `size`. The words are measured once per label and size: the stack
