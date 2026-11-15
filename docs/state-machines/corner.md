@@ -105,7 +105,7 @@ Decides when the panel is on screen, when cards slide out, and when a slide-out 
 | not `visible` | `show` (`:226`) | `visible = true` through `present` (`:1299`) | bumps `dismissGeneration`; sends `cardsShown`; then `leaveCorner` |
 | `visible` | `show` | card inserted through `insert` (`:1366`) | `shiftUp` (`:1430`) when the column is non-empty and the entrance is `.slide`; else plain insert; then `leaveCorner` |
 | not `visible` | `dismiss(by:)` (`:671`) | — | — (guard) |
-| `visible` | `dismiss(by:)` | `slideOut` (`:678`): `visible = false`; bumps `dismissGeneration`; ends forming flights; `model.slidingOut = true`; `offscreen = all cards` | after the slide: if the generation is unchanged and still `!visible`: `orderOut`, remove all cards, clear selection, `outCards`, forming and scroll, `pinnedScreen = nil`, send `slidOut` |
+| `visible` | `dismiss(by:)` | `slideOut` (`:678`): `visible = false`; bumps `dismissGeneration`; ends forming flights; flies every card still flying home to its slot's place off the screen; records the annotator's card in `leavingWithColumn`; `model.slidingOut = true`; `offscreen = all cards` | after the slide: if the generation is unchanged and still `!visible`: `orderOut`, remove all cards, clear selection, `outCards`, forming and scroll, `pinnedScreen = nil`, send `slidOut` |
 | sliding out | `present` | the slide-out is reversed; cards turn around | `dismissGeneration` bumped, so the removal at `:710` skips |
 | lone card in the editor | `takeOutOfPanel` (`:950`) | card removed; if the column is now empty, `visible = false` | `panel.orderOut`; mode stays `.thumbnails` |
 

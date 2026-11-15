@@ -13,7 +13,7 @@ Carries out the run's effects and keeps the stack, the dim and the keys in step 
 - `run` `:75`. `sessionCard` `:77`, the card the run has open: set in `perform(.prepare)` `:797`, nil at `.endRun` `:871`. `annotating` `:78` is `run.isActive ? sessionCard : nil`.
 - `annotationFrame` `:79`, `parkedMarks` `:82`, `captureOrigin` `:145`, `flightPress` `:84`.
 - `model.annotating` and `flights.staysUp`: flipped together at the end of `handle` when `model.annotating != run.isActive` (`:757-765`), which sends `keys.send(.editorOpened)` or `.editorClosed(ending)` with the `ending` from this batch's `endRun`.
-- `model.outCards` holds the session card's id from `.prepare` (`:803`) until `returnCard` arrives (`:~915`) or `.hideAnnotator` (`:856`).
+- `model.outCards` holds the session card's id from `.prepare` (`:803`) until `returnCard` arrives (`:~915`) or `.hideAnnotator` (`:856`); a card that leaves with a dismissed column keeps it until the slide-out's completion empties `outCards`.
 - `dim`: shown at `.prepare` (`:808`), hidden only at `.endRun` (`:872`).
 - `model.slidingOut` (set `:704`, reset `:716` and in `present`).
 
@@ -26,7 +26,7 @@ Carries out the run's effects and keeps the stack, the dim and the keys in step 
 | any | `.park` | `parkedMarks = annotatorMarks()` | `onAnnotatorHide` then `send(.parked(opening))` (`:845`) |
 | any | `.abandon` | `parkedMarks` set | `onAnnotatorAbandon` (`:847`) |
 | any | `.returnCard` | card home | needs `sessionCard.key == opening.key` (`:852`); re-inserts the card when the panel lacks it (`returnCard`, `:888-900`) ([run-3](findings.md#run-3)) |
-| any | `.hideAnnotator` | `parkedMarks = nil` | ends the flight unless the column is sliding out with that card in it (`:855-858`) |
+| any | `.hideAnnotator` | `parkedMarks = nil` | with `leavingWithColumn` naming the card and the stack not visible, flies the image to its slot's place off the screen; otherwise ends the flight; clears `leavingWithColumn` |
 | any | `.endRun` | `sessionCard = nil` | `dim.hide()` |
 | any | `.landed`, `.liftFlight` | — | each needs `sessionCard` (`:874`, `:882`) |
 | any | `.handOverPresses` | — | `flightPress.ready(key)` (`:880`) |
@@ -39,7 +39,7 @@ Carries out the run's effects and keeps the stack, the dim and the keys in step 
 
 **Late and concurrent answers**
 
-- `slideOut` sets `model.slidingOut` and aims the flight offscreen before sending `.dismiss`, so a same-turn park keeps that flight: `:704`, `:855`.
+- `slideOut` turns every card still flying home offscreen, records the annotator's card and its slot's place off the screen in `leavingWithColumn`, and sends `.dismiss`. The flight starts at `.hideAnnotator`, in the same turn at zoom 1 and after the fit-out when zoomed. A stack presented again before then makes `visible` true, and `.hideAnnotator` ends the flight instead.
 - `handle` runs `makeRoom` once for a batch, so a swap is one column: `:741-748`.
 - `flightPress.ended` for an image no longer in the editor: `:750-752`.
 - `perform(.park)` sends by opening id, so the reducer drops a late `parked`.

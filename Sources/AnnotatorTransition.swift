@@ -132,9 +132,8 @@ struct AnnotatorTransition: Equatable {
                 phase = .parking(o, then: .finish)
                 return [.park(o)]
             case .dismiss:
-                // The panel takes the image with it (see `ThumbnailController.dismiss`), which
-                // aims this flight offscreen before the event arrives. The park keeps the card in
-                // the layer until it is out of sight.
+                // The panel takes the image with it: `hideAnnotator` turns this flight around
+                // to the slot's place off the screen (see `ThumbnailController.slideOut`).
                 phase = .parking(o, then: .dismiss)
                 return [.park(o)]
             case .remove(let r):

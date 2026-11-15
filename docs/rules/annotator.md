@@ -36,8 +36,13 @@
   same turn as `park`. `EventHold` holds an event that arrives while another is being handled and
   runs it once that one is done, so the reducer's events stay in order. The
   `parking` phase stays for the zoomed case, where the window springs back to the fit before it
-  comes down. `dismiss` sets `model.slidingOut` before it sends, so a park that answers in that turn
-  leaves the flight it just aimed offscreen to the slide-out. Add a sequence to `AnnotationRunTests`,
+  comes down. A dismissal of the stack takes the image with the column: `hideAnnotator` flies it
+  from the editor to its slot's place off the screen, on the slide-out's spring, so a zoomed editor
+  springs back to the fit first and its image starts about 0.2 s after the column. The image
+  leaves at once, with the newest card, rather than at its slot's place in the stagger. A card already on its way home when the column
+  goes is turned around the same way (`ThumbnailController.slideOut`). A click outside reaches both the
+  annotator's `OutsideClick` and the stack's, the annotator's first in the log on macOS 27, so its
+  card is already on its way home when the stack's dismissal arrives. Add a sequence to `AnnotationRunTests`,
   or to `AnnotatorTransitionTests` for the transition's table, before changing either. Their
   random-sequence tests check the invariants through `EventHold`, with same-turn answers among
   their sequences. A swap runs two flights at once, and the
@@ -50,8 +55,8 @@
   pressed then can change the drawing, and it takes the window down with no fit-out, since no zoom
   can have happened. The controller's `.abandon` keeps the parked marks (`parkedMarks`), as `.park`
   does, so the flight home carries the drawing as it was parked, not as it left. `dismiss` and
-  `remove` still park from `flyingOut`, because the panel aims that same flight offscreen before the
-  event arrives. Esc during the flight comes back through `onClosed` as `cancel`.
+  `remove` still park from `flyingOut`: a dismissal's `hideAnnotator` turns that same flight off the
+  screen with the column, and a removal's ends it. Esc during the flight comes back through `onClosed` as `cancel`.
   `docs/flight-interrupt-2026-09-18.md` has the frames.
 - Annotating a list is one annotation run with a queue (`AnnotationRun.queue`, `stack.queue` in the
   state report): the first file opens and the rest wait, and finishing one opens the next until the

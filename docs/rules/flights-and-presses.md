@@ -21,7 +21,8 @@
 - Nothing takes a flight's place until it has arrived; the annotator hides behind it before then. A
   spring's tail runs well past its nominal duration, so anything put at the exact target on a timer
   steps by what the spring still had to go. Every flight moves by `ui.flightTiming` (`FlightTiming`),
-  and each choice is a SwiftUI spring, so a flight re-aimed in mid-air keeps its velocity. The
+  but an image that leaves with a dismissed column, which moves on the slide-out's spring with no
+  bounce over `ui.slideOutDuration` (`fly`'s `spring`). Each choice is a SwiftUI spring, so a flight re-aimed in mid-air keeps its velocity. The
   default, `quickSpring`, has a bounce of 0.07 over 0.65 of `ui.expandDuration`, tuned to first
   reach its target when `spring` does (0.27 s at the default 0.35 s). It passes the target by 0.04%
   of the path, under half a point across a laptop's screen. `spring` has `Anim.flightBounce` over
