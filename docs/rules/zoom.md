@@ -24,8 +24,11 @@
   All of them move one number, the level: how far the image is magnified past the frame it opened
   in. The picture is magnified uniformly by that level, so the image is never stretched. The frame
   is not: each of its sides grows with the level until that side fills the room it was given, the
-  visible screen less the strip the recent stack keeps, and less the toolbar and its two margins
-  along the bottom (`Zoom.room`). `Zoom.split` divides the level in one place,
+  visible screen less the strip the recent stack keeps with a margin beside it, and less the
+  toolbar and its two margins along the bottom (`Zoom.room`). All three margins are
+  `annotationToolbarGap`. So the frame stops the same distance from the stack as from the toolbar,
+  and the toolbar that distance above the Dock. Against the menu bar and the screen's left edge the
+  frame keeps no margin. `Zoom.split` divides the level in one place,
   one division per side, so `window * camera` is the level in each direction. Zooming out stops at
   the fitted size. Only a hand pulls below it, with a short pull that springs back when the fingers
   lift; a key or a mouse wheel's notch stops at the fit. Zoom's springs are in code rather than the

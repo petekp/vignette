@@ -17,14 +17,15 @@ struct StackView: View {
         let layout = self.layout
         return ZStack(alignment: .bottomTrailing) {
             // Fully transparent pixels let events fall through to the window below, so the stack
-            // would only scroll over a card; a hair of alpha makes the column catch them. The
-            // clear layer fills the panel, which is wider than the column while the strip is out,
-            // so the column stays against its right edge; the strip's side catches nothing.
+            // would only scroll over a card; a hair of alpha makes the column catch them, out to
+            // `catchReach` on its left. The clear layer fills the panel, which is wider than the
+            // column while the strip is out, so the column stays against its right edge; the
+            // strip's side catches nothing.
             Color.clear
             // Lone thumbnails catch nothing between the cards, except while a swipe has moved
             // them: the fingers' next events must still reach the panel where the cards were.
             Color.black.opacity(model.isStack || model.swipe != 0 ? 0.01 : 0)
-                .frame(width: layout.columnWidth + layout.inset * 2)
+                .frame(width: layout.columnWidth + layout.inset + layout.catchReach(annotating: model.annotating))
                 // The panel runs down to the screen's edge; the Dock's room at the bottom of it
                 // stays clear, so a click on a Dock icon under the column still reaches the Dock.
                 .padding(.bottom, model.safeBottom)

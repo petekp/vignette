@@ -163,8 +163,14 @@
   the size the stack needs at rest, and transparent outside the column, so nothing has to be resized
   while the stack narrows; the scroll follows the column's height so the same cards stay in view and
   the column comes back to the same place. The rect the annotator fits and grows within is the
-  visible frame less the strip the stack keeps at its narrowest, `ui.stackGap` beside it
-  (`annotatorRoom`), so the frame can never reach the cards however far a zoom grows it. In between,
+  visible frame less the strip the stack keeps at its narrowest, and a gap beside it
+  (`annotatorRoom`), so the frame can never reach the cards however far a zoom grows it. The gap is
+  `ui.annotationToolbarGap`, the margin the toolbar keeps from the frame and from the bottom of the
+  screen, so a zoomed frame stops the same distance from the widest card as from the toolbar. The
+  widest card is as wide as the column, so the column's edge is that card's edge. The hair of alpha
+  that catches clicks and scrolls beside the cards reaches the panel's inset (19 pt by default) left of the
+  column, but while a card is in the annotator no further than that gap (`catchReach`), since the
+  stack's panel is above the annotator and would take the presses on the frame's edge. In between,
   every time the annotator's frame moves the stack takes the widest value that still clears it by
   the gap (`widthScale(clearing:visibleFrame:)`). Opening and closing spring it through
   `ui.relayoutDuration`; a zoom sets it straight, in the same turn as the frame. Only the recent

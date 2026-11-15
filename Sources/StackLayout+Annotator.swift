@@ -4,8 +4,17 @@ import AppKit
 
 extension StackLayout {
     /// The strip of the screen the stack keeps for itself at its narrowest, and the gap beside it.
-    /// The annotator's frame never enters it, so the stack always has somewhere to be.
-    var reservedWidth: CGFloat { margin + maxCardWidth * minWidthScale + ui.stackGap }
+    /// The annotator's frame never enters it, so the stack always has somewhere to be. The gap is
+    /// the margin the toolbar keeps from the frame and from the screen's bottom, so a zoomed frame
+    /// stops the same distance from the stack as from the toolbar.
+    var reservedWidth: CGFloat { margin + maxCardWidth * minWidthScale + ui.annotationToolbarGap }
+
+    /// How far left of the column the stack catches presses and scrolls on the clear screen beside
+    /// its cards. Its padding, while no card is in the annotator. While one is, no further than the
+    /// gap, which is where the frame may come: past it the stack would take the frame's presses.
+    func catchReach(annotating: Bool) -> CGFloat {
+        annotating ? min(inset, ui.annotationToolbarGap) : inset
+    }
 
     /// The rect the annotator's frame fits and grows within while the recent stack is showing:
     /// the visible frame, less the stack's reserved strip on the right.
@@ -18,7 +27,7 @@ extension StackLayout {
     /// frame is far enough away, and never below the minimum, which is the width the room the
     /// frame grows within was reserved for.
     func widthScale(clearing frame: NSRect, visibleFrame v: NSRect) -> CGFloat {
-        let free = v.maxX - margin - ui.stackGap - frame.maxX
+        let free = v.maxX - margin - ui.annotationToolbarGap - frame.maxX
         return min(1, max(minWidthScale, free / max(maxCardWidth, 1)))
     }
 

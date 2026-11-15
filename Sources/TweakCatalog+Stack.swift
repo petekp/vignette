@@ -11,8 +11,7 @@ extension TweakCatalog {
                 .number("panelInset", "Panel inset", \.panelInset, 0...60, safe: 0...1000),
                 .number("screenMargin", "Screen margin", \.screenMargin, 0...80, safe: 0...10_000),
                 .number("stackMinScale", "Narrows to", \.stackMinScale, 0.3...1, step: 0.05, safe: 0.3...1),
-                .number("stackGap", "Gap to annotator", \.stackGap, 0...80, safe: 0...1000),
-            ], caption: { _ in "How narrow the stack goes to make room for the annotator's frame, and how far it stays from it. The frame never grows into that narrowest width." }),
+            ], caption: { _ in "How narrow the stack goes to make room for the annotator's frame. The frame never grows into that narrowest width, and stays the Annotator margin from it." }),
             TweakGroup(nil, [
                 .number("cardCornerRadius", "Corner radius", \.cardCornerRadius, 0...30, safe: 0...1000),
                 .number("cardBorderWidth", "Border width", \.cardBorderWidth, 0...4, step: 0.5, safe: 0...100),
