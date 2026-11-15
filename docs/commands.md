@@ -124,7 +124,8 @@ logged again when its role arrives, so the last `target` line before a send has 
 line, `[send] menu top=<rows> list=top|project|search [submenu=<n>] [rows=<rows>] picked=<row>
 row=<n>`, says where the pick was made:
 
-- `top` holds the menu's first rows, up to five, and is empty with no session running.
+- `top` holds the menu's first rows, up to five: running sessions, or with none running, the rows
+  that start one. A searched row that starts a session is `resume:<id>` or `new` in `rows=` and `picked=`.
 - `list=top` means the pick came from those rows, with no search typed.
 - `list=project` is the `submenu`-th project submenu, counted from the top.
 - `list=search` is the rows a search left.

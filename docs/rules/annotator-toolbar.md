@@ -70,7 +70,8 @@
   made inside it jumped instead of animating. Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
   sessions the person sent to in the last 4 hours, newest send first, then the rest by when the agent last worked; five of them, with
   the target always among them, grouped under a header for each repository with Other folders last, then, after a separator, one submenu per project, titled as its header, with its count as a badge and every
-  active session of that project in it, the top rows too (live ink's Tab steps through the five only). The menu's first row is a search field that has the keyboard: typing lists the matching sessions from every project, Return picks the first, and Esc closes the menu (`SessionMenuSearch`). A row's title is the name of the Herdr tab its terminal is in, unless Herdr numbered it, else
+  running session of that project in it, the top rows too (live ink's Tab steps through the five only).
+  The rows that start a session are in neither part unless no session is running (`docs/rules/send.md`). The menu's first row is a search field that has the keyboard: typing lists the matching sessions from every project, the rows that start one after the running ones, Return picks the first, and Esc closes the menu (`SessionMenuSearch`). A row's title is the name of the Herdr tab its terminal is in, unless Herdr numbered it, else
   the session's name; its second line is the worktree, the branch and the inbox mod's goal; a badge says Needs you or Working
   (`InboxModStore` reads the mod's private file and may find nothing). A Claude Code session is active while the plugin's monitor runs in it,
   and a Codex thread when it was used in the last day, since nothing says which threads the Codex

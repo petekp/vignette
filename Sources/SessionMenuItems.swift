@@ -39,9 +39,9 @@ extension SessionMenu {
     }
 
     /// Adds a search field as the menu's first row, then the top groups and, after a separator, one
-    /// submenu per project holding all of its sessions, with their count as a badge. Typing in the
-    /// field replaces everything the menu holds from here on with the sessions that match. The
-    /// returned search must stay alive while the menu is open.
+    /// submenu per project holding all of its running sessions, with their count as a badge. Typing in
+    /// the field replaces everything the menu holds from here on with the sessions that match, the
+    /// rows that start a session included. The returned search must stay alive while the menu is open.
     @MainActor
     static func add(_ sessions: Menu, to menu: NSMenu, make: @escaping (Row) -> NSMenuItem) -> SessionMenuSearch {
         let search = SessionMenuSearch(sessions: sessions, menu: menu, make: make)

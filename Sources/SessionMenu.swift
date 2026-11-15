@@ -6,7 +6,8 @@ import Foundation
 ///
 /// The order is the sessions the person sent to in the last `sendWindow`, newest send first, then
 /// the rest by when the agent last worked. Five are kept, with the destination among them, and then
-/// grouped under their repository. Below them, one submenu per repository lists all of its active sessions.
+/// grouped under their repository. Below them, one submenu per repository lists all of its running
+/// sessions. The rows that start a session are found by search, unless no session is running.
 enum SessionMenu {
     /// A send older than this no longer ranks a session ahead of the others.
     static let sendWindow: TimeInterval = 4 * 60 * 60
@@ -46,31 +47,33 @@ enum SessionMenu {
     }
 
     /// The five rows the menu shows, grouped, and the project submenus below them: one group per
-    /// header, in the headers' order with Other folders last, holding every active session of that
-    /// project, the top rows included. Empty when the top rows already hold every active session.
+    /// header, in the headers' order with Other folders last, holding every running session of that
+    /// project, the top rows included. Empty when the top rows already hold every running session.
     struct Menu: Equatable {
         let top: [Group]
         let projects: [Group]
+        /// Every session on offer by project, the running ones first: what search looks through.
+        let everyone: [Group]
         /// The rows from top to bottom, which is also live ink's Tab order after the responder.
         var topRows: [Row] { top.flatMap(\.rows) }
-        /// Every active session by project: the project groups, or the top groups when they already
-        /// hold everyone.
-        var everyone: [Group] { projects.isEmpty ? top : projects }
     }
 
-    /// The groups of `groups` whose rows match `query`, in the same order. A row matches when every
-    /// word of the query is found, ignoring case and accents, in its title, its second line or its
-    /// group's header. A query with no words matches every row.
+    /// The groups of `groups` whose rows match `query`, in the same order, except that a group with a
+    /// running session comes before one of rows that start a session, so Return never starts one
+    /// while a running session matches. A row matches when every word of the query is found,
+    /// ignoring case and accents, in its title, its second line or its group's header. A query with
+    /// no words matches every row.
     static func matching(_ query: String, in groups: [Group]) -> [Group] {
         let words = fold(query).split(whereSeparator: \.isWhitespace).map(String.init)
-        guard !words.isEmpty else { return groups }
-        return groups.compactMap { group in
+        let found = words.isEmpty ? groups : groups.compactMap { group in
             let rows = group.rows.filter { row in
                 let text = fold([row.title, row.subtitle, group.header].joined(separator: " "))
                 return words.allSatisfy { text.contains($0) }
             }
             return rows.isEmpty ? nil : Group(header: group.header, key: group.key, rows: rows)
         }
+        let startsOnly = { (group: Group) in group.rows.allSatisfy(\.destination.startsProcess) }
+        return found.filter { !startsOnly($0) } + found.filter(startsOnly)
     }
 
     private static func fold(_ text: String) -> String {
@@ -111,24 +114,28 @@ enum SessionMenu {
         }
     }
 
-    /// The menu for `listed`. The first `count` ranked sessions are kept, and `destination` takes the
-    /// last of them when it is not among them (it is nil when live ink's note is on the responder,
-    /// and then nothing is forced in). `projects` files every active session by project once any is
-    /// left out of the top rows. A session's row does not depend on which part it is in.
+    /// The menu for `listed`. The first `count` ranked running sessions are kept, and `destination`
+    /// takes the last of them when it is not among them (it is nil when live ink's note is on the
+    /// responder, and then nothing is forced in). With none running, the rows that start a session
+    /// are ranked in their place, since starting one is all the menu can do then. `projects` files
+    /// every running session by project once any is left out of the top rows. A session's row does
+    /// not depend on which part it is in.
     static func menu(_ listed: [AgentDestination], destination: AgentDestination?, count: Int = 5, now: Date = Date()) -> Menu {
         let active = ranked(listed, now: now)
-        var top = Array(active.prefix(count))
+        let running = active.filter { !$0.startsProcess }
+        var top = Array((running.isEmpty ? active : running).prefix(count))
         if let destination, !top.contains(where: { $0.id == destination.id }) {
             top = Array(top.prefix(count - 1)) + [active.first { $0.id == destination.id } ?? destination]
         }
         let shown = Set(top.map(\.id))
-        let hasMore = active.contains { !shown.contains($0.id) }
         let everyone = including(destination, in: active)
+        let receiving = everyone.filter { !$0.startsProcess }
         let filer = Filer(everyone)
         let rows = filer.rows(now: now)
         let topGroups = groups(top, filer, rows)
-        let projects = hasMore ? groups(everyone, filer, rows, headersFirst: topGroups.map(\.key)) : []
-        return Menu(top: topGroups, projects: projects)
+        let first = topGroups.map(\.key)
+        let projects = receiving.contains { !shown.contains($0.id) } ? groups(receiving, filer, rows, headersFirst: first) : []
+        return Menu(top: topGroups, projects: projects, everyone: groups(everyone, filer, rows, headersFirst: first))
     }
 
     /// `destination`'s row among `listed`, as the destination control and live ink's target button
@@ -174,7 +181,8 @@ enum SessionMenu {
             }
             members[filing.key, default: []].append(row)
         }
-        let keys = order.filter { $0 != otherFolders } + order.filter { $0 == otherFolders }
+        let filled = order.filter { members[$0] != nil }
+        let keys = filled.filter { $0 != otherFolders } + filled.filter { $0 == otherFolders }
         return keys.map { Group(header: headers[$0] ?? $0, key: $0, rows: members[$0] ?? []) }
     }
 
