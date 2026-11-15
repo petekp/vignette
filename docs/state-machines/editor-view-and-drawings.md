@@ -134,7 +134,7 @@ Done, Cmd+C, Copy Drawing and a card drag render a drawing to a PNG on one seria
 - `PendingRendering`: pending, then finished(output) once. `finish` is idempotent (`RenderingQueue.swift:142`). `wait(timeout:)`, `isDone` and `whenDone` read it.
 - Queue: each `render` adds one job to `firstJobs` or `jobs` under `lock` and enqueues one block. A block runs whichever job is next, `firstJobs` first (`:42-44`). The block count always equals the job count.
 - Clipboard: `copyRendering` clears the pasteboard, writes one item (the path as text now; PNG, TIFF and file URL promised), and records `changeCount`.
-- `DragItems`: `kept`, the PNGs rendered for drags, newest last, finished or not, each under its key (screenshot, drawing, text style, mark style); `ahead`, the one rendering `prepare` started that has not finished; `wanted`, the cards `prepare` named last.
+- `DragItems`: `kept`, the PNGs rendered for drags, newest last, finished or not, each under its key (screenshot, drawing, text style, mark style); `ahead`, the one rendering `prepare` started that has not finished; `wanted`, the first 3 cards with drawings that `prepare` named last (`preparedAhead`). `StackModel.prepareDrag` names the hovered or pressed card first, then the rest of the selection a drag from it carries.
 
 **Transitions**
 
@@ -145,7 +145,7 @@ Done, Cmd+C, Copy Drawing and a card drag render a drawing to a PNG on one seria
 | any | `resultURL` fails | finished (failed) | Finishes at once without queuing (`RenderingQueue.swift:36-38`, `:55-57`). |
 | no `ahead`, or `ahead` finished | `prepare(cards)` (hover or press on a card) | `ahead` = the first wanted key not kept | Renders that key's PNG in turn and keeps it. Nothing when every wanted key is kept. |
 | `ahead` pending | `prepare(cards)` | `ahead` unchanged | Only `wanted` changes. When `ahead` finishes, `trim` runs and the next wanted key starts. |
-| any | drag begins (`items(for:)`) | file pending | Takes the kept PNG for each card's key, or renders one in turn, and calls `file(from:beside:)`, which names the file now and writes it on its own queue once the PNG exists (`RenderingQueue.swift:52`). A kept PNG that failed is rendered again. |
+| any | drag begins (`items(for:)`) | file pending | Takes the kept PNG for each card's key, or renders one in turn (every card past the first 3 with drawings in a selection), and calls `file(from:beside:)`, which names the file now and writes it on its own queue once the PNG exists (`RenderingQueue.swift:52`). A kept PNG that failed is rendered again. |
 | kept over 32 MB | `trim` (after `prepare` and each rendering) | oldest finished entries dropped | Pending entries and the wanted keys' entries stay, so a wanted PNG is never dropped and rendered again. |
 | pending | job runs | finished | Reads the screenshot file now, so a trash or rename before this fails as `unreadableImage`; the card says Not copied. |
 | clipboard promised | paste before finish | waits | `RenderingProvider` waits up to 5 s on the main thread (`Clipboard.swift:108`); gives nothing if the rendering failed (`:113-117`). |

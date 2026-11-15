@@ -9,7 +9,10 @@ import AppKit
 /// A drop target can ask for the PNG as soon as the pointer reaches it, and the answer waits on the
 /// main thread, which also moves the drag image. So the PNG is rendered before the drag: `prepare`
 /// starts it when a card is hovered or pressed, one card at a time, and the PNGs are kept for the
-/// drags to come. The drag then only writes the file.
+/// drags to come. The drag then only writes the file. In a selection, only the hovered or pressed
+/// card and a few more are rendered ahead, so a large selection does not hold a PNG per drawn card.
+/// The rest are rendered in turn as the drag begins, and a drop target that asks for one of those
+/// before it is done waits for it, for up to 5 s (`RenderingProvider.patience`).
 @MainActor
 final class DragItems {
     private struct Key: Equatable {
@@ -25,18 +28,22 @@ final class DragItems {
     /// The rendering `prepare` started that has not finished. Only one runs ahead at a time, so a
     /// pointer moving over many cards renders only the last one it rests on.
     private var ahead: PendingRendering?
-    /// The cards `prepare` named last.
+    /// The first `preparedAhead` cards with drawings that `prepare` named last.
     private var wanted: [Card] = []
+    /// How many cards with drawings `prepare` renders ahead. Their PNGs are 1 to 10 MB each, so the
+    /// wanted ones stay within about the bytes kept beyond them.
+    private static let preparedAhead = 3
     /// How many finished PNGs' bytes are kept beyond the wanted ones. A full-screen capture with a
     /// drawing is 1 to 10 MB.
     private static let keptBytes = 32 << 20
 
     init(drawings: Drawings) { self.drawings = drawings }
 
-    /// Renders the drawings of `cards` ahead of a drag, in the order given, unless they are kept
-    /// already. An empty list renders nothing more after the one already running.
+    /// Renders the drawings of the first `preparedAhead` cards with one in `cards` ahead of a drag, in
+    /// the order given, unless they are kept already. An empty list renders nothing more after the one
+    /// already running.
     func prepare(_ cards: [Card]) {
-        wanted = cards
+        wanted = Array(cards.lazy.filter { self.key(for: $0) != nil }.prefix(Self.preparedAhead))
         trim()
         startAhead()
     }

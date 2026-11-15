@@ -91,7 +91,10 @@
   the PNG, the TIFF and the file URL; a paste that comes first waits for the rendering on the main
   thread for up to 5 s, then gets nothing and logs `[clipboard] error`. The card goes home at once.
   A dragged card with a drawing carries the same item, its PNG rendered from the hover or press
-  (`DragItems`), written as `<name>-<result-id>-annotated.png` as the drag begins; a card without
+  (`DragItems`). In a selection, the hovered or pressed card is rendered first, and at most two more
+  with it; the rest are rendered in turn as the drag begins. A drop target that asks for one of
+  those first holds the main thread until it is rendered, and gets nothing for it after 5 s, as a
+  paste does. Each is written as `<name>-<result-id>-annotated.png` as the drag begins; a card without
   one drops its file.
   A rendering that fails clears the clipboard, unless something else was copied since, and the card
   says "Not copied" and why in place of its Copied notice (`ThumbnailController.showNotCopied`,

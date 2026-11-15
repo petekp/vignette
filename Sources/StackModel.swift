@@ -165,8 +165,10 @@ final class StackModel: ObservableObject {
         }
     }
 
+    /// Renders ahead for the drag that would start on `id`: its own card first, then the selection it carries.
     private func prepareDrag(of id: UUID?) {
-        drags?.prepare(id.map(dragCards(from:)) ?? [])
+        let cards = id.map(dragCards(from:)) ?? []
+        drags?.prepare(cards.filter { $0.id == id } + cards.filter { $0.id != id })
     }
 
     /// Cards for a bulk action, in the order they were selected.
