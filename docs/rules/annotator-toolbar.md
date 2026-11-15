@@ -2,8 +2,9 @@
 
 - The annotator's window is borderless and spans the screen's visible frame. The frame inside it is
   sized to the image. Its toolbar is a native panel (`AnnotatorToolbar.swift`) placed under the
-  frame, one level above the flight layer, so a flight into or out of the editor passes under it as
-  the editor does. It is not the annotator window's child, since AppKit keeps a child window at its
+  frame (`AnnotatorToolbar+Placing.swift`), one level above the flight layer, so a flight into or
+  out of the editor passes under it as the editor does. A zoomed frame growing down carries the bar
+  with it, in the turn the frame moves (`follow`, `docs/rules/zoom.md`). It is not the annotator window's child, since AppKit keeps a child window at its
   parent's level. It shows `EditorCore.Tool.allCases`, the editor reports the active tool through `onTool`,
   and the bar calls `setTool`, `send` and `done` on the editor, `send` through `onSend` and
   `EditorView.send(to:)`. The destination Send was pressed for travels in the editor's send effect (`EditorCore.Effect.send(_:to:)`), so a press the editor

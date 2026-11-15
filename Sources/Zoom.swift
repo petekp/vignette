@@ -215,6 +215,30 @@ enum Zoom {
         return (window, CGSize(width: level / window.width, height: level / window.height))
     }
 
+    /// The rect the frame may grow within when `bar` hangs under it: `room` less the bar and its two
+    /// margins along the bottom. A frame growing down carries the bar until the bar rests one margin
+    /// above the bottom of `room`, and its bottom edge stops there. A frame fitted lower than that
+    /// keeps its own bottom as the limit, so the fitted frame is always inside.
+    static func room(_ room: CGRect, fitted: CGRect, bar: ZoomBar) -> CGRect {
+        let bottom = min(room.minY + bar.height + 2 * bar.margin, fitted.minY)
+        return CGRect(x: room.minX, y: bottom, width: room.width, height: max(0, room.maxY - bottom))
+    }
+
+    /// The bar's top edge under `frame`: one margin below the frame's bottom edge, or below the
+    /// fitted frame's when that is lower, so a pull below the fit leaves the bar where it opened.
+    static func barTop(under frame: CGRect, fitted: CGRect, bar: ZoomBar) -> CGFloat {
+        min(frame.minY, fitted.minY) - bar.margin
+    }
+}
+
+/// The annotator's toolbar as the zoom sees it: how tall it is, and the margin it keeps above it,
+/// to the frame, and below it, to the bottom of the room once the frame has carried it there.
+struct ZoomBar: Equatable {
+    var height: CGFloat
+    var margin: CGFloat
+
+    /// No bar: the frame grows to the bottom of the room.
+    static let none = ZoomBar(height: 0, margin: 0)
 }
 
 /// The magnification's side of a zoom step in flight: the visible middle when the input arrived,

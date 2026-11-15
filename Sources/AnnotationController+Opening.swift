@@ -34,12 +34,15 @@ extension AnnotationController {
             room.size.height = top - room.minY
         }
         zoom.edge = Self.edgePull(ui)
-        run(.prepare(fitted: frame, room: room))
+        let bar = self.bar
+        // Before the zoom's first tick: every tick has the bar follow the frame, and on a swap the
+        // bar has to slide to this image's place rather than jump there.
+        toolbar.place(below: frame, gap: bar.margin)
+        run(.prepare(fitted: frame, room: room, bar: bar))
         zoomTween.set(1)
         place(win, frame: frame)
         measureTitleInk()
         applyCornerRadius()
-        toolbar.place(below: frame, gap: Settings.shared.data.ui.annotationToolbarGap)
         editorUntouched = true
         windowUp = false
         win.alphaValue = 0

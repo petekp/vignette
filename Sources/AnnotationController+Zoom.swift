@@ -9,7 +9,7 @@ extension AnnotationController {
         zoomScreen = screen
         zoom.pixelScale = screen.backingScaleFactor
         if win.frame != screen.visibleFrame { win.setFrame(screen.visibleFrame, display: false) }
-        moveFrame(to: frame, picture: zoom.picture)
+        moveFrame(to: frame, picture: zoom.picture, barTop: zoom.barTop)
     }
 
     /// Hands `input` to the zoom and does what it answers. A spring that lands at once, at motion 0,
@@ -22,9 +22,9 @@ extension AnnotationController {
                 self?.run(.arrived)
                 self?.measureTitleInk()
             }
-        case .place(let frame, let picture)?:
+        case .place(let frame, let picture, let barTop)?:
             guard window != nil else { return }
-            moveFrame(to: frame, picture: picture)
+            moveFrame(to: frame, picture: picture, barTop: barTop)
         case .movePicture(let picture)?:
             editor.pictureRect = picture
         case nil:

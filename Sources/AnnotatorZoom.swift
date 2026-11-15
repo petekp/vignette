@@ -10,7 +10,7 @@ import CoreGraphics
 /// the window has to be at the frame the flight starts from.
 struct AnnotatorZoom: Equatable {
     enum Input: Equatable {
-        case prepare(fitted: CGRect, room: CGRect)   // an image opens in `fitted`; the frame grows within `room`
+        case prepare(fitted: CGRect, room: CGRect, bar: ZoomBar)   // an image opens in `fitted`, with `bar` under it; the frame grows within `room`
         case landed                                    // the flight put the image down
         case zoomIn, zoomOut, fit                      // Cmd+Plus, Cmd+Minus, Cmd+0
         case smart(at: CGPoint?)                       // a two-finger double tap, or a double-click on empty space
@@ -27,9 +27,10 @@ struct AnnotatorZoom: Equatable {
     enum Effect: Equatable {
         /// Carry the level to `to` on a spring of this many seconds, before the motion scale.
         case spring(to: CGFloat, seconds: Double)
-        /// A tick: the frame on screen, and the picture in the editor's coordinates, which run down
-        /// from the top of the frame. Both are set in one turn of the run loop.
-        case place(frame: CGRect, picture: CGRect)
+        /// A tick: the frame on screen, the picture in the editor's coordinates, which run down from
+        /// the top of the frame, and the top edge of the bar under the frame. All three are set in
+        /// one turn of the run loop.
+        case place(frame: CGRect, picture: CGRect, barTop: CGFloat)
         /// A pan: the picture moves and the frame stays.
         case movePicture(CGRect)
     }
@@ -55,8 +56,11 @@ struct AnnotatorZoom: Equatable {
     private(set) var phase = Phase.closed
     /// The frame the image opened in; the zoom grows the frame from here.
     private(set) var fitted = CGRect.zero
-    /// The rect the frame may grow within: the visible screen, less the strip the recent stack keeps.
+    /// The rect the frame may grow within: the visible screen, less the strip the recent stack keeps,
+    /// and less the bar and its margins along the bottom (`Zoom.room`).
     private(set) var room = CGRect.zero
+    /// The bar under the frame, which the frame carries down as it grows.
+    private(set) var bar = ZoomBar.none
     /// How far the image is magnified past the fitted frame, as the spring has carried it. One
     /// number: `Zoom.split` divides it between the frame's growth and the magnification inside it,
     /// one division per side, so those two can never disagree about it.
@@ -79,6 +83,8 @@ struct AnnotatorZoom: Equatable {
     var window: CGSize { split(level).window }
     /// The anchor in effect at the level on screen.
     var anchor: CGPoint { aim.anchor(at: level) }
+    /// The bar's top edge under the frame on screen.
+    var barTop: CGFloat { Zoom.barTop(under: frame, fitted: fitted, bar: bar) }
 
     /// Where the whole picture sits in the frame: magnified by `camera` and slid so that the part of
     /// the image `center` names fills it. In the editor's coordinates, which run down from the top.
@@ -117,8 +123,9 @@ struct AnnotatorZoom: Equatable {
 
     mutating func reduce(_ input: Input) -> Effect? {
         switch input {
-        case .prepare(let fitted, let room):
-            self = AnnotatorZoom(edge: edge, pixelScale: pixelScale, phase: .flying, fitted: fitted, room: room, frame: fitted)
+        case .prepare(let fitted, let room, let bar):
+            self = AnnotatorZoom(edge: edge, pixelScale: pixelScale, phase: .flying, fitted: fitted,
+                                 room: Zoom.room(room, fitted: fitted, bar: bar), bar: bar, frame: fitted)
             return nil
         case .landed:
             if phase == .flying { phase = .landed }
@@ -203,7 +210,7 @@ struct AnnotatorZoom: Equatable {
         // Kept in the room: a frame grown to the screen's height slides rather than clips.
         frame = Zoom.frame(fitted: fitted, scale: step.window, anchor: aim.anchor(at: level), within: room)
         if let pixelScale { frame = Zoom.aligned(frame, to: pixelScale, within: room) }
-        return .place(frame: frame, picture: picture)
+        return .place(frame: frame, picture: picture, barTop: barTop)
     }
 
     /// Points the frame's growth at `cursor`. The anchor it starts from is read off the frame on
