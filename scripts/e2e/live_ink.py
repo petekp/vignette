@@ -356,9 +356,14 @@ def ink_offered_once(app):
         json.dump(old, f, indent=2)
     start(app)
     app.wait_log('[settings] offered live ink', 0)
-    with open(app.settings) as f:
-        if not json.load(f).get('liveInkOffered'):
+    deadline = time.time() + 3
+    while True:
+        with open(app.settings) as f:
+            if json.load(f).get('liveInkOffered'):
+                break
+        if time.time() > deadline:
             raise Failed('the offer was not recorded in settings.json')
+        time.sleep(0.1)
     app.report.step('the first launch offered live ink and recorded it')
     app.stop()
     offset = app.log_size()
