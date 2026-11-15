@@ -16,12 +16,20 @@ extension SessionMenu {
         return small
     }
 
+    /// Puts `client`'s logo on `item`, where a menu draws an item's image. From macOS 27 AppKit hides
+    /// an item's image unless the item asks for it.
+    @MainActor
+    static func showLogo(of client: AgentClient, on item: NSMenuItem) {
+        item.image = logo(for: client)
+        if #available(macOS 27.0, *) { item.preferredImageVisibility = .visible }
+    }
+
     /// One row as an item: the agent's logo, its title, a second line, and a badge. Before macOS 14.4
     /// an item has no subtitle, so the tooltip, which holds the second line, is all there is.
     @MainActor
     static func item(for row: Row, selected: Bool) -> NSMenuItem {
         let item = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
-        item.image = logo(for: row.destination.client)
+        showLogo(of: row.destination.client, on: item)
         item.state = selected ? .on : .off
         item.toolTip = row.tooltip
         if #available(macOS 14.4, *), !row.subtitle.isEmpty { item.subtitle = row.subtitle }
