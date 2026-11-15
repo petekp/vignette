@@ -83,11 +83,16 @@
   stop in its attributed title, with no `NSMenuItemBadge`, which has no API for its look or its
   distance from the chevron. `SessionMenuIndicators` sets one tab stop for each menu and
   submenu, past the widest row's text, its words and `SessionMenu.indicatorGap`, so the words end
-  in one column; the search sets it again after each rebuild. The dot's centre sits on the middle of
+  in one column; the search sets it again after each rebuild. macOS 27 starts the title of an item
+  with no image at the menu's left but measures it from where the others' titles start, so a
+  project's row carries a clear 16 pt image (`SessionMenu.showSpace`) to end its count with the
+  rows' words, 10 pt before the chevron. A menu with a submenu keeps the chevron's column on every
+  row, so there the rows' words end that far short of the menu's right edge. The dot's centre sits on the middle of
   the word's x-height (`IndicatorItem.dotAttachment`). As the menu's delegate it redraws the
   highlighted row's words in `selectedMenuItemTextColor`, since they carry colours of their own. While a row says working, a soft band crosses the word letter by letter, one opacity per
-  letter, on live ink's thinking clock (`SessionMenu.shimmer`, one beat across and one at rest), from
-  a timer in the common run loop modes, which include the menu's tracking; the word is still under
+  letter, on live ink's thinking clock (`SessionMenu.shimmer`, one beat across and one at rest), and the dot's soft glow is brightest as each
+  pass starts and faintest as it ends, from
+  a timer in the common run loop modes, which include the menu's tracking; the word and the dot are still under
   Reduce Motion or `ui.motion` 0, and the timer stops when the menu closes or no row says working. Headers are section
   headers with an attributed title in SF's small capitals (`SessionMenu.header`). AppKit measures an item's
   second line as two lines once it is wider than both its title and about 282 pt, yet draws it on
