@@ -176,29 +176,30 @@ Events: `place(below:gap:)` (`:436`), `show()` (`:521`), `hideSoon()` (`:532`), 
 
 ### Keyboard focus: focus, keyed, tookKeysOnOpen, toolLetter, heldLetter (implicit)
 
-Owner: `Model.focus` (`AnnotatorToolbar.swift:100`), `keyed` (`:71`), `tookKeysOnOpen` (`:73`), `toolLetter` (`:75`), `messageAsks` (`:102`); `AnnotatorToolbar.heldLetter` (`:213`); `ToolbarPanel.pressOnField` (`:560`), `wantsKeys` (`:561`). Tests: none for the panel; `HeldToolLetter` below has one.
+Owner: `Model.focus` (`AnnotatorToolbar.swift:102`), `keyed` (`:73`), `tookKeysOnOpen` (`:75`), `toolLetter` (`:77`), `messageAsks` (`:104`); `AnnotatorToolbar.heldLetter` (`:221`); `ToolbarPanel.pressOnField` (`AnnotatorToolbar+Panel.swift:8`), `wantsKeys` (`:9`), `caretToEnd` (`:36`). Tests: none for the panel; `HeldToolLetter` below has one.
 
 Decides whether the bar's panel or the editor has the keys. Only a press on the message field or an explicit ask lets the panel take them.
 
-**States**: the panel is key or not (`panel.isKeyWindow`, mirrored by `keyed` through `didBecomeKey` and `didResignKey`, `:289-305`). `focus` is nil, a tool, copy, the target, an action, or `.message`. `tookKeysOnOpen` says the field got the keys without a press.
+**States**: the panel is key or not (`panel.isKeyWindow`, mirrored by `keyed` through `didBecomeKey` and `didResignKey`, `:303-317`). `focus` is nil, a tool, copy, the target, an action, or `.message`. `tookKeysOnOpen` says the field got the keys without a press.
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | any | `didBecomeKey` | `keyed = true`, `focus = .message` | whatever made the panel key |
-| any | `didResignKey` | `keyed = false`, `tookKeysOnOpen = false`; `focus = nil` if it was `.message` | `makeFirstResponder(nil)` |
+| any | `didResignKey` | `keyed = false`, `tookKeysOnOpen = false`, `caretToEnd = false`; `focus = nil` if it was `.message` | `makeFirstResponder(nil)` |
 | any | `begin` | `focus = nil`, `tookKeysOnOpen = false`, `toolLetter` reset | `keyed` and `panel.isKeyWindow` untouched |
-| panel already key | `typeOnOpen` (`:349`, from `offerTyping`, `AnnotationController.swift:376`) | — | refused (`:350`) |
-| any | Tab, Shift+Tab (`move`, `:316`); Space (`activate`, `:326`); M or P (`focusMessage`, `:342`); press (`onPress`, `:275`); `keyDown` (`:365`) | `focus` moves | — |
+| bar shown, a field on it | a pick in the target's menu (`typeAfterPick`, `:363`) | `tookKeysOnOpen = false` (`Model.pick`); `focus = .message` | the controller's `editorUntouched = false` first; the panel takes the keys |
+| panel already key | `typeOnOpen` (`:375`, from `offerTyping`, `AnnotationController+ShowingAndHiding.swift:34`) | — | refused (`:376`) |
+| any | Tab, Shift+Tab (`move`, `:330`); Space (`activate`, `:340`); M or P (`focusMessage`, `:356`); press (`onPress`, `:288`); `keyDown` (`:391`) | `focus` moves | — |
 
 **Invariants**
 
-- The panel can be key only by `canBecomeKey = pressOnField || wantsKeys || isKeyWindow` (`:572`). Checked by: the guard at `:572`. `pressOnField` is not reset until the next left press ([toolbar-6](plausible-findings-run-to-toolbar.md#toolbar-6)).
+- The panel can be key only by `canBecomeKey = pressOnField || wantsKeys || isKeyWindow` (`AnnotatorToolbar+Panel.swift:20`). Checked by: the guard there. `pressOnField` is not reset until the next left press ([toolbar-6](plausible-findings-run-to-toolbar.md#toolbar-6)).
 
 **Late and concurrent answers**
 
-- `offerTyping` runs once per image (`editorUntouched`). `tookKeysOnOpen` is cleared on resign.
+- `offerTyping` runs once per image (`editorUntouched`), and not after a pick. `tookKeysOnOpen` is cleared on resign and by a pick.
 
 ### HeldToolLetter (explicit)
 

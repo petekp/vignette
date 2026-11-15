@@ -56,8 +56,8 @@ final class AnnotationController {
     /// The opening `prepare` was given, so a decode or a send's rendering only lands on the open
     /// that asked for it: the same file can be closed and opened again while the first is on its way.
     var opened: Opening?
-    /// No key and no press has reached the editor since `prepare`, and the message field has not
-    /// taken the keys on its own yet (`offerTyping`).
+    /// No key or press has reached the editor since `prepare`, no session was picked in the target's
+    /// menu, and the message field has not taken the keys on its own yet (`offerTyping`).
     var editorUntouched = false
     /// `show` has put this image's window up.
     var windowUp = false
@@ -116,6 +116,7 @@ final class AnnotationController {
             if let window = self?.window, !window.isKeyWindow { window.makeKey() }
         }
         editor.onKey = { [weak self] in self?.editorUntouched = false }
+        toolbar.onPick = { [weak self] in self?.editorUntouched = false }
         toolbar.onClose = { [weak self] in self?.cancel() }
         editor.takesKey = { [weak self] key, modifiers in
             guard let toolbar = self?.toolbar, toolbar.model.focus != nil, modifiers.isSubset(of: .shift) else { return false }

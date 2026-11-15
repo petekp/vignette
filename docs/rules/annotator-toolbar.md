@@ -20,7 +20,10 @@
   (`ToolbarPanel.sendEvent`), since SwiftUI's buttons ask for them as a field does; a press on a
   button leaves them with the editor. The panel also takes them once the image's window is up, when
   the bar has a message field and no key or press has reached the editor yet
-  (`AnnotationController.offerTyping`), so typing goes to the agent at once. The field counts as
+  (`AnnotationController.offerTyping`), so typing goes to the agent at once. A pick in the target's
+  menu, however it is made, gives the field the keys too, with the caret after any words in it
+  (`AnnotatorToolbar.typeAfterPick`, `ToolbarPanel.caretToEnd`). It takes them a turn after the menu
+  closes, after the bar starts to spring to the new target's width. The field counts as
   typed in only while the panel is key
   (`Model.keyed`), because AppKit makes it the panel's first responder when the bar comes up. There is no
   palette: a mark's colour says who drew it. Send starts on the kept pick when there is one: the
@@ -93,7 +96,9 @@
   sends or replies (`EditorCore.finishes`). On the image, Return never sends to a session Vignette
   picked. In the message field Return sends, as in a chat app, with the target beside it. A field
   that took the keys on its own and is still empty has nothing that asks to send, so Return and Esc
-  there do what they do on the image (`Model.fieldReturn`, `fieldEscCloses`).
+  there do what they do on the image (`Model.fieldReturn`, `fieldEscCloses`). A pick ends that
+  (`Model.pick`): choosing a session is asking to write to it, so the field then acts as pressed. A
+  letter types, Return sends, and Esc hands the keys to the image, from which a second Esc closes.
   `docs/send-and-reply-2026-09-24.md` has the rules. While one image follows another with no gap (a click on
   another card, or the queue moving on) the bar stays on screen and springs to the next image's
   place, and keeps the image before's target until the next image's settles (`Model.begin`'s

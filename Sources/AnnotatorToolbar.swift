@@ -185,10 +185,12 @@ final class AnnotatorToolbar {
             target = answer.pick
         }
 
+        /// A hand pick, which also chooses to write to it: the field counts as pressed from here.
         func pick(_ destination: AgentDestination) {
             target = destination
             picked = true
             carried = false
+            tookKeysOnOpen = false
         }
 
         func isHandPick(_ destination: AgentDestination) -> Bool { picked && target?.id == destination.id }
@@ -199,6 +201,8 @@ final class AnnotatorToolbar {
     var onTool: ((EditorCore.Tool) -> Void)?
     var onDone: (() -> Void)?
     var onSend: ((AgentDestination) -> Void)?
+    /// A session picked in the target's menu, before the bar applies it.
+    var onPick: (() -> Void)?
     /// Esc in the message field: the keys go back to the editor.
     var onMessageEnd: (() -> Void)?
     /// Esc in a message field that took the keys on its own and is still empty: the editor closes.
@@ -267,7 +271,10 @@ final class AnnotatorToolbar {
                 guard let self else { return }
                 Log.write("[send] picked \(destination.address.description) project=\(destination.detail) role=\(destination.role ?? "none")")
                 if let menuLine { Log.write(menuLine) }
+                // Before the pick changes the offer, which may offer the field the keys as on open.
+                self.onPick?()
                 withAnimation(Anim.spring(0.35 * Settings.shared.motionScale)) { self.model.pick(destination) }
+                self.typeAfterPick()
             }
         }
         panel.onTab = { [weak self] backward in self?.move(backward: backward) }
@@ -304,6 +311,7 @@ final class AnnotatorToolbar {
                     self?.model.keyed = false
                     self?.keepHeldTool()
                     self?.model.tookKeysOnOpen = false
+                    self?.panel.caretToEnd = false
                     if self?.model.focus == .message { self?.model.focus = nil }
                     _ = self?.panel.makeFirstResponder(nil)
                 }
@@ -347,6 +355,18 @@ final class AnnotatorToolbar {
     /// M or P in the editor: the keys go to the message field, when the bar has one.
     func focusMessage() {
         guard model.controls.contains(.message) else { return }
+        focus(on: .message)
+    }
+
+    /// A pick in the target's menu chooses whom to write to, so the message field takes the keys as a
+    /// press on it gives them: a letter types, Return sends, and Esc hands the keys to the image.
+    private func typeAfterPick() {
+        guard model.shown, model.controls.contains(.message) else { return }
+        if panel.isKeyWindow, let text = panel.firstResponder as? NSTextView {
+            text.setSelectedRange(NSRange(location: (text.string as NSString).length, length: 0))
+        } else {
+            panel.caretToEnd = true
+        }
         focus(on: .message)
     }
 
@@ -552,89 +572,6 @@ final class AnnotatorToolbar {
             guard let self, self.hideGeneration == gen else { return }
             self.panel.orderOut(nil)
         }
-    }
-}
-
-/// Key only for the message field: a press on it takes the keys, and a press anywhere else in the
-/// bar leaves them, and so the tool keys and shortcuts, with the editor window. SwiftUI's buttons
-/// ask for the keys as a text field does, so `becomesKeyOnlyIfNeeded` cannot tell them apart.
-@MainActor
-final class ToolbarPanel: NSPanel {
-    private var pressOnField = false
-    private var wantsKeys = false
-    /// Cmd+Return while the message field has the keys: Send, as in the editor.
-    var onCommandReturn: (() -> Void)?
-    /// Tab or Shift+Tab (true) while the message field has the keys.
-    var onTab: ((_ backward: Bool) -> Void)?
-    /// A press on the bar, and whether it is on the message field.
-    var onPress: ((_ onField: Bool) -> Void)?
-    /// A key down, before the field sees it. True when it was taken.
-    var onKey: ((NSEvent) -> Bool)?
-    /// Up on the message field's first line or Down on its last. True when it opened the target's menu.
-    var onMenuKey: (() -> Bool)?
-    override var canBecomeKey: Bool { pressOnField || wantsKeys || isKeyWindow }
-
-    /// Delivers a key that `onKey` held, past `onKey`.
-    func replay(_ event: NSEvent) { super.sendEvent(event) }
-
-    /// Takes the keys for the message field without a press on it: Tab onto it, M or P, or the image
-    /// opening (`AnnotatorToolbar.typeOnOpen`).
-    func takeKeys() {
-        wantsKeys = true
-        makeKey()
-        wantsKeys = false
-    }
-    override var canBecomeMain: Bool { false }
-
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.type == .keyDown, EditorCore.Key(keyCode: event.keyCode, characters: nil) == .returnKey,
-           event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
-            onCommandReturn?()
-            return true
-        }
-        return super.performKeyEquivalent(with: event)
-    }
-
-    override func sendEvent(_ event: NSEvent) {
-        if event.type == .leftMouseDown, let content = contentView {
-            // NSWindow makes itself key inside `super.sendEvent`, so the answer is ready before it asks.
-            var view = content.hitTest(content.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow)
-            while let current = view, !(current is NSTextField || current is NSText) { view = current.superview }
-            pressOnField = view != nil
-            onPress?(pressOnField)
-        }
-        if event.type == .keyDown, onKey?(event) == true { return }
-        let composing = (firstResponder as? NSTextView)?.hasMarkedText() == true
-        if event.type == .keyDown, !composing, event.modifierFlags.isDisjoint(with: [.command, .control, .option]) {
-            switch EditorCore.Key(keyCode: event.keyCode, characters: nil) {
-            case .tab?:
-                // The next control rather than the key view loop.
-                onTab?(event.modifierFlags.contains(.shift))
-                return
-            case let arrow? where (arrow == .up || arrow == .down) && !event.modifierFlags.contains(.shift):
-                // On the field's first line or its last, the target's menu, as on a pop-up button.
-                // Within the text the arrows move the caret.
-                if let text = firstResponder as? NSTextView, text.caretIsOnLine(first: arrow == .up), onMenuKey?() == true { return }
-            default:
-                break
-            }
-        }
-        super.sendEvent(event)
-    }
-}
-
-private extension NSTextView {
-    /// Whether the caret is on the text's first line as laid out, or with `first` false its last.
-    func caretIsOnLine(first: Bool) -> Bool {
-        let length = (string as NSString).length
-        guard length > 0, let layout = layoutManager, let container = textContainer else { return true }
-        let caret = selectedRange().location
-        let line = caret >= length && layout.extraLineFragmentTextContainer != nil
-            ? layout.extraLineFragmentRect
-            : layout.lineFragmentRect(forGlyphAt: layout.glyphIndexForCharacter(at: min(caret, length - 1)), effectiveRange: nil)
-        layout.ensureLayout(for: container)
-        let used = layout.usedRect(for: container)
-        return first ? line.minY <= used.minY : line.maxY >= used.maxY
     }
 }
 
