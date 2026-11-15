@@ -73,7 +73,7 @@ final class NoteVoice: NSObject {
     private var letters = HeardLetters()
     private var wave: VoiceCaret
     private var levels = VoiceLevels()
-    private var link: CADisplayLink?
+    private var link: ScreenLink?
     private var lastTick: CFTimeInterval?
     private var ending = false
     private var listening = true
@@ -91,11 +91,7 @@ final class NoteVoice: NSObject {
         self.content = content
         wave = VoiceCaret(lineWidth: NoteLayout.wordsWidth, edge: layout.edge(after: 0))
         super.init()
-        if let screen = NSScreen.main ?? NSScreen.screens.first {
-            let link = screen.displayLink(target: self, selector: #selector(tick))
-            link.add(to: .main, forMode: .common)
-            self.link = link
-        }
+        link = ScreenLink(self, #selector(tick))
     }
 
     var text: String { letters.text }
