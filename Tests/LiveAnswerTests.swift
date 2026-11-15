@@ -109,5 +109,11 @@ final class LiveAnswerTests: XCTestCase {
             if let say = LiveAnswer.partialSay(in: json), say != seen.last { seen.append(say) }
         }
         XCTAssertEqual(seen, ["The", "The total", "The total is \"$197", "The total is \"$197.85\"\nnot", "The total is \"$197.85\"\nnot $194·"])
+
+        let three = "The row has no padding. Its field sits on the line, e.g. under 1.5 rows. Give it the rows' padding."
+        let four = three + " Or check its margin."
+        XCTAssertEqual(LiveAnswer.partialSay(in: "{\"say\": \"" + three + " Or ch"), three, "a fourth sentence never shows as it streams")
+        XCTAssertEqual(try LiveAnswer(responder: ["say": four, "marks": []]).say, three, "the answer ends where its streamed reply stopped")
+        XCTAssertEqual(try LiveAnswer(json: ["say": four, "marks": []]).say, four, "a session's answer keeps every sentence")
     }
 }

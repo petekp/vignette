@@ -14,6 +14,7 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
 | Whether each can answer, which live ink, Settings and setup all read | `ResponderStatus.swift`, from each driver's `availability()` and `problem(_:)` |
 | Codex's sign-in | `CodexSignIn.swift`, and its row in Settings and setup in `ResponderStatus.swift` |
 | The note's target and its menu | `LiveNoteTarget.swift`, `LiveNotePopover.swift` |
+| The prompt both share, and how much of a reply is shown | `LiveResponderPrompt.swift`, `LiveAnswerReply.swift` |
 
 ## Which one answers
 
@@ -130,6 +131,21 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
   finish, and the restart follows it; an ask waiting then goes to the new process. The new
   conversation has seen no picture, so its first ask sends one. An isolation check's refusal holds
   across it, since it is about the codex file, not the sign-in.
+
+## How long a reply is
+
+- Both responders get the same system prompt (`LiveResponderPrompt.swift`). It asks for two short
+  sentences in `say`, never more than three, and the likeliest cause rather than a list of possible
+  ones. In 11 runs on 2026-11-15, under the earlier wording of one to three sentences, Claude wrote up
+  to six.
+- A schema cannot count sentences, so Vignette keeps the first three of a responder's reply
+  (`LiveAnswer.maxSentences`, `LiveAnswerReply.swift`), split as Foundation splits sentences. The cut
+  applies as the reply streams in and once the answer is whole, so a streamed reply stops growing
+  where the answer will end. A session's reply keeps every sentence.
+- A focus tour has at most three stops, one for each sentence a reply keeps.
+- The prompt tells the responder never to state a size, distance or pixel count it read off the
+  picture, since the picture is scaled. In those 11 runs, every answer that gave the gap above a
+  field said 30 or 32 px, where the page had 18 pt. A number the window's text shows is fine.
 
 ## In `[state]`
 

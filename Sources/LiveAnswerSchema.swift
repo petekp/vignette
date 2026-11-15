@@ -24,7 +24,7 @@ extension LiveAnswer {
           "additionalProperties": false,
           "required": \#(required(["say", "marks"], of: ["say", "marks", "steps", "actions"])),
           "properties": {
-            "say": {"type": "string", "description": "The answer, in one to three short sentences of plain text."},
+            "say": {"type": "string", "description": "The answer, in plain text: usually two short sentences, never more than three. Only the first three are shown."},
             "marks": {
               "type": "array",
               "maxItems": \#(maxMarks),
