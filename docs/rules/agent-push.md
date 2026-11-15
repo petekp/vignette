@@ -11,11 +11,12 @@ that is a single black shape, like Codex's, is listed in `Agent.oneColourLogos` 
 colour of the text beside it.
 The tab sits in the card's top-right corner, `CardView.buttonPad` in from its edges, and never
 reaches past the card (`AgentBadge.swift`). When the whole capsule does not fit inside the card's
-drawn width with that margin on both sides, it folds to the logo alone in a circle, or to
+drawn width with that margin on both sides and between it and the selection circle in the top-left
+corner, it folds to the logo alone in a circle, or to
 `Agent.fallbackSymbol` for an agent with no logo (`AgentBadgeFit`). It says its words again once
 the card has `AgentBadgeFit.hysteresis` (4 pt) more room than it needs, so a pinch held near the
 edge does not fold and unfold it with each step of the stack's width. "From Claude" needs a card
-111 pt wide: a 188 pt card in the stack at its narrowest beside the annotator is 94 pt and folds,
+136 pt wide: a 188 pt card in the stack at its narrowest beside the annotator is 94 pt and folds,
 and so does a tall capture's narrow card at full width. The words are measured once per label and
 size. The right edge stays put, the logo travels with the capsule's left edge, and the words fade
 as the capsule closes over them. A fold that comes with the stack's own spring rides it, so the

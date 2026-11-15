@@ -5,12 +5,14 @@ import XCTest
 final class AgentBadgeTests: XCTestCase {
     let size: CGFloat = 19
 
-    func testTheWordsShowOnlyWhenTheWholeCapsuleFitsInsideTheCard() {
+    func testTheWordsShowOnlyWhenTheCapsuleFitsInsideTheCardClearOfTheSelectionCircle() {
         let fit = AgentBadgeFit.of("From Claude", size: size)
+        let circleTrailingEdge = AgentBadgeFit.inset + size
         for width in stride(from: CGFloat(20), through: 240, by: 0.5) {
             for wasFolded in [false, true] where !fit.folds(cardWidth: width, wasFolded: wasFolded) {
-                XCTAssertLessThanOrEqual(fit.fullWidth + AgentBadgeFit.inset * 2, width,
-                                         "a badge wider than its \(width) pt card kept its words")
+                let capsuleLeadingEdge = width - AgentBadgeFit.inset - fit.fullWidth
+                XCTAssertGreaterThanOrEqual(capsuleLeadingEdge, circleTrailingEdge + AgentBadgeFit.inset,
+                                            "a badge on a \(width) pt card kept its words under the selection circle")
             }
         }
         XCTAssertTrue(fit.folds(cardWidth: 94, wasFolded: false), "a 188 pt card at the narrowest stack")
@@ -19,7 +21,7 @@ final class AgentBadgeTests: XCTestCase {
 
     func testAFoldedBadgeWaitsForRoomToSpareBeforeItUnfolds() {
         let fit = AgentBadgeFit.of("From Claude", size: size)
-        let fits = fit.fullWidth + AgentBadgeFit.inset * 2
+        let fits = fit.cardWidthForWords
         XCTAssertFalse(fit.folds(cardWidth: fits, wasFolded: false))
         XCTAssertTrue(fit.folds(cardWidth: fits, wasFolded: true))
         XCTAssertTrue(fit.folds(cardWidth: fits + AgentBadgeFit.hysteresis - 0.5, wasFolded: true))
