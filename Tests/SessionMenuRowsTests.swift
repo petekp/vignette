@@ -66,6 +66,33 @@ final class SessionMenuRowsTests: XCTestCase {
         withExtendedLifetime(search) {}
     }
 
+    func testTheSearchRowLeavesTheRowsTheWidthTheyHaveWithoutIt() {
+        let now = Date()
+        func session(_ id: String, _ title: String, hoursAgo: Double, busy: Bool = false) -> AgentDestination {
+            var s = AgentDestination(id: id, name: title, address: .claudeSession(id), lastUsed: now.addingTimeInterval(-hoursAgo * 3600),
+                                     place: .folder(fromHome: "~/Code/checkout-web"))
+            if busy { s.turn = .busy }
+            return s
+        }
+        let few = [session("a", "Fix the tax rounding", hoursAgo: 0.1, busy: true),
+                   session("b", "A much longer title for this session", hoursAgo: 2)]
+        let many = few + (1...5).map { session("c\($0)", "Session \($0)", hoursAgo: Double($0) + 2) }
+        for list in [few, many] {
+            let sessions = SessionMenu.menu(list, destination: list[0], now: now)
+            let make = { (row: SessionMenu.Row) in SessionMenu.item(for: row, selected: row.id == list[0].id) }
+            let searched = NSMenu()
+            let search = SessionMenu.add(sessions, to: searched, make: make)
+            let plain = NSMenu()
+            SessionMenu.addAll(sessions, to: plain, make: make)
+            let indicators = SessionMenuIndicators(menu: plain)
+            indicators.refresh()
+            XCTAssertEqual(searched.items.contains { $0.state == .on }, true)
+            XCTAssertGreaterThanOrEqual(searched.size.width, plain.size.width,
+                                        "\(sessions.projects.count) projects: a checked row's words fit on its first line")
+            withExtendedLifetime((search, indicators)) {}
+        }
+    }
+
     func testEveryRowIsAsTallAsItsLinesHoweverWideTheyAre() {
         func height(title: String, folder: String) -> CGFloat {
             let session = AgentDestination(id: "a", name: title, address: .claudeSession("a"), lastUsed: nil, place: .folder(fromHome: folder))

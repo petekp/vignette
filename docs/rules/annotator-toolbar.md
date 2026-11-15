@@ -83,7 +83,10 @@
   stop in its attributed title, with no `NSMenuItemBadge`, which has no API for its look or its
   distance from the chevron. `SessionMenuIndicators` sets one tab stop for each menu and
   submenu, past the widest row's text, its words and `SessionMenu.indicatorGap`, so the words end
-  in one column; the search sets it again after each rebuild. macOS 27 starts the title of an item
+  in one column; the search sets it again after each rebuild. A menu that holds a view, such as
+  the search row, leaves the checkmark's column out of its width, so `SessionMenuIndicators` gives
+  it a `minimumWidth` of the width AppKit measures for its other items alone; without it, a checked
+  row's words wrap under its title on macOS 15. macOS 27 starts the title of an item
   with no image at the menu's left but measures it from where the others' titles start, so a
   project's row carries a clear 16 pt image (`SessionMenu.showSpace`) to end its count with the
   rows' words, 10 pt before the chevron. A menu with a submenu keeps the chevron's column on every

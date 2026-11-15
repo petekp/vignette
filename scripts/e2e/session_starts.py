@@ -47,7 +47,7 @@ def send_starts_session(app):
     s = app.wait_state(lambda s: (s['annotator'].get('offer') or {}).get('session') == session, 'Continue picked', timeout=5)
     app.report.step('Continue last session is the target', detail=json.dumps(s['annotator']['offer']))
     offset = app.log_size()
-    app.keys('annotator', 'key', KEY_RETURN, 'cmd')
+    app.keys('toolbar', 'key', KEY_RETURN)
     app.wait_log('[send] ok', offset, timeout=60)
     calls = app.herdr_calls()
     run = next((c for c in calls if c[:2] == ['hc', 'run']), None)
