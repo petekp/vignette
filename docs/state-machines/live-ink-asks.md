@@ -24,7 +24,7 @@ Side tables: `picks[askID]` (the answer a picked button was picked under, plus `
 - `removed`: `LiveInk.remove` (547: tap-erase, pick, `removeAnswer`, `dropFocus`, step advance, `finished`). `windowGone`: `forget` (560).
 - `arrived(.packetCame)`: `send` (876), `share` (903). `.replyCame`: `showSay` (1246). `.answerCame`: `answered` (1269). `.failed`: `failed` (1546). `.sentToSession`: the `sendNote` completion (939).
 - `pictureSent`: the responder's `content` closure (865). `conversed`: `ask` (811), `say` (1214). `streamed`: `showSay` (1258). `answered`: `answered` (1288). `drafted`: the actions panel (1158). `replyRedrawn`: `restoreAnswer` (1595), `notice` (1608). `answerShown`: `clicked` (1359), focus code.
-- `dismissed`: the × (1124). `cancelled`: `cancelAsk` (`LiveInk+Escape.swift:57`). `answerClosed`: Esc (`LiveInk+Escape.swift:44`). `finished`: the finish timer (974). `cleared`: `endConversation` (1728).
+- `dismissed`: the × (1124). `cancelled`: `cancelAsk` (`LiveInk+Escape.swift:57`). Esc sends `dismissed` for `newestAnswerToClose`. `finished`: the finish timer (974). `cleared`: `endConversation` (1728).
 
 **Transitions**
 
@@ -45,7 +45,6 @@ Side tables: `picks[askID]` (the answer a picked button was picked under, plus `
 | any present ask | `dismissed` | ended | `interrupt` only if `asking`; `finish(answer ∪ about − others ∪ aside)` |
 | under way | `cancelled` | ended, or restored | `interrupt` only if `asking`; `removeAnswer`; `reopenNote` if ink is given back, or `remove` of that ink when `sentOnRelease`; session ask: id into `withdrawn` |
 | settled | `cancelled`, `failed`, `replyCame`, `answerCame`, `packetCame` | — (ignored) | — |
-| newest settled ask with a non-leaving answer mark | `answerClosed` | ended | `finish(answer, .dismissed)` |
 | any | `removed`, `windowGone`, `finished` | marks lose roles; settled asks with no answer mark left end (`endAnswersWithNoMarks`, 514); asks under way stay | — |
 | any | `cleared` | every ask ended | `ended(id)` for each; `picks` emptied; roles, answers, finishing dropped; `withdrawn` and `lastID` kept; no `interrupt` |
 

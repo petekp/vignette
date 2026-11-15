@@ -93,7 +93,7 @@ extension LiveInk {
         case .endTour:
             letGoOfTour(because: "escape")
         case .closeAnswer:
-            closeAnswer(by: .answerClosed)
+            if let id = asks.newestAnswerToClose { closeAnswer(id) }
         case .clearInk:
             clear()
         }

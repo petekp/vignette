@@ -161,6 +161,12 @@ struct LiveAsks: Equatable {
         return ask.picked == nil || ask.say?.notice != nil
     }
 
+    /// The answer Esc closes next, by the same `dismissed` event as its ×: the newest settled one that
+    /// still has a mark not already leaving.
+    var newestAnswerToClose: Ask.ID? {
+        asks.last { !$0.isUnderWay && answerMarks(of: $0.id).contains { !isFinishing($0) } }?.id
+    }
+
     /// The person's own marks among `shown`, oldest first: a failure's note is in their colour, but
     /// Vignette's.
     func ink(among shown: [Mark]) -> [Mark] { shown.filter { !$0.agent && !isAnswer($0.id) } }
@@ -277,7 +283,7 @@ struct LiveAsks: Equatable {
         case replyRedrawn(Mark)
         /// More of ask `for`'s answer, or its failure's note, came on the screen.
         case answerShown(Set<Mark.ID>, for: Ask.ID)
-        /// An answer's ×. It finishes the answer's marks, and the marks the ask is about, erased or
+        /// An answer's × or the Esc that closes it. It finishes the answer's marks, and the marks the ask is about, erased or
         /// not, that no other ask is about. The ask ends, and the responder's turn stops when it was
         /// this ask's.
         case dismissed(Ask.ID)
@@ -286,8 +292,6 @@ struct LiveAsks: Equatable {
         /// on release goes instead. A reply to put back must be among `shown`. Nothing is said, since the
         /// person stopped it. A session's note stored after this is withdrawn.
         case cancelled(Ask.ID, shown: Set<Mark.ID>)
-        /// Esc with no ask to stop: the newest answer's marks leave, and the person's ink stays.
-        case answerClosed
         /// The time for marks to leave is up.
         case finished(Set<Mark.ID>)
         /// The screen was cleared, or live ink turned off.
@@ -395,11 +399,6 @@ struct LiveAsks: Equatable {
             end(id)
             let ink: [Effect] = present.isEmpty ? [] : [current.sentOnRelease ? .remove(present) : .reopenNote(words: current.words)]
             return interrupt + [removal] + ink
-        case .answerClosed:
-            guard let ask = asks.last(where: { !$0.isUnderWay && answerMarks(of: $0.id).contains { !isFinishing($0) } }) else { break }
-            let ids = answerMarks(of: ask.id)
-            end(ask.id)
-            return finish(ids, .dismissed)
         case .finished(let ids):
             // A clear, or an earlier timer for the same marks, has ended it already.
             guard ids.contains(where: { records[$0]?.finishing != nil }) else { break }
