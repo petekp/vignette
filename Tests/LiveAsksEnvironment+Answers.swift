@@ -179,8 +179,8 @@ extension LiveAsksEnvironment {
 
     /// Esc with no ask to stop.
     func closeAnswer() {
-        guard asks.cancellable(sendsWait: false) == nil else { return }
-        run(send(.answerClosed))
+        guard asks.cancellable(sendsWait: false) == nil, let id = asks.newestAnswerToClose else { return }
+        run(send(.dismissed(id)))
     }
 
     func finished(_ ids: Set<Mark.ID>) {
@@ -225,7 +225,6 @@ extension LiveAsksEnvironment {
         case .answerShown(let ids, let id): "answerShown \(list(ids)) #\(id)"
         case .dismissed(let id): "dismissed #\(id)"
         case .cancelled(let id, _): "cancelled #\(id)"
-        case .answerClosed: "answerClosed"
         case .finished(let ids): "finished \(list(ids))"
         case .cleared: "cleared"
         }

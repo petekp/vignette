@@ -152,9 +152,9 @@ The names in brackets are `// MARK:` sections.
      send grace, until its send is stored: one stored after all is withdrawn
      (`LiveNoteCards.unsend`). Once stored, the card's Don't send takes it back.
   3. End the tour: the focus run, and the steps still to show.
-  4. Close the newest answer, one per press: its reply, buttons and the agent's marks leave
-     (`LiveAsks.Event.answerClosed`). A failure's reply counts as an answer. The person's ink stays;
-     the × takes it too.
+  4. Close the newest answer, one per press, as its × does (`LiveAsks.newestAnswerToClose`, then
+     `dismissed`): its reply, buttons, marks and the ink only it was about leave. A failure's
+     reply counts.
   5. Clear what is left (`clear()`), ending the conversation.
 
   After a release that opens or keeps the note, steps 1 and 2 apply wherever the pointer is, to a
@@ -433,7 +433,7 @@ The names in brackets are `// MARK:` sections.
   shows what the person circled then, and waits with its ink carrying the thinking light until the
   ask before it has answered, failed or been stopped (`[live-ink] waiting`, then `sending`). `LiveInk.held`
   holds what each waiting ask will send. A note to a session waits for none of them.
-  Every answer stays beside its own ink until its own × or Esc closes it, and a new ask takes none
+  Every answer stays beside its own ink until its × or an Esc closes it, and a new ask takes none
   off. The × finishes its answer and the ink only it was about: ink another answer on the screen is
   about stays. On the ask the responder is answering, the × also stops the responder's turn, so the
   next ask goes at once, wasting no turn on an answer nobody will see. A new reply, its marks

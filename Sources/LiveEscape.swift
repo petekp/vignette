@@ -27,7 +27,8 @@ enum LiveEscape {
         case discardAsk = "discard-ask"
         /// The focus run or the steps still to show are let go.
         case endTour = "end-tour"
-        /// The newest answer's reply, its buttons and the agent's marks leave. The person's ink stays.
+        /// The newest answer closes as its × closes it: its reply, buttons and the agent's marks leave,
+        /// and so does the person's ink only it was about.
         case closeAnswer = "close-answer"
         /// Every mark left goes, and the conversation ends.
         case clearInk = "clear-ink"

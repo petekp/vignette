@@ -229,7 +229,7 @@ nothing, and press Return: Claude or Codex looks at the windows your ink is on a
 screen. Its reply appears beside your ink as it's written, and its own marks draw themselves on, in
 its colour, pointing at what it means. A click anywhere else closes the note and keeps your ink. Esc
 closes it and erases the ink you have not asked about. Each Esc after that goes back one step. It
-cancels the ask under way, then closes the answer, then erases every mark.
+cancels the ask under way, then closes the answer and the ink it was about, then erases every mark.
 
 Ask again with no new ink and it's a follow-up about the same thing. A new question replaces the
 last answer. Esc with the pointer on the ink goes back a step at a time, and its last step erases every
