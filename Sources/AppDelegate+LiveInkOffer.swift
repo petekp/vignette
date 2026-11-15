@@ -5,15 +5,12 @@ extension AppDelegate {
     /// which the launch has decided before calling this. It opens the General tab, where the offer is,
     /// and is recorded as made, in the file and on this Mac (`Settings.liveInkOffered`, `ThisMac`).
     func offerLiveInk() {
-        guard !(settings.data.liveInkOffered && ThisMac.saw(Self.liveInkOfferKey)), !settings.data.liveInk else { return }
-        settings.update { $0.liveInkOffered = true }
-        ThisMac.record(Self.liveInkOfferKey)
+        guard !(settings.data.liveInkOffered && ThisMac.saw(ThisMac.liveInkOfferKey)), !settings.data.liveInk else { return }
+        settings.update { ThisMac.recordLiveInkOffer(in: &$0) }
         liveInkOfferOpen = true
         Log.write("[settings] offered live ink")
         settingsWindow.show(tab: .general, activating: false)
     }
-
-    static let liveInkOfferKey = "liveInkOfferedOnThisMac"
 
     /// The offer's answer: Turn On turns live ink on, as the General tab's switch does.
     func answerLiveInkOffer(_ on: Bool) {

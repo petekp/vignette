@@ -45,7 +45,7 @@ A test launch asks only when the file says `unasked` (`:68`). Setting the file b
 `record(_:)` (`:206`), per close:
 
 - `quitting`: logs `[setup] quit before it was done` and writes nothing. `setup` stays `unasked`, so the next launch asks again.
-- Otherwise: `askFolder()` if the last look saw `.ask` (`:212`). One `settings.update` writes `setup = done`, `liveInkOffered = true` if live ink's page was reached, and `launchAtLogin` only if the switch moved (`:213-217`). Then `setupDoneOnThisMac = true` and `returnsToLiveInkSetup = false`. ([setup-2](plausible-findings-requests-to-live-ink.md#setup-2))
+- Otherwise: `askFolder()` if the last look saw `.ask` (`:212`). One `settings.update` runs `SetupModel.record`: it writes `setup = done`, records live ink's offer if its page was reached (`liveInkOffered = true`, and `liveInkOfferedOnThisMac` in this Mac's defaults, through `ThisMac.recordLiveInkOffer`), and writes `launchAtLogin` only if the switch moved. Then `setupDoneOnThisMac = true` and `returnsToLiveInkSetup = false`. ([setup-2](plausible-findings-requests-to-live-ink.md#setup-2))
 - If the agents page was reached (`sawAgents`): install the chosen agents that are not installed (`installAgentPlugin(roots)`), apply `ClaudeReadRule` if Claude's plugin is already in, and write `agentSkill = off` (`:223-231`). The install is only queued; nothing waits for it. ([setup-4](plausible-findings-requests-to-live-ink.md#setup-4)) If the page was not reached, `agentSkill` stays `unasked` and the next launch makes the offer in Settings (`AppDelegate.swift:282`).
 - `applyLoginItem()` (defers while the intro plays), then `FocusReturn.restore` next turn.
 

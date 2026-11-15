@@ -210,11 +210,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         }
         // Vignette can't work without the folder, so a window closed before it asked asks now.
         if model.seen.folder == .ask { model.callbacks.askFolder() }
-        settings.update {
-            $0.setup = SetupState.done.rawValue
-            if model.sawLiveInk { $0.liveInkOffered = true }
-            if let choice = model.launchAtLoginChoice { $0.launchAtLogin = choice }
-        }
+        settings.update { model.record(in: &$0) }
         Identity.defaults.set(true, forKey: SetupWindowController.doneOnThisMacKey)
         SetupModel.returnsToLiveInkSetup = false
         // The plugin is installed only for someone who saw the page offering it. Closed earlier, the
