@@ -141,8 +141,8 @@ final class Drawings {
 
     /// Only a successful listing of the screenshot's own folder can authorize deletion.
     func sweep(_ inventory: ScreenshotWatcher.Inventory) {
-        for key in keys.sorted() where changedAt[key, default: 0] <= inventory.observedAt
-            && inventory.confirmsAbsence(of: key.url) {
+        let gone = keys.filter { changedAt[$0, default: 0] <= inventory.observedAt && inventory.confirmsAbsence(of: $0.url) }
+        for key in gone.sorted() {
             guard (try? store.remove(key: key.path)) != nil else { continue }
             keys.remove(key)
             Log.write("[drawing] swept \(key.name)")
