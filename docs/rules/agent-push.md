@@ -9,6 +9,24 @@ extended attribute (`Agent.swift`, `xattr -l` shows it) and the card gets a whit
 with the vendor's logo when `Resources/agents/<name>.svg` has one (`Agent.logo(for:)`). A logo
 that is a single black shape, like Codex's, is listed in `Agent.oneColourLogos` and drawn in the
 colour of the text beside it.
+The tab sits in the card's top-right corner, `CardView.buttonPad` in from its edges, and never
+reaches past the card (`AgentBadge.swift`). When the whole capsule does not fit inside the card's
+drawn width with that margin on both sides, it folds to the logo alone in a circle, or to
+`Agent.fallbackSymbol` for an agent with no logo (`AgentBadgeFit`). It says its words again once
+the card has `AgentBadgeFit.hysteresis` (4 pt) more room than it needs, so a pinch held near the
+edge does not fold and unfold it with each step of the stack's width. "From Claude" needs a card
+111 pt wide: a 188 pt card in the stack at its narrowest beside the annotator is 94 pt and folds,
+and so does a tall capture's narrow card at full width. The words are measured once per label and
+size. The right edge stays put, the logo travels with the capsule's left edge, and the words fade
+as the capsule closes over them. A fold that comes with the stack's own spring rides it, so the
+capsule moves in step with the card and stays inside it all the way. A zoom sets the width with
+animations off, and the fold then runs its own `ui.relayoutDuration` spring. A Cmd+Plus or a fast
+pinch narrows the card faster than that spring closes, so `CardView` clips the tab to the card: for
+a few frames its left end is cut at the card's edge. At rest the clip cuts nothing, shadow included,
+since the tab keeps its margin from every edge. Its accessibility
+label is the full words in either shape. Flights, the drag image and a stitch's converge never draw
+the tab: it fades out as the card leaves its slot and fades in, in the shape that card's slot
+calls for, as it lands. A lone thumbnail follows the same rule at its own width.
 `&session=<id>` names the agent session pushing it. With `agent=claude` it is a Claude Code
 session, recorded beside the name as `com.petepetrash.vignette.session`. With `agent=codex` it is
 a Codex thread, recorded as `com.petepetrash.vignette.thread`, the attribute live ink uses for
