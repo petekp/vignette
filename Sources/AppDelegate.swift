@@ -120,7 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         thumbnail.onAnnotatorRenamed = { [weak self] shot, opening in self?.annotator.renamed(to: shot, opening: opening) }
         annotator.onFrame = { [weak self] frame in self?.thumbnail.annotatorFrameMoved(frame) }
-        thumbnail.onAnnotatorShow = { [weak self] in self?.annotator.show() }
+        thumbnail.onAnnotatorShow = { [weak self] watches in self?.annotator.show(watchesClickOutside: watches) }
         thumbnail.onAnnotatorLanded = { [weak self] in self?.annotator.landed() }
         thumbnail.annotatorBelow = { [weak self] in self?.annotator.spaceBelow ?? 0 }
         thumbnail.annotatorAbove = { [weak self] shot, wrap in self?.annotator.spaceAbove(for: shot, wrap: wrap) ?? 0 }
@@ -554,13 +554,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     func moveToTrash(_ shots: [Screenshot]) {
         folderWrites.trash(shots)
-    }
-
-    func unsend(_ shots: [Screenshot]) {
-        let cancelled = shots.flatMap { requests.unsend(file: $0.key) }
-        let what = shots.count == 1 ? shots[0].url.lastPathComponent : "\(shots.count) files"
-        if cancelled.isEmpty { Commands.error("unsend", .nothingToUnsend, "\(what): no send of it is waiting") }
-        else { Commands.ok("unsend", "request=\(cancelled.map(\.id).joined(separator: ",")) \(what)") }
     }
 
     /// Copy Drawing: each card's drawing as it is now, rendered and written beside its screenshot,
