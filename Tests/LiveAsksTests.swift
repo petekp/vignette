@@ -4,12 +4,12 @@ import XCTest
 final class LiveAsksTests: XCTestCase {
     typealias A = LiveAsks
 
-    private func reduce(_ a: inout A, _ event: A.Event) -> [A.Effect] { a.reduce(event) }
+    func reduce(_ a: inout A, _ event: A.Event) -> [A.Effect] { a.reduce(event) }
 
-    private func ink(_ x: CGFloat = 0) -> Mark { Mark(geometry: .ellipse(CGRect(x: x, y: 0, width: 40, height: 30))) }
+    func ink(_ x: CGFloat = 0) -> Mark { Mark(geometry: .ellipse(CGRect(x: x, y: 0, width: 40, height: 30))) }
     private func arrow() -> Mark { Mark(geometry: .arrow(Mark.Arrow(start: .zero, end: CGPoint(x: 60, y: 40)))) }
-    private func shape() -> Mark { Mark(geometry: .ellipse(CGRect(x: 200, y: 0, width: 40, height: 30)), agent: true) }
-    private func text(_ words: String, agent: Bool = false) -> Mark {
+    func shape() -> Mark { Mark(geometry: .ellipse(CGRect(x: 200, y: 0, width: 40, height: 30)), agent: true) }
+    func text(_ words: String, agent: Bool = false) -> Mark {
         Mark(geometry: .text(Mark.Text(origin: .zero, text: words, wrap: nil, size: 14)), agent: agent)
     }
 
@@ -19,9 +19,9 @@ final class LiveAsksTests: XCTestCase {
 
     /// Begins an ask as `LiveInk.ask` does, and answers its id.
     @discardableResult
-    private func begin(_ a: inout A, on shown: [Mark], following reply: Mark? = nil, picked: LiveAnswerActions.Pick? = nil,
-                       words: String = "and this?", toSession: Bool = false, file: StaticString = #filePath,
-                       line: UInt = #line) -> A.Ask.ID {
+    func begin(_ a: inout A, on shown: [Mark], following reply: Mark? = nil, picked: LiveAnswerActions.Pick? = nil,
+               words: String = "and this?", toSession: Bool = false, file: StaticString = #filePath,
+               line: UInt = #line) -> A.Ask.ID {
         switch a.begin(among: shown, following: following(reply, picked: picked, words: words), words: words, toSession: toSession) {
         case .began(let id, _, _, _):
             return id
@@ -38,7 +38,7 @@ final class LiveAsksTests: XCTestCase {
 
     /// What `LiveInk.showSay` sends when the reply streams in for `id`. Answers whether the ask took it.
     @discardableResult
-    private func streamed(_ a: inout A, _ reply: Mark, for id: A.Ask.ID) -> Bool {
+    func streamed(_ a: inout A, _ reply: Mark, for id: A.Ask.ID) -> Bool {
         let effects = reduce(&a, .arrived(.replyCame, for: id))
         guard effects.contains(.showReply) else { return false }
         takeOff(&a, effects)
@@ -59,7 +59,7 @@ final class LiveAsksTests: XCTestCase {
 
     /// Asks about `shown` and draws `reply` with `shapes` as its answer, with no other ask under way.
     @discardableResult
-    private func answer(_ a: inout A, on shown: [Mark], reply: Mark, shapes: [Mark] = []) -> A.Ask.ID {
+    func answer(_ a: inout A, on shown: [Mark], reply: Mark, shapes: [Mark] = []) -> A.Ask.ID {
         let id = begin(&a, on: shown)
         XCTAssertEqual(reduce(&a, .arrived(.packetCame, for: id)), [.send(id)])
         answered(&a, reply, actions: [LiveAnswer.Action("Fix it")], findings: shapes.map { [$0.id] }, shown: Set(([reply] + shapes).map(\.id)),
@@ -430,7 +430,7 @@ final class LiveAsksTests: XCTestCase {
         _ = reduce(&a, .arrived(.packetCame, for: follow))
 
         XCTAssertEqual(reduce(&a, .arrived(.failed(reason: "Claude stopped.", shown: [mark.id, reply.id]), for: follow)),
-                       [.ended(follow), .restore(reply: reply.id, reason: "Claude stopped.", aside: [])])
+                       [.restore(reply: reply.id, reason: "Claude stopped.", aside: [], followUp: follow)])
         var noticed = reply
         noticed.notice = "Claude stopped."
         _ = reduce(&a, .replyRedrawn(noticed))
@@ -447,7 +447,7 @@ final class LiveAsksTests: XCTestCase {
         var action = A()
         let answeredID = answer(&action, on: [mark], reply: reply)
         XCTAssertEqual(action.begin(among: [reply], following: A.Following(reply: reply, pick: .action("Fix it"), words: "Fix it")),
-                       .refused(.noInk, effects: [.restore(reply: reply.id, reason: noInk, aside: [])]), "an ask refused before it began puts it back too")
+                       .refused(.noInk, effects: [.restore(reply: reply.id, reason: noInk, aside: [], followUp: nil)]), "an ask refused before it began puts it back too")
         XCTAssertEqual(action.newest?.id, answeredID)
         XCTAssertEqual(action.newest?.reason, noInk)
         XCTAssertEqual(action.newest?.draft, "", "an action's words are not typed words")
@@ -455,7 +455,7 @@ final class LiveAsksTests: XCTestCase {
         var typed = A()
         answer(&typed, on: [mark], reply: reply)
         XCTAssertEqual(typed.begin(among: [reply], following: A.Following(reply: reply, pick: .reply, words: "and this?")),
-                       .refused(.noInk, effects: [.restore(reply: reply.id, reason: noInk, aside: [])]))
+                       .refused(.noInk, effects: [.restore(reply: reply.id, reason: noInk, aside: [], followUp: nil)]))
         XCTAssertEqual(typed.newest?.draft, "and this?", "typed words wait in Reply again")
 
         var gone = A()
@@ -479,7 +479,7 @@ final class LiveAsksTests: XCTestCase {
         _ = reduce(&a, .streamed(reply, for: follow))
         var failing = a
         XCTAssertEqual(reduce(&failing, .arrived(.failed(reason: "Claude stopped.", shown: [mark.id, reply.id]), for: follow)),
-                       [.ended(follow), .restore(reply: reply.id, reason: "Claude stopped.", aside: [loop.id])],
+                       [.restore(reply: reply.id, reason: "Claude stopped.", aside: [loop.id], followUp: follow)],
                        "a failure while the reply streams puts the earlier answer back")
         XCTAssertEqual(failing.answerMarks, [reply.id, loop.id])
         XCTAssertEqual(reduce(&a, .arrived(.answerCame, for: follow)), [.removeAnswer(follow, [loop.id]), .drawAnswer],
@@ -703,7 +703,7 @@ final class LiveAsksTests: XCTestCase {
         XCTAssertEqual(a.noteInk, [fresh.id], "the new ink stays the note's")
         _ = reduce(&a, .arrived(.packetCame, for: follow))
         XCTAssertEqual(reduce(&a, .cancelled(follow, shown: [asked.id, reply.id, fresh.id])),
-                       [.ended(follow), .interrupt, .restore(reply: reply.id, reason: nil, aside: [])], "stopping it opens no note")
+                       [.interrupt, .restore(reply: reply.id, reason: nil, aside: [], followUp: follow)], "stopping it opens no note")
         XCTAssertEqual(a.noteInk, [fresh.id])
     }
 
@@ -896,53 +896,6 @@ final class LiveAsksTests: XCTestCase {
         XCTAssertEqual(a.about(among: [mark]).map(\.id), [mark.id])
     }
 
-    func testStoppingAFollowUpPutsTheAnswerBackWithNoSentence() {
-        var a = A()
-        let mark = ink(), reply = text("It's a button.", agent: true), loop = shape()
-        let first = answer(&a, on: [mark], reply: reply, shapes: [loop])
-        let earlier = a.ask(first)!
-        var quoting = reply
-        quoting.quote = "and this?"
-        let follow = begin(&a, on: [mark, quoting, loop], following: quoting, picked: .reply, words: "and this?")
-        _ = reduce(&a, .arrived(.packetCame, for: follow))
-        XCTAssertEqual(reduce(&a, .cancelled(follow, shown: [mark.id, reply.id, loop.id])),
-                       [.ended(follow), .interrupt, .restore(reply: reply.id, reason: nil, aside: [])])
-        var expected = earlier
-        expected.draft = "and this?"
-        XCTAssertEqual(a.asks, [expected], "the earlier answer is back as it was, with the typed words waiting in Reply")
-        XCTAssertTrue(a.isAnswer(reply.id) && a.isAnswer(loop.id))
-        XCTAssertEqual(a.answer(of: loop.id), first)
-        XCTAssertEqual(reduce(&a, .arrived(.answerCame, for: follow)), [], "the stopped ask takes nothing more")
-    }
-
-    func testStoppingAFollowUpThatStartedToReplyBringsTheAnswerBack() {
-        var a = A()
-        let mark = ink(), reply = text("It's a button.", agent: true), loop = shape()
-        let first = answer(&a, on: [mark], reply: reply, shapes: [loop])
-        let earlier = a.ask(first)!
-        let follow = begin(&a, on: [mark, reply, loop], following: reply, picked: .reply, words: "and this?")
-        _ = reduce(&a, .arrived(.packetCame, for: follow))
-        var streaming = reply
-        streaming.geometry = .text(Mark.Text(origin: .zero, text: "It's a", wrap: nil, size: 14))
-        XCTAssertTrue(streamed(&a, streaming, for: follow))
-        XCTAssertEqual(reduce(&a, .cancelled(follow, shown: [mark.id, reply.id])),
-                       [.ended(follow), .interrupt, .restore(reply: reply.id, reason: nil, aside: [loop.id])])
-        var expected = earlier
-        expected.draft = "and this?"
-        XCTAssertEqual(a.asks, [expected], "the earlier answer is back with its first words, not the ones that streamed")
-        XCTAssertEqual(a.answerMarks, [reply.id, loop.id])
-
-        var gone = A()
-        answer(&gone, on: [mark], reply: reply, shapes: [loop])
-        let stopped = begin(&gone, on: [mark, reply, loop], following: reply, picked: .reply)
-        _ = reduce(&gone, .arrived(.packetCame, for: stopped))
-        XCTAssertTrue(streamed(&gone, reply, for: stopped))
-        XCTAssertEqual(reduce(&gone, .cancelled(stopped, shown: [mark.id])), [.ended(stopped), .interrupt, .removeAnswer(stopped, [reply.id, loop.id])],
-                       "with its reply off the screen, the set-aside answer goes with the reply")
-        XCTAssertEqual(gone.asks, [])
-        XCTAssertTrue(gone.answerMarks.isEmpty)
-    }
-
     func testStoppingAnAskDoesNothingWhenItIsNotUnderWay() {
         var a = A()
         XCTAssertEqual(reduce(&a, .cancelled(1, shown: [])), [])
@@ -1025,7 +978,7 @@ final class LiveAsksTests: XCTestCase {
             among: [mark, reply], following: A.Following(reply: reply, pick: .reply, words: "and this?")) else { return XCTFail("the follow-up begins") }
         XCTAssertEqual(effects, [.ended(earlier)], "an answer a follow-up takes the place of")
         XCTAssertEqual(reduce(&followed, .cancelled(follow, shown: [mark.id, reply.id])),
-                       [.ended(follow), .restore(reply: reply.id, reason: nil, aside: [])], "a follow-up whose answer comes back")
+                       [.restore(reply: reply.id, reason: nil, aside: [], followUp: follow)], "a follow-up whose answer comes back ends with it")
     }
 
     func testRandomSequencesKeepTheInvariants() {
@@ -1041,8 +994,10 @@ final class LiveAsksTests: XCTestCase {
                 let (before, after) = (sent.before, sent.after)
                 let ended = sent.effects.prefix { if case .ended = $0 { true } else { false } }
                 let effects = Array(sent.effects.dropFirst(ended.count))
-                XCTAssertEqual(Array(ended), before.asks.map(\.id).filter { after.ask($0) == nil }.map(A.Effect.ended),
-                               fail("every ask that leaves says so first, oldest first"))
+                let restored = Set(effects.compactMap(\.restoredFollowUp))
+                XCTAssertEqual(Array(ended), before.asks.map(\.id).filter { after.ask($0) == nil && !restored.contains($0) }.map(A.Effect.ended),
+                               fail("every ask that leaves says so first, oldest first, but one an answer put back ends"))
+                XCTAssertTrue(restored.allSatisfy { before.ask($0) != nil && after.ask($0) == nil }, fail("an answer put back ends an ask that was there"))
                 XCTAssertFalse(effects.contains { if case .ended = $0 { true } else { false } }, fail("and only first"))
                 let all = Set(env.made.map(\.id))
                 func answers(_ asks: A, but id: A.Ask.ID?) -> [A.Ask.ID: Set<Mark.ID>] {
@@ -1089,8 +1044,9 @@ final class LiveAsksTests: XCTestCase {
                     guard !effects.isEmpty else { return }
                     let ending = effects.filter { if case .send = $0 { false } else { true } }
                     switch ending.last {
-                    case .restore(let reply, let said, let brought):
+                    case .restore(let reply, let said, let brought, let followUp):
                         XCTAssertEqual(ending.count, 1, fail("an answer put back is all that is answered"))
+                        XCTAssertEqual(followUp, id, fail("in the place of the ask that failed"))
                         checkRestore(reply, saying: said, reason)
                         checkBroughtBack(brought, owner: after.ask(withReply: reply)?.id)
                     case .notice(let reply, let said):
@@ -1129,7 +1085,7 @@ final class LiveAsksTests: XCTestCase {
                         XCTAssertNil(window, fail("an ask about a window is never refused"))
                         XCTAssertNil(about.last?.shapeExtent, fail("only an ask with no ink is refused"))
                         XCTAssertEqual(refusal, .noInk)
-                        if case .restore(let reply, let said, _)? = effects.first {
+                        if case .restore(let reply, let said, _, _)? = effects.first {
                             XCTAssertEqual(effects.count, 1, fail("a refusal puts back the answer and does nothing else"))
                             XCTAssertEqual(said, refusal.rawValue, fail("saying why"))
                             XCTAssertNotNil(after.ask(withReply: reply), fail("and the answer stays"))
@@ -1277,8 +1233,10 @@ final class LiveAsksTests: XCTestCase {
                     XCTAssertEqual(effects.first == .interrupt, ask.phase == .asking, fail("the responder is stopped only for the ask it has"))
                     if ask.phase == .asking { interrupted += 1 }
                     let ending = effects.filter { $0 != .interrupt && { if case .send = $0 { false } else { true } }($0) }
-                    if case .restore(let reply, let said, let brought)? = ending.last {
+                    if case .restore(let reply, let said, let brought, let followUp)? = ending.last {
                         stopped += 1
+                        XCTAssertEqual(followUp, id, fail("an answer Esc puts back takes the place of the ask it stopped"))
+                        XCTAssertFalse(effects.contains(.ended(id)), fail("which ends with it, not before it"))
                         XCTAssertNil(said, fail("an answer Esc puts back says nothing"))
                         checkBroughtBack(brought, owner: after.ask(withReply: reply)?.id)
                         XCTAssertEqual(after.ask(withReply: reply)?.phase, .answered, fail("the answer put back is an answer"))

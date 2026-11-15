@@ -88,8 +88,9 @@ extension LiveAsksEnvironment {
             case .interrupt: break
             case .removeAnswer(let id, let gone): removeAnswer(gone, of: id)
             case .setAside(let id, let ids): setAside(ids, of: id)
-            case .restore(let reply, let reason, let brought):
+            case .restore(let reply, let reason, let brought, let followUp):
                 if !brought.isEmpty { bringBack(brought) }
+                if let followUp { release(followUp) }
                 restoreAnswer(reply, saying: reason)
             case .say(let id, let reason): say(reason, for: id)
             case .notice(let reply, let reason): notice(reason, in: reply)
@@ -248,7 +249,7 @@ extension LiveAsksEnvironment {
         case .share(let about): "share \(list(about))"
         case .showReply: "showReply"
         case .drawAnswer: "drawAnswer"
-        case .restore(let reply, _, let aside): "restore \(name(reply)) aside=\(list(aside))"
+        case .restore(let reply, _, let aside, _): "restore \(name(reply)) aside=\(list(aside))"
         case .say(let id, _): "say #\(id)"
         case .notice(let reply, _): "notice \(name(reply))"
         case .remove(let ids): "remove \(list(ids))"
