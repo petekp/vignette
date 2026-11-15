@@ -11,35 +11,6 @@ extension Notification.Name {
     static let hotKeyHeld = Notification.Name("\(Identity.bundleID).hotkey.held")
 }
 
-/// Where macOS's permission for the watch folder stands, as the setup window shows it.
-enum FolderAccess {
-    /// Nothing has read the folder yet, so macOS has not asked.
-    case ask
-    /// Something has, and macOS's prompt is waiting for an answer.
-    case waiting
-    case granted
-    case refused
-}
-
-/// What the setup window reacts to, read together each time it looks: the permissions, the watch
-/// folder and macOS's own screenshot settings. Setup reads them from this Mac, and the Setup Lab
-/// sets them.
-struct SetupConditions: Equatable {
-    /// Trusted for Accessibility, which the double tap and live ink need.
-    var trusted: Bool
-    /// Allowed to record the screen, which live ink's asks need.
-    var screenRecording: Bool
-    /// The folder macOS will ask about, as setup names it ("your Desktop"), or nil when it won't
-    /// ask, which leaves the welcome page without a folder row.
-    var protectedArea: String?
-    var folder: FolderAccess
-    var hasScreenshots: Bool
-    /// ⌘⇧5's Save to: `file`, or where else macOS sends screenshots (`AppleScreencapture.target`).
-    var saveTarget: String
-    /// Whether the menu bar icon can be seen: it is off, or macOS found no room for it.
-    var menuBarIconVisible: Bool
-}
-
 /// The window a first launch opens: a page per step. Welcome, with the folder permission when macOS
 /// protects the folder; the shortcut, with the Accessibility permission the double tap needs; and
 /// the agent skill, when Claude Code or Codex is on this Mac.
@@ -79,13 +50,21 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         var callbacks = callbacks
         callbacks.choseLiveInk = { use in Settings.shared.update { $0.liveInk = use } }
         // macOS asks to quit and reopen, and the next launch's setup opens on live ink's permissions.
-        callbacks.askedForScreenRecording = { SetupModel.returnsToLiveInkSetup = true }
+        // The new grant comes with macOS's window picker question again.
+        callbacks.askedForScreenRecording = {
+            SetupModel.returnsToLiveInkSetup = true
+            PickerQuestion.forget()
+        }
         callbacks.closed = { [weak self] model in self?.record(model) }
-        let data = settings.data
-        let reopened = data.liveInk && SetupModel.returnsToLiveInkSetup
-        if reopened { Log.write("[setup] reopened on live ink's permissions") }
-        open(callbacks: callbacks, scope: .whole, start: reopened ? .liveInkSetup : .welcome)
+        if reopensOnLiveInk { Log.write("[setup] reopened on live ink's permissions") }
+        open(callbacks: callbacks, scope: .whole, start: reopensOnLiveInk ? .liveInkSetup : .welcome)
     }
+
+    /// Setup opens on live ink's permissions, after Screen Recording's Quit & Reopen.
+    var reopensOnLiveInk: Bool { settings.data.liveInk && SetupModel.returnsToLiveInkSetup }
+
+    /// Setup will ask for the watch folder: the welcome page, which asks, shows before any later page.
+    var asksForFolder: Bool { isUnasked && !reopensOnLiveInk }
 
     /// Setup as a new person sees it, for the Setup Lab (`vignette://setup-lab`, needs `debug`), in
     /// the window it answers. The lab's callbacks record nothing. `place` puts the window where it
@@ -107,6 +86,8 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         let model = SetupModel(callbacks: callbacks, scope: scope, start: start)
         model.granted = { [weak self] in self?.granted() }
         model.folderAnswered = { [weak self] access in self?.folderAnswered(access) }
+        // Open System Settings, one of the question's answers, covers this window.
+        model.pickerAnswered = { [weak self] in self?.comeBack() }
         model.dropFocus = { [weak self] in self?.window?.makeFirstResponder(nil) }
         // Not `performClose`: it shows the close button pressed while it simulates the click, and
         // the intro's picture of the window would carry that pressed button into the menu bar.
@@ -245,6 +226,7 @@ final class SetupModel: ObservableObject {
     let callbacks: SetupWindowController.Callbacks
     var granted: () -> Void = {}
     var folderAnswered: (FolderAccess) -> Void = { _ in }
+    var pickerAnswered: () -> Void = {}
     var done: () -> Void = {}
     let scope: Scope
     /// The live ink page's demo, kept here so going back to the page shows where it rested.
@@ -324,6 +306,7 @@ final class SetupModel: ObservableObject {
             if agentsChanged, !pages.contains(page), let last = pages.last { show(last, forward: false, animation: SetupView.spring) }
         }
         if seen.trusted, !before.trusted { granted() }
+        if before.pickerQuestion == .waiting, seen.pickerQuestion == .answered { pickerAnswered() }
         pointGuide()
         // After an answer to macOS's prompt, or a change made in System Settings after a refusal.
         // Not from `.ask`: a folder already allowed answers at once, with no prompt to cover us.
@@ -335,7 +318,7 @@ final class SetupModel: ObservableObject {
     func pointGuide() {
         guard page == .liveInkSetup else { return }
         let responders = callbacks.responders
-        inkGuide.point(at: SetupInkGuide.Pointing(trusted: seen.trusted, screenRecording: seen.screenRecording,
+        inkGuide.point(at: SetupInkGuide.Pointing(trusted: seen.trusted, screenRecording: seen.screenRecordingSetUp,
                                                   codexSignIn: responders.codexSignInLeft, signingIn: responders.signIn == .waiting),
                        as: responders.namedAgent)
     }
@@ -399,13 +382,6 @@ final class SetupModel: ObservableObject {
             if target == .agents { self.sawAgents = true }
         }
     }
-
-    /// Set until setup is done, so a quit and reopen part way through comes back to live ink's permissions.
-    static var returnsToLiveInkSetup: Bool {
-        get { Identity.defaults.bool(forKey: returnsToLiveInkSetupKey) }
-        set { Identity.defaults.set(newValue, forKey: returnsToLiveInkSetupKey) }
-    }
-    private static let returnsToLiveInkSetupKey = "setupReturnsToLiveInkPermissions"
 }
 
 @MainActor
@@ -460,6 +436,7 @@ struct SetupView: View {
         case .liveInk: LiveInkPage(player: model.inkPlayer, responders: model.callbacks.responders)
         case .liveInkSetup:
             LiveInkSetupPage(guide: model.inkGuide, trusted: model.seen.trusted, screenRecording: model.seen.screenRecording,
+                             pickerQuestion: model.seen.pickerQuestion,
                              callbacks: model.callbacks, responders: model.callbacks.responders)
         case .agents: agents
         }
@@ -634,7 +611,7 @@ struct SetupView: View {
         case .welcome: return seen.protectedArea == nil || seen.folder == .granted
         case .shortcut: return (!settings.data.usesDoubleTap || seen.trusted) && seen.folder == .granted && seen.saveTarget == "file"
         case .liveInk: return true
-        case .liveInkSetup: return seen.trusted && seen.screenRecording && !model.callbacks.responders.codexSignInLeft
+        case .liveInkSetup: return seen.trusted && seen.screenRecordingSetUp && !model.callbacks.responders.codexSignInLeft
         case .agents: return true
         }
     }

@@ -29,6 +29,14 @@ enum SetupInkCopy {
     /// reaches only a new process.
     static let reopenNote = "Once you allow Screen Recording, macOS asks to quit and reopen \(Identity.name). Setup opens again on this page."
 
+    /// Screen Recording's reason once it is allowed, until macOS's window picker question is answered.
+    static let pickerQuestionReason = "macOS has one more question about the screen."
+
+    /// Under the permissions while macOS's window picker question is unanswered.
+    static func pickerQuestionNote(agent: AgentClient) -> String {
+        "macOS asks this question the first time \(Identity.name) looks at the screen. Allow lets \(name(agent)) see the window you drew on."
+    }
+
     /// Why live ink asks for each permission, in the General tab.
     @MainActor static var liveInkAccessibilityReason: String {
         "Lets Vignette notice \(Settings.shared.data.liveInkChordChoice.glyphs) held down in any app."

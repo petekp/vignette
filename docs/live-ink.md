@@ -490,9 +490,9 @@ The names in brackets are `// MARK:` sections.
   Ink across a line garbled what Vision read of it, and the fast level garbled code
   (`docs/live-ink-step2-spike-2026-10-04.md`). A follow-up to the same window showing the same text,
   in the same conversation, sends no picture, only the nearby lines not sent yet. Capturing needs Screen Recording, which the switch asks
-  for when turned on (`ScreenRecording.request`, macOS's own alert, once); a row under the switch and
-  the menu's first item open its pane. On macOS 15 the first capture also raised macOS's "bypass the
-  system private window picker" alert.
+  for when turned on (`ScreenRecording.request`, macOS's alert, once); a row under the switch and
+  the menu's first item open its pane. A macOS prompt is never the window
+  drawn on; the note takes its keys back after it (`SystemPrompts`).
 - The answer streams in: `say` shows as the reply as its words arrive (`LiveAnswer.partialSay`).
   The reply is a popover from the overlay it is drawn on (`ReplyPopover`), and for an ask with words
   it is the conversation the note became: the person's question where the note's field had it, then
