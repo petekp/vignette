@@ -71,7 +71,7 @@ extension AppDelegate {
         // carries on. `sending` stays on, so the button keeps its plane while the bar leaves;
         // the next `prepare` resets it.
         sentShots[record.id] = shot
-        annotator.sent(to: destination)
+        annotator.sent(to: destination, as: record)
         thumbnail.showSending(shot, request: record.id, to: destination, titled: title, grace: requests.grace(of: record.id))
         thumbnail.annotationSent()
     }

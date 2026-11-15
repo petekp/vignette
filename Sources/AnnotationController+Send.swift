@@ -22,15 +22,17 @@ extension AnnotationController {
         if answer.keptIsGone { endKeptPick("gone") }
     }
 
-    /// A send from the editor stored its request (`DestinationChoice.KeptPick.after`).
-    func sent(to destination: AgentDestination) {
+    /// A send from the editor to `destination`, a row of the bar, stored `record`
+    /// (`DestinationChoice.KeptPick.after`). A row Vignette starts is kept as the session the send started.
+    func sent(to destination: AgentDestination, as record: ScreenshotRequests.Record) {
         let now = Date()
         if keptPick?.holds(at: now) == false { endKeptPick("time") }
-        let after = DestinationChoice.KeptPick.after(sendTo: destination, isSend: toolbar.model.offer.isSend,
+        let session = destination.sent(as: record)
+        let after = DestinationChoice.KeptPick.after(sendTo: session, isSend: toolbar.model.offer.isSend,
                                                      handPicked: toolbar.model.isHandPick(destination), kept: keptPick, at: now)
         guard after != keptPick else { return }
         keptPick = after
-        Log.write("[send] kept \(destination.address.description) project=\(destination.detail)")
+        Log.write("[send] kept \(session.address.description) project=\(session.detail)")
     }
 
     private func endKeptPick(_ reason: String) {

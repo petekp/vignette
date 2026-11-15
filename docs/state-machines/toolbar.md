@@ -60,9 +60,9 @@ The session Send starts on after the person picked it in the target's menu and s
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| kept | `sent(to:)` from `AppDelegate.submit` once the request is stored, 10 minutes since `sentAt` | none, then as below | `[send] kept ended <address> reason=time` |
-| any | `sent(to:)`, a Send to the hand pick (`model.isHandPick`) or to the kept session (`KeptPick.after`) | kept (`sentAt` now) | `[send] kept <address> project=<detail>` |
-| any | `sent(to:)`, a Reply, or a Send to a start Vignette chose | unchanged | — |
+| kept | `sent(to:as:)` from `AppDelegate.submit` once the request is stored, 10 minutes since `sentAt` | none, then as below | `[send] kept ended <address> reason=time` |
+| any | `sent(to:as:)`, a Send to the hand pick (`model.isHandPick`) or to the kept session (`KeptPick.after`) | kept (`sentAt` now); for a Continue last session or New session row, the session the send started (`AgentDestination.sent(as:)`), never the row | `[send] kept <address> project=<detail>` |
+| any | `sent(to:as:)`, a Reply, or a Send to a start Vignette chose | unchanged | — |
 | kept | `beginDestinations`, 10 minutes since `sentAt` | none | `[send] kept ended <address> reason=time` |
 | kept | `beginDestinations`, within 10 minutes | kept | answers `session`, passed to `Asker.send(kept:)` for this opening |
 | kept | `destinationsAnswered`, `answer.keptIsGone` | none | `[send] kept ended <address> reason=gone` |
