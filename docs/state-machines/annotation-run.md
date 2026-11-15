@@ -90,8 +90,8 @@ Owns the list of files to annotate and how a hand ended the run. It wraps the tr
 - `shown(o)`, `arrived(o)`: flight closures in `perform(.prepare)`.
 - `parked(o)`: `perform(.park)` `:844`.
 - `loaded(o)`: `editorLoaded` `:396`. `takesPresses(o)`: `annotatorTakesEvents` `:401`.
-- `cancel(RunEnding)`: `annotationEnded` `:367` (Esc, Cmd+W, bar close, click outside, decode failure) and `CornerPresentation` `.closeEditor` as `.shortcut` `:284`.
-- `sent`: `annotationSent` `:375`. `finish`: `annotationFinished(quick: false)` `:381`. `dismiss(.finished)` for quick Done, `dismiss(nil)` from `slideOut` `:704`.
+- `cancel(RunEnding)`: `annotationEnded` `:367` (Esc, Cmd+W, bar close, a click outside over lone thumbnails, decode failure) and `CornerPresentation` `.closeEditor` as `.shortcut` `:284`.
+- `sent`: `annotationSent` `:375`. `finish`: `annotationFinished(quick: false)` `:381`. From `slideOut` `:704`, `dismiss(reason.runEnding)`: `dismiss(.finished)` for quick Done, `dismiss(.clickedAway)` for a click outside while the stack shows, `dismiss(nil)` otherwise.
 - `remove([key])`: `:476`. `renamed`: `:493`. `selectionChanged`: `:768`. `copyFailed(o)`: `showNotCopied(in:)` `:646`. `newShot`: `show` `:230`.
 
 **Transitions** (the run's own change, then the transition's result `T`)

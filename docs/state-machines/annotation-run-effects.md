@@ -62,7 +62,7 @@ Phases, derived:
 
 1. Closed: `current == nil`, window hidden or absent.
 2. Prepared: `current != nil`, `windowUp == false`, alpha 0, keys held.
-3. Shown: `windowUp == true`, `outsideClick` running, `eventProbe` running until it answers.
+3. Shown: `windowUp == true`, `outsideClick` running unless the corner is the stack, `eventProbe` running until it answers.
 4. Hiding: `current == nil` while `fitBeforeHide` is pending (zoomed only).
 5. Removing: `removal` pending (`hideWindows`, `:514`); the window is still ordered in.
 
@@ -157,7 +157,7 @@ Takes the annotator window down after the flight home covers the frame. State: `
 
 Owner: `OutsideClick.swift:12`. Tests: none.
 
-Reports a click outside the annotator. State: `monitor: Any?`. The annotator starts it in `show` (`AnnotationController.swift:366`) and stops it in `hide` and `abandon`; `start` replaces an earlier monitor. The handler ignores clicks before `watching` (`settling` 0.15 s, `OutsideClick.swift:22`) and checks the window under the cursor first.
+Reports a click outside the annotator. State: `monitor: Any?`. The annotator starts it in `show` (`AnnotationController+ShowingAndHiding.swift:11`) unless the corner is the stack, whose own watch then decides a click outside (`show(watchesClickOutside:)`, passed `!keys.isStack` by the run's `.show` effect), and stops it in `hide` and `abandon`; `start` replaces an earlier monitor. The handler ignores clicks before `watching` (`settling` 0.15 s, `OutsideClick.swift:22`) and checks the window under the cursor first.
 
 ### FocusReturn (implicit)
 
