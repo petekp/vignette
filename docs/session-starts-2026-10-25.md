@@ -101,10 +101,12 @@ last answer is kept and shown until a fresh one comes.
 
 - **Both menus get them.** Pete hit this in live ink's note. A screenshot of the same site goes
   through the editor's Send. Both menus are built by `SessionMenu.menu`, so one change serves both.
-- **After every running session.** Sending to a startable row starts a process, so it never takes
-  one of the five top rows from a session that can receive now (`SessionMenu.ranked`). With five or
-  more sessions running, they appear in the project submenus and in search. Continue comes before
-  New in each project.
+- **In search, after every running session.** Sending to a startable row starts a process, and one
+  project can have a pair for each worktree used in the last 14 days. So the rows stay out of the
+  five top rows, the project submenus and their counts, and typing in the search field finds them,
+  after the running sessions (`SessionMenu.menu`, `SessionMenu.ranked`). With no session running
+  they fill the top rows, the most recent projects first, since starting one is all the menu can do
+  then. A picked row stays in the top rows as the target. Continue comes before New in each project.
 - **Nothing picks one on its own.** The rows travel apart from the running sessions
   (`DestinationChoice.Candidates.startable`, `Answer.startable`), so no pick rule sees them. Only the
   menus join the two lists, and a person's pick in one may land on a row. A Reply to a session that

@@ -98,21 +98,34 @@ final class SessionStartsTests: XCTestCase {
         XCTAssertEqual(ToolbarOffer(replyTo: claude(past), destinations: [], listed: true, target: nil, startable: [resume, new]), .choose)
     }
 
-    func testRowsThatStartASessionComeAfterEveryRunningOneAndNameTheirProjectOncePicked() {
+    func testRowsThatStartASessionAreSearchedAfterTheRunningOnesAndShownOnlyWhenNoneRuns() {
         let now = Date()
         let resume = claude(past, used: now.timeIntervalSince1970, start: .resume(folder: "/site"))
         let new = claude("new:/site", used: now.timeIntervalSince1970, start: .new(folder: "/site"))
         let running = claude("r", used: now.timeIntervalSince1970 - 86000)
+        let other = claude("o", used: now.timeIntervalSince1970 - 86100)
         XCTAssertEqual(SessionMenu.ranked([new, running, resume], now: now).map(\.id), ["r", past, "new:/site"])
-        let rows = SessionMenu.menu([new, running, resume], destination: nil, now: now).topRows
-        XCTAssertEqual(rows.map(\.title), ["r", SessionMenu.continueLast, SessionMenu.newSession])
-        XCTAssertTrue(rows[1].subtitle.contains(past), rows[1].subtitle)
+        let menu = SessionMenu.menu([new, running, resume, other], destination: nil, count: 1, now: now)
+        XCTAssertEqual(menu.topRows.map(\.id), ["r"])
+        XCTAssertEqual(menu.projects.flatMap(\.rows).map(\.id), ["r", "o"], "a project's count is its running sessions")
+        XCTAssertEqual(SessionMenu.matching("", in: menu.everyone).flatMap(\.rows).map(\.id), ["r", "o", past, "new:/site"])
+        var (inRepository, newInRepository) = (resume, new)
+        inRepository.place = .repository(name: "site", root: "/site", worktree: nil, subfolder: nil)
+        newInRepository.place = inRepository.place
+        let apart = SessionMenu.menu([running, inRepository, newInRepository], destination: nil, now: now).everyone
+        XCTAssertEqual(SessionMenu.matching("", in: apart).first?.rows.first?.id, "r",
+                       "a running session in Other folders still comes before a project's rows that start one")
+        XCTAssertEqual(SessionMenu.menu([new, running, resume], destination: resume, now: now).topRows.map(\.id), ["r", past],
+                       "a picked row that starts a session stays in view as the target")
+        let rows = SessionMenu.menu([new, resume], destination: nil, now: now).topRows
+        XCTAssertEqual(rows.map(\.title), [SessionMenu.continueLast, SessionMenu.newSession], "with none running they are what the menu offers")
+        XCTAssertTrue(rows[0].subtitle.contains(past), rows[0].subtitle)
         XCTAssertEqual(SessionMenu.row(of: resume, among: [running], now: now).title, SessionMenu.lastSession(in: "site"))
         XCTAssertEqual(SessionMenu.row(of: new, among: [running], now: now).title, SessionMenu.newSession(in: "site"))
         XCTAssertTrue(SessionMenu.row(of: resume, among: [running], now: now).tooltip.hasPrefix(SessionMenu.continueLast))
         XCTAssertEqual(SessionMenu.cardTitle(of: SessionMenu.row(of: resume, among: [running], now: now)), "site")
         XCTAssertEqual(SessionMenu.cardTitle(of: SessionMenu.row(of: new, among: [running], now: now)), "site")
-        XCTAssertEqual(SessionMenu.cardTitle(of: rows[0]), "r")
+        XCTAssertEqual(SessionMenu.cardTitle(of: menu.topRows[0]), "r")
     }
 
     private nonisolated static func inbox(_ root: URL, pid: Int32, session: String) throws {

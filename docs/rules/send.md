@@ -53,7 +53,9 @@
   are recorded on every request and reported in `[state] requests`; `docs/closed-agent-loop-implementation-2026-09-20.md` says why the weaker one
   is still allowed to submit.
 - A project with past Claude Code sessions and none running offers Continue last session and New
-  session in both session menus (`StartableSessions`, `SessionStart`). Sending to one opens a tab in
+  session in both session menus (`StartableSessions`, `SessionStart`). Search finds them, after the
+  running sessions; the top rows, the project submenus and their counts hold running sessions only,
+  unless none is running, when these rows fill the top rows (`SessionMenu.menu`). Sending to one opens a tab in
   the space the Herdr window shows (`HerdrLauncher`, through `hc run`), starts `claude --resume <id>` or `claude --session-id <id>` there, waits up to
   45 s for its inbox, then writes the line as any send does. Only a person's pick starts a process:
   the rows travel apart from the running sessions (`Candidates.startable`), so `DestinationChoice`

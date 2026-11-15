@@ -40,13 +40,13 @@ The menu bar menu names the switch as the General tab does.
 | The target's menu | Claude, on the screen; Codex, on the screen, unless Vignette found no Codex; then the sessions under a heading for each repository, "Other folders" last |
 | The search field, the first row of both target menus | Search sessions |
 | The row when what was typed matches no session | No session matches |
-| Below the five rows, in both target menus, once more than five sessions are active: one submenu per project, after a separator | The project's header text, with the number of its sessions as a badge |
+| Below the five rows, in both target menus, once more than five sessions are running: one submenu per project, after a separator | The project's header text, with the number of its running sessions as a badge |
 | A session's row in the target menus | The herdr tab's label without a leading "*repository*:", else the session's name. Under it: the worktree, the branch when it is not the default, and the session's goal from the inbox mod, or its name when that adds to the title. A folder with no repository shows its path from home. A row with no herdr tab and no goal shows the session's name, then its worktree, subfolder, branch and how long ago it was used |
 | The badge on a row | Needs you (the inbox mod has an open question for you), else Working (a turn is running) |
 | Two rows in one group with the same title | The title and, in parentheses, the first of the herdr tab, the worktree and the branch that tells them apart, else #1 and #2 by when they started |
 | The destination control in the bar | The row's title; its tooltip is the title, the second line and the repository |
 | The destination control when no session runs and some can be started (`ToolbarView.chooseSession`) | Choose a session; its tooltip: No session is running. You can continue a past one or start a new one. |
-| A project's rows when it has no running session (`SessionMenu.continueLast`, `newSession`) | Continue last session, under it the worktree, branch, the session's name and how long ago it was used / New session, under it the worktree and branch |
+| A project's rows when it has no running session (`SessionMenu.continueLast`, `newSession`), found by search, or in the top rows when no session runs | Continue last session, under it the worktree, branch, the session's name and how long ago it was used / New session, under it the worktree and branch |
 | The destination control, and the note's target, once a row of a project with no running session is picked (`SessionMenu.lastSession(in:)`, `newSession(in:)`) | Last session in *project* / New session in *project*; the tooltip keeps the menu row's words |
 
 *agent* is the note's target, Claude or Codex, and *other* is the agent that is not.
