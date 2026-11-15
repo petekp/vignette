@@ -8,7 +8,6 @@ The menu bar menu names the switch as the General tab does.
 | Where | Words |
 | --- | --- |
 | The menu's switch, with a badge | Live Ink, badge "Hold *pair*" |
-| The menu, while live ink is on, greyed out with no marks | Clear Live Ink |
 | The General tab, under the switch while Accessibility is missing and the double tap is not asking for it (`liveInkAccessibilityReason`) | Needs Accessibility permission. Lets Vignette notice *pair* held down in any app. |
 | The menu's first item while Accessibility is missing | Allow Accessibility for Live Ink…, or for the Shortcut and Live Ink… when the double tap needs it too |
 | The menu bar intro's popover, while Accessibility is missing | Live ink needs Accessibility. Click the icon to allow it. (The shortcut and live ink need Accessibility, when both do.) |

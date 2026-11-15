@@ -515,7 +515,7 @@ The names in brackets are `// MARK:` sections.
   (`LiveAnswerLayout.grown`). It is tried below, above, right and left of what it hangs from, and
   may hang past the window onto the visible screen (`Scene.screen`). The reply is still a text
   `Mark`, with where it hangs in `Mark.popover`, so it follows its window, a tap erases it, and
-  Clear clears it. Its window lets every click through, as a note on the overlay does. The answer's
+  Esc clears it. Its window lets every click through, as a note on the overlay does. The answer's
   × and actions are panels of their own, child windows of the popover's window
   (`ReplyPopover.carry`), so they take its layer: a window raised over the answer covers them, and
   they move with it. On macOS 15 a button inside the popover took the person's keys from their app
@@ -558,7 +558,7 @@ The names in brackets are `// MARK:` sections.
   An action
   may name the marks it acts on (`LiveAnswer.Action`, `{"title", "marks"}`, by index), and pointing
   at its button fades the answer's other findings (`LiveWindows.light`). They are agent `Mark`s on the same surfaces, so a tap
-  erases them (a note's tag counts) and Clear clears them, and they stay until their answer's × or Esc
+  erases them (a note's tag counts) and Esc clears them, and they stay until their answer's × or Esc
   closes it. Notes on
   the overlay are `NoteLayer`s, a bitmap `Mark.draw` makes on the main thread, not `MarkLayers`,
   which draws a drawing on an image. The reply is the exception: its popover draws it.
