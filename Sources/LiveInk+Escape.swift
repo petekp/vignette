@@ -9,6 +9,11 @@ extension LiveInk {
     /// Whether Esc is down now, read from the keyboard itself.
     static var escapeIsDown: Bool { CGEventSource.keyState(.hidSystemState, key: CGKeyCode(LiveEscape.keyCode)) }
 
+    /// The marks that show on the active Space: on windows on the screen, and on the surfaces in sight.
+    var marksInSight: Set<Mark.ID> {
+        Set(windows.marks.filter(\.shown).map(\.mark.id)).union(surfacesInSight.flatMap(\.marks).map(\.id))
+    }
+
     var escapeSnapshot: LiveEscape.Snapshot {
         /// Whether a mark that shows on the active Space and is not leaving passes `test`.
         func shows(_ test: (Mark.ID) -> Bool) -> Bool {
@@ -93,7 +98,7 @@ extension LiveInk {
         case .endTour:
             letGoOfTour(because: "escape")
         case .closeAnswer:
-            closeAnswer(by: .answerClosed)
+            closeAnswer(by: .answerClosed(inSight: marksInSight))
         case .clearInk:
             clear()
         }

@@ -814,7 +814,7 @@ final class LiveInk {
     }
 
     /// Closes an answer, as `event` says: by its × (`dismissed`), with the ink only it was about, or by
-    /// Esc (`answerClosed`), the newest, with the person's ink staying. Its marks leave.
+    /// Esc (`answerClosed`), the newest in sight; the person's ink stays. Its marks go.
     func closeAnswer(by event: LiveAsks.Event) {
         hideDismissButton()
         run(asks.reduce(event))

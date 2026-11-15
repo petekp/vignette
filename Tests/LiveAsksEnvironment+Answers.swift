@@ -177,10 +177,11 @@ extension LiveAsksEnvironment {
         run(send(.dismissed(ask.id)))
     }
 
-    /// Esc with no ask to stop.
+    /// Esc with no ask to stop, on a Space that shows all the marks or only some.
     func closeAnswer() {
         guard asks.cancellable(sendsWait: false) == nil else { return }
-        run(send(.answerClosed))
+        let inSight = chance(2) ? shown : shown.filter { _ in chance(2) }
+        run(send(.answerClosed(inSight: inSight)))
     }
 
     func finished(_ ids: Set<Mark.ID>) {
@@ -225,7 +226,7 @@ extension LiveAsksEnvironment {
         case .answerShown(let ids, let id): "answerShown \(list(ids)) #\(id)"
         case .dismissed(let id): "dismissed #\(id)"
         case .cancelled(let id, _): "cancelled #\(id)"
-        case .answerClosed: "answerClosed"
+        case .answerClosed(let inSight): "answerClosed inSight=\(list(inSight))"
         case .finished(let ids): "finished \(list(ids))"
         case .cleared: "cleared"
         }

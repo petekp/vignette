@@ -45,7 +45,7 @@ Side tables: `picks[askID]` (the answer a picked button was picked under, plus `
 | any present ask | `dismissed` | ended | `interrupt` only if `asking`; `finish(answer ∪ about − others ∪ aside)` |
 | under way | `cancelled` | ended, or restored | `interrupt` only if `asking`; `removeAnswer`; `reopenNote` if ink is given back, or `remove` of that ink when `sentOnRelease`; session ask: id into `withdrawn` |
 | settled | `cancelled`, `failed`, `replyCame`, `answerCame`, `packetCame` | — (ignored) | — |
-| newest settled ask with a non-leaving answer mark | `answerClosed` | ended | `finish(answer, .dismissed)` |
+| newest settled ask with a non-leaving answer mark among `inSight` (`LiveInk.marksInSight`, the marks on the active Space) | `answerClosed(inSight:)` | ended | `finish(answer, .dismissed)` |
 | any | `removed`, `windowGone`, `finished` | marks lose roles; settled asks with no answer mark left end (`endAnswersWithNoMarks`, 514); asks under way stay | — |
 | any | `cleared` | every ask ended | `ended(id)` for each; `picks` emptied; roles, answers, finishing dropped; `withdrawn` and `lastID` kept; no `interrupt` |
 

@@ -572,7 +572,7 @@ final class LiveAsksTests: XCTestCase {
         var a = A()
         let first = ink(), second = ink(50), reply = text("It's a button.", agent: true)
         let id = answer(&a, on: [first, second], reply: reply)
-        _ = reduce(&a, .answerClosed)
+        _ = reduce(&a, .answerClosed(inSight: [reply.id]))
         _ = reduce(&a, .dismissed(id))
         XCTAssertEqual(a.finishing, [reply.id: .dismissed], "the × of an answer Esc closed does nothing more")
         let other = begin(&a, on: [first, second])
@@ -887,7 +887,7 @@ final class LiveAsksTests: XCTestCase {
         var a = A()
         let mark = ink(), reply = text("It's a button.", agent: true)
         answer(&a, on: [mark], reply: reply)
-        _ = reduce(&a, .answerClosed)
+        _ = reduce(&a, .answerClosed(inSight: [reply.id]))
         _ = reduce(&a, .finished([reply.id]))
         let id = begin(&a, on: [mark])
         XCTAssertEqual(reduce(&a, .arrived(.packetCame, for: id)), [.send(id)])
@@ -907,33 +907,6 @@ final class LiveAsksTests: XCTestCase {
         XCTAssertEqual(a, before, "an answered ask is not stopped")
     }
 
-    func testEscClosesTheNewestAnswerFirstAndKeepsTheInk() {
-        var a = A()
-        let first = ink(), second = ink(50), reply = text("It's a button.", agent: true), loop = shape(), later = text("Later", agent: true)
-        let one = answer(&a, on: [first], reply: reply, shapes: [loop])
-        let two = answer(&a, on: [first, second], reply: later)
-        XCTAssertEqual(reduce(&a, .answerClosed), [.ended(two), .finish([later.id], .dismissed)], "the newest first")
-        XCTAssertNil(a.ask(two))
-        XCTAssertEqual(reduce(&a, .answerClosed), [.ended(one), .finish([reply.id, loop.id], .dismissed)], "then the one before")
-        XCTAssertNil(a.ask(one))
-        XCTAssertEqual(Set(a.finishing.keys), [later.id, reply.id, loop.id], "only the answers are leaving")
-        XCTAssertEqual(reduce(&a, .finished([reply.id, loop.id])), [.remove([reply.id, loop.id])])
-        XCTAssertEqual(a.ink(among: [first]).map(\.id), [first.id])
-        XCTAssertEqual(reduce(&a, .answerClosed), [], "with no answer left there is nothing to close")
-    }
-
-    func testClosingAnAnswerPassesOverAsksUnderWay() {
-        var a = A()
-        let mark = ink(), other = ink(50), reply = text("It's a button.", agent: true), conversation = text("", agent: true)
-        let first = answer(&a, on: [mark], reply: reply)
-        let next = begin(&a, on: [mark, reply, other])
-        _ = reduce(&a, .conversed(conversation, for: next))
-        XCTAssertFalse(a.isSettledAnswer(conversation.id), "a conversation waiting for its answer is not one Esc closes")
-        XCTAssertEqual(reduce(&a, .answerClosed), [.ended(first), .finish([reply.id], .dismissed)])
-        XCTAssertNil(a.ask(first))
-        XCTAssertNotNil(a.ask(next))
-    }
-
     // MARK: Random sequences
 
     /// Plays random sequences through `LiveAsksEnvironment` and checks the asks' invariants after
@@ -947,7 +920,7 @@ final class LiveAsksTests: XCTestCase {
 
         var closed = A()
         let esc = answer(&closed, on: [mark], reply: reply)
-        XCTAssertEqual(reduce(&closed, .answerClosed), [.ended(esc), .finish([reply.id], .dismissed)], "Esc on an answer")
+        XCTAssertEqual(reduce(&closed, .answerClosed(inSight: [mark.id, reply.id])), [.ended(esc), .finish([reply.id], .dismissed)], "Esc on an answer")
 
         var stopped = A()
         let stop = begin(&stopped, on: [mark])
@@ -1249,9 +1222,9 @@ final class LiveAsksTests: XCTestCase {
                         XCTAssertNil(after.ask(id), fail("and ends the ask"))
                     }
                     othersKept(but: id)
-                case .answerClosed:
+                case .answerClosed(let inSight):
                     checkFinishes()
-                    let newest = before.asks.last { !$0.isUnderWay && before.answerMarks(of: $0.id).contains { !before.isFinishing($0) } }
+                    let newest = before.asks.last { !$0.isUnderWay && before.answerMarks(of: $0.id).contains { !before.isFinishing($0) && inSight.contains($0) } }
                     if let newest {
                         closed += 1
                         XCTAssertEqual(effects, [.finish(before.answerMarks(of: newest.id), .dismissed)], fail("Esc closes the newest answer"))

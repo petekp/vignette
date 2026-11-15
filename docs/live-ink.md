@@ -152,7 +152,7 @@ The names in brackets are `// MARK:` sections.
      send grace, until its send is stored: one stored after all is withdrawn
      (`LiveNoteCards.unsend`). Once stored, the card's Don't send takes it back.
   3. End the tour: the focus run, and the steps still to show.
-  4. Close the newest answer, one per press: its reply, buttons and the agent's marks leave
+  4. Close the newest answer in sight, one per press: its reply, buttons and marks leave
      (`LiveAsks.Event.answerClosed`). A failure's reply counts as an answer. The person's ink stays;
      the × takes it too.
   5. Clear what is left (`clear()`), ending the conversation.
