@@ -42,7 +42,7 @@ struct CardView: View, Equatable {
     /// the card as it then looks: the drag image carries neither.
     private var showsButtons: Bool { showsHover && !pressed && !state.dragged && !state.inSelectionMode && notice == nil }
     /// The padding every corner control is given.
-    static let buttonPad: CGFloat = 6
+    nonisolated static let buttonPad: CGFloat = 6
     /// How far a corner control's hit area reaches past it into the card.
     static let hitReach: CGFloat = 8
 
@@ -141,9 +141,15 @@ struct CardView: View, Equatable {
         }
         .overlay(alignment: .topTrailing) {
             if let agent = card.agent, inSlot {
-                AgentBadge(agent: agent, size: ui.selectionCircleSize)
-                    .padding(CardView.buttonPad)
-                    .transition(.opacity)
+                // The fold decides the badge's shape from the card's width, but a zoom can narrow the
+                // card faster than the fold's spring closes. Clipped to the card, it never shows past it.
+                ZStack {
+                    AgentBadge(agent: agent, size: ui.selectionCircleSize, cardWidth: size.width, foldDuration: ui.relayoutDuration)
+                        .padding(AgentBadgeFit.inset)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .clipped()
+                .transition(.opacity)
             } else if card.shot.kind == .recording, inSlot {
                 RecordingBadge(duration: card.duration, size: ui.selectionCircleSize)
                     .padding(CardView.buttonPad)
@@ -282,33 +288,6 @@ private struct SelectionCircle: View {
         }
         .frame(width: size, height: size)
         .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
-    }
-}
-
-/// Marks a card an agent pushed in with `add?agent=`: a white tab saying who, with the vendor's
-/// logo when the bundle has one (`Agent.logo(for:)`).
-private struct AgentBadge: View {
-    let agent: String
-    let size: CGFloat
-    var body: some View {
-        HStack(spacing: size * 0.22) {
-            if let logo = Agent.logo(for: agent) {
-                // The tab is white in either appearance, so a one-colour logo is drawn black like the name.
-                Image(nsImage: logo).resizable().aspectRatio(contentMode: .fit)
-                    .foregroundStyle(.black.opacity(0.85))
-                    .frame(width: size * 0.62, height: size * 0.62)
-            } else {
-                Image(systemName: Agent.fallbackSymbol).font(.system(size: size * 0.5, weight: .bold))
-                    .foregroundStyle(.black.opacity(0.8))
-            }
-            Text(Agent.label(for: agent)).font(.system(size: size * 0.55, weight: .semibold))
-                .foregroundStyle(.black.opacity(0.85)).lineLimit(1).fixedSize()
-        }
-        .padding(.horizontal, size * 0.4)
-        .frame(height: size)
-        // A hairline edge and a deep shadow: the tab lands on light images too, a white wordmark included.
-        .background(Capsule().fill(.white).overlay(Capsule().strokeBorder(.black.opacity(0.22), lineWidth: 0.75)))
-        .shadow(color: .black.opacity(0.5), radius: 5, y: 1.5)
     }
 }
 
