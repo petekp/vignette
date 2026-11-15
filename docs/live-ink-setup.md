@@ -90,6 +90,8 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
   as the pointer field comes up, before any ink is drawn. It wraps at 260 pt and fades after 4 s,
   or as the chord is let go. It waits for the field, so a chord on its way to a window manager's
   shortcut says nothing. It is part of the pointer, not a toast, as Pete decided on 2026-10-29.
+  On macOS 15, the first capture after Screen Recording is allowed also raises macOS's question
+  about bypassing its private window picker. It is owned by `UserNotificationCenter`.
 - **Speech.** When speech cannot listen, for a missing permission, no on-device model, or a
   microphone that will not start, the note's prompt says why (`LiveInk.speechProblem`). It goes once
   speech can listen or is turned off.

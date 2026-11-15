@@ -496,6 +496,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         content.showsKeys(false, duration: Self.focusFade * Settings.shared.motionScale)
         DispatchQueue.main.async { if NSApp.keyWindow == nil { FocusReturn.shared.restore(reason: "live ink note") } }
         Log.write("[live-ink] note let go of the keys")
+        if !SystemPrompts.windowIDs().isEmpty { takeKeysAfterPrompts() }
     }
 
     /// Makes its window key, as the note asking for the keys.
@@ -523,8 +524,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         onKeysBack?()
     }
 
-    /// How long the words and the ↩ take to dim or come back as the note loses or takes the keys.
-    static let focusFade: TimeInterval = 0.18
     /// How long the target takes to settle into a name once sent, at full motion.
     private static let settleDuration: TimeInterval = 0.18
     private let removal = WindowRemoval()
