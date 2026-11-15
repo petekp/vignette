@@ -6,5 +6,14 @@ import Foundation
 enum ThisMac {
     static func saw(_ key: String) -> Bool { Launch.isTest || Identity.defaults.bool(forKey: key) }
 
-    static func record(_ key: String) { Identity.defaults.set(true, forKey: key) }
+    static func record(_ key: String, in defaults: UserDefaults = Identity.defaults) { defaults.set(true, forKey: key) }
+
+    static let liveInkOfferKey = "liveInkOfferedOnThisMac"
+
+    /// Live ink's one-time offer was made: setup showed its page, or a launch opened the Settings
+    /// window on it.
+    static func recordLiveInkOffer(in data: inout SettingsData, on defaults: UserDefaults = Identity.defaults) {
+        data.liveInkOffered = true
+        record(liveInkOfferKey, in: defaults)
+    }
 }

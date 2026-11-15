@@ -14,10 +14,14 @@ extension LiveAsks {
         case showReply
         /// Lay out the answer and draw it, then send `answered`.
         case drawAnswer
-        /// The answer is back as it was before its button was picked. Show its set-aside marks `aside`
-        /// again, then draw `reply` again, saying `reason` in its header when there is one, and send
-        /// `replyRedrawn`.
-        case restore(reply: Mark.ID, reason: String?, aside: Set<Mark.ID>)
+        /// The answer is back as it was before its button was picked, in the place of `followUp`, the ask
+        /// the pick began, when it began. That ask is over, with no `ended` of its own: let go of it, but
+        /// give the answer its answerer, who answered both. Show its set-aside marks `aside` again, then
+        /// draw `reply` again, saying `reason` in its header when there is one, and send `replyRedrawn`.
+        case restore(reply: Mark.ID, reason: String?, aside: Set<Mark.ID>, followUp: Ask.ID?)
+
+        /// The ask a `restore` ends.
+        var restoredFollowUp: Ask.ID? { if case .restore(_, _, _, let followUp) = self { followUp } else { nil } }
         /// Say `reason` in a reply hung from ask `id`'s ink, and send `answerShown`.
         case say(Ask.ID, String)
         /// Say `reason` in `reply`'s row, in place of its words, and send `replyRedrawn`.
@@ -37,5 +41,15 @@ extension LiveAsks {
         case setAside(Ask.ID, Set<Mark.ID>)
         /// These marks are leaving: show them going, and send `finished` once they have.
         case finish(Set<Mark.ID>, LiveMarksLayer.Finish)
+    }
+}
+
+extension LiveAsks {
+    /// An `ended` for each of the asks `before` that is no longer in the list, oldest first, but for
+    /// one a `restore` among `effects` ends.
+    func ended(since before: [Ask.ID], besides effects: [Effect] = []) -> [Effect] {
+        let now = Set(asks.map(\.id))
+        let restored = Set(effects.compactMap(\.restoredFollowUp))
+        return before.filter { !now.contains($0) && !restored.contains($0) }.map(Effect.ended)
     }
 }

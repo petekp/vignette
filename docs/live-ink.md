@@ -431,15 +431,15 @@ The names in brackets are `// MARK:` sections.
 - Asks go to the responder one at a time, in the order sent, in the same conversation, so each
   knows the ones before it (`LiveAsks`, `Effect.send`). Each takes its picture as it is sent, so it
   shows what the person circled then, and waits with its ink carrying the thinking light until the
-  ask before it has answered, failed or been stopped (`[live-ink] waiting`, then `sending`). `LiveInk`
-  holds what each waiting ask will send (`LiveInk.held`). A note to a session waits for none of them.
+  ask before it has answered, failed or been stopped (`[live-ink] waiting`, then `sending`). `LiveInk.held`
+  holds what each waiting ask will send. A note to a session waits for none of them.
   Every answer stays beside its own ink until its own × or Esc closes it, and a new ask takes none
   off. The × finishes its answer and the ink only it was about: ink another answer on the screen is
   about stays. On the ask the responder is answering, the × also stops the responder's turn, so the
-  next ask goes at once and no turn is spent on an answer nobody will see. A new reply, its marks
+  next ask goes at once, wasting no turn on an answer nobody will see. A new reply, its marks
   and the next note keep clear of the answers already up, which `LiveInk.scene` adds to the
   person's notes as things to avoid. Only one answer's focus or steps run at a time: a newer
-  answer's take over. However an ask ends, `LiveAsks` says so first (`Effect.ended`).
+  answer's take over. However an ask ends, `LiveAsks` says so first (`Effect.ended`; a follow-up's `restore`).
   `LiveInk.release` then lets go of what was kept for it: what it would have sent, its note, its ×,
   its buttons, and its steps or focus. The responder holds at most one ask it has not sent: during
   its warm-up, or until an interrupted turn ends (`LiveResponder.pending`). Clearing the ink ends
@@ -536,7 +536,7 @@ The names in brackets are `// MARK:` sections.
   buttons of its own. While the next reply streams, the earlier answer's other marks are set aside
   (`LiveAsks.Effect.setAside`, `LiveWindows.setAside`): they are hidden where they are. They go once the next answer is drawn, and the × finishes them
   with the rest. A follow-up that fails or is stopped before then puts the answer back as it was
-  (`LiveAsks.Effect.restore`, `LiveInk.restoreAnswer`): the set-aside marks show again,
+  (`Effect.restore`, `LiveInk.restoreAnswer`): the set-aside marks show again,
   the buttons come back, typed words wait in Reply again, and the reply's header gives the reason
   where it quoted them (`Mark.notice`), wrapped so all of it shows. A failure after the next answer
   is drawn says why in the reply's row, as for any ask. Closing the field gives the keys back through

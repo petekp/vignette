@@ -24,6 +24,28 @@ final class SetupModelTests: XCTestCase {
         XCTAssertEqual(model.page, .agents)
     }
 
+    func testSetupThatShowedLiveInkRecordsItsOfferOnThisMacToo() {
+        let suite = "SetupModelTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = SetupModel(callbacks: withClaude, scope: .whole, start: .liveInk)
+        var data = SettingsData()
+        model.record(in: &data, on: defaults)
+        XCTAssertTrue(data.liveInkOffered)
+        XCTAssertTrue(defaults.bool(forKey: ThisMac.liveInkOfferKey))
+    }
+
+    func testSetupClosedBeforeLiveInkLeavesItsOfferForTheNextLaunch() {
+        let suite = "SetupModelTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = SetupModel(callbacks: withClaude, scope: .whole, start: .welcome)
+        var data = SettingsData()
+        model.record(in: &data, on: defaults)
+        XCTAssertFalse(data.liveInkOffered)
+        XCTAssertFalse(defaults.bool(forKey: ThisMac.liveInkOfferKey))
+    }
+
     func testNotNowClosesLiveInkAlone() {
         let model = SetupModel(callbacks: withClaude, scope: .liveInk, start: .liveInk)
         var closed = false
