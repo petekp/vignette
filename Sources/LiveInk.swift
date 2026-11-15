@@ -1353,9 +1353,9 @@ final class LiveInk {
             case .interrupt: responders.cancel()
             case .removeAnswer(let id, let gone): removeAnswer(gone, of: id)
             case .setAside(let id, let ids): setAside(ids, of: id)
-            case .restore(let reply, let reason, let aside):
+            case .restore(let reply, let reason, let aside, let followUp):
                 if !aside.isEmpty { bringBack(aside) }
-                restoreAnswer(reply, saying: reason)
+                restoreAnswer(reply, after: followUp, saying: reason)
             case .say(let id, let reason): say(reason, for: id)
             case .notice(let reply, let reason): notice(reason, in: reply)
             case .remove(let ids): remove(ids)
@@ -1377,11 +1377,15 @@ final class LiveInk {
         hideActions(of: id)
     }
 
-    /// The answer a button was picked under is back as it was (`LiveAsks.Effect.restore`): its words
+    /// The answer a button was picked under is back as it was (`LiveAsks.Effect.restore`): the ask that
+    /// followed it is let go and its answerer answers the answer's buttons and Reply again, its words
     /// and buttons come back, typed words wait in Reply again, and its row says why, unless the person
     /// stopped the ask.
-    private func restoreAnswer(_ replyID: Mark.ID, saying reason: String?) {
+    private func restoreAnswer(_ replyID: Mark.ID, after followUp: LiveAsks.Ask.ID?, saying reason: String?) {
+        let answerer = followUp.flatMap { answerers[$0] }
+        if let followUp { release(followUp) }
         guard let ask = asks.ask(withReply: replyID), var reply = ask.say else { return }
+        if let answerer { answerers[ask.id] = answerer }
         if let reason { reply = noticed(reply, reason) }
         _ = asks.reduce(.replyRedrawn(reply))
         Log.write("[live-ink] follow-up \(reason == nil ? "stopped" : "failed"); its answer stays draft=\(ask.draft.count)")
@@ -1399,14 +1403,6 @@ final class LiveInk {
         _ = asks.reduce(.replyRedrawn(reply))
         Log.write("[live-ink] ask failed; its conversation says why")
         if handingTo[ask.id] != replyID { put([reply], window: windows.window(of: replyID), for: ask.id) }
-    }
-
-    /// `reply` with `notice` in its row, grown to fit it.
-    private func noticed(_ reply: Mark, _ notice: String) -> Mark {
-        guard case .text(let text) = reply.geometry else { return reply }
-        var reply = reply
-        reply.notice = notice
-        return LiveAnswerLayout.grown(reply, to: text.text, sizes: answerSizes, foot: reply.popover?.foot ?? .zero)
     }
 
     /// Adds ask `id`'s answer's marks, or Vignette's own note, replacing marks of the same id. They go

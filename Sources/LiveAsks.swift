@@ -236,7 +236,7 @@ struct LiveAsks: Equatable {
         }
         asks[at].reason = refusal.rawValue
         if following.pick == .reply { asks[at].draft = following.words }
-        return .refused(refusal, effects: [.restore(reply: following.reply.id, reason: refusal.rawValue, aside: [])])
+        return .refused(refusal, effects: [.restore(reply: following.reply.id, reason: refusal.rawValue, aside: [], followUp: nil)])
     }
 
     // MARK: Events
@@ -297,13 +297,7 @@ struct LiveAsks: Equatable {
     mutating func reduce(_ event: Event) -> [Effect] {
         let before = asks.map(\.id)
         let effects = apply(event) + sendNext()
-        return ended(since: before) + effects
-    }
-
-    /// An `ended` for each of the asks `before` that is no longer in the list, oldest first.
-    private func ended(since before: [Ask.ID]) -> [Effect] {
-        let now = Set(asks.map(\.id))
-        return before.filter { !now.contains($0) }.map(Effect.ended)
+        return ended(since: before, besides: effects) + effects
     }
 
     private mutating func apply(_ event: Event) -> [Effect] {
@@ -504,7 +498,7 @@ struct LiveAsks: Equatable {
         own(answerMarks(of: id).union(pick.aside), by: answer.id)
         asks[at] = answer
         picks[id] = nil
-        return .restore(reply: reply, reason: reason, aside: pick.aside)
+        return .restore(reply: reply, reason: reason, aside: pick.aside, followUp: id)
     }
 
     private mutating func forgetAside(_ ids: Set<Mark.ID>) {

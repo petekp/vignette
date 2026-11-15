@@ -51,7 +51,7 @@ Side tables: `picks[askID]` (the answer a picked button was picked under, plus `
 
 **Invariants**
 
-- Each ask that leaves the list says `ended` first, oldest first. Checked by: `testRandomSequencesKeepTheInvariants` (`LiveAsksTests:1018`).
+- Each ask that leaves the list says `ended` first, oldest first, but a follow-up an answer is put back in place of: its `restore` names it (`followUp`) and ends it. Checked by: `testRandomSequencesKeepTheInvariants` (`LiveAsksTests:984`).
 - Asks go to the responder one at a time, in order, each only when `waiting`. Checked by: the same test.
 - What comes back for an ask no longer under way changes nothing. Checked by: the same test, `testAReplyAndAnAnswerFromADismissedAskAreDropped`, `testAPacketFromAClearedAskIsDroppedAndTheNextAskTakesItsOwn`.
 - `interrupt` is emitted only for the ask the responder has. Checked by: the same test, `testEscStopsTheNewestAskFirstAndTheResponderOnlyForTheOneItHas`.
@@ -81,7 +81,7 @@ Runs the effects `LiveAsks` returns and keeps per-ask tables that must agree wit
 
 **States**: `LiveAsks` plus these tables:
 - `held[id]` (`LiveInk.swift:101`): what to send the responder. Set in `send` (861), consumed in `sendHeld` (883), cleared in `release` (1581).
-- `answerers[id]` (97): agent and display name. Set at `began` (802), cleared in `release` (1582).
+- `answerers[id]` (97): agent and display name. Set at `began` (802), cleared in `release` (1582). A restored answer takes its follow-up's in `restoreAnswer`.
 - `handing[id]` (note panel waiting to hand over) and `handingTo[id]` (the conversation mark it will become): set at 805 and 747, cleared by `letGoOfNote` (737; from `release`, `failed`, `share`) or the handover closure (750).
 - `dismissButton`, `dismissing` (79): the × for one ask. Cleared in `release` (1584) and `hideDismissButton`.
 - `actionsPanels[id]` (84): buttons per answered ask. Made in `showActions` (1161), removed by `hideActions` (1165; also from `release`, `removeAnswer`, `setAside`, `restoreAnswer`).
@@ -94,6 +94,7 @@ Runs the effects `LiveAsks` returns and keeps per-ask tables that must agree wit
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | any | effect `ended(id)` | tables for `id` cleared | `release`: `held`, `answerers`, note fade, ×, tour, buttons |
+| follow-up stopped or failed | effect `restore(followUp: F)` | answer back, F's tables cleared | `restoreAnswer`: the answer takes `answerers[F]`, then `release(F)` |
 | `waiting` | effect `send(id)` | `asking` | `sendHeld` calls `responders.ask`; a failure calls `failed` |
 | `asking` | effect `interrupt` | — | `responders.cancel()` (all agents) |
 | marks settled | effect `finish(ids)` | — | `finish` (969): `showMarks`, then `asyncAfter(finishDuration)` sends `.finished` |
