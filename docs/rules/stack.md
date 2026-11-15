@@ -30,8 +30,12 @@
 - The backdrop's progressive blur is a stack of masked NSVisualEffectViews with different radii.
   The private CAFilter variableBlur ignores its mask when the backdrop renders in the window
   server on macOS 15, and a bare CABackdropLayer renders black. Do not retry. The band masks are
-  one-pixel bitmaps stretched to the strip and cached by width; shading a drawing-handler image at
-  the strip's full height on every show was measurably slow.
+  small bitmaps stretched to the strip, cached for the current width, band count and top fade;
+  shading a drawing-handler image at the strip's full height on every show was measurably slow.
+  The strip ends at the menu
+  bar's bottom edge, `visibleFrame.maxY` of its screen, which is also the column's top, and the
+  blur and tint fade in over its first `backdropTopFade` points. With the menu bar hidden the strip
+  reaches the screen's top, and the menu bar slides down over it.
 - Stitching from the stack is one motion, not a file appearing later. `ThumbnailController.stitched`
   takes the cards the image was made from out of the column, holds a slot for the new card at the
   bottom, and hands both to `TransitionLayer.converge`: the pieces fly into that slot while the

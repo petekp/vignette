@@ -37,9 +37,10 @@ final class ScreenshotWatcher: @unchecked Sendable {
         var identities: [String: FileIdentity] = [:]
 
         func confirmsAbsence(of url: URL) -> Bool {
-            // A positive lookup protects equivalent names and files created after the listing.
-            url.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL
-                && !names.contains(url.lastPathComponent)
+            // A positive lookup protects equivalent names and files created after the listing. It
+            // comes first because it is the cheap test and most callers' files are still listed.
+            !names.contains(url.lastPathComponent)
+                && url.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL
                 && !FileManager.default.fileExists(atPath: url.path)
         }
 
@@ -90,6 +91,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
         var files: [String: Date] = [:]   // candidate name -> modification date
         var identities: [String: FileIdentity] = [:]
         var present: Set<String> = []
+        var presentScan = 0               // the scan whose listing `present` is
         var watching = false              // the directory source is live
         var indexed = false               // a successful listing or a missing-folder capture cutoff exists
         var denied = false                // macOS refused this app the folder
@@ -101,40 +103,14 @@ final class ScreenshotWatcher: @unchecked Sendable {
         var held = HeldRenames()
     }
 
-    /// Renames a scan paired, held until a delivery that covers that scan takes them. A delivery
-    /// that finds the directory changed under it delivers nothing, and the next one takes them.
-    struct HeldRenames {
-        private var held: [(scan: Int, from: String, to: String)] = []
-
-        /// Holds the pairs from scan `scan`, except those whose old name has an arrival not yet
-        /// delivered: the app never heard of that name, so it leaves as a removal and the new name
-        /// arrives. Answers the pairs it held.
-        @discardableResult
-        mutating func hold(_ pairs: [(from: String, to: String)], scan: Int,
-                           undelivered: Set<String>) -> [(from: String, to: String)] {
-            let kept = pairs.filter { !undelivered.contains($0.from) }
-            held += kept.map { (scan: scan, from: $0.from, to: $0.to) }
-            return kept
-        }
-
-        /// The renames held for scans up to `scan`, and the candidates that left `present` for
-        /// `current` other than by one of those renames.
-        mutating func deliver(through scan: Int, present: Set<String>,
-                              current: Set<String>) -> (renames: [(from: String, to: String)], removed: [String]) {
-            let renames = held.filter { $0.scan <= scan }.map { (from: $0.from, to: $0.to) }
-            held.removeAll { $0.scan <= scan }
-            let renamedFrom = Set(renames.map(\.from))
-            let removed = ScreenshotWatcher.diff(known: present, current: current).removed
-                .filter { ScreenshotWatcher.isCandidate($0) && !renamedFrom.contains($0) }
-            return (renames, removed)
-        }
-    }
     private let state = OSAllocatedUnfairLock(initialState: State())
 
     /// How long launch waits for the first listing, and how often an unopenable folder is tried
     /// again. In code: a cadence for system calls, not a number a user would tune.
     private static let firstListingWait: TimeInterval = 0.5
     private static let retryDelay: TimeInterval = 2
+    /// A delivery on the main thread longer than this costs a frame at 120 Hz, so it is logged.
+    private static let slowHandOffMs = 8
 
     init(folder: URL, onNew: @escaping (ScreenshotKey) -> Void,
          onRemoved: @escaping ([ScreenshotKey], Inventory) -> Void, onInventory: @escaping (Inventory) -> Void = { _ in },
@@ -287,9 +263,10 @@ final class ScreenshotWatcher: @unchecked Sendable {
             retryLater()
             return
         }
-        let (arrivals, scanNumber) = state.withLock { s -> ([(String, Arrival)], Int) in
+        let (arrivals, scanNumber, base) = state.withLock { s -> ([(String, Arrival)], Int, (names: Set<String>, scan: Int)) in
             s.scans += 1
             let scanNumber = s.scans
+            let base = (names: s.present, scan: s.presentScan)
             s.availability = .available
             s.denied = false
             let undelivered = Set(s.pending.keys)
@@ -303,7 +280,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
                 s.files = current
                 s.identities = identities
                 s.indexed = true
-                return ([], scanNumber)
+                return ([], scanNumber, base)
             }
             var renames: [(from: String, to: String)] = []
             if s.missingSince == nil {
@@ -326,10 +303,15 @@ final class ScreenshotWatcher: @unchecked Sendable {
                 let arrival = Arrival(generation: generation)
                 s.pending[name] = arrival
                 return (name, arrival)
-            }, scanNumber)
+            }, scanNumber, base)
         }
-        let started = generation
+        let started = generation, left = Self.left(base.names, for: inventory.names)
         DispatchQueue.main.async {
+            let began = ProcessInfo.processInfo.systemUptime
+            defer {
+                let ms = Int((ProcessInfo.processInfo.systemUptime - began) * 1000)
+                if ms > Self.slowHandOffMs { Log.write("[main] slow inventory \(ms)ms") }
+            }
             guard self.state.withLock({ $0.generation == started }) else { return }
             guard inventory.directoryID == DirectoryID(self.folder.path),
                   access(self.folder.path, R_OK | X_OK) == 0 else {
@@ -337,8 +319,9 @@ final class ScreenshotWatcher: @unchecked Sendable {
                 return
             }
             let (renames, removed) = self.state.withLock { s in
-                defer { s.present = inventory.names }
-                return s.held.deliver(through: scanNumber, present: s.present, current: inventory.names)
+                defer { (s.present, s.presentScan) = (inventory.names, scanNumber) }
+                let gone = s.presentScan == base.scan ? left : Self.left(s.present, for: inventory.names)
+                return s.held.deliver(through: scanNumber, left: gone)
             }
             if !renames.isEmpty {
                 self.onRenamed(renames.map {

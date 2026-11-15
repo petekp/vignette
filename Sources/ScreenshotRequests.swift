@@ -78,6 +78,7 @@ final class ScreenshotRequests {
     private var publicationReady = false
     /// Cancellation takes effect in memory even when its record cannot yet be written.
     private var pendingCleanupWrites: Set<String> = []
+    private var clearedFolders: ClearedRequestFolders
     /// The sends between Send and their line reaching the client.
     private var sendGrace = SendGrace()
     /// The requests not handed over yet whose session's turn a note will read (`send`'s `watchingTurn`).
@@ -94,6 +95,7 @@ final class ScreenshotRequests {
              DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { MainActor.assumeIsolated { work() } }
          }) {
         self.root = root
+        clearedFolders = ClearedRequestFolders(root: root)
         self.connections = connections
         self.now = now
         self.schedule = schedule
@@ -175,7 +177,10 @@ final class ScreenshotRequests {
 
     func reconcile(_ inventory: ScreenshotWatcher.Inventory, now: Date = Date()) {
         publicationReady = true
-        for record in requests.values where record.status == .cleared { cleanup(record.id, inventory: inventory) }
+        let byRequest = Dictionary(grouping: replies.values, by: \.requestID)
+        for record in requests.values where record.status == .cleared {
+            cleanup(record.id, replies: byRequest[record.id] ?? [], inventory: inventory)
+        }
         for (id, reply) in replies where reply.stage == .published && !reply.deleted {
             guard publishedAt[id, default: 0] <= inventory.observedAt, let url = reply.publishedURL,
                   inventory.confirmsAbsence(of: url) else { continue }
@@ -768,12 +773,9 @@ final class ScreenshotRequests {
     /// Deletes the folders of requests cleared more than `clearedKept` ago, dated by `request.json`,
     /// which clearing rewrites. Published replies need current proof of absence at their recorded location.
     func prune(now: Date = Date(), inventory: ScreenshotWatcher.Inventory? = nil) {
-        let fm = FileManager.default
         for record in requests.values where record.status == .cleared {
-            let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
-            let file = directory.appendingPathComponent(Self.recordFileName)
-            guard let cleared = (try? fm.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date,
-                  now.timeIntervalSince(cleared) > Self.clearedKept else { continue }
+            guard let remembered = clearedFolders.clearedOn(record.id),
+                  now.timeIntervalSince(remembered) > Self.clearedKept else { continue }
             let own = replies.values.filter { $0.requestID == record.id }
             guard !own.contains(where: { $0.needsOutputCleanup == true }) else { continue }
             guard !own.contains(where: { reply in
@@ -783,7 +785,11 @@ final class ScreenshotRequests {
                 return !inventory.confirmsAbsence(of: url)
             })
             else { continue }
-            guard (try? fm.removeItem(at: directory)) != nil else { continue }
+            let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
+            guard let cleared = clearedFolders.clearedOn(record.id, fresh: true),
+                  now.timeIntervalSince(cleared) > Self.clearedKept,
+                  (try? FileManager.default.removeItem(at: directory)) != nil else { continue }
+            clearedFolders.forget(record.id)
             requests[record.id] = nil
             for reply in own {
                 replies[reply.id] = nil
@@ -811,9 +817,9 @@ final class ScreenshotRequests {
         return true
     }
 
-    private func cleanup(_ id: String, inventory: ScreenshotWatcher.Inventory? = nil) {
+    private func cleanup(_ id: String, replies own: [Reply]? = nil, inventory: ScreenshotWatcher.Inventory? = nil) {
         guard requests[id]?.status == .cleared else { return }
-        for reply in replies.values where reply.requestID == id && !reply.isPresented {
+        for reply in own ?? Array(replies.values) where reply.requestID == id && !reply.isPresented {
             if reply.stage == .cancelled, reply.errorCode == "request-cleared", reply.needsOutputCleanup == false,
                !pendingCleanupWrites.contains(reply.id) { continue }
             pendingImports.removeAll { $0 == reply.id }
@@ -845,13 +851,7 @@ final class ScreenshotRequests {
             }
             catch { Log.write("[requests] error cleanup-state \(id): \(error.localizedDescription)") }
         }
-        let directory = ReplyProtocol.requestDirectory(root: root, requestID: id)
-        for name in ["image.png", "submissions"] {
-            let url = directory.appendingPathComponent(name)
-            guard FileManager.default.fileExists(atPath: url.path) else { continue }
-            do { try FileManager.default.removeItem(at: url) }
-            catch { Log.write("[requests] error cleanup \(id): \(error.localizedDescription)") }
-        }
+        clearedFolders.removePayloads(of: id)
     }
 
     // MARK: The state report
@@ -886,6 +886,7 @@ final class ScreenshotRequests {
     private func write(_ record: Record) throws {
         let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        clearedFolders.forget(record.id)
         try encode(record, to: directory.appendingPathComponent(Self.recordFileName))
     }
 
@@ -925,10 +926,4 @@ final class ScreenshotRequests {
         decoder.dateDecodingStrategy = .iso8601
         return try? decoder.decode(T.self, from: data)
     }
-}
-
-extension String {
-    /// The words with one space between each, whatever line breaks, tabs or spaces were there: what
-    /// the line Send puts in a session can hold, since the plugin's monitor makes each line one message.
-    var asOneLine: String { split(whereSeparator: \.isWhitespace).joined(separator: " ") }
 }

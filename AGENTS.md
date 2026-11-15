@@ -24,7 +24,7 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   `AppleScreencapture.swift`, `DebugPanel.swift` or `ThisMac.swift`, or adding a number a person
   might tune, read `docs/rules/settings.md`.
 - Before changing the shortcut, the watcher or a screenshot's file (`HotKey*.swift`,
-  `ModifierTap.swift`, `KeyMonitors.swift`, `CaptureOrigin.swift`, `ScreenshotWatcher.swift`,
+  `ModifierTap.swift`, `KeyMonitors.swift`, `CaptureOrigin.swift`, `ScreenshotWatcher*.swift`,
   `ScreenshotKey.swift`, `Screenshot.swift`, `FolderWrites.swift`), or how a recording or an
   iCloud file is read, read `docs/rules/capture.md`.
 - Before changing setup, the Settings window or the menu bar icon (`Setup*.swift`,
@@ -63,7 +63,7 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
 - `docs/codex-issues.md` tracks the known problems with Codex and the Codex app, with a progress log.
   Read it before changing anything that talks to Codex, and add to it what you find or fix.
 - Before changing `ScreenshotRequests.swift`, read `docs/rules/send.md` and
-  `docs/rules/replies.md`. Before changing a reply (`ScreenshotRequestRecords.swift`,
+  `docs/rules/replies.md`. Before changing a reply (`ScreenshotRequestRecords.swift`, `ClearedRequestFolders.swift`,
   `ReplyProtocol.swift`, `ReplyCommand.swift`, `skills/vignette/scripts/reply`), read
   `docs/rules/replies.md`, and `docs/rules/agent-push.md` for a reply's title.
 - Before changing the `add` command, `Agent.swift`, `AgentTitle.swift`, `AgentTitleView.swift`,
