@@ -71,6 +71,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// The last session list, which a change in whether Claude can answer resolves again.
     private var candidates: DestinationChoice.Candidates?
     private(set) var closing = false
+    var promptWaiting: Task<Void, Never>?
     /// Waiting to look as the conversation does before handing over to it, which `fadeAway` can stop.
     private var handingOver = false
     private var revealed = false
@@ -278,7 +279,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     /// The list of targets, under the target, or beside the note when the screen has no room below it,
     /// so it never covers the words being typed.
-    private func showTargets() {
+    func showTargets() {
         guard let window = content.window else { return }
         let menu = NSMenu()
         for responder in responders {
@@ -466,28 +467,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         watching = []
     }
 
-    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
-        switch selector {
-        case #selector(NSResponder.insertNewline(_:)):
-            send()
-            return true
-        case #selector(NSResponder.cancelOperation(_:)):
-            onEscape?()
-            return true
-        case #selector(NSResponder.moveDown(_:)):
-            showTargets()
-            return true
-        case #selector(NSResponder.insertTab(_:)):
-            step(backward: false)
-            return true
-        case #selector(NSResponder.insertBacktab(_:)):
-            step(backward: true)
-            return true
-        default:
-            return false
-        }
-    }
-
     /// A click elsewhere took the keys: the note stays, inactive, with its words, target and caret. A
     /// turn later the keys go back to the person's app (`FocusReturn`), unless a Vignette window has them.
     private func resigned() {
@@ -496,7 +475,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         content.showsKeys(false, duration: Self.focusFade * Settings.shared.motionScale)
         DispatchQueue.main.async { if NSApp.keyWindow == nil { FocusReturn.shared.restore(reason: "live ink note") } }
         Log.write("[live-ink] note let go of the keys")
-        if !SystemPrompts.windowIDs().isEmpty { takeKeysAfterPrompts() }
+        if SystemPrompts.areUp { takeKeysAfterPrompts() }
     }
 
     /// Makes its window key, as the note asking for the keys.

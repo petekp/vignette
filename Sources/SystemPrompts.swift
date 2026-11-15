@@ -13,6 +13,14 @@ enum SystemPrompts {
         (info[kCGWindowOwnerName as String] as? String).map(owners.contains) ?? false
     }
 
+    /// One is on the screen, or its process holds the keys.
+    static var areUp: Bool { !windowIDs().isEmpty || isPromptApp(NSWorkspace.shared.frontmostApplication) }
+
+    /// `app` is one of their processes.
+    static func isPromptApp(_ app: NSRunningApplication?) -> Bool {
+        app?.executableURL.map { owners.contains($0.lastPathComponent) } ?? false
+    }
+
     /// The ones on the screen.
     static func windowIDs() -> Set<CGWindowID> {
         let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
