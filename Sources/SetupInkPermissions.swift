@@ -17,6 +17,7 @@ struct LiveInkSetupPage: View {
     private let recording = SetupInkGuide.Step.screenRecording
 
     private var screenRecordingSetUp: Bool { screenRecording && pickerQuestion == .answered }
+    private var waitsForPickerQuestion: Bool { screenRecording && pickerQuestion != .answered }
 
     var body: some View {
         VStack(spacing: 14) {
@@ -35,7 +36,7 @@ struct LiveInkSetupPage: View {
                     }
                     .screenSpot(accessibility.row, in: guide.spots)
                     PermissionRow(symbol: "rectangle.dashed.badge.record", title: "Screen Recording",
-                                  reason: screenRecording ? SetupInkCopy.pickerQuestionReason
+                                  reason: waitsForPickerQuestion ? SetupInkCopy.pickerQuestionReason
                                       : SetupInkCopy.screenRecordingReason(agent: responders.namedAgent),
                                   status: screenRecordingSetUp ? .granted : .ask,
                                   isDefault: trusted && !screenRecordingSetUp, busy: pickerQuestion == .waiting,
