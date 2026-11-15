@@ -188,15 +188,15 @@ final class TransitionLayer {
     /// the flight's place draws at the exact target, so it has to appear then or it steps by what
     /// the spring still had to go. A `caption` fades out from the flight's start.
     ///
-    /// A flight moves by `ui.flightTiming` over `ui.expandDuration`. With `spring`, it moves on a
-    /// spring of that many seconds with no bounce instead: the curve a card slides out of the column on.
+    /// A flight moves by `ui.flightTiming` over `ui.expandDuration`. With `spring`, it moves on
+    /// `FlightTiming.slideOut` over that many seconds instead.
     func fly(id: UUID, image: NSImage, marks: MarkLayers? = nil, caption: Caption? = nil, from: NSRect, to: NSRect,
              leavingAnnotator: Bool = false, lookFrom: Look, lookTo: Look, spring: Double? = nil, on screen: NSScreen,
              covered: @escaping () -> Void = {}, arrived: @escaping () -> Void = {}, dropped: (() -> Void)? = nil) {
         let ui = Settings.shared.motionUI
         showPanel(on: screen)
         let duration = spring ?? ui.expandDuration
-        let timing = spring == nil ? FlightTiming(ui) : .springNoBounce
+        let timing = spring == nil ? FlightTiming(ui) : .slideOut
         // At most half the flight, so the title is gone well before the card lands over the stack.
         let fade = min(ui.agentTitleFade, duration / 2)
         let gen = start(id: id, image: image, marks: marks, caption: fade > 0 ? caption : nil, leavingAnnotator: leavingAnnotator,

@@ -1,33 +1,49 @@
 import SwiftUI
 
-/// How every flight moves down its path and comes to rest, from `ui.flightTiming`. Each is a spring,
-/// so a flight aimed somewhere else in mid-air keeps its velocity.
+/// How a flight moves down its path and comes to rest. Each is a spring, so a flight aimed somewhere
+/// else in mid-air keeps its velocity.
 @MainActor
-enum FlightTiming: String, CaseIterable {
-    /// A shorter spring with a little bounce. It first reaches its target when `spring` does, and
-    /// passes it by 0.04% of the path, under half a point on a flight across a laptop's screen.
-    case quickSpring
-    /// `ui.expandDuration` with `Anim.flightBounce`. It passes its target by 0.6% of the path, which
-    /// shows as a card growing past the annotator's frame and shrinking back.
-    case spring
-    /// `ui.expandDuration` with no bounce. It covers the target only once it is within half a point,
-    /// about twice as late as the others.
-    case springNoBounce
+struct FlightTiming {
+    /// The timings `ui.flightTiming` picks from.
+    enum Choice: String, CaseIterable {
+        case quickSpring
+        case spring
 
-    init(_ ui: UITweaks) { self = Self(rawValue: ui.flightTiming) ?? Self(rawValue: UITweaks().flightTiming)! }
-
-    private var bounce: Double {
-        switch self {
-        case .quickSpring: return 0.07
-        case .spring: return Anim.flightBounce
-        case .springNoBounce: return 0
+        var timing: FlightTiming {
+            switch self {
+            case .quickSpring: return .quickSpring
+            case .spring: return .spring
+            }
         }
     }
 
-    /// The spring's own duration for a flight of `duration`. The quick spring's share puts the moment
+    /// A shorter spring with a little bounce. It first reaches its target when `spring` does, and
+    /// passes it by 0.04% of the path, under half a point on a flight across a laptop's screen.
+    static let quickSpring = FlightTiming(bounce: 0.07, durationShare: 0.6527)
+    /// `ui.expandDuration` with `Anim.flightBounce`. It passes its target by 0.6% of the path, which
+    /// shows as a card growing past the annotator's frame and shrinking back.
+    static let spring = FlightTiming(bounce: Anim.flightBounce, durationShare: 1)
+    /// No bounce: the curve a card slides out of the column on, which an image leaving with the
+    /// column follows (`TransitionLayer.fly`'s `spring`). It covers its target only once it is within
+    /// half a point.
+    static let slideOut = FlightTiming(bounce: 0, durationShare: 1)
+
+    private let bounce: Double
+    /// The spring's own duration as a share of the flight's. The quick spring's share puts the moment
     /// it first reaches its target where `spring`'s is.
+    private let durationShare: Double
+
+    private init(bounce: Double, durationShare: Double) {
+        self.bounce = bounce
+        self.durationShare = durationShare
+    }
+
+    init(_ ui: UITweaks) {
+        self = (Choice(rawValue: ui.flightTiming) ?? Choice(rawValue: UITweaks().flightTiming)!).timing
+    }
+
     private func springDuration(_ duration: Double) -> Double {
-        self == .quickSpring ? duration * 0.6527 : duration
+        duration * durationShare
     }
 
     func animation(_ duration: Double) -> Animation {

@@ -83,7 +83,7 @@ struct UITweaks: Codable, Equatable {
     var flightArc = 0.15             // how far the path bows, as a fraction of its length
     var flightArcMax = 240.0         // the bow never exceeds this many points
     var flightDepth = 0.07           // how much larger the card is in the middle of the path
-    var flightTiming = "quickSpring" // quickSpring, spring, springNoBounce: how a flight moves and comes to rest (FlightTiming)
+    var flightTiming = "quickSpring" // quickSpring or spring: how a flight moves and comes to rest (FlightTiming.Choice)
     var motion = 1.0                 // multiplier on every animation, 0 to 1; Reduce Motion forces 0
     // Backdrop
     var backdropWidth = 160.0

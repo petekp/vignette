@@ -20,15 +20,18 @@
   shadow is never drawn twice and never missing for a frame.
 - Nothing takes a flight's place until it has arrived; the annotator hides behind it before then. A
   spring's tail runs well past its nominal duration, so anything put at the exact target on a timer
-  steps by what the spring still had to go. Every flight moves by `ui.flightTiming` (`FlightTiming`),
-  but an image that leaves with a dismissed column, which moves on the slide-out's spring with no
-  bounce over `ui.slideOutDuration` (`fly`'s `spring`). Each choice is a SwiftUI spring, so a flight re-aimed in mid-air keeps its velocity. The
+  steps by what the spring still had to go. Every flight moves by `ui.flightTiming`
+  (`FlightTiming.Choice`), which is `quickSpring` or `spring`, but an image that leaves with a
+  dismissed column. That one moves on `FlightTiming.slideOut`, the column's own slide-out spring
+  with no bounce, over `ui.slideOutDuration` (`fly`'s `spring`). No setting picks `slideOut`, and a
+  settings.json naming any other value gets the default. Each timing is
+  a SwiftUI spring, so a flight re-aimed in mid-air keeps its velocity. The
   default, `quickSpring`, has a bounce of 0.07 over 0.65 of `ui.expandDuration`, tuned to first
   reach its target when `spring` does (0.27 s at the default 0.35 s). It passes the target by 0.04%
   of the path, under half a point across a laptop's screen. `spring` has `Anim.flightBounce` over
   the whole duration and passes by 0.6%, about 7 points that shrink back over its last 0.2 s.
-  `springNoBounce` never passes it and covers it only at 0.57 s. `fly` answers on `arrived` once
-  the flight is within half a point of the target (`Anim.settle`), and no sooner than 50 ms, three
+  `slideOut` never passes its target, so it covers it only once it is within half a point. `fly`
+  answers on `arrived` once the flight is within half a point of the target (`Anim.settle`), and no sooner than 50 ms, three
   refreshes at 60 Hz, after it covers the target, with the flight put exactly on it in that turn:
   the card retakes its slot, and the annotator takes the shadow back
   (`AnnotationController.landed`). The flight into the editor lifts at the last of three moments,
