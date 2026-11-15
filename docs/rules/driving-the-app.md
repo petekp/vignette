@@ -7,7 +7,11 @@
    Aim each command at your own build with `open -g -a`, as `AGENTS.md` says.
    A relaunch from `open` carries no `VIGNETTE_SETTINGS`, so it runs on the user's real settings
    and folder, and when another copy of the bundle id is running `open -a <path>` can launch that
-   copy instead of the path given; running `<app>/Contents/MacOS/Vignette` directly always lands on
+   copy instead of the path given. Launch a test copy only with an explicit
+   `open -g --env VIGNETTE_SETTINGS=<path> --env CFFIXED_USER_HOME=<home> <app>`, never on the
+   `LSEnvironment` in its Info.plist alone: on 2026-11-14 a bare `open -g` of a copy rebuilt in
+   place ran without its `LSEnvironment`, so it was not a test launch, and it showed setup and
+   watched the user's own screenshot folder. Running `<app>/Contents/MacOS/Vignette` directly always lands on
    the path given. That last one is the wrong way to test anything about permissions: a process
    launched from the terminal is attributed to the terminal, so the app inherits its Accessibility
    trust and reports itself trusted with no entry of its own in the TCC database (measured
