@@ -22,6 +22,8 @@ extension SessionMenu {
     static func item(for row: Row, selected: Bool) -> NSMenuItem {
         let item = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
         item.image = logo(for: row.destination.client)
+        // From macOS 27 AppKit hides an item's image unless the item asks for it.
+        if #available(macOS 27.0, *) { item.preferredImageVisibility = .visible }
         item.state = selected ? .on : .off
         item.toolTip = row.tooltip
         if #available(macOS 14.4, *), !row.subtitle.isEmpty { item.subtitle = row.subtitle }
