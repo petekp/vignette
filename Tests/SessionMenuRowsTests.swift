@@ -45,10 +45,16 @@ final class SessionMenuRowsTests: XCTestCase {
         XCTAssertGreaterThan(SessionMenu.subtitleWidth(of: wide), 250)
         XCTAssertGreaterThanOrEqual(ends.first!, SessionMenu.subtitleWidth(of: wide), "the words end at the right of a wider row without words")
         for row in rows {
-            let words = row.attributedTitle!.string.components(separatedBy: "\t")
+            let lines = row.attributedTitle!.string.components(separatedBy: "\n")
+            let words = lines[0].components(separatedBy: "\t")
             let title = (words[0] as NSString).size(withAttributes: [.font: NSFont.menuFont(ofSize: 0)]).width
-            let indicator = NSAttributedString(attributedString: row.attributedTitle!.attributedSubstring(from: NSRange(location: words[0].count + 1, length: row.attributedTitle!.length - words[0].count - 1))).size().width
-            XCTAssertGreaterThanOrEqual(ends.first! - indicator, title + SessionMenu.indicatorGap, row.title)
+            let indicator = row.attributedTitle!.attributedSubstring(from: NSRange(location: words[0].count + 1, length: lines[0].count - words[0].count - 1)).size().width
+            XCTAssertGreaterThanOrEqual(ends.first! - indicator, title + SessionMenu.indicatorGap, row.text)
+            row.drawsHighlighted = true
+            row.render()
+            XCTAssertNotNil(row.secondLine)
+            XCTAssertEqual(row.attributedTitle!.string.components(separatedBy: "\n").last, row.secondLine, "a new title keeps the second line")
+            if #available(macOS 14.4, *) { XCTAssertNil(row.subtitle, "AppKit would draw a subtitle twice") }
         }
         let quiet = AgentDestination(id: "d", name: "Fix", address: .claudeSession("d"), lastUsed: nil, place: .folder(fromHome: "~/Code"))
         let plain = NSMenu()
