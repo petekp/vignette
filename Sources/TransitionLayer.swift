@@ -187,20 +187,24 @@ final class TransitionLayer {
     /// behind it. `arrived` runs when the spring has really settled on the target; whatever takes
     /// the flight's place draws at the exact target, so it has to appear then or it steps by what
     /// the spring still had to go. A `caption` fades out from the flight's start.
+    ///
+    /// A flight moves by `ui.flightTiming` over `ui.expandDuration`. With `spring`, it moves on a
+    /// spring of that many seconds with no bounce instead: the curve a card slides out of the column on.
     func fly(id: UUID, image: NSImage, marks: MarkLayers? = nil, caption: Caption? = nil, from: NSRect, to: NSRect,
-             leavingAnnotator: Bool = false, lookFrom: Look, lookTo: Look, on screen: NSScreen, covered: @escaping () -> Void = {},
-             arrived: @escaping () -> Void = {}, dropped: (() -> Void)? = nil) {
+             leavingAnnotator: Bool = false, lookFrom: Look, lookTo: Look, spring: Double? = nil, on screen: NSScreen,
+             covered: @escaping () -> Void = {}, arrived: @escaping () -> Void = {}, dropped: (() -> Void)? = nil) {
         let ui = Settings.shared.motionUI
         showPanel(on: screen)
+        let duration = spring ?? ui.expandDuration
+        let timing = spring == nil ? FlightTiming(ui) : .springNoBounce
         // At most half the flight, so the title is gone well before the card lands over the stack.
-        let fade = min(ui.agentTitleFade, ui.expandDuration / 2)
+        let fade = min(ui.agentTitleFade, duration / 2)
         let gen = start(id: id, image: image, marks: marks, caption: fade > 0 ? caption : nil, leavingAnnotator: leavingAnnotator,
                         from: from, to: to, look: lookFrom, ui: ui, dropped: dropped)
         let travel = max(abs(to.minX - from.minX), abs(to.minY - from.minY),
                          abs(to.width - from.width), abs(to.height - from.height))
-        let timing = FlightTiming(ui)
-        let settleTime = timing.settles(ui.expandDuration, distance: travel, within: Self.arrivalTolerance)
-        let coverTime = timing.covers(ui.expandDuration, distance: travel, within: Self.arrivalTolerance)
+        let settleTime = timing.settles(duration, distance: travel, within: Self.arrivalTolerance)
+        let coverTime = timing.covers(duration, distance: travel, within: Self.arrivalTolerance)
         let aspect = lookTo.aspect(of: image, in: to)
         // The starting state has to be committed before the animated change, or it starts at `to`.
         // The annotator's `Removal` hides its frame and the title on this same turn, so the flight
@@ -208,7 +212,7 @@ final class TransitionLayer {
         DispatchQueue.main.async { [weak self] in
             guard let self, let i = self.model.flights.firstIndex(where: { $0.id == id }), self.model.flights[i].generation == gen else { return }
             if self.model.flights[i].leavingAnnotator { self.annotatorStoppedDrawing() }
-            withAnimation(timing.animation(ui.expandDuration)) {
+            withAnimation(timing.animation(duration)) {
                 self.model.flights[i].frame = self.local(to)
                 self.model.flights[i].look = lookTo
                 self.model.flights[i].aspect = aspect
@@ -342,6 +346,11 @@ final class TransitionLayer {
         return gen
     }
 
+    /// Whether `id` has a flight in the air or resting on its target.
+    func isFlying(_ id: UUID) -> Bool {
+        model.flights.contains { $0.id == id }
+    }
+
     /// The marks the flight `id` shows, while it is in the air.
     func marks(of id: UUID) -> MarkLayers? {
         model.flights.first { $0.id == id }?.marks
@@ -456,16 +465,4 @@ final class TransitionLayer {
     }
 
     private func center(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.midY) }
-}
-
-/// The panel's content. The window server gives the panel only the presses on a flight's pixels,
-/// so it takes every press it gets, with the drag and the release that follow, and none reaches
-/// the flights' SwiftUI views.
-private final class PressCatcher: NSView {
-    var onEvent: ((NSEvent) -> Void)?
-    override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func mouseDown(with event: NSEvent) { onEvent?(event) }
-    override func mouseDragged(with event: NSEvent) { onEvent?(event) }
-    override func mouseUp(with event: NSEvent) { onEvent?(event) }
 }

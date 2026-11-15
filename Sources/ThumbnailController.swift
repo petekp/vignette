@@ -80,6 +80,8 @@ final class ThumbnailController {
     private var sessionCard: Card?
     private var annotating: Card? { run.isActive ? sessionCard : nil }
     private var annotationFrame: NSRect = .zero
+    /// The editor's card and its offscreen slot as the column slides out.
+    private var leavingWithColumn: (id: UUID, to: NSRect)?
     /// The editor's marks as its park left them, until the flight home has taken their texts. The
     /// editor lets them go once it is hidden, which is before the card is sent home.
     private var parkedMarks: MarkLayers?
@@ -690,18 +692,14 @@ final class ThumbnailController {
             for id in model.forming { flights.end(id: id) }
             model.forming = []
         }
-        if let card = annotating, model.cards.contains(where: { $0.id == card.id }) {
-            // The image in the annotator leaves with the column while the annotator parks its drawing.
-            var slot = cardFrame(of: card)
-            slot.origin.x += layout.offscreenDistance(cardWidth: slot.width)
-            flights.fly(id: card.id, image: flightImages.image(for: currentCard(card)), marks: homeFlightMarks(for: currentCard(card)),
-                        caption: annotatorTitle(card.shot.key), from: annotationFrame, to: slot,
-                        leavingAnnotator: true, lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
-                self?.flights.end(id: card.id)
-            })
+        // An image flying home leaves too: a click outside can close the editor first.
+        for card in model.cards where card.id != annotating?.id && model.outCards.contains(card.id) && flights.isFlying(card.id) {
+            leaveWithColumn(card, to: layout.offscreen(cardFrame(of: card)), marks: flights.marks(of: card.id))
         }
-        // Before the event: a park that answers in the same turn hides the annotator, and that must
-        // leave the flight just aimed offscreen to the slide-out.
+        // The editor's image goes once the editor is down, after any fit-out.
+        leavingWithColumn = annotating.flatMap { card in
+            model.cards.contains { $0.id == card.id } ? (card.id, layout.offscreen(cardFrame(of: card))) : nil
+        }
         model.slidingOut = true
         if run.isActive { send(.dismiss(reason == .quickDone ? .finished : nil)) }
         // Cards leave the way they came, newest first (see CardView). The selection stays in the
@@ -723,6 +721,16 @@ final class ThumbnailController {
             self.pinnedScreen = nil
             self.keys.send(.slidOut)
         }
+    }
+
+    /// Flies `card`'s image to `slot` on the column's spring.
+    private func leaveWithColumn(_ card: Card, to slot: NSRect, marks: MarkLayers?) {
+        Log.write("[stack] leaves with the column \(card.shot.key.name)")
+        flights.fly(id: card.id, image: flightImages.image(for: currentCard(card)), marks: marks, caption: annotatorTitle(card.shot.key),
+                    from: annotationFrame, to: slot, leavingAnnotator: true, lookFrom: .annotator(ui), lookTo: .card(ui),
+                    spring: ui.slideOutDuration, on: screen, arrived: { [weak self] in
+            self?.flights.end(id: card.id)
+        })
     }
 
     // MARK: Annotation run. The run decides; this section only runs its effects.
@@ -810,7 +818,7 @@ final class ThumbnailController {
             flights.annotatorStoppedDrawing()   // it draws this image from here, so not the one leaving
             onAnnotatorPrepare?(card.shot, opening, target, annotatorRoom)
             var from = slot ?? cardFrame(of: card)
-            if model.offscreen.contains(card.id) { from.origin.x += layout.offscreenDistance(cardWidth: from.width) }
+            if model.offscreen.contains(card.id) { from = layout.offscreen(from) }
             // A capture starts where it was taken, looking like the screen there. The flight is
             // drawn on one screen, so a capture on another one starts at its card. A window's
             // shadow may run past the screen's edge, where the flight is cut off as the shadow was.
@@ -856,13 +864,14 @@ final class ThumbnailController {
             guard let card = sessionCard, card.shot.key == opening.key else { return }
             returnCard(currentCard(card), copied: copied)
         case .hideAnnotator:
-            // While the column slides out, the image is flying to its slot's offscreen position
-            // (see `dismiss`); that flight ends itself, and the slide-out's completion clears the card.
-            // A lone thumbnail that left the panel has no such flight.
-            if let card = sessionCard, !(model.slidingOut && model.cards.contains(where: { $0.id == card.id })) {
+            // The image follows its slot off the screen, unless the stack came back during a fit-out.
+            if let card = sessionCard, let leaving = leavingWithColumn, leaving.id == card.id, !visible {
+                leaveWithColumn(card, to: leaving.to, marks: homeFlightMarks(for: currentCard(card)))
+            } else if let card = sessionCard {
                 model.outCards.remove(card.id)
                 flights.end(id: card.id)
             }
+            leavingWithColumn = nil
             parkedMarks = nil
         case .join:
             break   // `show(_:)` inserts the card; the run only confirms the annotator stays open.
@@ -940,8 +949,7 @@ final class ThumbnailController {
         // Esc during the flight out: the card has not left the panel yet (see `.show`).
         if model.cards.contains(where: { $0.id == card.id }) { takeOutOfPanel(card) }
         areaReader.read(on: screen, layout: layout)
-        var slot = layout.loneCardFrame(size: card.size, area: area)
-        slot.origin.x += layout.offscreenDistance(cardWidth: slot.width)
+        let slot = layout.offscreen(layout.loneCardFrame(size: card.size, area: area))
         flights.fly(id: card.id, image: flightImages.image(for: card), marks: homeFlightMarks(for: card), caption: annotatorTitle(card.shot.key),
                     from: annotationFrame, to: slot, leavingAnnotator: true, lookFrom: .annotator(ui), lookTo: .card(ui), on: screen, arrived: { [weak self] in
             self?.flights.end(id: card.id)

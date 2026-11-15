@@ -10,6 +10,11 @@ extension StackLayout {
         offscreenDistance(cardWidth: columnWidth + stripGap + stripWidth + stripReveal(rows: StackLayout.stripRows))
     }
 
+    /// Where a card resting at `slot` is once it has slid off the screen's edge.
+    func offscreen(_ slot: CGRect) -> CGRect {
+        slot.offsetBy(dx: offscreenDistance(cardWidth: slot.width), dy: 0)
+    }
+
     /// How far the column can move away from the screen's edge before the panel cuts off the
     /// widest card's shadow: the inset, less the shadow's blur, which spreads about twice its radius.
     var pullRoom: CGFloat { max(0, inset - ui.cardShadowRadius * 2) }
