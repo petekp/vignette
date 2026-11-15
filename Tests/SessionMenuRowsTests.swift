@@ -32,5 +32,11 @@ final class SessionMenuRowsTests: XCTestCase {
                        "a second line far wider than its title")
         XCTAssertEqual(height(title: String(repeating: "a long title ", count: 10), folder: "~/" + String(repeating: "worktree-", count: 30)), twoLines,
                        "a second line wider than a long title")
+        let problem = "Claude Code is not signed in. Run claude in a terminal and sign in, then try the note again."
+        let responder = LiveNotePopover.Responder(client: .claude, name: "Claude Code", problem: problem, canPick: false)
+        let menu = NSMenu()
+        menu.addItem(LiveNotePopover.item(for: responder, selected: false, action: #selector(NSObject.copy), target: self))
+        XCTAssertEqual(menu.size.height, twoLines, "a responder that cannot answer, with a long reason")
+        XCTAssertEqual(menu.items[0].toolTip, problem)
     }
 }

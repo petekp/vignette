@@ -46,21 +46,24 @@ extension SessionMenu {
         return cut(low)
     }
 
+    /// Sets `text` as the item's second line, cut to the width AppKit draws on one line. Before
+    /// macOS 14.4 an item has no subtitle, and the tooltip is all there is.
+    @MainActor
+    static func setSubtitle(_ text: String, on item: NSMenuItem) {
+        guard #available(macOS 14.4, *) else { return }
+        let titleDrawn = (item.title as NSString).size(withAttributes: [.font: NSFont.menuFont(ofSize: 0)]).width
+        item.subtitle = fitted(text, width: max(titleDrawn, subtitleWidth), font: .systemFont(ofSize: NSFont.smallSystemFontSize))
+    }
+
     /// One row as an item: the agent's logo, its title, a second line, and a badge, each on one line.
-    /// Before macOS 14.4 an item has no subtitle, so the tooltip, which holds the second line, is
-    /// all there is.
     @MainActor
     static func item(for row: Row, selected: Bool) -> NSMenuItem {
-        let titleFont = NSFont.menuFont(ofSize: 0)
-        let title = fitted(row.title, width: titleWidth, font: titleFont)
+        let title = fitted(row.title, width: titleWidth, font: .menuFont(ofSize: 0))
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         showLogo(of: row.destination.client, on: item)
         item.state = selected ? .on : .off
         item.toolTip = row.tooltip
-        if #available(macOS 14.4, *), !row.subtitle.isEmpty {
-            let titleDrawn = (title as NSString).size(withAttributes: [.font: titleFont]).width
-            item.subtitle = fitted(row.subtitle, width: max(titleDrawn, subtitleWidth), font: .systemFont(ofSize: NSFont.smallSystemFontSize))
-        }
+        if !row.subtitle.isEmpty { setSubtitle(row.subtitle, on: item) }
         if let badge = row.badge { item.badge = NSMenuItemBadge(string: badge) }
         return item
     }
