@@ -7,7 +7,8 @@ import QuartzCore
 /// lit at once show it in the same place, which is what lets the note hand over to its conversation
 /// unseen. It is a blob of light moving along the rim at an even pace, seen only through a thin ring
 /// at the edge and, fainter, through a wider one for its glow. White on a dark popover, the ink's ice
-/// blue (`ui.inkGelLight`) on a light one, where white would not show. With motion off the ring glows dimly and holds.
+/// blue (`ui.inkGelLight`) on a light one, where white would not show. `ui.thinkingRimBrightness` is its
+/// opacity. With motion off the ring glows dimly and holds.
 @MainActor
 final class RimLight: CALayer {
     private var lit = false
@@ -29,7 +30,8 @@ final class RimLight: CALayer {
     static let beatsPerLap: Double = 2
     /// How wide the light is along the rim, in points.
     private static let blob: CGFloat = 96
-    /// The ring's opacity while it holds, with motion off.
+    /// The ring's opacity while it holds, with motion off, as a share of its brightness
+    /// (`ui.thinkingRimBrightness`).
     private static let still: Float = 0.35
 
     /// Lays the rim round `bounds`, in its superlayer's coordinates, starting at `start`, the point on
@@ -48,11 +50,14 @@ final class RimLight: CALayer {
     /// Turns the light on or off, fading as the light on the ink does, or at once with `fades` off,
     /// for a popover that comes up lit, taking over from one that was.
     func think(_ on: Bool, fades: Bool = true) {
-        guard on != lit else { return }
+        let brightness = Float(Settings.shared.data.ui.thinkingRimBrightness)
+        let target: Float = on ? brightness * (Settings.shared.motionScale == 0 ? Self.still : 1) : 0
+        // Lit already, only a change of brightness in the tweaks is shown.
+        guard on != lit || (on && opacity != target) else { return }
+        let turning = on != lit
         lit = on
         let fade = fades ? LiveMarksLayer.thinkingFade * Settings.shared.motionScale : 0
-        let target: Float = on ? (Settings.shared.motionScale == 0 ? Self.still : 1) : 0
-        if on { build() }
+        if on && turning { build() }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         let from = presentation()?.opacity ?? opacity
