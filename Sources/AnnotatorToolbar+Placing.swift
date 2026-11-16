@@ -9,29 +9,31 @@ extension AnnotatorToolbar {
     /// with the image's height. It also cancels a `hideSoon` waiting its turn: this bar is wanted.
     func place(below frame: NSRect, gap: CGFloat) {
         placedBelow = (frame, gap)
-        carriedTop = nil
+        carried = nil
         hideGeneration += 1
         position(slide: true)
     }
 
-    /// Puts the bar's top edge at `top` at once, under the frame `place` was given: a zoomed frame
-    /// carries the bar down as it grows towards it, and back up as it comes home. At once, with no
-    /// spring of its own, since the frame it follows is already on one. A top at or above the bar's
-    /// place is the place itself, and a bar already there is left alone, slide and all. `fitted` is
-    /// the fitted frame the zoom is growing from: a bar placed under another frame, the last image's
-    /// before a swap's `place`, is not the one this top belongs to, and is left to slide.
-    func follow(top: CGFloat, fitted: NSRect) {
+    /// Puts the middle of the bar's top edge at `center` and `top` at once: a zoomed frame carries
+    /// the bar down as it grows towards it, and back up as it comes home, and a re-fit carries it
+    /// from under the frame's last place to under its new one. At once, with no spring of its own,
+    /// since the frame it follows is already on one. The bar's place under the frame `place` was
+    /// given is nil, and a bar already there is left alone, slide and all. `fitted` is the fitted
+    /// frame the zoom is growing from: a bar placed under another frame, the last image's before a
+    /// swap's `place`, is not the one this point belongs to, and is left to slide.
+    func follow(top: CGFloat, center: CGFloat, fitted: NSRect) {
         guard let (frame, gap) = placedBelow, frame == fitted else { return }
-        let placed = frame.minY - gap
-        let carried = top < placed ? top : nil
-        guard carried != carriedTop else { return }
-        carriedTop = carried
+        let place = NSPoint(x: frame.midX, y: frame.minY - gap)
+        let point = NSPoint(x: center, y: top)
+        let next = point == place ? nil : point
+        guard next != carried else { return }
+        carried = next
         sliding = false
         slideX.stop(); slideY.stop()
-        let barTop = carried ?? placed
-        panel.setFrameOrigin(Self.rect(center: frame.midX, top: barTop + Self.padding + Self.messageRoom,
+        let at = next ?? place
+        panel.setFrameOrigin(Self.rect(center: at.x, top: at.y + Self.padding + Self.messageRoom,
                                        size: panel.frame.size).origin)
-        noteRoomBelow(barTop: barTop, x: frame.midX)
+        noteRoomBelow(barTop: at.y, x: at.x)
     }
 
     func position(slide: Bool) {
@@ -42,8 +44,8 @@ extension AnnotatorToolbar {
         // presses through. A new session starts at the bar's own width.
         let up = model.shown && panel.isVisible
         let size = NSSize(width: up ? max(fit.width, panel.frame.width) : fit.width, height: fit.height)
-        let barTop = carriedTop ?? frame.minY - gap
-        let center = frame.midX, top = barTop + Self.padding + Self.messageRoom
+        let barTop = carried?.y ?? frame.minY - gap
+        let center = carried?.x ?? frame.midX, top = barTop + Self.padding + Self.messageRoom
         noteRoomBelow(barTop: barTop, x: center)
         guard slide, up else {
             sliding = false

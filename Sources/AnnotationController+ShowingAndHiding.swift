@@ -104,6 +104,11 @@ extension AnnotationController {
         revealTitle(.landed(at: CACurrentMediaTime()))
     }
 
+    /// The flight's image is gone, lifted or dropped: only the window draws the image now.
+    func lifted() {
+        run(.lifted)
+    }
+
     /// The file in the editor was renamed. The editor's drawing follows through `Drawings.rename`.
     func renamed(to shot: Screenshot, opening: Opening) {
         guard current != nil, self.opened == opening else { return }
@@ -151,20 +156,33 @@ extension AnnotationController {
         if let drawing = editor.park() { onDrawing?(drawing, "parked") }
     }
 
-    /// Springs the level back to the fitted size and answers once it is there, so the window the
-    /// flight takes over from is the frame the flight starts at. The deadline brings the window down
-    /// even if the spring never reports arriving.
+    /// Springs the level back to the fitted size, and lets a re-fit on its way land, and answers
+    /// once both are there, so the window the flight takes over from is the frame the flight starts
+    /// at. The deadline brings the window down even if a spring never reports arriving.
     private func fitBeforeHide(_ done: @escaping () -> Void) {
-        guard case .spring(let level, let seconds)? = zoom.reduce(.close), window != nil else { done(); return }
+        let fit = zoom.reduce(.close)
+        guard window != nil else { done(); return }
+        var springs: [(Tween, CGFloat, Double)] = []
+        if case .spring(let level, let seconds)? = fit { springs.append((zoomTween, level, seconds)) }
+        if zoom.refitting { springs.append((refitTween, 1, AnnotatorZoom.stepSeconds)) }
+        guard let longest = springs.map(\.2).max() else { done(); return }
+        var waiting = springs.count
         var answered = false
         let once = { if !answered { answered = true; done() } }
-        zoomTween.animate(to: level, duration: motionScaled(seconds), completion: once)
-        DispatchQueue.main.asyncAfter(deadline: .now() + motionScaled(seconds) + 0.3) { once() }
+        // At motion 0 a spring arrives inside `animate`, so the count is set before either starts.
+        for (tween, target, seconds) in springs {
+            tween.animate(to: target, duration: motionScaled(seconds)) {
+                waiting -= 1
+                if waiting == 0 { once() }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + motionScaled(longest) + 0.3) { once() }
     }
 
     private func hideWindows() {
         // Nothing here is on screen any more: a spring still ticking would move a hidden frame.
         zoomTween.stop()
+        refitTween.stop()
         // `hideSoon` takes the bar down only if no other image has asked for it by the next turn
         // of the run loop.
         toolbar.hideSoon()

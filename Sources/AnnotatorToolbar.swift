@@ -223,8 +223,8 @@ final class AnnotatorToolbar {
     private var heldLetter: NSEvent?
     /// Where `place` last put the bar, so a bar whose contents change width can centre again.
     var placedBelow: (frame: NSRect, gap: CGFloat)?
-    /// The top edge a zoomed frame has carried the bar down to (`follow`), or nil at its place.
-    var carriedTop: CGFloat?
+    /// Where a zoom or re-fit put the middle of the bar's top edge (`follow`), nil at its place.
+    var carried: NSPoint?
 
     static let height: CGFloat = 44
     /// Room around the bar inside its panel for the shadow and the entrance motion.

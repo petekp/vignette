@@ -23,20 +23,10 @@ extension AnnotationController {
         titleView.show(false, duration: 0)
         titleView.set(title, ui: ui)
         revealTitle(title == nil ? .closed : .opened)
-        // The frame grows no higher than leaves the title on screen, with its margin above it. Its
-        // height at the fitted frame is the most it takes, since a wider frame wraps it onto fewer lines.
-        var room = room
-        if let title {
-            let wrap = StackLayout.titleWrapWidth(frame: frame, room: room, minimum: ui.agentTitleMinWidth,
-                                                  indent: ui.annotationCornerRadius)
-            let above = AgentTitleView.spaceAbove(title, wrap: wrap, ui: ui) + AgentTitleView.marginAbove(ui)
-            let top = max(frame.maxY, room.maxY - above)
-            room.size.height = top - room.minY
-        }
         zoom.edge = Self.edgePull(ui)
         let bar = self.bar
         toolbar.place(below: frame, gap: bar.margin)
-        run(.prepare(fitted: frame, room: room, bar: bar))
+        run(.prepare(fitted: frame, room: Self.room(room, below: title, over: frame, ui: ui), bar: bar))
         zoomTween.set(1)
         place(win, frame: frame)
         measureTitleInk()
@@ -47,6 +37,28 @@ extension AnnotationController {
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         open(shot, opening: opening, started: started)
+    }
+
+    /// The room changed under the open image: a Dock appeared, hid or moved, or a screen changed.
+    /// `frame` is where it fits now and `room` the rect it may grow within, as `prepare` takes them.
+    /// The zoom moves the frame there once the flight has landed (`AnnotatorZoom.refit`).
+    func refit(in frame: NSRect, room: NSRect) {
+        guard let shot = current else { return }
+        let title = Agent.title(of: shot.url)
+        run(.refit(fitted: frame, room: Self.room(room, below: title, over: frame, ui: Settings.shared.data.ui), bar: bar))
+    }
+
+    /// `room` less an agent's title above `frame` and its margin: the frame grows no higher than
+    /// leaves the title on screen. Its height at the fitted frame is the most it takes, since a
+    /// wider frame wraps it onto fewer lines.
+    private static func room(_ room: NSRect, below title: AgentTitle?, over frame: NSRect, ui: UITweaks) -> NSRect {
+        guard let title else { return room }
+        let wrap = StackLayout.titleWrapWidth(frame: frame, room: room, minimum: ui.agentTitleMinWidth,
+                                              indent: ui.annotationCornerRadius)
+        let above = AgentTitleView.spaceAbove(title, wrap: wrap, ui: ui) + AgentTitleView.marginAbove(ui)
+        var room = room
+        room.size.height = max(frame.maxY, room.maxY - above) - room.minY
+        return room
     }
 
     /// Opens the drawing with the screenshot's decode at the screen's size: the one a hovered card's

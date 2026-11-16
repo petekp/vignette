@@ -9,43 +9,6 @@ import CoreGraphics
 /// would grow under a flight image still at the fitted frame, and once the card is on its way home
 /// the window has to be at the frame the flight starts from.
 struct AnnotatorZoom: Equatable {
-    enum Input: Equatable {
-        case prepare(fitted: CGRect, room: CGRect, bar: ZoomBar)   // an image opens in `fitted`, with `bar` under it; the frame grows within `room`
-        case landed                                    // the flight put the image down
-        case zoomIn, zoomOut, fit                      // Cmd+Plus, Cmd+Minus, Cmd+0
-        case smart(at: CGPoint?)                       // a two-finger double tap, or a double-click on empty space
-        case pinch(by: CGFloat, at: CGPoint?)          // a pinch's magnification
-        case wheel(points: CGFloat, at: CGPoint?, fingers: Bool)   // a scroll with Cmd or Ctrl held
-        case lift                                      // the fingers left the trackpad
-        case pan(by: CGVector)                         // a plain scroll, in points
-        case reveal(CGRect, image: CGSize)             // the caret, in image px
-        case tick(CGFloat)                             // the spring's level now
-        case arrived                                   // the spring reached its target
-        case close                                     // the card is about to fly home
-    }
-
-    enum Effect: Equatable {
-        /// Carry the level to `to` on a spring of this many seconds, before the motion scale.
-        case spring(to: CGFloat, seconds: Double)
-        /// A tick: the frame on screen, the picture in the editor's coordinates, which run down from
-        /// the top of the frame, and the top edge of the bar under the frame. All three are set in
-        /// one turn of the run loop.
-        case place(frame: CGRect, picture: CGRect, barTop: CGFloat)
-        /// A pan: the picture moves and the frame stays.
-        case movePicture(CGRect)
-    }
-
-    enum Phase: Equatable {
-        case closed, flying, landed, closing
-    }
-
-    /// How far from each edge of the picture a zoom holds that edge, in points, and the part of that
-    /// band where it holds it exactly (`Zoom.pulledToEdges`).
-    struct EdgePull: Equatable {
-        var band: CGFloat
-        var pull: CGFloat
-    }
-
     var edge = EdgePull(band: 0, pull: 0)
     /// Device pixels per point on the screen the frame is on. A tick puts each edge of the frame on
     /// a pixel boundary, so the frame's 1 px border is drawn in whole pixels at every level rather
@@ -76,8 +39,19 @@ struct AnnotatorZoom: Equatable {
     private(set) var camera = Zoom.none
     /// The middle of the visible part of the image, as a fraction of it, y from the top.
     private(set) var center = Zoom.center
-    /// The frame on screen, as the last tick placed it.
+    /// The frame the rules put on screen at the level. During a re-fit the frame drawn is on its way
+    /// here from where it was (`placed`).
     private(set) var frame = CGRect.zero
+    /// What the last `.place` or `.movePicture` drew.
+    private(set) var placed = Placement(frame: .zero, picture: .zero, barTop: 0, barCenter: 0)
+    /// A room that changed while the flight's image was still drawn, taken once it has gone.
+    private var waitingFit: Fit?
+    private var flightLifted = false
+    /// What was drawn when the room last changed. Each tick draws `refitProgress` of the way from
+    /// here to where the rules put the frame now, so the move starts from what is on screen and a
+    /// zoom during it bends into it. Nil once the re-fit has landed.
+    private var refitFrom: Placement?
+    private var refitProgress: CGFloat = 1
 
     /// How far each side of the frame has grown past the fitted frame. 1 by 1 is the fitted frame.
     var window: CGSize { split(level).window }
@@ -85,6 +59,10 @@ struct AnnotatorZoom: Equatable {
     var anchor: CGPoint { aim.anchor(at: level) }
     /// The bar's top edge under the frame on screen.
     var barTop: CGFloat { Zoom.barTop(under: frame, fitted: fitted, bar: bar) }
+    /// The middle of the bar, as drawn: under the fitted frame, or on its way there in a re-fit.
+    var barCenter: CGFloat { placed.barCenter }
+    /// A re-fit is on its way: its spring has not reached 1.
+    var refitting: Bool { refitFrom != nil }
 
     /// Where the whole picture sits in the frame: magnified by `camera` and slid so that the part of
     /// the image `center` names fills it. In the editor's coordinates, which run down from the top.
@@ -126,10 +104,21 @@ struct AnnotatorZoom: Equatable {
         case .prepare(let fitted, let room, let bar):
             self = AnnotatorZoom(edge: edge, pixelScale: pixelScale, phase: .flying, fitted: fitted,
                                  room: Zoom.room(room, fitted: fitted, bar: bar), bar: bar, frame: fitted)
+            placed = Placement(frame: fitted, picture: picture, barTop: barTop, barCenter: fitted.midX)
             return nil
         case .landed:
-            if phase == .flying { phase = .landed }
-            return nil
+            guard phase == .flying else { return nil }
+            phase = .landed
+            return refitWaiting()
+        case .lifted:
+            flightLifted = true
+            return refitWaiting()
+        case .refit(let fitted, let room, let bar):
+            return refit(Fit(fitted: fitted, room: room, bar: bar))
+        case .refitTick(let progress):
+            guard refitFrom != nil, progress.isFinite else { return nil }
+            refitProgress = min(max(progress, 0), 1)
+            return tick(level)
         case .tick(let level):
             return tick(level)
         case .close:
@@ -160,7 +149,7 @@ struct AnnotatorZoom: Equatable {
             return panPicture(by: delta)
         case .reveal(let rect, let image):
             return reveal(rect, image: image)
-        case .prepare, .landed, .tick, .close:
+        case .prepare, .landed, .lifted, .refit, .refitTick, .tick, .close:
             return nil
         }
     }
@@ -190,8 +179,11 @@ struct AnnotatorZoom: Equatable {
 
     /// Springs the level back to the fitted size, about the middle, so the frame the flight home
     /// starts from is the one the image opened in. Nil when it is there already.
+    /// A re-fit still on its way keeps going (`refitting`), and the frame is at the fitted frame
+    /// once both have landed.
     private mutating func close() -> Effect? {
         phase = .closing
+        waitingFit = nil
         guard fitted.width > 0, abs(level - 1) > 0.001 || abs(target - 1) > 0.001 else { return nil }
         target = 1
         aimFrame(at: Zoom.center)
@@ -210,7 +202,64 @@ struct AnnotatorZoom: Equatable {
         // Kept in the room: a frame grown to the screen's height slides rather than clips.
         frame = Zoom.frame(fitted: fitted, scale: step.window, anchor: aim.anchor(at: level), within: room)
         if let pixelScale { frame = Zoom.aligned(frame, to: pixelScale, within: room) }
-        return .place(frame: frame, picture: picture, barTop: barTop)
+        return place()
+    }
+
+    /// Draws the frame where the rules put it, or part of the way there from where a re-fit began.
+    private mutating func place() -> Effect {
+        var now = Placement(frame: frame, picture: picture, barTop: barTop, barCenter: fitted.midX)
+        if let from = refitFrom {
+            if refitProgress < 1 { now = from.blended(to: now, by: refitProgress, pixelScale: pixelScale) } else { refitFrom = nil }
+        }
+        placed = now
+        return .place(frame: now.frame, picture: now.picture, barTop: now.barTop)
+    }
+
+    /// The room changed under the open image: a Dock appeared, hid or moved, or the screen changed.
+    /// The image takes its new fit and room. Zoomed, it keeps its magnification on screen, the
+    /// picture's points per pixel, up to the new room's cap, with the same part of it in the
+    /// middle; at the fit it stays at the fit. Each side of the frame grows to the new room, or
+    /// stops at it. While the flight is on its way in, the change waits for the landing, and once
+    /// the card has started home it is the stack's to place.
+    private mutating func refitWaiting() -> Effect? {
+        guard phase == .landed, flightLifted, let fit = waitingFit else { return nil }
+        waitingFit = nil
+        return refit(fit)
+    }
+
+    /// A flight's image drawn over the window stays where the flight put it, so a re-fit waits for
+    /// it to go.
+    private mutating func refit(_ fit: Fit) -> Effect? {
+        switch phase {
+        case .flying:
+            waitingFit = fit
+            return nil
+        case .landed where !flightLifted:
+            waitingFit = fit
+            return nil
+        case .closed, .closing:
+            return nil
+        case .landed:
+            break
+        }
+        let room = Zoom.room(fit.room, fitted: fit.fitted, bar: fit.bar)
+        guard fit.fitted.width > 0, fit.fitted.height > 0,
+              fit.fitted != fitted || room != self.room || fit.bar != bar else { return nil }
+        // The picture is `level * fitted.width` points across, whatever the frame does.
+        let pictureWidth = target * fitted.width
+        fitted = fit.fitted
+        self.room = room
+        bar = fit.bar
+        // A pull below the fit lets go: there is no hand on the new frame to pull against.
+        let next = target <= 1.001 ? 1 : min(maxLevel, max(1, pictureWidth / fitted.width))
+        level = next
+        target = next
+        let anchor = Zoom.anchor(fitted: fitted, within: room)
+        aim = ZoomAim(was: anchor, now: anchor, from: next, to: next)
+        pan = ZoomPan(center: center, camera: split(next).camera, cursor: Zoom.center)
+        refitFrom = placed
+        refitProgress = 0
+        return .refit(seconds: Self.stepSeconds)
     }
 
     /// Points the frame's growth at `cursor`. The anchor it starts from is read off the frame on
@@ -280,6 +329,8 @@ struct AnnotatorZoom: Equatable {
         guard c != center else { return nil }
         pan = ZoomPan(center: c, camera: camera, cursor: Zoom.center)
         center = c
+        if refitFrom != nil { return place() }
+        placed.picture = picture
         return .movePicture(picture)
     }
 
@@ -294,15 +345,4 @@ struct AnnotatorZoom: Equatable {
     /// The side that fills the room first is the one magnified most, so its cap is the whole
     /// picture's.
     private var maxLevel: CGFloat { min(reach.width, reach.height) * Self.maxCanvasZoom }
-}
-
-extension AnnotatorZoom.Phase: CustomStringConvertible {
-    var description: String {
-        switch self {
-        case .closed: return "closed"
-        case .flying: return "flying"
-        case .landed: return "landed"
-        case .closing: return "closing"
-        }
-    }
 }

@@ -6,25 +6,26 @@ final class AnnotatorZoomTests: XCTestCase {
     /// A 400x300 frame in a room with 30 points above it and 110 below, 48 of them left once the bar
     /// and its margins are kept, so the height fills first: each side reaches the room at its own
     /// level, 2.5 across and 1.26 down.
-    private let fitted = CGRect(x: 300, y: 250, width: 400, height: 300)
-    private let room = CGRect(x: 0, y: 140, width: 1000, height: 440)
-    private let bar = ZoomBar(height: 44, margin: 9)
-    private var frameRoom: CGRect { CGRect(x: 0, y: 202, width: 1000, height: 378) }
-    private let edge = AnnotatorZoom.EdgePull(band: 120, pull: 0.5)
+    let fitted = CGRect(x: 300, y: 250, width: 400, height: 300)
+    let room = CGRect(x: 0, y: 140, width: 1000, height: 440)
+    let bar = ZoomBar(height: 44, margin: 9)
+    var frameRoom: CGRect { CGRect(x: 0, y: 202, width: 1000, height: 378) }
+    let edge = AnnotatorZoom.EdgePull(band: 120, pull: 0.5)
 
     /// An image opened in `fitted` whose flight has landed.
-    private func landed() -> AnnotatorZoom {
+    func landed() -> AnnotatorZoom {
         var zoom = AnnotatorZoom()
         zoom.edge = edge
         XCTAssertNil(zoom.reduce(.prepare(fitted: fitted, room: room, bar: bar)))
         _ = zoom.reduce(.tick(1))
         XCTAssertNil(zoom.reduce(.landed))
+        XCTAssertNil(zoom.reduce(.lifted))
         return zoom
     }
 
     /// Carries the level to the spring's target, as the tween does, and answers every spring the
     /// arrival asks for in turn.
-    private func settle(_ zoom: inout AnnotatorZoom, _ effect: Effect?) {
+    func settle(_ zoom: inout AnnotatorZoom, _ effect: Effect?) {
         var next = effect
         while case .spring(let level, _)? = next {
             _ = zoom.reduce(.tick(level))
@@ -32,17 +33,17 @@ final class AnnotatorZoomTests: XCTestCase {
         }
     }
 
-    private func target(_ effect: Effect?) -> CGFloat? {
+    func target(_ effect: Effect?) -> CGFloat? {
         if case .spring(let level, _)? = effect { return level }
         return nil
     }
 
-    private func seconds(_ effect: Effect?) -> Double? {
+    func seconds(_ effect: Effect?) -> Double? {
         if case .spring(_, let seconds)? = effect { return seconds }
         return nil
     }
 
-    private func assertEqual(_ a: CGRect, _ b: CGRect, _ message: String = "", line: UInt = #line) {
+    func assertEqual(_ a: CGRect, _ b: CGRect, _ message: String = "", line: UInt = #line) {
         for (x, y) in [(a.minX, b.minX), (a.minY, b.minY), (a.width, b.width), (a.height, b.height)] {
             XCTAssertEqual(x, y, accuracy: 1e-6, "\(a) is not \(b) \(message)", line: line)
         }
@@ -277,6 +278,8 @@ final class AnnotatorZoomTests: XCTestCase {
                 case .movePicture?:
                     if zoom.camera.width <= 1, zoom.camera.height <= 1 { fail("\(input) moved a picture with nothing hidden") }
                     if case .pan = input { pans += 1 } else { reveals += 1 }
+                case .refit?:
+                    fail("\(input) re-fitted a room that never changed")
                 case nil:
                     switch input {
                     case .prepare, .landed, .tick, .arrived, .close: break

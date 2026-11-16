@@ -118,17 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             self.annotator.prepare(shot, opening: opening, in: frame, room: room)
             self.refreshDestinations(for: shot)
         }
-        thumbnail.onAnnotatorRenamed = { [weak self] shot, opening in self?.annotator.renamed(to: shot, opening: opening) }
-        annotator.onFrame = { [weak self] frame in self?.thumbnail.annotatorFrameMoved(frame) }
-        thumbnail.onAnnotatorShow = { [weak self] watches in self?.annotator.show(watchesClickOutside: watches) }
-        thumbnail.onAnnotatorLanded = { [weak self] in self?.annotator.landed() }
-        thumbnail.annotatorBelow = { [weak self] in self?.annotator.spaceBelow ?? 0 }
-        thumbnail.annotatorAbove = { [weak self] shot, wrap in self?.annotator.spaceAbove(for: shot, wrap: wrap) ?? 0 }
-        thumbnail.annotatorMarks = { [weak self] in self?.annotator.editor.marks }
-        thumbnail.annotatorTitle = { [weak self] key in self?.annotator.takeTitle(of: key) }
-        thumbnail.onAnnotatorHide = { [weak self] hidden in self?.annotator.hide { hidden() } }
-        thumbnail.onAnnotatorAbandon = { [weak self] in self?.annotator.abandon() }
-        thumbnail.onAnnotatorPress = { [weak self] event, key in self?.annotator.take(event, for: key) }
+        connectAnnotator()
         thumbnail.onTakesScreen = { [weak self] in self?.liveInk.standAside() }
         liveInk.listSessions = { [weak self] answer in self?.sessions.list(answer) }
         liveInk.sendNote = { [weak self] note, destination, title, message, done in

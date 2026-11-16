@@ -24,6 +24,8 @@ final class AnnotationController {
     /// The frame moved: it was placed, a zoom stepped it, or it came home on the way out. The
     /// stack follows it, so it narrows as the frame grows towards it.
     var onFrame: ((NSRect) -> Void)?
+    /// The image fits in this frame now: a re-fit took the new room. The card flies home from here.
+    var onRefit: ((NSRect) -> Void)?
     /// Send or Reply handed the drawing to this agent session, with what the sent card calls it and the
     /// message typed in the bar, if any.
     var onSend: ((Screenshot, Drawing, AgentDestination, _ title: String, _ message: String?) -> Void)?
@@ -39,7 +41,8 @@ final class AnnotationController {
     var keptPick: DestinationChoice.KeptPick?
     let titleView = AgentTitleView()
     var window: AnnotationWindow?
-    /// The window spans the screen's visible frame and stays put. The visible frame is `frameView`
+    /// The window spans the screen's visible frame and stays put, until a re-fit grows it to cover
+    /// a new visible frame as well (`refitted`). The visible frame is `frameView`
     /// inside it (shadow) with `container` (clip, corner, ring, editor), so a zoom step moves the
     /// frame and the picture inside it in one layer commit: a window resize and a layer change do
     /// not land on the same display frame, and the picture would drift from the frame between them.
@@ -85,6 +88,8 @@ final class AnnotationController {
     /// The zoom's rules and where they put the frame and the picture. The spring is `zoomTween`.
     var zoom = AnnotatorZoom()
     lazy var zoomTween = Tween(initial: 1) { [weak self] level in self?.run(.tick(level)) }
+    /// The re-fit's spring, from 0 where the room changed to 1 in the new room.
+    lazy var refitTween = Tween(initial: 1) { [weak self] progress in self?.run(.refitTick(progress)) }
     /// Counts the title's ink measurements, so an answer for a block that has moved since is dropped.
     var inkMeasurement = 0
     /// Where the title's ink came from, for `[state]`.

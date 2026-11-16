@@ -10,17 +10,28 @@ final class AnnotatorToolbarFollowTests: XCTestCase {
         let toolbar = AnnotatorToolbar()
         toolbar.place(below: wide, gap: gap)
         let before = toolbar.panel.frame.origin
-        toolbar.follow(top: tall.minY - 100, fitted: tall)
+        toolbar.follow(top: tall.minY - 100, center: tall.midX, fitted: tall)
         XCTAssertEqual(toolbar.panel.frame.origin, before)
-        XCTAssertNil(toolbar.carriedTop)
+        XCTAssertNil(toolbar.carried)
     }
 
     func testATickForTheImageTheBarIsPlacedUnderCarriesIt() {
         let toolbar = AnnotatorToolbar()
         toolbar.place(below: tall, gap: gap)
         let before = toolbar.panel.frame.origin
-        toolbar.follow(top: tall.minY - gap - 100, fitted: tall)
-        XCTAssertEqual(toolbar.carriedTop, tall.minY - gap - 100)
+        toolbar.follow(top: tall.minY - gap - 100, center: tall.midX, fitted: tall)
+        XCTAssertEqual(toolbar.carried, NSPoint(x: tall.midX, y: tall.minY - gap - 100))
         XCTAssertEqual(toolbar.panel.frame.origin.y, before.y - 100)
+    }
+
+    func testARefitCarriesTheBarAboveItsPlaceAndSidewaysAndBack() {
+        let toolbar = AnnotatorToolbar()
+        toolbar.place(below: tall, gap: gap)
+        let before = toolbar.panel.frame.origin
+        toolbar.follow(top: tall.minY - gap + 50, center: tall.midX - 30, fitted: tall)
+        XCTAssertEqual(toolbar.panel.frame.origin, NSPoint(x: before.x - 30, y: before.y + 50))
+        toolbar.follow(top: tall.minY - gap, center: tall.midX, fitted: tall)
+        XCTAssertNil(toolbar.carried)
+        XCTAssertEqual(toolbar.panel.frame.origin, before)
     }
 }
