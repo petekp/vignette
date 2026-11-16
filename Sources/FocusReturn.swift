@@ -13,6 +13,8 @@ final class FocusReturn {
     /// annotator came up. Closing those goes back to it; going to another app forgets it.
     private weak var ownWindow: NSWindow?
     private var observer: Any?
+    /// Posted just before `restore` hands the keys to the app that is the notification's object.
+    static let handingBack = Notification.Name("FocusReturn.handingBack")
 
     private init() {
         previousApp = NSWorkspace.shared.frontmostApplication
@@ -50,6 +52,7 @@ final class FocusReturn {
             return
         }
         guard NSApp.isActive, let app = previousApp, !app.isTerminated else { return }
+        NotificationCenter.default.post(name: Self.handingBack, object: app)
         // A non-activating panel takes the keys while that app stays frontmost, and activating a
         // frontmost app leaves the keys with Vignette; letting go hands them back.
         if NSWorkspace.shared.frontmostApplication == app { NSApp.deactivate() } else { app.activate() }

@@ -48,8 +48,8 @@ final class LiveWindows {
         var onScreen = true
         /// When its hidden marks show again: the window is back on the screen and has landed.
         var showFrom: CFTimeInterval?
-        /// Floated over normal windows while its app raises its windows over the overlay.
-        var liftedAt: CFTimeInterval?
+        /// Floated over normal windows while its app may raise its windows over the overlay.
+        var lift: Lift?
         /// Faded because the person asked to minimise it.
         var minimisingSince: CFTimeInterval?
         /// Its marks are faded: it is minimising, or back on the screen and still landing.
@@ -379,6 +379,10 @@ final class LiveWindows {
                 let pid = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
                 MainActor.assumeIsolated { self?.activated(pid) }
             }),
+            (NotificationCenter.default, NotificationCenter.default.addObserver(forName: FocusReturn.handingBack, object: nil, queue: nil) { [weak self] note in
+                guard let app = note.object as? NSRunningApplication else { return }
+                MainActor.assumeIsolated { self?.keysGoingBack(to: app) }
+            }),
             (workspace, workspace.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
                 guard let pid = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier else { return }
                 MainActor.assumeIsolated { _ = self?.askedForTree.remove(pid) }
@@ -450,25 +454,31 @@ final class LiveWindows {
 
     /// The window's app is about to raise its windows over their overlays: they float until it has,
     /// so the marks are not missing for a frame.
-    private func activated(_ pid: pid_t?) {
-        activeUntil = CACurrentMediaTime() + 1
-        for window in windows.values where window.pid == pid && window.onScreen {
-            window.overlay.level = .floating
-            window.liftedAt = CACurrentMediaTime()
+    private func activated(_ pid: pid_t?) { lift(pid, .activating) }
+
+    /// The keys are going back to `app`. Already frontmost, it is not activated, so the overlay of its
+    /// front window floats until the app has had time to bring that window forward. Its windows behind
+    /// keep covering their marks.
+    private func keysGoingBack(to app: NSRunningApplication) {
+        guard NSWorkspace.shared.frontmostApplication == app else { return }
+        let pid = app.processIdentifier
+        guard let front = WindowList.front(of: pid) else { return }
+        lift(pid, .keysBack) { $0.id == front }
+    }
+
+    private func lift(_ pid: pid_t?, _ cause: Lift.Cause, only: (Tracked) -> Bool = { _ in true }) {
+        let now = CACurrentMediaTime()
+        activeUntil = now + 1
+        for window in windows.values where window.pid == pid && window.onScreen && only(window) {
+            window.overlay.level = Lift.level
+            window.lift = Lift(cause: cause, since: now)
         }
     }
 
     /// ⌘M: the frontmost app's front window goes to the Dock, and its marks fade at once rather than
     /// trail the genie.
     private func minimising(_ pid: pid_t?) {
-        guard let pid else { return }
-        let infos = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-        // Its frontmost window, past the small one macOS 15 puts over a titled window's title bar.
-        guard let front = infos.first(where: {
-            ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && ($0[kCGWindowLayer as String] as? Int) == 0
-                && (WindowList.bounds($0).map { $0.width > 60 && $0.height > 60 } ?? false)
-        }),
-              let id = front[kCGWindowNumber as String] as? CGWindowID, let window = windows[id] else { return }
+        guard let pid, let id = WindowList.front(of: pid), let window = windows[id] else { return }
         fadeForMinimise(window)
     }
 
@@ -574,14 +584,19 @@ final class LiveWindows {
     private func keepInPlace(_ window: Tracked, now: CFTimeInterval) {
         let above = WindowList.ids(above: window.id)
         let mine = CGWindowID(window.overlay.windowNumber)
-        if let lifted = window.liftedAt {
+        if let lift = window.lift {
+            // Vignette's own panels at the normal level, such as the answer's dismiss button, are not
+            // another app's windows.
+            let own = ProcessInfo.processInfo.processIdentifier
             let covered = WindowList.describe(above.filter { $0 != mine }).contains {
-                ($0[kCGWindowLayer as String] as? Int) == 0 && ($0[kCGWindowOwnerPID as String] as? pid_t) != window.pid
+                let owner = $0[kCGWindowOwnerPID as String] as? pid_t
+                return ($0[kCGWindowLayer as String] as? Int) == 0 && owner != window.pid && owner != own
+                    && WindowList.bounds($0).map { $0.intersects(window.frame) } == true
             }
-            guard !covered || now - lifted > 0.5 else { return }
+            guard lift.ends(coveredByAnotherApp: covered, at: now) else { return }
             window.overlay.level = .normal
             window.overlay.order(.above, relativeTo: Int(window.id))
-            window.liftedAt = nil
+            window.lift = nil
             return
         }
         var inPlace = false
@@ -669,33 +684,6 @@ enum WindowAccessibility {
             current = attribute(element, kAXParentAttribute).map { $0 as! AXUIElement }
         }
         return false
-    }
-}
-
-/// The window list, read the cheap way: a description of the listed windows only, and the ids of the
-/// windows above one, which `CGWindowListCreate` gives without describing them.
-enum WindowList {
-    private typealias Create = @convention(c) (UInt32, UInt32) -> Unmanaged<CFArray>?
-    /// Swift marks `CGWindowListCreate` unavailable, so it is looked up.
-    private static let create: Create? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreate")
-        .map { unsafeBitCast($0, to: Create.self) }
-
-    /// The windows above `id`, front to back, as the window server lists them.
-    static func ids(above id: CGWindowID) -> [CGWindowID] {
-        guard let array = create?(CGWindowListOption.optionOnScreenAboveWindow.rawValue, id)?.takeRetainedValue() else { return [] }
-        return (0..<CFArrayGetCount(array)).map { CGWindowID(UInt(bitPattern: CFArrayGetValueAtIndex(array, $0))) }
-    }
-
-    /// The window list's entries for `ids`. The array holds the ids themselves, not numbers.
-    static func describe(_ ids: [CGWindowID]) -> [[String: Any]] {
-        guard !ids.isEmpty else { return [] }
-        var values = ids.map { UnsafeRawPointer(bitPattern: UInt($0)) }
-        guard let array = CFArrayCreate(nil, &values, values.count, nil) else { return [] }
-        return CGWindowListCreateDescriptionFromArray(array) as? [[String: Any]] ?? []
-    }
-
-    static func bounds(_ info: [String: Any]) -> CGRect? {
-        (info[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) }
     }
 }
 
