@@ -966,7 +966,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         menu.removeAllItems()
         let shortcut = HotKeySpec.parse(settings.data.recentHotkey)
 
-        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        MainMenu.addSettings(to: menu, action: #selector(openSettings))
         let liveInkItem = NSMenuItem(title: "Live Ink", action: #selector(toggleLiveInk), keyEquivalent: "")
         liveInkItem.state = settings.data.liveInk ? .on : .off
         liveInkItem.badge = NSMenuItemBadge(string: "Hold \(settings.data.liveInkChordChoice.glyphs)")
