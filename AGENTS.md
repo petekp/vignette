@@ -167,16 +167,15 @@ Before you drive the app:
   (`AgentPlugin.stage`), and every `open` in it names that copy's path with `-a`, so an agent's
   command never starts another build of the same bundle id on the person's settings.
 - Stop a test copy by its PID before you launch another copy of the same bundle id. On 2026-09-26,
-  `open -a <a Release copy> <url>`, sent after a Debug copy of the same bundle id had run, launched a
-  second Release instance without `VIGNETTE_SETTINGS`, on the user's real settings file.
-- A launch through LaunchServices with no environment is not a test launch. macOS's Quit & Reopen
-  after a permission grant, Sparkle's relaunch and a bare `open` are all such launches.
-  `Launch.isTest` then reads false. The copy reads `~/.config/<its URL scheme>/settings.json`,
+  `open -a <a Release copy> <url>` after a Debug copy had run launched a second Release instance
+  on the user's real settings file.
+- A launch through LaunchServices with no environment (Quit & Reopen after a permission grant,
+  Sparkle's relaunch, a bare `open`) is not a test launch: `Launch.isTest` reads false. The copy reads `~/.config/<its URL scheme>/settings.json`,
   writes Apple's own screenshot settings, can register a login item, runs the updater and reaches
   the person's `~/.claude` and `~/.codex`. The end-to-end copies name a scratch home and settings
   file under `LSEnvironment` in their Info.plist, `/tmp/<bundle id>/home` (`scripts/e2e/build.sh`),
-  so one launched that way is still a test launch. `open --env` overrides those values key by key.
-  For a test by hand, launch the copy on that home, or link it to your scratch home.
+  so one launched that way is still a test launch.
+  For a test by hand, launch the copy on that home.
 
 `docs/rules/driving-the-app.md` has the steps and their details.
 
@@ -215,6 +214,8 @@ Before you drive the app:
   A link made on one display stops when that display is unplugged, and what it drives freezes.
   `scripts/check-display-links.py`, run by `build.sh --test`, fails any other `displayLink(target:)`.
   Its `ALLOWED` list names the links tied to one screen on purpose, each with why.
+- A type keeps a display's number, never an `NSScreen` (`docs/rules/stack.md`).
+  `scripts/check-screen-stores.py`, run by `build.sh --test`, fails a stored one.
 - `docs/glossary.md` is Vignette's vocabulary: screenshots and the corner, drawing, and the agent
   loop. It says what each word means and what not to call it. Use its words in code, docs and
   labels. The distinction it guards most is that an agent session is a conversation and a pane is

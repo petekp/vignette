@@ -6,7 +6,7 @@ extension AnnotationController {
     func place(_ win: NSWindow, frame: NSRect) {
         let center = NSPoint(x: frame.midX, y: frame.midY)
         let screen = NSScreen.screens.first { $0.frame.contains(center) } ?? NSScreen.main ?? NSScreen.screens[0]
-        zoomScreen = screen
+        zoomDisplay = screen.displayNumber
         zoom.pixelScale = screen.backingScaleFactor
         if win.frame != screen.visibleFrame { win.setFrame(screen.visibleFrame, display: false) }
         moveFrame(to: frame, picture: zoom.picture, barTop: zoom.barTop)
@@ -45,9 +45,9 @@ extension AnnotationController {
         let fitted = zoom.fitted
         let center = NSPoint(x: fitted.midX, y: fitted.midY)
         let screen = NSScreen.screens.first { $0.frame.contains(center) } ?? NSScreen.main ?? NSScreen.screens[0]
-        let sameScreen = zoomScreen.map { $0.displayNumber == screen.displayNumber } ?? false
+        let sameScreen = zoomDisplay.map { $0 == screen.displayNumber } ?? false
         Log.write("[annotate] refit \(StateReport.topLeft(fitted, primaryHeight: StateReport.primaryHeight)) room \(StateReport.topLeft(zoom.room, primaryHeight: StateReport.primaryHeight))\(sameScreen ? "" : " new screen")")
-        zoomScreen = screen
+        zoomDisplay = screen.displayNumber
         zoom.pixelScale = screen.backingScaleFactor
         let cover = sameScreen ? win.frame.union(screen.visibleFrame) : screen.visibleFrame
         if win.frame != cover { win.setFrame(cover, display: false) }
