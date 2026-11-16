@@ -29,13 +29,7 @@ final class SetupInkPlayer: ObservableObject {
     private var loggedWindow = false
     private var began: CFTimeInterval = 0
     private var next = SetupInkDemo.steps.count
-    private struct Writing {
-        let pen: InkMarkLayer
-        let hand: HandStroke
-        let began: CFTimeInterval
-        var writer: InkHand.Pen
-    }
-    private var writing: [Writing] = []
+    private var writing: [StageWriting] = []
     private var titlePens: [InkMarkLayer] = []
     private var loopPen: InkMarkLayer?
     private var loop: (mark: Mark, hand: InkHand)?
@@ -99,16 +93,7 @@ final class SetupInkPlayer: ObservableObject {
 
     /// The page as the demo leaves it: the title written, the words in and the keys grown.
     private func rest() {
-        if titlePens.isEmpty, title != .zero {
-            let feel = Settings.shared.data.ui.inkHandFeel
-            for (index, duration) in SetupInkDemo.writing.enumerated() {
-                let hand = HandStroke(through: SetupInkTitle.stroke(index, in: title.origin), duration: duration)
-                let pen = stage.pen()
-                pen.showPen(InkHand.stroke(hand.points, tapersEnd: true, feel: feel), settled: 0, longest: .greatestFiniteMagnitude,
-                            markStyle: Settings.shared.data.ui.markStyle)
-                titlePens.append(pen)
-            }
-        }
+        if titlePens.isEmpty, title != .zero { titlePens = SetupInkTitle.written(on: stage, in: title.origin) }
         wordsShown = true
         keysGrown = true
     }
@@ -134,20 +119,18 @@ final class SetupInkPlayer: ObservableObject {
         case .chord(let down):
             keysDown = down
         case .write(let index):
-            let pen = stage.pen()
-            titlePens.append(pen)
-            writing.append(Writing(pen: pen, hand: HandStroke(through: SetupInkTitle.stroke(index, in: title.origin),
-                                                              duration: SetupInkDemo.writing[index]),
-                                   began: now, writer: InkHand.Pen(feel: feel)))
+            let stroke = SetupInkTitle.write(index, on: stage, in: title.origin, at: now)
+            titlePens.append(stroke.pen)
+            writing.append(stroke)
         case .circleKeys:
             let pen = stage.pen()
             loopPen = pen
             // Round the room the keys take once grown, so they grow inside the loop.
             let grown = SetupInkKeys.row(height: SetupInkKeys.grown)
             let room = CGRect(x: keys.midX - grown.width / 2, y: keys.midY - grown.height / 2, width: grown.width, height: grown.height)
-            writing.append(Writing(pen: pen, hand: HandStroke(through: InkSamples.handLoop(in: room.insetBy(dx: -26, dy: -11)),
-                                                              duration: SetupInkDemo.circling),
-                                   began: now, writer: InkHand.Pen(feel: feel)))
+            writing.append(StageWriting(pen: pen, hand: HandStroke(through: InkSamples.handLoop(in: room.insetBy(dx: -26, dy: -11)),
+                                                                   duration: SetupInkDemo.circling),
+                                        began: now, writer: InkHand.Pen(feel: feel)))
         case .openNote:
             openNote()
         case .type(let words):
@@ -172,24 +155,9 @@ final class SetupInkPlayer: ObservableObject {
     /// Draws each stroke under way as far as its hand has got, and lets go of those it has finished.
     private func draw(at now: CFTimeInterval) {
         let markStyle = Settings.shared.data.ui.markStyle
-        for index in writing.indices.reversed() {
-            let elapsed = now - writing[index].began
-            let hand = writing[index].hand
-            let points = hand.events(by: elapsed)
-            guard points.count > 1 else { continue }
-            var stroke = writing[index].writer.stroke(through: points)
-            // The pen takes whole events; its end goes on to where the hand is at this refresh.
-            if let tip = hand.position(at: elapsed), let end = stroke.points.last, let width = stroke.widths.last,
-               hypot(tip.x - end.x, tip.y - end.y) > 0.25 {
-                stroke.points.append(tip)
-                stroke.widths.append(width)
-            }
-            let pen = writing[index].pen
-            pen.showPen(stroke, settled: writing[index].writer.settled.points.count, longest: .greatestFiniteMagnitude, markStyle: markStyle,
-                        byClock: true)
-            guard elapsed >= writing[index].hand.duration else { continue }
+        for index in writing.indices.reversed() where writing[index].draw(at: now, markStyle: markStyle) {
             let finished = writing.remove(at: index)
-            if pen === loopPen { endLoop(finished.hand.points) }
+            if finished.pen === loopPen { endLoop(finished.hand.points) }
         }
     }
 

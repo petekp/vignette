@@ -22,6 +22,13 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
   as the plugin's is, and whenever live ink turns on, by any switch. An install with live ink on
   never sees it, and a showing offer leaves when the switch goes on. A settings file written before the offer existed that already holds `liveInk`
   counts as offered (`Settings.migrate`), since the switch in it was set by the person or by setup.
+- The Live Ink tab always opens with "Live Ink" written in the gel at its top, at 55% of the size
+  setup's live ink page writes it, above the offer and the switch (`LiveInkTabTitle`). It is a
+  section header, not a boxed row, since a boxed row reads as a setting. The hand writes it with
+  the page's own timing the first time the tab appears in a launch. After that, with motion off,
+  and after a writing cut short by leaving the tab, it shows written (`InkTitleWriter`). Setup's
+  page and the tab draw it with the same pen code (`SetupInkTitle.write`, `SetupInkTitle.written`,
+  `StageWriting`).
 - Setup's permissions page offers Codex's sign-in while Codex is installed and Claude Code can't
   answer (`CodexSetupSection`). `docs/live-ink-responders.md` has the sign-in. The page's height is
   fixed, so while the row shows, the title starts higher (`LiveInkSetupTop`). The switch is on the

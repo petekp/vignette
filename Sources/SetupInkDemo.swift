@@ -31,6 +31,10 @@ enum SetupInkDemo {
     }
 
     static let writing: [TimeInterval] = [1.15, 0.2, 1.2]
+    /// The hand's pause after each stroke of the title but the last, before the next.
+    static let writingPauses: [TimeInterval] = [0.12, 0.16]
+    /// When each stroke of the title starts, from the first stroke's start.
+    static let writingStarts: [TimeInterval] = [0, writing[0] + writingPauses[0], writing[0] + writingPauses[0] + writing[1] + writingPauses[1]]
     static let circling: TimeInterval = 0.75
     static let words = "make these keys bigger"
     /// How long the keys take to grow, at full motion: slowly, so it reads as the session's work.
@@ -47,8 +51,8 @@ enum SetupInkDemo {
         }
         add(.chord(down: true))
         add(.write(0), after: 0.15)
-        add(.write(1), after: writing[0] + 0.12)
-        add(.write(2), after: writing[1] + 0.16)
+        add(.write(1), after: writing[0] + writingPauses[0])
+        add(.write(2), after: writing[1] + writingPauses[1])
         add(.chord(down: false), after: writing[2] + 0.1)
         add(.showWords, after: 0.25)
         add(.chord(down: true), after: 0.9)
