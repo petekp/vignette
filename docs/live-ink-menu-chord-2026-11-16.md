@@ -45,10 +45,10 @@ it. Another app's menu does not stop Vignette's global monitor.
 - The chord's 50 ms key poll runs in the common run loop modes, so it keeps running while any of
   Vignette's tracking loops runs.
 
-## Not checked
+## Checked on Pete's Mac
 
-- No run has shown the tap hearing ⌃⌥ with Vignette's own menu open, or the menu closing as inking
-  starts. Checking it needs a person's hands on this Mac's keys, which a VM's VNC cannot press.
-- Whether Vignette has access to listen to keys on Pete's Mac was not read. Without it, the log says
-  `[live-ink] the chord: no access to listen to keys`, and the chord over Vignette's own menu still
-  begins nothing.
+- Build e026bf6, 2026-11-16: holding ⌃⌥ with Vignette's own status menu open logged
+  `[live-ink] closed Vignette's own menu` at 11:30:39.327, then `[live-ink] inking` 29 ms later.
+  The launch logged no `no access to listen to keys` line, so the tap was in place.
+- Over the Wi-Fi and Tailscale menus, the ink stayed on release and the note opened; the menu closed
+  as designed.
