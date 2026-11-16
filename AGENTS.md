@@ -97,8 +97,8 @@ These files hold code for several areas. Read the file for the part you change:
   `moveFrame` and the zoom, `zoom.md`; `offerTyping`, `annotator-toolbar.md`; the title
   (`AnnotationController+Title.swift`), `agent-push.md`; `applyTweaks`, `settings.md`.
 - `AppDelegate*.swift`: `main` and the reply command, `replies.md`; `connections` and Send,
-  `send.md`; the plugin's install, `agent-plugin.md`; setup and the menu bar menu, `setup-and-updates.md`;
-  Copy Drawing, `editor-and-drawings.md`.
+  `send.md`; the plugin's install, `agent-plugin.md`; setup, `setup-and-updates.md`; Copy
+  Drawing, `editor-and-drawings.md`.
 - `EditorView*.swift`: `editor-and-drawings.md`; `setSize`, `restDelay` and the zoom steps,
   `zoom.md`; `takesKey` and `enterCanvas`, `annotator-toolbar.md`; `take`, `flights-and-presses.md`.
 - `Thumbnailer.swift`: `memory.md`; `lookUp`, `cardImage`, `download` and `posterFrame`,

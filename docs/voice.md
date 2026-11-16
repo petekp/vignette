@@ -187,17 +187,12 @@ moves the script on only while its line shows on the shortcut page.
 | 34 | I'm out. ✌️ |
 | 35 and after | *The setup assistant has peaced out.* In muted italics, and it stays. |
 
-### The menu bar menu's shortcuts (`HotKeySpec.menuKeyEquivalent`, `HotKeySpec.menuHold`)
-
-Each shows in the menu's shortcut column, beside ⌘, and ⌘Q. A shortcut with no single key is text
-set as the key equivalent, of more than one character, so no key press fires the item. AppKit makes
-room for its first character only, so it stays short.
+### The menu bar menu's shortcuts (`HotKeySpec.glyphs`, `HotKeySpec.holdLabel`)
 
 | Item | With a double tap | With a key combination |
 | --- | --- | --- |
-| Live Ink | *pair* Hold | *pair* Hold |
-| Show Recent Screenshots | ⇧ ×2 (the key's glyph: ⇧, ⌘, ⌥ or ⌃) | ⇧⌘6 |
-| Draw on Newest Screenshot | ⇧ ×2 Hold | ⇧⌘6 Hold |
+| Show Recent Screenshots | Right Shift ×2 | ⇧⌘6, in the menu's shortcut column |
+| Draw on Newest Screenshot | Right Shift ×2 and Hold | Hold ⇧⌘6 |
 
 ### Live ink
 

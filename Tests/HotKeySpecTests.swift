@@ -71,8 +71,8 @@ final class HotKeySpecTests: XCTestCase {
     }
 
     func testLabelNamesTheKey() {
-        XCTAssertEqual(HotKeySpec.parse("double-rshift")?.menuHoldKeyEquivalent, "⇧ ×2 Hold")
-        XCTAssertEqual(HotKeySpec.parse("cmd+shift+6")?.menuHoldKeyEquivalent, "⇧⌘6 Hold")
+        XCTAssertEqual(HotKeySpec.parse("double-rshift")?.holdLabel, "Right Shift ×2 and Hold")
+        XCTAssertEqual(HotKeySpec.parse("cmd+shift+6")?.holdLabel, "Hold ⇧⌘6")
         XCTAssertEqual(HotKeySpec.parse("ctrl+opt+space")?.keycaps, ["⌃", "⌥", "Space"])
         XCTAssertEqual(HotKeySpec.parse("ctrl+opt+space")?.keycapModifiers, [.control, .option, []])
         XCTAssertEqual(HotKeySpec.parse("cmd+shift+6")?.keycapModifiers, [.shift, .command, []])
@@ -90,9 +90,7 @@ final class HotKeySpecTests: XCTestCase {
         XCTAssertEqual(HotKeySpec.parse("cmd+up")?.menuKeyEquivalent?.key,
                        String(UnicodeScalar(UInt32(NSUpArrowFunctionKey))!))
         XCTAssertEqual(HotKeySpec.parse("ctrl+opt+space")?.menuKeyEquivalent?.key, " ")
-        XCTAssertEqual(HotKeySpec.parse("double-rshift")?.menuKeyEquivalent?.key, "⇧ ×2")
-        XCTAssertEqual(HotKeySpec.parse("double-rshift")?.menuKeyEquivalent?.modifiers, [])
-        XCTAssertEqual(HotKeySpec.parse("double-lcmd")?.menuKeyEquivalent?.key, "⌘ ×2")
+        XCTAssertNil(HotKeySpec.parse("double-rshift")?.menuKeyEquivalent)
     }
 
     /// A Carbon hotkey takes its key from every app, so the recorder must never register one.

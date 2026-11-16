@@ -45,6 +45,15 @@ extension HotKeySpec {
         return "Press \(glyphs)"
     }
 
+    /// What to hold to draw on the newest screenshot, for the menu item that does it: with a double
+    /// tap it is the second tap, so the hold comes after the key named twice.
+    var holdLabel: String {
+        switch self {
+        case .key: return "Hold \(glyphs)"
+        case .doubleTap: return "\(glyphs) and Hold"
+        }
+    }
+
     /// The key a double tap is made on, as its keycap reads: "⇧" and "shift", and whether it sits on
     /// the right of the keyboard, where the keycap's label is on the right too. nil for a key
     /// combination.
@@ -78,25 +87,13 @@ extension HotKeySpec {
         return ([.control, .option, .shift, .command] as [NSEvent.ModifierFlags]).filter { flags.contains($0) } + [[]]
     }
 
-    /// The NSMenuItem key equivalent, so a menu renders the hotkey in its shortcut column. A double
-    /// tap has no key, so it is text, "⇧ ×2", with no modifiers.
+    /// The NSMenuItem key equivalent, so a menu renders the hotkey in its shortcut column.
+    /// nil for a double tap, which no menu can draw.
     var menuKeyEquivalent: (key: String, modifiers: NSEvent.ModifierFlags)? {
-        if let key = doubleTapKey { return ("\(key.glyph) ×2", []) }
         guard case let .key(keyCode, modifiers) = self,
               let name = HotKeySpec.keyName(forKeyCode: keyCode) else { return nil }
         return (HotKeySpec.specialKeys[name]?.keyEquivalent ?? name, HotKeySpec.eventModifiers(modifiers))
     }
-
-    /// The key equivalent, with no modifiers, of the menu item that draws on the newest screenshot,
-    /// which is done by holding the shortcut: "⇧ ×2 Hold", "⇧⌘6 Hold".
-    var menuHoldKeyEquivalent: String {
-        HotKeySpec.menuHold(doubleTapKey.map { "\($0.glyph) ×2" } ?? glyphs)
-    }
-
-    /// A menu item key equivalent for keys held down, such as live ink's "⌃⌥ Hold". It is text of
-    /// more than one character, which no key press makes, so the item never fires from the keyboard.
-    /// AppKit makes room in the shortcut column for its first character only, so it stays short.
-    static func menuHold(_ keys: String) -> String { "\(keys) Hold" }
 
     /// Why a combination can't be the shortcut, or nil. A Carbon hotkey takes its key from every
     /// app: ⌘ with one key is a command every app has (⌘Q would quit nothing), ⌘⇧3, 4 and 5 are
