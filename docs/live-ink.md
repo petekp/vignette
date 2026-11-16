@@ -30,7 +30,7 @@ The names in brackets are `// MARK:` sections.
 | Esc: which step is next, the hotkey that holds it | `LiveEscape.swift`, `LiveInk+Escape.swift`, `HotKey.swift` |
 | The answer: reading it, drawing it, steps | `LiveAnswer.swift`, `LiveInk.swift` (Answering) |
 | The reply's popover, the conversation: its question, its row, its words, what it is laid over | `LiveReplyPopover.swift`, `LiveInkOverlay.swift` (`LiveMarksLayer.showPopover`) |
-| The thinking light round a popover's rim | `LiveRimLight.swift` |
+| The thinking light on the ink, the note and a popover's rim (`docs/live-ink-thinking-light.md`) | `LiveThinkingLight.swift`, `LiveRimLight.swift`, `LiveInkOverlay.swift` (`LiveMarksLayer.think`) |
 | Where the person's note, the reply, labels and pointing marks go | `LiveAnswerLayout.swift` (Pointing, Notes) |
 | The agent pulling focus: rack focus, the tour, the loupe | `LiveFocus.swift`, `LiveInk.swift` (Pulling focus) |
 | The answer's ×, its buttons and Reply's field, pointing at an action | `LiveInk.swift` (Dismissing and actions), `LiveAnswerActions.swift`, `LiveDismissButton.swift` |
@@ -242,17 +242,8 @@ The names in brackets are `// MARK:` sections.
   tap would make it the person's, so while the pointer rests on it the light gives way to the
   person's ink. The person's marks stay ink, so the material says who drew a mark as the colour
   does (`docs/live-ink-look-2026-10-07.md`).
-- While an ask waits, for the responder or for its turn, the ink and the note it is about carry the thinking light
-  (`LiveMarksLayer.think`): a 40 pt band of light runs along each stroke every 1.15 s, and a sheen
-  crosses the note a third of a beat later. Every band counts from one start, so marks that began
-  waiting at different moments move together. The light fades in and out over 0.2 s. With motion
-  off the ink brightens and holds. A popover waiting on an answer, the sent note and then its
-  conversation, carries the light round its rim (`RimLight`): a soft light that leaves from under the
-  arrow and goes round clockwise once every two beats, seen through a thin ring at the body's edge
-  and a fainter, wider one for its glow. It is white on a dark popover and the ink's light colour
-  (`ui.inkGelLight`) on a light one, where white would not show. It keeps time with the band on the
-  ink, so the note and the conversation that takes its place show the light at the same point.
-  With motion off the whole rim glows at 35% and holds.
+- While an ask waits, its ink, its note and its popover carry the thinking light
+  (`docs/live-ink-thinking-light.md`).
 - `vignette://live-ink-clear` erases every mark, and `live-ink-stroke?points=x,y;x,y` (debug) takes
   a stroke as if by hand, whether the stack is up or not, so a script can test without posting
   input; it answers what the stroke did. `[state]` has a `liveInk` section: `on`, `inking`, `chord`, `pair`,

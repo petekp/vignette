@@ -483,12 +483,17 @@ final class LiveMarksLayer: CALayer {
     /// each of its strokes, and a sheen crosses its note a third of a beat later, so the marks read as
     /// being worked on. Every band and sheen keeps time with `thinkingEpoch`, so marks that start at
     /// different moments move together. With motion off the ink brightens and holds. The light fades
-    /// in and out; one fading out has opacity 0 and counts as gone.
+    /// in and out; one fading out has opacity 0 and counts as gone, so a band of brightness 0 is
+    /// never laid.
     private func think(_ record: Drawn, _ on: Bool, markStyle: MarkStyle) {
         let lit = { (layer: CALayer) in (layer is ThinkingBand || layer is NoteSheen) && layer.opacity > 0 }
         let shown = record.previewed.sublayers?.first(where: lit) ?? record.note?.sublayers?.first(where: lit)
         let fade = Self.thinkingFade * Settings.shared.motionScale
-        guard on, let mark = record.mark else {
+        let ui = Settings.shared.data.ui
+        let lineWidth = record.ink == nil ? markStyle.strokeWidth : CGFloat(ui.inkGelWidth)
+        let look = ThinkingBand.Look(ui, lineWidth: lineWidth)
+        let bandIsDark = record.note == nil && look.brightness <= 0
+        guard on, !bandIsDark, let mark = record.mark else {
             guard let shown else { return }
             let from = shown.presentation()?.opacity ?? shown.opacity
             shown.opacity = 0
@@ -503,16 +508,27 @@ final class LiveMarksLayer: CALayer {
             CATransaction.commit()
             return
         }
-        guard shown == nil else { return }
+        // A band whose tweaks changed is laid again in its place. It keeps time with the epoch, so
+        // the new one is where the old one was.
+        let restyled = (shown as? ThinkingBand).map { $0.look != look } ?? false
+        guard shown == nil || restyled else { return }
         let still = Settings.shared.motionScale == 0
         let light: CALayer
         if let note = record.note {
             light = NoteSheen(over: note, still: still)
             note.addSublayer(light)
         } else if let path = record.ink?.centreLine ?? mark.shape(pointScale: 1, markStyle: markStyle)?.stroked {
-            light = ThinkingBand(along: path, width: markStyle.strokeWidth, scale: scale, still: still)
+            let loops = switch mark.geometry {
+            case .ellipse, .rectangle: true
+            case .arrow, .text: false
+            }
+            light = ThinkingBand(along: path, loops: loops, look: look, scale: scale, still: still)
             record.previewed.addSublayer(light)
         } else {
+            return
+        }
+        if restyled {
+            shown?.removeFromSuperlayer()
             return
         }
         guard fade > 0 else { return }
@@ -730,85 +746,4 @@ final class LiveMarksLayer: CALayer {
     /// The done state's green, macOS's system green in light mode, and the check's diameter in pt.
     static let doneColor = SRGB(hex: "#34C759")!
     private static let checkSize: CGFloat = 16
-}
-
-/// The thinking light on one stroke: a band of light `bandLength` long that runs along it from start
-/// to end, starting and finishing `runUp` off the stroke so each pass ends in a short rest.
-private final class ThinkingBand: CAShapeLayer {
-    init(along path: CGPath, width: CGFloat, scale: CGFloat, still: Bool) {
-        super.init()
-        anchorPoint = .zero
-        contentsScale = scale
-        self.path = path
-        fillColor = nil
-        strokeColor = CGColor(gray: 1, alpha: 0.85)
-        lineWidth = width * 0.7
-        lineCap = .round
-        lineJoin = .round
-        shadowColor = CGColor(gray: 1, alpha: 1)
-        shadowOffset = .zero
-        shadowRadius = 4
-        shadowOpacity = 0.9
-        guard !still else { opacity = 0.35; return }
-        let length = max(path.length, 1)
-        let reach = Self.bandLength / length, runUp = Self.runUp / length
-        // Core Animation clamps the ends to the stroke, so the band grows in at the start and shrinks
-        // away at the end.
-        let end = CABasicAnimation(keyPath: "strokeEnd")
-        end.fromValue = -runUp
-        end.toValue = 1 + reach + runUp
-        let start = CABasicAnimation(keyPath: "strokeStart")
-        start.fromValue = -runUp - reach
-        start.toValue = 1 + runUp
-        let run = CAAnimationGroup()
-        run.animations = [end, start]
-        run.duration = LiveMarksLayer.thinkingPeriod
-        run.repeatCount = .infinity
-        run.beginTime = convertTime(LiveMarksLayer.thinkingEpoch, from: nil)
-        add(run, forKey: "think")
-    }
-
-    override init(layer: Any) { super.init(layer: layer) }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    static let bandLength: CGFloat = 40
-    static let runUp: CGFloat = 40
-}
-
-/// The thinking light on a note: a sheen that crosses its tag a third of a beat after the band on
-/// the ink, masked by the note's own picture so only the tag catches it.
-private final class NoteSheen: CAGradientLayer {
-    init(over note: NoteLayer, still: Bool) {
-        super.init()
-        frame = note.bounds
-        contentsScale = note.contentsScale
-        let tag = CALayer()
-        tag.frame = bounds
-        tag.contents = note.contents
-        tag.contentsScale = note.contentsScale
-        mask = tag
-        startPoint = CGPoint(x: 0, y: 0.3)
-        endPoint = CGPoint(x: 1, y: 0.7)
-        guard !still else {
-            colors = [CGColor(gray: 1, alpha: 0.15), CGColor(gray: 1, alpha: 0.15)]
-            return
-        }
-        let clear = CGColor(gray: 1, alpha: 0), lit = CGColor(gray: 1, alpha: 0.42)
-        colors = [clear, lit, clear]
-        locations = [-0.3, -0.15, 0]
-        let sweep = CABasicAnimation(keyPath: "locations")
-        sweep.fromValue = [-0.3, -0.15, 0]
-        sweep.toValue = [1, 1.15, 1.3]
-        sweep.duration = LiveMarksLayer.thinkingPeriod
-        sweep.repeatCount = .infinity
-        sweep.beginTime = convertTime(LiveMarksLayer.thinkingEpoch, from: nil)
-        // Two thirds of a beat ahead is a third behind: the sheen follows the band.
-        sweep.timeOffset = LiveMarksLayer.thinkingPeriod * 0.65
-        add(sweep, forKey: "think")
-    }
-
-    override init(layer: Any) { super.init(layer: layer) }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
 }
