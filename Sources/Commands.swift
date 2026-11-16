@@ -109,13 +109,21 @@ enum Commands {
                               agent: Agent.clean(items.first { $0.name == "agent" }.map { $0.value ?? "" }),
                               session: items.first { $0.name == "session" }?.value,
                               marks: items.first { $0.name == "marks" }?.value,
-                              title: items.first { $0.name == "title" }?.value,
-                              description: items.first { $0.name == "description" }?.value,
+                              title: text("title", in: url),
+                              description: text("description", in: url),
                               root: items.first { $0.name == "root" }?.value.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) },
                               clear: items.first { $0.name == "clear" }?.value,
                               points: items.first { $0.name == "points" }?.value,
                               message: items.first { $0.name == "message" }?.value,
                               section: items.first { $0.name == "section" }?.value)
+    }
+
+    /// A text parameter read as a form encodes it, `+` for a space: Python's `urlencode` and other
+    /// form encoders write a space as `+`, and a literal plus as `%2B`, which stays a plus.
+    private static func text(_ name: String, in url: URL) -> String? {
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedQueryItems ?? []
+        guard let raw = items.first(where: { $0.name == name })?.value else { return nil }
+        return raw.replacingOccurrences(of: "+", with: " ").removingPercentEncoding
     }
 
     /// `points=` as a stroke: `x,y` pairs joined by `;`. Nil when it holds none, or any pair is not
