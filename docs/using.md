@@ -196,11 +196,11 @@ covers changing it.
 
 Live ink lets you draw straight on your screen, over any app, without taking a screenshot. Setup's
 Live Ink page turns it on with Use Live Ink, then asks for its permissions. If you set up Vignette
-before it had live ink, Settings → General offers it once, with Turn On. You can also turn it on
-or off in Settings → General, or with Live Ink in the menu bar menu.
+before it had live ink, Settings → Live Ink offers it once, with Turn On. You can also turn it on
+or off in Settings → Live Ink, or with Live Ink in the menu bar menu.
 
 Hold Control and Option and draw. To use another pair, pick it under Hold to draw in Settings →
-General. A glowing ring follows the pointer while you hold the keys. A loop becomes an ellipse
+Live Ink. A glowing ring follows the pointer while you hold the keys. A loop becomes an ellipse
 round what you circled, and any other stroke becomes an arrow, in your red. To erase a mark, click
 on it or inside its circle with the keys held. With no note, ask or answer open, Esc with the
 pointer on a mark erases them all, and so does turning live ink off.
@@ -244,13 +244,13 @@ Claude answers through Claude Code, which must be installed and signed in, on yo
 account, without your settings, plugins or tools. An ask costs about one to four cents. Without
 Claude Code, or signed out of it, the note starts on Codex or on a session, and Claude's row in its
 menu says why. Codex
-answers on its own ChatGPT sign-in, which you make once in Settings → General, and an ask counts
+answers on its own ChatGPT sign-in, which you make once in Settings → Live Ink, and an ask counts
 toward your ChatGPT plan's usage limit. It also runs without your settings or tools. Each sees only
 the windows your ink is on, with their titles and URLs, and the note says so until your first ask.
 
 ### Speaking while you draw
 
-Turn on Speak while you draw, under Live ink in Settings → General, and what you say while you hold
+Turn on Speak while you draw, in Settings → Live Ink, and what you say while you hold
 the keys goes into the note. It needs the microphone and speech recognition, and your voice stays on
 this Mac. With Ask when you let go on, the note asks as you let go of the keys, once you have drawn
 something. Speak without drawing and the note opens by the pointer. Return then asks about the

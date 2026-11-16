@@ -261,7 +261,7 @@ final class LiveInk {
         Log.write("[live-ink] \(on ? "on" : "off")")
     }
 
-    /// Takes the pair chosen in the General tab. The marks stay; a stroke under way ends.
+    /// Takes the pair chosen under Live Ink. The marks stay; a stroke under way ends.
     func takeChord() {
         guard isOn else { return }
         if isInking { cutInkingShort(because: "the chord changed") }

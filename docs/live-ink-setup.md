@@ -15,9 +15,9 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
 
 ## Turning it on
 
-- Live ink is turned on in setup's live ink page, the General tab's switch, or the menu (`liveInk`).
+- Live ink is turned on in setup's live ink page, the Live Ink tab's switch, or the menu (`liveInk`).
 - An install that finished setup without seeing that page gets a one-time offer at the top of the
-  General tab, on a launch that makes no other offer: the Settings window shows one tab, and the
+  Live Ink tab, on a launch that makes no other offer: the Settings window opens for one offer, and the
   agent plugin's offer goes first. The offer is recorded as made (`liveInkOffered`) when it opens,
   as the plugin's is, and whenever live ink turns on, by any switch. An install with live ink on
   never sees it, and a showing offer leaves when the switch goes on. A settings file written before the offer existed that already holds `liveInk`
@@ -37,12 +37,12 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
   the next step: the guide's Then this points at it and it is the default button, and nothing is
   pointed at while the sign-in waits in the browser (`SetupInkGuide.Pointing`). On that Mac the
   guide's note, Screen Recording's reason, the cost line, the live ink page's line, the demo's
-  note and the General tab's one-time offer name Codex. The demo's note starts on Codex.
-- What leaves the Mac is said in three places (`SetupInkCopy.costNote`): under the switch, on
-  setup's permissions page, and in the note's prompt until the first ask to that agent
+  note and the Live Ink tab's one-time offer name Codex. The demo's note starts on Codex.
+- What leaves the Mac is said in two places (`SetupInkCopy.costNote`): on
+  setup's permissions page and in the note's prompt until the first ask to that agent
   (`liveInkAskedClaude`, `liveInkAskedCodex`). Until then it comes before why speech cannot listen
   (`NoteContent.prompt`). The prompt goes once the person types or speaks, so with speech on the
-  note can fill before it is read. Under the switch and in setup, it names the agents that can
+  note can fill before it is read. In setup, it names the agents that can
   answer: Claude, Codex, or both (`ResponderStatus.costNote`).
 
 ## The pair
@@ -60,7 +60,7 @@ is missing. `docs/live-ink.md` has the rest of live ink's rules. The decisions b
   picker for as long as it lasts. A double tap never collides: `ModifierTap` counts a modifier only when it is pressed alone, and
   another modifier's press resets its count.
 - A new pair replaces the chord and keeps the marks (`LiveInk.takeChord`). The menu's badge and the
-  General tab's words name the pair, and so do the keys in setup's live ink demo.
+  Live Ink tab's words name the pair, and so do the keys in setup's live ink demo.
 
 ## When a responder starts
 

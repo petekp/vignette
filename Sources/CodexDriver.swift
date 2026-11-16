@@ -72,7 +72,7 @@ final class CodexDriver: ResponderDriver {
         return nil
     }
 
-    nonisolated static let signedOut = "Codex isn't signed in for live ink. You can sign in in Settings."
+    nonisolated static let signedOut = "Codex isn't signed in for live ink. You can sign in under Live Ink in Settings."
 
     /// A note offers Codex only where it is installed.
     static let alwaysOffered = false

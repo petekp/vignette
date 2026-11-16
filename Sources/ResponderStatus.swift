@@ -144,7 +144,7 @@ final class ResponderStatus: ObservableObject {
     }
 }
 
-/// Codex's sign-in as a form row: the General tab's, under Live ink, while Codex is installed, and
+/// Codex's sign-in as a form row: the Live Ink tab's, while Codex is installed, and
 /// that of setup's permissions page for live ink. The words are in docs/voice.md.
 struct CodexSignInRow: View {
     @ObservedObject var status: ResponderStatus

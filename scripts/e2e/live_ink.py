@@ -346,7 +346,7 @@ def ink_claude_shows_no_tools(app):
 
 def ink_offered_once(app):
     """An install updated from 0.1.6, whose settings.json has no live ink keys, is offered live ink on
-    its first launch only: Settings opens on its General tab, the offer is recorded, and the next
+    its first launch only: Settings opens on its Live Ink tab, the offer is recorded, and the next
     launch offers nothing."""
     app.write_settings()
     with open(app.settings) as f:

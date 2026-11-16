@@ -43,7 +43,7 @@
   forward while it is up; with the icon hidden it is the way back. A `vignette://` URL is not a
   reopen (checked 2026-09-25), so a script's commands never open the window. The menu names its
   two screenshot switches as the Screenshots tab does, under an "After a Screenshot" section
-  header, and its Live Ink switch as the General tab does.
+  header, and its Live Ink switch as the Live Ink tab does.
 - Files named `*-annotated.png` are outputs and are ignored by the watcher. `Stitch *.png`
   outputs are not ignored on purpose: they arrive like a capture, which is what carries a stitch into
   the annotator when `annotateOnCapture` is on. The watcher takes png, jpg, jpeg, and heic images
