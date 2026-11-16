@@ -974,9 +974,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         let shortcut = HotKeySpec.parse(settings.data.recentHotkey)
 
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
-        let liveInkItem = ShortcutHintItem(title: "Live Ink", action: #selector(toggleLiveInk), keyEquivalent: "")
+        let liveInkItem = NSMenuItem(title: "Live Ink", action: #selector(toggleLiveInk), keyEquivalent: HotKeySpec.menuHold(settings.data.liveInkChordChoice.glyphs))
+        liveInkItem.keyEquivalentModifierMask = []
         liveInkItem.state = settings.data.liveInk ? .on : .off
-        liveInkItem.hint = "Hold \(settings.data.liveInkChordChoice.glyphs)"
         menu.addItem(liveInkItem)
         // The same two switches, under the same heading, as the Settings window's Screenshots tab.
         menu.addItem(.sectionHeader(title: "After a Screenshot"))
@@ -1004,18 +1004,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             menu.addItem(.separator())
         }
 
-        let recentItem = ShortcutHintItem(title: "Show Recent Screenshots", action: #selector(toggleRecent), keyEquivalent: "")
+        let recentItem = NSMenuItem(title: "Show Recent Screenshots", action: #selector(toggleRecent), keyEquivalent: "")
         // A status item's menu is not the main menu, so this key equivalent is live only while the
         // menu is open; the global press is the Carbon hotkey's.
         if let equivalent = shortcut?.menuKeyEquivalent {
             recentItem.keyEquivalent = equivalent.key
             recentItem.keyEquivalentModifierMask = equivalent.modifiers
-        } else if let shortcut {
-            recentItem.hint = shortcut.glyphs
         }
         menu.addItem(recentItem)
-        let drawItem = ShortcutHintItem(title: "Draw on Newest Screenshot", action: #selector(annotateLast), keyEquivalent: "")
-        if let shortcut { drawItem.hint = shortcut.holdLabel }
+        let drawItem = NSMenuItem(title: "Draw on Newest Screenshot", action: #selector(annotateLast), keyEquivalent: shortcut?.menuHoldKeyEquivalent ?? "")
+        drawItem.keyEquivalentModifierMask = []
         menu.addItem(drawItem)
         let folderItem = NSMenuItem(title: "Open Screenshots Folder", action: #selector(openScreenshotsFolder), keyEquivalent: "")
         folderItem.toolTip = (settings.data.folderURL.path as NSString).abbreviatingWithTildeInPath
@@ -1040,7 +1038,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
         menu.addItem(withTitle: "Quit Vignette", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         for item in menu.items where item.action != #selector(NSApplication.terminate(_:)) { item.target = self }
-        ShortcutHints.align(menu)
     }
 
     @objc private func openFilesAndFolders() {
