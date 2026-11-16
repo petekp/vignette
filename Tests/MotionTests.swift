@@ -77,10 +77,11 @@ final class MotionTests: XCTestCase {
         XCTAssertLessThanOrEqual(FlightTiming.quickSpring.settles(duration, distance: 1138, within: 0.5),
                                  FlightTiming.spring.settles(duration, distance: 1138, within: 0.5),
                                  "and lands no later")
-        for timing in FlightTiming.allCases {
+        let timings = FlightTiming.Choice.allCases.map { ($0.rawValue, $0.timing) } + [("slideOut", FlightTiming.slideOut)]
+        for (name, timing) in timings {
             let covered = timing.covers(duration, distance: 1138, within: 0.5)
             XCTAssertGreaterThanOrEqual(timing.settles(duration, distance: 1138, within: 0.5), covered + 0.05 - 1e-9,
-                                        "\(timing) lands at least three refreshes after it covers, so the stack's panel is up")
+                                        "\(name) lands at least three refreshes after it covers, so the stack's panel is up")
             XCTAssertEqual(timing.covers(0, distance: 1138, within: 0.5), 0)
             XCTAssertEqual(timing.settles(0, distance: 1138, within: 0.5), 0)
         }
