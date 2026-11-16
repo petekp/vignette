@@ -48,7 +48,11 @@ final class AnnotationController {
     /// not land on the same display frame, and the picture would drift from the frame between them.
     var frameView: NSView?
     var container: NSView?
-    var zoomScreen: NSScreen?
+    /// The display the zoom last fitted the editor to, kept as its number: AppKit makes new `NSScreen`
+    /// objects when the screens change, and an old one keeps its old visible frame.
+    var zoomDisplay: NSNumber?
+    /// The current screen of `zoomDisplay`, nil once that display is gone.
+    var zoomScreen: NSScreen? { zoomDisplay.flatMap { shown in NSScreen.screens.first { $0.displayNumber == shown } } }
     /// The shot in the editor, from `prepare` until `hide` parks it. Not the session: see AnnotatorTransition.
     var current: Screenshot?
     let outsideClick = OutsideClick()
