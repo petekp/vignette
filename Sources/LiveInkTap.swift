@@ -50,8 +50,8 @@ final class LiveInkTap {
         tap.link.port = port
         taken.withLock { $0 = Taken() }
         let source = CFMachPortCreateRunLoopSource(nil, port, 0)
-        CFRunLoopAddSource(TapThread.shared.loop, source, .commonModes)
-        CFRunLoopWakeUp(TapThread.shared.loop)
+        CFRunLoopAddSource(EventTapThread.shared.loop, source, .commonModes)
+        CFRunLoopWakeUp(EventTapThread.shared.loop)
         CGEvent.tapEnable(tap: port, enable: true)
         tap.source = source
         return tap
@@ -93,7 +93,7 @@ final class LiveInkTap {
         guard let port = link.takePort() else { return }
         Self.stoppedTaking()
         CGEvent.tapEnable(tap: port, enable: false)
-        let loop = TapThread.shared.loop
+        let loop = EventTapThread.shared.loop
         if let source { CFRunLoopRemoveSource(loop, source, .commonModes) }
         CFMachPortInvalidate(port)
         source = nil
@@ -124,38 +124,6 @@ final class LiveInkTap {
                 defer { _port = nil }
                 return _port
             }
-        }
-    }
-
-    /// The thread the callback runs on. macOS turns a tap off when its callback is slow to answer, and
-    /// the main thread can be busy for longer than it waits: in a VM, starting to ink held it for
-    /// 4.8 s, the tap went off, and the menu under the ink highlighted an item.
-    private final class TapThread: Thread, @unchecked Sendable {
-        static let shared = TapThread()
-        private let started = DispatchSemaphore(value: 0)
-        private var runLoop: CFRunLoop?
-
-        /// The thread's run loop, once it runs.
-        var loop: CFRunLoop {
-            if runLoop == nil {
-                start()
-                started.wait()
-            }
-            return runLoop!
-        }
-
-        private override init() {
-            super.init()
-            name = "live ink tap"
-            qualityOfService = .userInteractive
-        }
-
-        override func main() {
-            runLoop = CFRunLoopGetCurrent()
-            // A port keeps the run loop waiting while no tap's source is on it.
-            RunLoop.current.add(Port(), forMode: .common)
-            started.signal()
-            while true { RunLoop.current.run() }
         }
     }
 
@@ -194,5 +162,38 @@ final class LiveInkTap {
     private func handOn(_ input: LiveInkOverlay.Input) {
         guard source != nil else { return }
         take(input)
+    }
+}
+
+/// The thread event taps' callbacks run on: `LiveInkTap`'s and `ModifierChord`'s. macOS turns a tap
+/// off when its callback is slow to answer, and the main thread can be busy for longer than it waits:
+/// in a VM, starting to ink held it for 4.8 s, the tap went off, and the menu under the ink
+/// highlighted an item.
+final class EventTapThread: Thread, @unchecked Sendable {
+    static let shared = EventTapThread()
+    private let started = DispatchSemaphore(value: 0)
+    private var runLoop: CFRunLoop?
+
+    /// The thread's run loop, once it runs.
+    var loop: CFRunLoop {
+        if runLoop == nil {
+            start()
+            started.wait()
+        }
+        return runLoop!
+    }
+
+    private override init() {
+        super.init()
+        name = "live ink tap"
+        qualityOfService = .userInteractive
+    }
+
+    override func main() {
+        runLoop = CFRunLoopGetCurrent()
+        // A port keeps the run loop waiting while no tap's source is on it.
+        RunLoop.current.add(Port(), forMode: .common)
+        started.signal()
+        while true { RunLoop.current.run() }
     }
 }

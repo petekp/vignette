@@ -42,23 +42,23 @@ Letting go of one modifier and pressing it again while the other stays down give
 
 Owner: `ModifierChord.swift:63`. Tests: none.
 
-Owns a `HeldChord`, the key monitors and a poll that detects a key pressed during the chord. `LiveInk.makeChord` creates it and `LiveInk.takeChord()` replaces it.
+Owns a `HeldChord`, the modifier tap (`FlagsTap`, or the key monitors without it) and a poll that detects a key pressed during the chord. `LiveInk.makeChord` creates it and `LiveInk.takeChord()` replaces it.
 
-**States**: `chord` (`:64`), `keyWatch: Timer?` (`:66`), `beganAt` (`:68`, set only from a monitor event). The states: not held (no `keyWatch`), held (`keyWatch` running).
+**States**: `chord` (`:64`), `keyWatch: Timer?` (`:66`), `beganAt` (`:68`, set only from a tap or monitor event). The states: not held (no `keyWatch`), held (`keyWatch` running).
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| not held | monitor `flagsChanged` giving `.began` | held | `keyWatch` created (`apply`, `:94`), `beganAt` set |
-| held | monitor `flagsChanged` giving `.ended` or `.interrupted` | not held | `keyWatch` invalidated first |
+| not held | tap or monitor `flagsChanged` giving `.began` | held | `keyWatch` created (`apply`, `:94`), `beganAt` set |
+| held | tap or monitor `flagsChanged` giving `.ended` or `.interrupted` | not held | `keyWatch` invalidated first |
 | held | 50 ms `checkKeys` (`:105`) reads flags or a key | not held or held | `HeldChord.flagsChanged` or `keyDown()`; changes go to `apply` |
 | not held | `checkKeys` | — | the poll does not run |
 
 **Invariants**
 
 - The poll timer runs exactly while the chord is held. `apply` invalidates it before every change and creates it only on `.began`. Checked by: nothing.
-- The poll never produces `.began`, so `beganAt` always comes from a monitor event. Checked by: nothing.
+- The poll never produces `.began`, so `beganAt` always comes from a tap or monitor event. Checked by: nothing.
 
 **Late and concurrent answers**
 
@@ -98,7 +98,7 @@ Derived states:
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | any | `.began` and `mayInk()` false | unchanged | log only; `HeldChord` stays held (`:1763`) |
-| Idle, Settled, MenuWait | `.began` | Inking | `chordInterrupted=false`, `listening?.pressedAgain()`, then `startInking`: `inkings += 1`, `FocusReturn.sessionStarting`, `drewWhileInking=false`, `releaseWatch=nil`, `inking=activeSurfaces()`, overlays `setInking(true)`, `startTap`, hover, `fieldTimer`. A pending `closeMenus` is dropped by the `inkings` mismatch. |
+| Idle, Settled, MenuWait | `.began` | Inking | `ownMenus.close()` (Vignette's own open menu, `LiveMenus.Own`), `chordInterrupted=false`, `listening?.pressedAgain()`, then `startInking`: `inkings += 1`, `FocusReturn.sessionStarting`, `drewWhileInking=false`, `releaseWatch=nil`, `inking=activeSurfaces()`, overlays `setInking(true)`, `startTap`, hover, `fieldTimer`. A pending `closeMenus` is dropped by the `inkings` mismatch. |
 | Inking, Stroking | `.began` (script, or a re-begin) | same | `startInking` runs again: new `inkings`, timer restarted, tap and `pressedSurface` kept (`startTap` guard, `:1826`) |
 | ReleasePending | `.began` | Stroking | `releaseWatch` invalidated (`:1783`); the stroke now ends without ending inking |
 | Inking | first non-empty `strokeMoved`, or `fieldTimer` fires | Inking, field shown | `showFieldForChord`: `holdField`, `letGoOfFocus("ink")`, `InkBackdrop.refresh`, `listen()` |

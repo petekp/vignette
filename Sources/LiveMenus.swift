@@ -56,6 +56,39 @@ enum LiveMenus {
         done(left)
     }
 
+    /// Vignette's own menus while they are open, heard from NSMenu's tracking notifications. Such a
+    /// menu tracks on the main thread, where inking runs, and holds the keys the note would take, so
+    /// the chord closes it before inking starts. Other apps' menus stay open under the ink.
+    @MainActor
+    final class Own {
+        /// The outermost first.
+        private var open: [NSMenu] = []
+        private var observers: [Any] = []
+
+        init() {
+            let center = NotificationCenter.default
+            observers = [
+                center.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { [weak self] note in
+                    MainActor.assumeIsolated { if let menu = note.object as? NSMenu { self?.open.append(menu) } }
+                },
+                center.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { [weak self] note in
+                    MainActor.assumeIsolated { self?.open.removeAll { $0 === note.object as? NSMenu } }
+                },
+            ]
+        }
+
+        isolated deinit {
+            for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        }
+
+        /// Ends the tracking of the outermost open menu, which closes its submenus too.
+        func close() {
+            guard let menu = open.first else { return }
+            menu.cancelTracking()
+            Log.write("[live-ink] closed Vignette's own menu")
+        }
+    }
+
     /// The menu at `window`'s middle, or the menu it opened from, all the way up, as Accessibility
     /// sees it in the window's app.
     private static func outermostMenu(in window: Window) -> AXUIElement? {
