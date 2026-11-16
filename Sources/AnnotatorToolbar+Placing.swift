@@ -17,9 +17,11 @@ extension AnnotatorToolbar {
     /// Puts the bar's top edge at `top` at once, under the frame `place` was given: a zoomed frame
     /// carries the bar down as it grows towards it, and back up as it comes home. At once, with no
     /// spring of its own, since the frame it follows is already on one. A top at or above the bar's
-    /// place is the place itself, and a bar already there is left alone, slide and all.
-    func follow(top: CGFloat) {
-        guard let (frame, gap) = placedBelow else { return }
+    /// place is the place itself, and a bar already there is left alone, slide and all. `fitted` is
+    /// the fitted frame the zoom is growing from: a bar placed under another frame, the last image's
+    /// before a swap's `place`, is not the one this top belongs to, and is left to slide.
+    func follow(top: CGFloat, fitted: NSRect) {
+        guard let (frame, gap) = placedBelow, frame == fitted else { return }
         let placed = frame.minY - gap
         let carried = top < placed ? top : nil
         guard carried != carriedTop else { return }

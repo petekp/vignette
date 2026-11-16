@@ -41,7 +41,7 @@
   place the frame's rect is set. In one run loop turn it sets the frame from `Zoom.frame` and the
   picture inside it from `Zoom.picture`, and hands the editor its new size and picture together
   (`EditorView.setSize(_:picture:)`), so the marks, the overlay and the text being typed follow in
-  that same turn. The toolbar moves in that turn too (`AnnotatorToolbar.follow`). Its top edge is
+  that same turn. The toolbar moves in that turn too (`AnnotatorToolbar.follow`, given the zoom's fitted frame, and a no-op for a bar placed under another frame, so a tick before a swap's `place` cannot make the bar jump). Its top edge is
   `annotationToolbarGap` below the frame's bottom edge, or below the fitted frame's when that is
   lower (`Zoom.barTop`). So a frame growing down carries the bar with it, the same gap between them,
   and a pull below the fit leaves the bar where it opened. Once the frame's bottom edge reaches the
