@@ -95,8 +95,7 @@ extension LivePacket {
     }
 
     /// The app windows on the screen, front to back, but Vignette's, the Dock's, the menu bar's and
-    /// its items', and macOS's own prompts. Ink is not drawn on those, and they never cover the ink's
-    /// window.
+    /// its items', and macOS's own prompts.
     @MainActor
     static func listedWindows() -> [Listed] {
         let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
