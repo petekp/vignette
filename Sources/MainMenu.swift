@@ -25,4 +25,11 @@ enum MainMenu {
         edit.submenu = editMenu
         return main
     }
+
+    /// From macOS 27, AppKit decides whether a menu item shows an image, and `.hidden` is the opt-out.
+    /// Without it the system puts a gear beside this item, which pushes its label right of the others.
+    static func addSettings(to menu: NSMenu, action: Selector) {
+        let item = menu.addItem(withTitle: "Settings…", action: action, keyEquivalent: ",")
+        if #available(macOS 27.0, *) { item.preferredImageVisibility = .hidden }
+    }
 }
