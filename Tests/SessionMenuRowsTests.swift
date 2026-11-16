@@ -112,4 +112,22 @@ final class SessionMenuRowsTests: XCTestCase {
         XCTAssertEqual(menu.size.height, twoLines, "a responder that cannot answer, with a long reason")
         XCTAssertEqual(menu.items[0].toolTip, problem)
     }
+
+    func testSearchFindsTheWordsAtARowsRight() {
+        let now = Date()
+        func session(_ id: String, hours: Double, busy: Bool = false, repo: String) -> AgentDestination {
+            var s = AgentDestination(id: id, name: id, address: .claudeSession(id), lastUsed: now.addingTimeInterval(-hours * 3600),
+                                     place: .repository(name: repo, root: "/Users/p/Code/\(repo)", worktree: nil, subfolder: nil))
+            if busy { s.turn = .busy }
+            return s
+        }
+        let list = [session("a", hours: 5, busy: true, repo: "vignette"), session("b", hours: 3, repo: "vignette"), session("c", hours: 48, repo: "inbox")]
+        let groups = SessionMenu.menu(list, destination: nil, now: now).everyone
+        func ids(_ query: String) -> [[String]] { SessionMenu.matching(query, in: groups).map { $0.rows.map(\.id) } }
+        XCTAssertEqual(ids("WORKING"), [["a"]], "a busy row is found by its working badge")
+        XCTAssertEqual(ids("3 hr"), [["b"]], "a time badge is found by the words it shows")
+        XCTAssertEqual(ids("2 days ago"), [["c"]], "every word of the badge matches")
+        XCTAssertEqual(ids("hr vignette"), [["b"]], "a badge word combines with a header word, and the busy row's badge has no hr")
+        XCTAssertEqual(ids("1 hr"), [], "a time no badge shows matches nothing")
+    }
 }
