@@ -115,6 +115,12 @@
   (`ScreenshotRequests.sourceKey(of:)`). A rename after the send moves `sourceKey` with it.
   A published reply is its own card and nothing else
   says it arrived. `docs/send-confirmation-2026-09-26.md` has the frames.
+- A send that reaches its client, accepted or queued by Codex, is recorded on the screenshot it was
+  sent from as the `com.petepetrash.vignette.sent` attribute (`Agent.Sent`), which the card's tab
+  shows (`docs/rules/agent-push.md`). `ScreenshotRequests.recordOutcome` writes it, so a send handed
+  over at quit and a request cleared after its line went are recorded too. A failed or uncertain
+  send writes nothing, and a send cancelled with Don't send never gets an outcome. The title is the
+  request's `cardTitle`, which `send` takes from the caller at Send. A newer send replaces the record.
   While the line waits, the card shows `.inGrace`: a ring round the logo that empties to the
   deadline, and a Don't send button, the only part of the overlay that takes presses. The ring is
   drawn from the clock and is the one animation not scaled by the motion setting. The button

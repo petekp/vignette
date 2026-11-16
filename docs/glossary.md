@@ -64,6 +64,12 @@ What a card says after something happened to it: Copied, Not copied, or where a 
 it went. A card shows one notice at a time.
 _Avoid_: Mark, toast, badge
 
+**Tab**:
+The white capsule in a card's top-right corner. It says which agent the card is from, which session
+the screenshot was last sent to, or that an agent's card was replied to. It stays on the card, unlike
+a notice.
+_Avoid_: Coin, sticker
+
 ## Drawing
 
 **Draw**:

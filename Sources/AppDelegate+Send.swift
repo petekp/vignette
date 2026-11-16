@@ -61,7 +61,7 @@ extension AppDelegate {
         do {
             record = try requests.send(picture, source: shot.key, to: destination, message: message,
                                        instructions: settings.data.sendInstructions,
-                                       grace: settings.data.ui.sendGraceSeconds)
+                                       grace: settings.data.ui.sendGraceSeconds, cardTitle: title)
         } catch {
             annotator.sendFailed((error as? ScreenshotRequests.Refusal)?.reason ?? "Vignette couldn't send the drawing. The log has details.")
             return

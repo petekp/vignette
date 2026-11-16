@@ -47,11 +47,13 @@ enum Agent {
 
     /// Records the agent that added the file and the session it came from, which is what
     /// `origin(of:)` reads back. With an origin, its client is the agent. A session recorded by an
-    /// earlier push and not named by this one is removed, so Reply never goes to it. A failure is
+    /// earlier push and not named by this one is removed, so Reply never goes to it, and so is a
+    /// send of the file (`Sent`), which was of the picture this push replaces. A failure is
     /// logged and otherwise ignored: the push itself has already succeeded, and without the session
     /// Reply on the card asks where to send, as for a screenshot of your own.
     static func record(agent name: String, origin: AgentAddress?, on url: URL) {
         write(origin?.client.rawValue ?? name, attribute, "the agent", on: url)
+        forgetSent(on: url)
         for client in AgentClient.allCases {
             if let origin, origin.client == client {
                 write(origin.id, attribute(for: client), "its session", on: url)
@@ -120,6 +122,42 @@ enum Agent {
     static func hasSentDrawing(_ drawing: Drawing, at url: URL) -> Bool {
         guard let recorded = read(sentDrawingAttribute, of: url) else { return false }
         return recorded == fingerprint(of: drawing, file: url)
+    }
+
+    /// The last send of the file that reached its client: accepted, or queued by Codex. The card's
+    /// tab says it ("Sent to vignette"), or, on an agent's card sent back to the session it came
+    /// from, "Replied". `title` is what the send's notice called the session (`SessionMenu.cardTitle`).
+    struct Sent: Codable, Equatable {
+        let client: AgentClient
+        let id: String
+        let title: String
+        let at: Date
+
+        var address: AgentAddress { AgentAddress(client: client, id: id) }
+    }
+
+    /// Where the last send is stored, as JSON. A newer send replaces it.
+    private static let sentAttribute = Identity.bundleID + ".sent"
+    /// The most bytes a send is read with: a session's title is a tab's label, far shorter. A card
+    /// reads it as it is made, so the buffer stays small.
+    private static let sentBytes = 4096
+
+    /// Records a send of the file. A failure is logged and otherwise ignored: the send itself went,
+    /// and the card then shows no tab for it.
+    static func record(sent: Sent, on url: URL) {
+        guard let json = try? JSONEncoder().encode(sent) else { return }
+        let bytes = Array(json)
+        guard setxattr(url.path, sentAttribute, bytes, bytes.count, 0, 0) != 0 else { return }
+        Log.write("[send] warning could not record the send on \(url.lastPathComponent): \(String(cString: strerror(errno)))")
+    }
+
+    static func forgetSent(on url: URL) {
+        removexattr(url.path, sentAttribute, 0)
+    }
+
+    /// The send `record(sent:on:)` wrote, or nil when the file has none or it does not decode.
+    static func sent(of url: URL) -> Sent? {
+        read(sentAttribute, of: url, upTo: sentBytes).flatMap { try? JSONDecoder().decode(Sent.self, from: Data($0.utf8)) }
     }
 
     /// The most bytes a title's part is read with. A character's bytes have no fixed bound, since

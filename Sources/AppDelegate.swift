@@ -113,11 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             return (index.recent.map(Screenshot.init(key:)), "files=\(index.files) ")
         }
         listOlderShots()
-        thumbnail.onAnnotatorPrepare = { [weak self] shot, opening, frame, room in
-            guard let self else { return }
-            self.annotator.prepare(shot, opening: opening, in: frame, room: room)
-            self.refreshDestinations(for: shot)
-        }
+        thumbnail.origin = { [unowned self] in requests.origin(of: $0) }
         connectAnnotator()
         thumbnail.onTakesScreen = { [weak self] in self?.liveInk.standAside() }
         liveInk.listSessions = { [weak self] answer in self?.sessions.list(answer) }

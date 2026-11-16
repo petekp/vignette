@@ -54,6 +54,18 @@ anything works inside.
 Pressing Don't send says nothing. The press is the confirmation, the ring and the button go with
 it, and "Not sent" is the headline for a failure, not for a choice.
 
+### The tab on a card (`CardTab`)
+
+| Card | Tab | Folded on a narrow card |
+| --- | --- | --- |
+| An agent pushed it | From *Agent* ("From an agent" with no name) | The logo |
+| A person's screenshot that was sent | Sent to *session* | The logo and a paper plane |
+| An agent's card sent back to the session it came from | From *Agent* · Replied | The logo and a check |
+
+*session* is the title the send's notice showed, as above. A newer send replaces it. The tab
+names the last send that reached its client: a send that failed, went unconfirmed or was
+cancelled with Don't send leaves the tab as it was.
+
 ### Why a send did not go (`SubmissionOutcome.reason`)
 
 | When | Reason |

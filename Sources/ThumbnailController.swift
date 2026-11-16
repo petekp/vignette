@@ -256,6 +256,8 @@ final class ThumbnailController {
     var holdsScreen: Bool { visible && (keys.isStack || keys.becomesStack) || run.isActive }
     /// The stack or the annotator is coming up: `holdsScreen` turns true.
     var onTakesScreen: (() -> Void)?
+    /// The session a card came from, which a send back to it makes "Replied" (`ScreenshotRequests.origin(of:)`).
+    var origin: (URL) -> AgentDestination? = Agent.origin(of:)
 
     /// The card with the keyboard focus ring, while the stack is up.
     var focusedShot: Screenshot? { model.cards.first { $0.id == model.focused }?.shot }
@@ -462,6 +464,19 @@ final class ThumbnailController {
         sessionCard?.marks = model.cards.first { $0.id == card.id }.map(\.marks) ?? marks(drawing, on: card)
     }
 
+    /// Sets what the tabs of `shot`'s cards say about its last send, the editor's card included.
+    func setSent(_ sent: Card.Sent?, of shot: Screenshot) {
+        if model.cards.contains(where: { $0.shot.url == shot.url && $0.sent != sent }) {
+            model.cards = model.cards.map { card in
+                guard card.shot.url == shot.url else { return card }
+                var card = card
+                card.sent = sent
+                return card
+            }
+        }
+        if sessionCard?.shot.url == shot.url { sessionCard?.sent = sent }
+    }
+
     /// Reads the drawings of the cards made since the last read, together.
     private func readDrawings() {
         let keys = drawingReads
@@ -599,7 +614,7 @@ final class ThumbnailController {
         let size = layout.cardSize(for: pointSize)
         guard let image = Thumbnailer.image(at: url, maxPixel: thumbnailPixels(size: size, pointSize: pointSize), space: screenSpace) else { return nil }
         return Card(id: UUID(), shot: Screenshot(key: key), image: image, pointSize: pointSize, size: size,
-                    agent: Agent.of(url), duration: Thumbnailer.duration(of: url))
+                    agent: Agent.of(url), duration: Thumbnailer.duration(of: url), sent: sent(of: url))
     }
 
     /// The Copied notice over the cards themselves. With nothing on screen, the first of them comes
@@ -1233,7 +1248,8 @@ final class ThumbnailController {
         let maxPixel = notDownloaded ? cloudThumbnailPixels : thumbnailPixels(size: size, pointSize: header.size)
         let space = screenSpace
         let card = Card(id: UUID(), shot: shot, image: Thumbnailer.cached(at: shot.url, maxPixel: maxPixel, space: space),
-                        pointSize: header.size, size: size, agent: Agent.of(shot.url), duration: header.duration)
+                        pointSize: header.size, size: size, agent: Agent.of(shot.url), duration: header.duration,
+                        sent: sent(of: shot.url))
         if card.image == nil {
             Thumbnailer.loadCard(at: shot.url, maxPixel: maxPixel, space: space, caches: caches) { [weak self] image, kept in
                 guard let self, self.model.cards.contains(where: { $0.id == card.id }) else { return }

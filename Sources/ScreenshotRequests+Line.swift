@@ -78,9 +78,9 @@ extension ScreenshotRequests {
     @discardableResult
     func send(png: Data, source: ScreenshotKey, to destination: AgentDestination, message: String? = nil,
               instructions: String = SettingsData.defaultSendInstructions, grace: TimeInterval = 0,
-              watchingTurn: Bool = false) throws -> Record {
+              watchingTurn: Bool = false, cardTitle: String? = nil) throws -> Record {
         try send(.drawing(png: png), source: source, to: destination, message: message, instructions: instructions,
-                 grace: grace, watchingTurn: watchingTurn)
+                 grace: grace, watchingTurn: watchingTurn, cardTitle: cardTitle)
     }
 
     /// The one line the agent receives, which arrives in the person's session as their own message.

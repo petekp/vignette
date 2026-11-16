@@ -29,6 +29,9 @@ extension ScreenshotRequests {
         /// True when the person answered the agent's own image with words alone, so the line named
         /// that image and sent no picture (`ScreenshotRequests.Picture.unchanged`).
         var unchanged: Bool? = nil
+        /// What the card called the session at Send (`SessionMenu.cardTitle`). Nil in a record from
+        /// before this field.
+        var cardTitle: String? = nil
 
         enum Status: String, Codable {
             /// Stored and not yet handed to the client: in its grace, or about to be.
@@ -44,6 +47,17 @@ extension ScreenshotRequests {
 
         /// Whether a reply may still be accepted for this request.
         var takesReplies: Bool { status != .cleared }
+
+        /// This request as the send its screenshot records once it reaches the client.
+        var sent: Agent.Sent {
+            Agent.Sent(client: address.client, id: address.id, title: cardTitle ?? destinationName, at: Date())
+        }
+    }
+
+    /// The screenshot a request was sent from. A record from before `sourceKey` keeps only its
+    /// name, and a send is made from the watch folder.
+    func sourceKey(of record: Record) -> ScreenshotKey {
+        record.sourceKey.map { ScreenshotKey(asGiven: $0) } ?? ScreenshotKey(folder: callbacks.watchFolder(), name: record.source)
     }
 
     /// One reply to one request, and where its import has reached.
