@@ -40,9 +40,9 @@
   from the editor to its slot's place off the screen, on the slide-out's spring, so a zoomed editor
   springs back to the fit first and its image starts about 0.2 s after the column. The image
   leaves at once, with the newest card, rather than at its slot's place in the stagger. A card already on its way home when the column
-  goes is turned around the same way (`ThumbnailController.slideOut`). A click outside reaches both the
-  annotator's `OutsideClick` and the stack's, the annotator's first in the log on macOS 27, so its
-  card is already on its way home when the stack's dismissal arrives. Add a sequence to `AnnotationRunTests`,
+  goes is turned around the same way (`ThumbnailController.slideOut`). While the stack shows, a click
+  outside reaches only the stack's `OutsideClick` and is a dismissal like the shortcut's
+  (`docs/rules/flights-and-presses.md`). Add a sequence to `AnnotationRunTests`,
   or to `AnnotatorTransitionTests` for the transition's table, before changing either. Their
   random-sequence tests check the invariants through `EventHold`, with same-turn answers among
   their sequences. A swap runs two flights at once, and the

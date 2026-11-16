@@ -14,7 +14,7 @@ final class ThumbnailController {
     /// `room` is the rect its frame may grow within, which a zoom may not leave.
     var onAnnotatorPrepare: ((Screenshot, Opening, NSRect, NSRect) -> Void)?
     /// The flight covers the annotator's frame; the window comes up behind it and takes the keys.
-    var onAnnotatorShow: (() -> Void)?
+    var onAnnotatorShow: ((_ watchesClickOutside: Bool) -> Void)?
     /// The flight is exactly on the frame; the annotator draws the shadow itself from here on.
     var onAnnotatorLanded: (() -> Void)?
     /// A swap, return, or dismissal has started. The annotator parks its drawing, hides, then calls back.
@@ -677,7 +677,7 @@ final class ThumbnailController {
         keys.send(.dismiss(reason))
     }
 
-    /// The column leaves. Quick Done closes by hand: the focus goes back to the person's app once the
+    /// The column leaves. Quick Done and a click outside close by hand: the focus goes back once the
     /// annotator is gone.
     private func slideOut(_ reason: DismissReason) {
         guard visible else { return }
@@ -692,7 +692,7 @@ final class ThumbnailController {
             for id in model.forming { flights.end(id: id) }
             model.forming = []
         }
-        // An image flying home leaves too: a click outside can close the editor first.
+        // An image still flying home from the editor leaves too.
         for card in model.cards where card.id != annotating?.id && model.outCards.contains(card.id) && flights.isFlying(card.id) {
             leaveWithColumn(card, to: layout.offscreen(cardFrame(of: card)), marks: flights.marks(of: card.id))
         }
@@ -701,7 +701,7 @@ final class ThumbnailController {
             model.cards.contains { $0.id == card.id } ? (card.id, layout.offscreen(cardFrame(of: card))) : nil
         }
         model.slidingOut = true
-        if run.isActive { send(.dismiss(reason == .quickDone ? .finished : nil)) }
+        if run.isActive { send(.dismiss(reason.runEnding)) }
         // Cards leave the way they came, newest first (see CardView). The selection stays in the
         // layout and slides out with them; the block below clears it once gone.
         if reason == .swipe { swipe.leave() }
@@ -848,7 +848,7 @@ final class ThumbnailController {
                 self?.onAnnotatorLanded?()
             })
         case .show:
-            onAnnotatorShow?()
+            onAnnotatorShow?(!keys.isStack)
             guard let card = sessionCard else { return }
             // A lone thumbnail alone in the corner leaves it. With other cards there, its slot stays
             // empty, as the stack's does, so it comes home to the same place.

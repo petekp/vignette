@@ -170,6 +170,17 @@ enum DismissReason: String {
         case .url: self = .url
         }
     }
+
+    /// The hand that ended the annotation run when this dismissal took the editor with the column.
+    /// A click outside ends it as a click outside the editor would, so the focus goes back as the
+    /// editor closes rather than once the column is off the screen.
+    var runEnding: RunEnding? {
+        switch self {
+        case .quickDone: return .finished
+        case .clickOutside: return .clickedAway
+        default: return nil
+        }
+    }
 }
 
 extension CornerPresentation.Event: CustomStringConvertible {

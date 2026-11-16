@@ -107,17 +107,25 @@
 - "Click outside" detection goes through `OutsideClick`. A plain global mouse monitor also
   reports clicks on this app's own floating windows, so the topmost window under the cursor is
   checked first. The stack and the annotator each own one; the monitor's token never leaves that
-  file. The annotator's ignores clicks for `outsideClickSettling` after its window is ordered in:
-  the window server does not report the new window under the cursor for a few milliseconds, and a
-  press inside the frame then reads as outside. That is a race, not motion, so the scale does not
-  touch it.
+  file. A click outside has one owner, because AppKit does not promise the order in which it calls
+  two global monitors. While the corner is the stack, only the stack's watch runs: the annotator
+  starts none (`show(watchesClickOutside:)`), and the stack's dismissal takes the editor down with
+  the column. The run then ends as `clickedAway` (`DismissReason.runEnding`), so the focus goes back
+  as the editor closes, after a zoomed editor's fit-out, as it does for a click outside the editor
+  over lone thumbnails. Over lone thumbnails only the annotator's watch runs. The choice made in
+  `show` holds while the annotator watches: `CornerPresentation` makes no stack from `selected` or
+  `cardLanded` while the editor is open, and the shortcut closes the editor, which stops its watch,
+  before it lists. The annotator's ignores clicks
+  for `outsideClickSettling` after its window is ordered in: the window server does not report the
+  new window under the cursor for a few milliseconds, and a press inside the frame then reads as
+  outside. That is a race, not motion, so the scale does not touch it.
 - A screenshot's transparent pixels are never see-through. The annotator's frame, a card
   (`StackView`) and a flight (`TransitionLayer`) paint `Config.matte`, `#1a1a1a`, behind the image,
   so nothing changes when one takes over from another. The matte is also what routes the annotator's
   clicks. Its window spans the screen's visible frame and is clear outside the frame, and the window
   server gives a press to a window only where its pixel is not clear. So every press on the frame
-  reaches the editor, and a click outside it reaches the app behind, where the annotator's
-  `OutsideClick` sees it and closes the editor. A shadow passes presses too: asked about points from
+  reaches the editor, and a click outside it reaches the app behind, where an `OutsideClick` sees
+  it and closes the editor. A shadow passes presses too: asked about points from
   1 to 64 pt outside a card, the window server named the window behind every time, for a layer
   shadow like the annotator's and a SwiftUI shadow like a flight's. So the annotator's shadow and a
   flight's are click-through. All of this holds for the annotator and the flight layer only while

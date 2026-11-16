@@ -76,6 +76,13 @@ extension AppDelegate {
         thumbnail.annotationSent()
     }
 
+    func unsend(_ shots: [Screenshot]) {
+        let cancelled = shots.flatMap { requests.unsend(file: $0.key) }
+        let what = shots.count == 1 ? shots[0].url.lastPathComponent : "\(shots.count) files"
+        if cancelled.isEmpty { Commands.error("unsend", .nothingToUnsend, "\(what): no send of it is waiting") }
+        else { Commands.ok("unsend", "request=\(cancelled.map(\.id).joined(separator: ",")) \(what)") }
+    }
+
     /// Where the bar can send while this image is open, and the session it came from: an agent's
     /// reply to a request, or a push that named its session. Reading the sessions runs
     /// subprocesses, so it answers later; the bar offers Send once it has a session to send to.

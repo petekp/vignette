@@ -7,20 +7,23 @@ extension AnnotationController {
     /// covers it — except for a shadow, which falls outside the frame it is cast from. The flight
     /// carries the shadow until it lands; `landed` hands it over. The keys came with `prepare`; the
     /// pointer comes here, so a drag lands on the editor as soon as the card looks still.
-    func show() {
+    /// `watchesClickOutside` is false while the stack's own watch decides a click outside.
+    func show(watchesClickOutside: Bool) {
         guard let win = window, current != nil else { return }
         win.alphaValue = 1
         frameView?.layer?.shadowOpacity = 0
         win.makeKeyAndOrderFront(nil)
         toolbar.show()
         NSApp.activate(ignoringOtherApps: true)
-        // A click outside this app's windows ends the session. The window was ordered in a line ago
-        // and the window server does not report it under the cursor yet, so a press inside this
-        // frame in the first few milliseconds would be read as outside and throw the session away
-        // (measured: 3 of 4 presses landing 14 to 19 ms after this call). Nothing is ignored for
-        // long enough to swallow a press that answers the window: it is not on screen until the
-        // flight lands on it, and a hand cannot react inside `outsideClickSettling`.
-        outsideClick.start(settling: Self.outsideClickSettling) { [weak self] in self?.cancel(.clickedAway) }
+        // Over lone thumbnails, a click outside this app's windows ends the session. The window was
+        // ordered in a line ago and the window server does not report it under the cursor yet, so a
+        // press inside this frame in the first few milliseconds would be read as outside and throw the
+        // session away (measured: 3 of 4 presses landing 14 to 19 ms after this call). Nothing is
+        // ignored for long enough to swallow a press that answers the window: it is not on screen
+        // until the flight lands on it, and a hand cannot react inside `outsideClickSettling`.
+        if watchesClickOutside {
+            outsideClick.start(settling: Self.outsideClickSettling) { [weak self] in self?.cancel(.clickedAway) }
+        }
         probeEvents()
         windowUp = true
         // A turn later, once the app is active and the bar is up.

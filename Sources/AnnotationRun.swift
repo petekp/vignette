@@ -18,7 +18,7 @@ struct AnnotationRun: Equatable {
         case cancel(RunEnding)       // Esc, a click outside, Cmd+W, the shortcut: the run ends
         case sent                    // Send: this image closes without a Copied notice, and the run goes on
         case finish                  // Done or Return: the result is on the clipboard, and the run goes on
-        case dismiss(RunEnding?)     // the panel is going away, and the run with it; quick Done is `.finished`
+        case dismiss(RunEnding?)     // the panel is going away, and the run with it; quick Done is `.finished`, a click outside `.clickedAway`
         case remove([ScreenshotKey])        // files trashed or deleted
         case newShot(ScreenshotKey)         // a new file arrived
         case renamed(from: ScreenshotKey, to: ScreenshotKey)   // a file was renamed: a queued file and the open one follow it
