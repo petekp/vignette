@@ -55,6 +55,31 @@ final class SetupInkStage: NSView {
     }
 }
 
+/// A stroke a hand writes on a stage with the real pen, drawn each refresh as far as the hand has got.
+@MainActor
+struct StageWriting {
+    let pen: InkMarkLayer
+    let hand: HandStroke
+    let began: CFTimeInterval
+    var writer: InkHand.Pen
+
+    /// Draws the stroke as far as the hand has got at `now`, and says whether the hand has finished.
+    mutating func draw(at now: CFTimeInterval, markStyle: MarkStyle) -> Bool {
+        let elapsed = now - began
+        let points = hand.events(by: elapsed)
+        guard points.count > 1 else { return false }
+        var stroke = writer.stroke(through: points)
+        // The pen takes whole events; its end goes on to where the hand is at this refresh.
+        if let tip = hand.position(at: elapsed), let end = stroke.points.last, let width = stroke.widths.last,
+           hypot(tip.x - end.x, tip.y - end.y) > 0.25 {
+            stroke.points.append(tip)
+            stroke.widths.append(width)
+        }
+        pen.showPen(stroke, settled: writer.settled.points.count, longest: .greatestFiniteMagnitude, markStyle: markStyle, byClock: true)
+        return elapsed >= hand.duration
+    }
+}
+
 /// The stage, laid over a page.
 struct SetupInkCanvas: NSViewRepresentable {
     let stage: SetupInkStage

@@ -26,6 +26,8 @@ struct LiveInkSettings: View {
 
     var body: some View {
         Group {
+            // A header rather than a row, since a boxed row reads as a setting.
+            Section {} header: { LiveInkTabTitle() }
             if offeringLiveInk {
                 LiveInkOfferSection(pair: settings.data.liveInkChordChoice.glyphs, answer: answerLiveInkOffer)
             }
@@ -102,5 +104,23 @@ struct LiveInkSettings: View {
     private func answerLiveInkOffer(_ on: Bool) {
         withAnimation(SettingsView.noticeMotion) { offeringLiveInk = false }
         callbacks.answerLiveInkOffer(on)
+    }
+}
+
+/// "Live Ink" in the ink's gel, centred at the top of the tab, smaller than setup's title.
+private struct LiveInkTabTitle: View {
+    static let scale: CGFloat = 0.55
+    @StateObject private var writer = InkTitleWriter(scale: LiveInkTabTitle.scale)
+
+    var body: some View {
+        Color.clear
+            .frame(width: SetupInkTitle.size.width * Self.scale, height: SetupInkTitle.size.height * Self.scale)
+            .overlay { SetupInkCanvas(stage: writer.stage).allowsHitTesting(false) }
+            .frame(maxWidth: .infinity)
+            .accessibilityElement()
+            .accessibilityLabel("Live Ink")
+            .accessibilityAddTraits(.isHeader)
+            .onAppear { writer.appear() }
+            .onDisappear { writer.disappear() }
     }
 }

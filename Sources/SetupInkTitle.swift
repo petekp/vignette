@@ -31,4 +31,83 @@ enum SetupInkTitle {
         let shift = CGPoint(x: origin.x + margin - extent.minX, y: origin.y + margin - extent.minY)
         return strokes[index].map { CGPoint(x: $0.x + shift.x, y: $0.y + shift.y) }
     }
+
+    /// The hand starting stroke `index` on `stage` at `now`, in a room whose top-left is `origin`.
+    @MainActor
+    static func write(_ index: Int, on stage: SetupInkStage, in origin: CGPoint, at now: CFTimeInterval) -> StageWriting {
+        StageWriting(pen: stage.pen(), hand: HandStroke(through: stroke(index, in: origin), duration: SetupInkDemo.writing[index]),
+                     began: now, writer: InkHand.Pen(feel: Settings.shared.data.ui.inkHandFeel))
+    }
+
+    /// The title written whole on `stage`, in a room whose top-left is `origin`: a pen for each stroke.
+    @MainActor
+    static func written(on stage: SetupInkStage, in origin: CGPoint) -> [InkMarkLayer] {
+        let ui = Settings.shared.data.ui
+        return SetupInkDemo.writing.enumerated().map { index, duration in
+            let hand = HandStroke(through: stroke(index, in: origin), duration: duration)
+            let pen = stage.pen()
+            pen.showPen(InkHand.stroke(hand.points, tapersEnd: true, feel: ui.inkHandFeel), settled: 0, longest: .greatestFiniteMagnitude,
+                        markStyle: ui.markStyle)
+            return pen
+        }
+    }
+}
+
+/// The title on a stage of its own, at `scale` of setup's size, as the Live Ink tab shows it. The
+/// hand writes it the first time it appears in a launch; after that, and with motion off, it shows
+/// written.
+@MainActor
+final class InkTitleWriter: ObservableObject {
+    let stage = SetupInkStage()
+    private static var writtenThisLaunch = false
+    private var pens: [InkMarkLayer] = []
+    private var writing: [StageWriting] = []
+    private var began: CFTimeInterval = 0
+    /// How many strokes the hand has started.
+    private var started = 0
+
+    init(scale: CGFloat) {
+        stage.layer?.sublayerTransform = CATransform3DMakeScale(scale, scale, 1)
+    }
+
+    private var isWriting: Bool { started < SetupInkTitle.strokes.count || !writing.isEmpty }
+
+    func appear() {
+        guard pens.isEmpty else { return }
+        guard !Self.writtenThisLaunch, Settings.shared.motionScale > 0 else {
+            pens = SetupInkTitle.written(on: stage, in: .zero)
+            return
+        }
+        Self.writtenThisLaunch = true
+        // Before the first stroke, which would otherwise wait for the gel's first drawing.
+        InkMarkLayer.warmUp(scale: stage.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2)
+        began = CACurrentMediaTime()
+        started = 0
+        stage.onFrame = { [weak self] in self?.refreshed(showing: $0) }
+        stage.isRunning = true
+    }
+
+    /// The tab went. A title cut short is shown written the next time it appears.
+    func disappear() {
+        stage.isRunning = false
+        guard isWriting else { return }
+        started = SetupInkTitle.strokes.count
+        writing = []
+        pens.forEach { $0.removeFromSuperlayer() }
+        pens = []
+    }
+
+    private func refreshed(showing now: CFTimeInterval) {
+        while started < SetupInkTitle.strokes.count, SetupInkDemo.writingStarts[started] <= now - began {
+            let stroke = SetupInkTitle.write(started, on: stage, in: .zero, at: now)
+            pens.append(stroke.pen)
+            writing.append(stroke)
+            started += 1
+        }
+        let markStyle = Settings.shared.data.ui.markStyle
+        for index in writing.indices.reversed() where writing[index].draw(at: now, markStyle: markStyle) {
+            writing.remove(at: index)
+        }
+        if !isWriting { stage.isRunning = false }
+    }
 }
