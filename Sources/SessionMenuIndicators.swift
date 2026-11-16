@@ -81,11 +81,6 @@ extension SessionMenu {
     /// A row with words at its right edge: a session's activity, or a project's count of running
     /// sessions. They follow its title after a right tab stop, which `SessionMenuIndicators` sets to
     /// one place for every row of a menu, so the words end in one column.
-    ///
-    /// The row's second line is part of its attributed title, not its subtitle. On macOS 27, setting
-    /// an item's attributed title while its menu is open draws the new title without the subtitle,
-    /// until the row's highlight changes, and these rows set theirs as the highlight moves and as
-    /// "working" shimmers.
     @MainActor
     final class IndicatorItem: NSMenuItem {
         enum Indicator: Equatable {
@@ -96,10 +91,6 @@ extension SessionMenu {
 
         let indicator: Indicator
         let text: String
-        /// The line under the title, in the font and colour AppKit gives a subtitle.
-        var secondLine: String? {
-            didSet { render() }
-        }
         var tabStop: CGFloat = 0
         /// Whether the row is drawn as the menu's highlighted row. The words after the tab carry
         /// colours of their own, so the highlight sets them.
@@ -118,13 +109,10 @@ extension SessionMenu {
 
         required init(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
-        /// How wide the row's text is drawn: its title or its second line, whichever is wider.
+        /// How wide the row's text is drawn.
         var textWidth: CGFloat {
-            let title = (text as NSString).size(withAttributes: [.font: NSFont.menuFont(ofSize: 0)]).width
-            return max(title, SessionMenu.subtitleWidth(of: self))
+            (text as NSString).size(withAttributes: [.font: NSFont.menuFont(ofSize: 0)]).width
         }
-
-        static let secondLineFont = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
 
         var indicatorWidth: CGFloat {
             switch indicator {
@@ -134,7 +122,7 @@ extension SessionMenu {
             }
         }
 
-        /// Sets the title: the row's text, a tab, its words as the row is now, then its second line.
+        /// Sets the title: the row's text, a tab, then its words as the row is now.
         func render() {
             let title = NSMutableAttributedString(string: text, attributes: [.font: NSFont.menuFont(ofSize: 0)])
             title.append(NSAttributedString(string: "\t"))
@@ -159,10 +147,6 @@ extension SessionMenu {
             let paragraph = NSMutableParagraphStyle()
             paragraph.tabStops = [NSTextTab(textAlignment: .right, location: tabStop)]
             title.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: title.length))
-            if let secondLine {
-                title.append(NSAttributedString(string: "\n"))
-                title.append(NSAttributedString(string: secondLine, attributes: [.font: Self.secondLineFont, .foregroundColor: NSColor.secondaryLabelColor]))
-            }
             attributedTitle = title
         }
 
@@ -219,17 +203,11 @@ extension SessionMenu {
         }
     }
 
-    /// How wide `item`'s second line is drawn, or 0 without one.
+    /// How wide `item`'s subtitle is drawn, or 0 without one.
     @MainActor
     static func subtitleWidth(of item: NSMenuItem) -> CGFloat {
-        let line: String? = if let row = item as? IndicatorItem {
-            row.secondLine
-        } else if #available(macOS 14.4, *) {
-            item.subtitle
-        } else {
-            nil
-        }
-        return line.map { ($0 as NSString).size(withAttributes: [.font: IndicatorItem.secondLineFont]).width } ?? 0
+        guard #available(macOS 14.4, *), let line = item.subtitle else { return 0 }
+        return (line as NSString).size(withAttributes: [.font: subtitleFont]).width
     }
 }
 

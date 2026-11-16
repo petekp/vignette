@@ -69,15 +69,16 @@
   answer that does not parse, or a status whose tab is not the focused terminal's marks nothing,
   and logs `[herdr] no focus: <reason>` when the reason changes, then `[herdr] focus read again`.
   The target shows the agent's logo and the session's title, cut in the middle past 132 pt, with
-  the title, the second line and the repository in its tooltip (`SessionMenu.row(of:among:)`). Its width is set rather than left to the text, so it springs with the bar. A
+  the title, the session's details and the repository in its tooltip (`SessionMenu.row(of:among:)`). Its width is set rather than left to the text, so it springs with the bar. A
   pick from its menu is applied a turn later, after the menu's own event loop ends, since a change
   made inside it jumped instead of animating. Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
   sessions the person sent to in the last 4 hours, newest send first, then the rest by when the agent last worked; five of them, with
   the target always among them, grouped under a header for each repository with Other folders last, then, after a separator, one submenu per project, titled as its header, with its count at its right and every
   running session of that project in it, the top rows too (live ink's Tab steps through the five only).
-  The rows that start a session are in neither part unless no session is running (`docs/rules/send.md`). The menu's first row is a search field that has the keyboard: typing lists the matching sessions from every project (a query also matches the words at a row's right, as shown: working, 5 min ago), the rows that start one after the running ones, Return picks the first, and Esc closes the menu (`SessionMenuSearch`). A row starts with its agent's logo, which macOS 27 shows only when the item asks for it (`SessionMenu.item`, `preferredImageVisibility`). A row's title is the name of the Herdr tab its terminal is in, unless Herdr numbered it, else
-  the session's name; its second line is the worktree, the branch and the inbox mod's goal
-  (`InboxModStore` reads the mod's private file and may find nothing). At its right the row says
+  The rows that start a session are in neither part unless no session is running (`docs/rules/send.md`). The menu's first row is a search field that has the keyboard: typing lists the matching sessions from every project (a query also matches a row's details and the words at its right, as shown: working, 5 min ago), the rows that start one after the running ones, Return picks the first, and Esc closes the menu (`SessionMenuSearch`). A row starts with its agent's logo, which macOS 27 shows only when the item asks for it (`SessionMenu.item`, `preferredImageVisibility`). A row's title is the name of the Herdr tab its terminal is in, unless Herdr numbered it, else
+  the session's name. A session's row is one line: its details, the worktree, the branch and the
+  inbox mod's goal (`SessionMenu.Row.details`; `InboxModStore` reads the mod's private file and may
+  find nothing), are in its tooltip, under its title. At its right the row says
   working, after a green dot, while a turn runs, else when the session was last active
   (`SessionMenu.Activity`). Those words, and a project's count, follow the title after a right tab
   stop in its attributed title, with no `NSMenuItemBadge`, which has no API for its look or its
@@ -96,20 +97,17 @@
   letter, on live ink's thinking clock (`SessionMenu.shimmer`, one beat across and one at rest), and the dot's soft glow is brightest as each
   pass starts and faintest as it ends, from
   a timer in the common run loop modes, which include the menu's tracking; the word and the dot are still under
-  Reduce Motion or `ui.motion` 0, and the timer stops when the menu closes or no row says working. A row with words at its
-  right carries its second line in its attributed title, after a line break, in the font and
-  colour AppKit gives a subtitle (`IndicatorItem.secondLine`): on macOS 27, an attributed title
-  set while the menu is open is drawn without the item's subtitle until the row's highlight
-  changes, and these rows set theirs as the highlight moves and as working shimmers. The time is
+  Reduce Motion or `ui.motion` 0, and the timer stops when the menu closes or no row says working. The time is
   in the secondary label grey, as the count and working are. Headers are section headers, as
   written, in AppKit's own section-header font, 11 pt semibold (`SessionMenu.header`). AppKit
   draws a section header's title in the tertiary grey, which replaces any system label colour or
   grey set on it, so the header's secondary grey is a colour of the app's own
-  (`SessionMenu.own`). AppKit measures an item's
-  second line as two lines once it is wider than both its title and about 282 pt, yet draws it on
-  one, which left a blank line under it and the logo below the text. So the item cuts the second
-  line to fit, and the title to `SessionMenu.titleWidth`, which a menu with little room on screen
-  also wrapped and drew as its first line (`SessionMenu.item`, `fitted`). The tooltip keeps both whole. A Claude Code session is active while the plugin's monitor runs in it,
+  (`SessionMenu.own`). A row cuts its title to `SessionMenu.titleWidth`, since a menu with little
+  room on screen wrapped a longer one and drew its first line (`SessionMenu.item`, `fitted`); the
+  tooltip keeps it whole. Live ink's row for an agent on the screen that cannot answer says why on
+  a second line, its subtitle. AppKit measures a subtitle as two lines once it is wider than both
+  its title and about 282 pt, yet draws it on one, which left a blank line under it and the logo
+  below the text, so `SessionMenu.setSubtitle` cuts it to fit and the tooltip keeps it whole. A Claude Code session is active while the plugin's monitor runs in it,
   and a Codex thread when it was used in the last day, since nothing says which threads the Codex
   app has open. The target settles once, from the first answer that names a focus (herdr's comes in
   about 60 ms, before the bar is up), or else from the whole list (`Model.answered`). With a kept

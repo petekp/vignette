@@ -45,16 +45,13 @@ final class SessionMenuRowsTests: XCTestCase {
         XCTAssertGreaterThan(SessionMenu.subtitleWidth(of: wide), 250)
         XCTAssertGreaterThanOrEqual(ends.first!, SessionMenu.subtitleWidth(of: wide), "the words end at the right of a wider row without words")
         for row in rows {
-            let lines = row.attributedTitle!.string.components(separatedBy: "\n")
-            let words = lines[0].components(separatedBy: "\t")
+            let line = row.attributedTitle!.string
+            XCTAssertFalse(line.contains("\n"), "a session's row is one line")
+            let words = line.components(separatedBy: "\t")
             let title = (words[0] as NSString).size(withAttributes: [.font: NSFont.menuFont(ofSize: 0)]).width
-            let indicator = row.attributedTitle!.attributedSubstring(from: NSRange(location: words[0].count + 1, length: lines[0].count - words[0].count - 1)).size().width
+            let indicator = row.attributedTitle!.attributedSubstring(from: NSRange(location: words[0].count + 1, length: line.count - words[0].count - 1)).size().width
             XCTAssertGreaterThanOrEqual(ends.first! - indicator, title + SessionMenu.indicatorGap, row.text)
-            row.drawsHighlighted = true
-            row.render()
-            XCTAssertNotNil(row.secondLine)
-            XCTAssertEqual(row.attributedTitle!.string.components(separatedBy: "\n").last, row.secondLine, "a new title keeps the second line")
-            if #available(macOS 14.4, *) { XCTAssertNil(row.subtitle, "AppKit would draw a subtitle twice") }
+            if #available(macOS 14.4, *) { XCTAssertNil(row.subtitle, row.text) }
         }
         let quiet = AgentDestination(id: "d", name: "Fix", address: .claudeSession("d"), lastUsed: nil, place: .folder(fromHome: "~/Code"))
         let plain = NSMenu()
@@ -62,7 +59,7 @@ final class SessionMenuRowsTests: XCTestCase {
         let oneRow = NSMenu()
         menu.removeItem(rows[0])
         oneRow.addItem(rows[0])
-        XCTAssertEqual(oneRow.size.height, plain.size.height, "the dot and the tab keep the row two lines tall")
+        XCTAssertEqual(oneRow.size.height, plain.size.height, "the dot and the tab keep the row one line tall")
         withExtendedLifetime(search) {}
     }
 
@@ -100,11 +97,17 @@ final class SessionMenuRowsTests: XCTestCase {
             menu.addItem(SessionMenu.item(for: row(session), selected: false))
             return menu.size.height
         }
-        let twoLines = height(title: "Fix", folder: "~/Code")
-        XCTAssertEqual(height(title: "Fix", folder: "~/" + String(repeating: "worktree-", count: 12)), twoLines,
-                       "a second line far wider than its title")
-        XCTAssertEqual(height(title: String(repeating: "a long title ", count: 10), folder: "~/" + String(repeating: "worktree-", count: 30)), twoLines,
-                       "a second line wider than a long title")
+        let oneLine = NSMenu()
+        oneLine.addItem(NSMenuItem(title: "Fix", action: nil, keyEquivalent: ""))
+        SessionMenu.showLogo(of: .claude, on: oneLine.items[0])
+        XCTAssertEqual(height(title: "Fix", folder: "~/" + String(repeating: "worktree-", count: 12)), oneLine.size.height,
+                       "a session's row is one line, its details in the tooltip")
+        XCTAssertEqual(height(title: String(repeating: "a long title ", count: 10), folder: "~/Code"), oneLine.size.height, "a long title")
+        let reasoned = NSMenu()
+        reasoned.addItem(NSMenuItem(title: "Claude Code, on the screen", action: nil, keyEquivalent: ""))
+        SessionMenu.setSubtitle("Not signed in.", on: reasoned.items[0])
+        let twoLines = reasoned.size.height
+        XCTAssertGreaterThan(twoLines, oneLine.size.height)
         let problem = "Claude Code is not signed in. Run claude in a terminal and sign in, then try the note again."
         let responder = LiveNotePopover.Responder(client: .claude, name: "Claude Code", problem: problem, canPick: false)
         let menu = NSMenu()

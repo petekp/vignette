@@ -41,6 +41,8 @@ extension SessionMenu {
     /// whichever is wider, then draws it on one line across the menu: the row keeps an empty line
     /// and its logo sits below its text. Measured on macOS 27.2: between 282 and 288 pt of 11 pt text.
     static let subtitleWidth: CGFloat = 280
+    /// The font AppKit draws an item's subtitle in.
+    static let subtitleFont = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
 
     /// `text`, cut at its end with "…" when it is wider than `width` in `font`.
     static func fitted(_ text: String, width: CGFloat, font: NSFont) -> String {
@@ -55,19 +57,17 @@ extension SessionMenu {
         return cut(low)
     }
 
-    /// Sets `text` as the item's second line, cut to the width AppKit draws on one line. Before
+    /// Sets `text` as the item's subtitle, cut to the width AppKit draws on one line. Before
     /// macOS 14.4 an item has no subtitle, and the tooltip is all there is.
     @MainActor
     static func setSubtitle(_ text: String, on item: NSMenuItem) {
         guard #available(macOS 14.4, *) else { return }
-        let row = item as? IndicatorItem
-        let titleDrawn = ((row?.text ?? item.title) as NSString).size(withAttributes: [.font: NSFont.menuFont(ofSize: 0)]).width
-        let line = fitted(text, width: max(titleDrawn, subtitleWidth), font: IndicatorItem.secondLineFont)
-        if let row { row.secondLine = line } else { item.subtitle = line }
+        let titleDrawn = (item.title as NSString).size(withAttributes: [.font: NSFont.menuFont(ofSize: 0)]).width
+        item.subtitle = fitted(text, width: max(titleDrawn, subtitleWidth), font: subtitleFont)
     }
 
-    /// One row as an item: the agent's logo, its title, a second line, each on one line, and at its
-    /// right what the session is doing.
+    /// One row as an item, on one line: the agent's logo, its title, and at its right what the
+    /// session is doing. The tooltip holds the title and the session's details whole.
     @MainActor
     static func item(for row: Row, selected: Bool) -> NSMenuItem {
         let title = fitted(row.title, width: titleWidth, font: .menuFont(ofSize: 0))
@@ -79,7 +79,6 @@ extension SessionMenu {
         showLogo(of: row.destination.client, on: item)
         item.state = selected ? .on : .off
         item.toolTip = row.tooltip
-        if !row.subtitle.isEmpty { setSubtitle(row.subtitle, on: item) }
         return item
     }
 
