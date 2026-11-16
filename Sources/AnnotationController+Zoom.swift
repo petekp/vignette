@@ -15,21 +15,56 @@ extension AnnotationController {
     /// Hands `input` to the zoom and does what it answers. A spring that lands at once, at motion 0,
     /// ticks and arrives inside `animate`, after the zoom has answered.
     func run(_ input: AnnotatorZoom.Input) {
-        switch zoom.reduce(input) {
-        case .spring(let level, let seconds)?:
+        if let effect = zoom.reduce(input) { perform(effect) }
+    }
+
+    func perform(_ effect: AnnotatorZoom.Effect) {
+        switch effect {
+        case .spring(let level, let seconds):
             // The title sits over another part of the screen once a step has moved the frame.
             zoomTween.animate(to: level, duration: motionScaled(seconds)) { [weak self] in
                 self?.run(.arrived)
                 self?.measureTitleInk()
             }
-        case .place(let frame, let picture, let barTop)?:
+        case .place(let frame, let picture, let barTop):
             guard window != nil else { return }
             moveFrame(to: frame, picture: picture, barTop: barTop)
-        case .movePicture(let picture)?:
+        case .movePicture(let picture):
             editor.pictureRect = picture
-        case nil:
-            break
+        case .refit(let seconds):
+            refitted(seconds: seconds)
         }
+    }
+
+    /// The zoom took a new room. The window grows to cover the new visible screen as well as where
+    /// the frame is now, so neither is cut off on the way, and keeps that size until the next image.
+    /// The bar is placed under the new fitted frame first, so the ticks that follow carry it from
+    /// where it is. A frame that changes screens has no path to spring along, and moves at once.
+    private func refitted(seconds: Double) {
+        guard let win = window else { return }
+        let fitted = zoom.fitted
+        let center = NSPoint(x: fitted.midX, y: fitted.midY)
+        let screen = NSScreen.screens.first { $0.frame.contains(center) } ?? NSScreen.main ?? NSScreen.screens[0]
+        let sameScreen = zoomScreen.map { Self.display(of: $0) == Self.display(of: screen) } ?? false
+        Log.write("[annotate] refit \(StateReport.topLeft(fitted, primaryHeight: StateReport.primaryHeight)) room \(StateReport.topLeft(zoom.room, primaryHeight: StateReport.primaryHeight))\(sameScreen ? "" : " new screen")")
+        zoomScreen = screen
+        zoom.pixelScale = screen.backingScaleFactor
+        let cover = sameScreen ? win.frame.union(screen.visibleFrame) : screen.visibleFrame
+        if win.frame != cover { win.setFrame(cover, display: false) }
+        toolbar.place(below: fitted, gap: bar.margin)
+        onRefit?(fitted)
+        // The level the zoom kept, without the spring a zoom step had it on.
+        zoomTween.set(zoom.level)
+        guard sameScreen else {
+            refitTween.set(1)
+            return
+        }
+        refitTween.set(0)
+        refitTween.animate(to: 1, duration: motionScaled(seconds)) { [weak self] in self?.measureTitleInk() }
+    }
+
+    private static func display(of screen: NSScreen) -> NSNumber? {
+        screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
     }
 
     /// The editor's zoom keys and its double-click on empty space.

@@ -125,7 +125,7 @@
 - A screenshot's transparent pixels are never see-through. The annotator's frame, a card
   (`StackView`) and a flight (`TransitionLayer`) paint `Config.matte`, `#1a1a1a`, behind the image,
   so nothing changes when one takes over from another. The matte is also what routes the annotator's
-  clicks. Its window spans the screen's visible frame and is clear outside the frame, and the window
+  clicks. Its window spans at least the screen's visible frame (more after a re-fit, `zoom.md`) and is clear outside the frame, and the window
   server gives a press to a window only where its pixel is not clear. So every press on the frame
   reaches the editor, and a click outside it reaches the app behind, where an `OutsideClick` sees
   it and closes the editor. A shadow passes presses too: asked about points from

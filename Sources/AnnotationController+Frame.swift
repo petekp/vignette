@@ -15,7 +15,7 @@ extension AnnotationController {
         let r = Settings.shared.data.ui.annotationCornerRadius
         frameView.layer?.shadowPath = CGPath(roundedRect: frameView.bounds, cornerWidth: r, cornerHeight: r, transform: nil)
         editor.setSize(container.bounds.size, picture: picture)
-        toolbar.follow(top: barTop, fitted: zoom.fitted)
+        toolbar.follow(top: barTop, center: zoom.barCenter, fitted: zoom.fitted)
         placeTitle(frame: frame)
         onFrame?(frame)
     }

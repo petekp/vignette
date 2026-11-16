@@ -8,9 +8,9 @@ Owner: `AnnotatorZoom.swift:11`, held as `zoom` in `AnnotationController` and ru
 
 A pure reducer for the annotator's zoom. It decides what each zoom input does and which spring to run; the controller turns events into inputs and runs the spring on a `Tween`.
 
-**States** (`Phase`, `:37`): `closed` (initial only), `flying`, `landed`, `closing`. Other fields: `level`, `target` (`:63-66`), `aim`, `pan`, `camera`, `center`, `frame`, `fitted`, `room`.
+**States** (`Phase`, in `AnnotatorZoom+Types.swift`): `closed` (initial only), `flying`, `landed`, `closing`. Other fields: `level`, `target` (`:63-66`), `aim`, `pan`, `camera`, `center`, `frame`, `fitted`, `room`, and for a re-fit `placed` (what the last effect drew), `waitingFit`, `flightLifted`, `refitFrom` and `refitProgress`.
 
-Events (`Input`, `:12`) and senders:
+Events (`Input`, in `AnnotatorZoom+Types.swift`) and senders:
 
 - `prepare(fitted:room:)`: `AnnotationController.swift:187`.
 - `landed`: `AnnotationController.swift:441`, called from `ThumbnailController.swift:836` (flight `dropped`) and `:877` (`.landed` effect) through `AppDelegate.swift:123`.
@@ -20,6 +20,9 @@ Events (`Input`, `:12`) and senders:
 - `tick`: the `zoomTween` apply (`:84`).
 - `arrived`: the `animate` completion (`+Zoom.swift:21-24`).
 - `close`: `fitBeforeHide` (`:507`) and `abandon` (`:459`).
+- `refit(fitted:room:bar:)`: `AnnotationController.refit`, from `ThumbnailController.screensChanged` on `didChangeScreenParametersNotification` (`AppDelegate`).
+- `refitTick`: the `refitTween` apply.
+- `lifted`: `AnnotationController.lifted`, from `ThumbnailController`'s `.liftFlight` effect and a dropped flight.
 
 **Transitions**
 
@@ -33,7 +36,14 @@ Events (`Input`, `:12`) and senders:
 | `flying`, `closing`, `closed` | any zoom, pan, reveal, lift or arrived input | — | refused: nil (`:133` guard) |
 | `landed` | `zoomIn`, `zoomOut`, `fit`, `smart`, `pinch`, `wheel` | `landed` | `.spring` effect; `target` moved; `aim` and `pan` aimed |
 | `landed` | `lift`, `arrived` | `landed` | if `target < 1`, spring back to 1 (the hand let go); else — (`:148-151`) |
-| `landed` | `pan`, `reveal` | `landed` | `.movePicture` or nil |
+| `landed` | `pan`, `reveal` | `landed` | `.movePicture` or nil; `.place` during a re-fit |
+| `flying`, or `landed` before `lifted` | `refit` | same | kept in `waitingFit`; nil |
+| `flying` | `landed` | `landed` | the kept re-fit, as below, if `lifted` came first |
+| any | `lifted` | same | `flightLifted = true`; in `landed`, the kept re-fit, as below |
+| `landed` | `refit` | `landed` | nil if the fit, room and bar are unchanged; else `fitted`, `room` and `bar` taken, `level = target` scaled to keep `level * fitted.width` (1 at or below the fit, capped), aimed at rest, `refitFrom = placed`, `.refit(seconds:)` |
+| `closing`, `closed` | `refit` | — | nil |
+| any | `refitTick(t)` | same | while `refitFrom` is set: `.place`, `t` of the way from `refitFrom` to the rules' placement; `refitFrom` cleared at 1 |
+| `landed` | `close` during a re-fit | `closing` | `waitingFit` cleared; `refitFrom` kept, so its ticks still blend beside the fit's spring, if any |
 
 **Invariants**
 
@@ -45,6 +55,10 @@ Events (`Input`, `:12`) and senders:
 - `prepare` resets level, frame and center, and keeps `edge`. Checked by: `testTheNextImageOpensAtItsFitWithTheSameEdgePull`.
 - `closed` is re-entered after a close. Checked by: nothing; it is not ([flights-4](plausible-findings-run-to-toolbar.md#flights-4)).
 - `zoom.phase` agrees with the run's phase. Checked by: nothing.
+- A re-fit starts from what is drawn, keeps the picture's size, ends inside the new room with the bar above the Dock, keeps the picture covering the frame and the bar under it on the way, and caps the level at the new room's cap. Checked by: `testARoomThatShrinksAndGrowsMidZoomKeepsTheMagnificationAndTheFrameInside`, `testARoomThatShrinksUnderAZoomAtTheCapTakesTheNewCap`.
+- An image at the fit stays at the fit. Checked by: `testAnImageAtTheFitStaysAtTheFit`.
+- A re-fit waits for the landing and the flight's image to go, in either order, and is dropped by a close. Checked by: `testARoomThatChangesBeforeTheFlightsImageHasGoneWaitsForIt`.
+- A close mid-re-fit starts from the frame on screen and ends on the new fitted frame. Checked by: `testACloseDuringARefitLetsItLandOnTheNewFittedFrameWithoutAJump`.
 
 **Late and concurrent answers**
 
@@ -67,11 +81,12 @@ Brings the zoom back to the fitted size before the annotator's window comes down
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | open | `hide(then:)` | closing | `current = nil`, `park()`, `fitBeforeHide`: `zoom.reduce(.close)` |
-| closing | `.close` gave no spring, or no window | closed | `done()` now |
+| closing | `.close` gave no spring and no re-fit is on its way, or no window | closed | `done()` now |
+| closing | a re-fit on its way | waiting | `refitTween.animate(to: 1, …)`, beside the fit's spring if any; `done` once each has arrived |
 | closing | `.close` gave a spring | waiting | `zoomTween.animate(… completion: once)`, plus a deadline `asyncAfter(motionScaled(seconds) + 0.3)` that calls `once` (`:509-511`) |
 | waiting | spring arrives or deadline fires, first of the two | closed | `once` runs `done` once: `hideWindows()`, then the caller's completion (the run's `.parked`) |
 | waiting | the other of the two | closed | `answered` stops a second `done` |
-| closed | `hideWindows` | — | `zoomTween.stop()`, `toolbar.hideSoon()`, `shadowOpacity = 0`, `removal.start(…)` (hide the frame view on the next main turn, `orderOut` after 3 display refreshes) |
+| closed | `hideWindows` | — | `zoomTween.stop()`, `refitTween.stop()`, `toolbar.hideSoon()`, `shadowOpacity = 0`, `removal.start(…)` (hide the frame view on the next main turn, `orderOut` after 3 display refreshes) |
 | any | `prepare` | open | `removal.cancel()` (`:168`), `zoom` gets `.prepare`, `zoomTween.set(1)` |
 
 **Invariants**

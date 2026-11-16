@@ -13,6 +13,9 @@ final class ThumbnailController {
     /// A card starts travelling to `frame`; the annotator loads the image there while hidden.
     /// `room` is the rect its frame may grow within, which a zoom may not leave.
     var onAnnotatorPrepare: ((Screenshot, Opening, NSRect, NSRect) -> Void)?
+    /// The Dock or a screen changed under the annotator's image: its new frame and room.
+    var onAnnotatorRefit: ((NSRect, NSRect) -> Void)?
+    var onAnnotatorLifted: (() -> Void)?
     /// The flight covers the annotator's frame; the window comes up behind it and takes the keys.
     var onAnnotatorShow: ((_ watchesClickOutside: Bool) -> Void)?
     /// The flight is exactly on the frame; the annotator draws the shadow itself from here on.
@@ -157,6 +160,7 @@ final class ThumbnailController {
     var screenSpace: CGColorSpace? { screen.colorSpace?.cgColorSpace }
     /// A display was added, removed, or rearranged. Whatever is showing moves to a screen that exists.
     func screensChanged() {
+        defer { if let card = annotating { onAnnotatorRefit?(targetFrame(for: currentCard(card)), annotatorRoom) } }
         guard visible else { return }
         if let pinned = pinnedScreen, !NSScreen.screens.contains(pinned) { pinnedScreen = NSScreen.main ?? NSScreen.screens[0] }
         Log.write("[screen] changed; relayout on \(screen.localizedName)")
@@ -606,44 +610,6 @@ final class ThumbnailController {
         for shot in shots where isSeen(shot) { post(.copied(label: label), on: shot) }
     }
 
-    /// The request for `shot` is stored and its card is going home: the card shows where it is going
-    /// from the moment it lands, calling the session `title`.
-    func showSending(_ shot: Screenshot, request: String, to destination: AgentDestination, titled title: String, grace: SendNotice.Grace? = nil) {
-        post(.sending(request: request, client: destination.client, sessionTitle: title, grace: grace,
-                      starts: destination.startsProcess), on: shot)
-    }
-
-    /// The grace of the send `request` ended and its line is going to the client.
-    func released(_ shot: Screenshot, request: String) {
-        post(.released(request: request), on: shot)
-    }
-
-    /// The send `request` was cancelled before its line went. Its notice goes and the card is as it
-    /// was; a lone thumbnail that stayed for the grace leaves after the usual hold.
-    func cancelled(_ shot: Screenshot, request: String) {
-        post(.cancelled(request: request), on: shot)
-        if isSeen(shot) { leaveCorner(after: ui.markSeconds + ui.expandDuration) }
-    }
-
-    /// The client answered for the request `request` about `shot`. A card no longer on screen says
-    /// nothing more about a delivery that worked, and comes back as a lone thumbnail about any other.
-    func delivered(_ shot: Screenshot, request: String, _ state: SendNotice.State, reason: String?) {
-        post(.answered(request: request, state: state, reason: reason), on: shot)
-    }
-
-    /// The session's turn on the live ink note `shot` ended with nothing to show as a result card.
-    /// A card not on screen comes up as the lone thumbnail to say it, as a result card would, unless
-    /// `quietly`: it then says it in place, and a card off screen stays off.
-    func finished(_ shot: Screenshot, request: String, in destination: AgentDestination, titled title: String, quietly: Bool = false) {
-        post(.finished(request: request, client: destination.client, sessionTitle: title), on: shot, comesUp: !quietly)
-    }
-
-    /// A reply to a send could not be made a card, so the card that was sent says so, as it says a
-    /// failed send.
-    func replyFailed(_ shot: Screenshot, request: String, client: AgentClient, reason: String) {
-        post(.replyFailed(request: request, client: client, reason: reason), on: shot)
-    }
-
     /// A copy of `shot` that failed: the card says why, and a card still on its way back from the
     /// annotator does not take the Copied notice when it lands. A card not on screen comes up as the
     /// lone thumbnail; one in the annotator, or on its way home, shows the notice when it lands.
@@ -654,7 +620,7 @@ final class ThumbnailController {
 
     /// The person sees `shot`'s card, or will when it lands: it is on screen, or in the annotator,
     /// whose card comes home wearing whatever was posted meanwhile.
-    private func isSeen(_ shot: Screenshot) -> Bool {
+    func isSeen(_ shot: Screenshot) -> Bool {
         (visible && card(for: shot) != nil) || run.key == shot.key
     }
 
@@ -662,7 +628,7 @@ final class ThumbnailController {
     /// takes the notice down after its hold. The notice's hold sets the corner's time. With `comesUp`
     /// false a card off screen stays off: the notice is still posted and expires on time, and does not
     /// hold the corner for a card nobody sees.
-    private func post(_ event: CardNotices.Event, on shot: Screenshot, comesUp: Bool = true) {
+    func post(_ event: CardNotices.Event, on shot: Screenshot, comesUp: Bool = true) {
         let file = shot.key, seen = isSeen(shot)
         guard let posted = model.notices.post(event, on: file, seen: seen, noticeHold: ui.markSeconds + ui.expandDuration) else { return }
         if !seen && comesUp { show(shot) }
@@ -846,6 +812,7 @@ final class ThumbnailController {
                 // The layer went down between the two moments — a new capture presenting the panel
                 // anew while a lone thumbnail is being annotated. Nothing covers the window now.
                 self?.onAnnotatorLanded?()
+                self?.onAnnotatorLifted?()
             })
         case .show:
             onAnnotatorShow?(!keys.isStack)
@@ -895,6 +862,7 @@ final class ThumbnailController {
             guard let card = sessionCard else { return }
             takeFlightTexts(card)
             flights.lift(id: card.id)
+            onAnnotatorLifted?()
         }
     }
 
@@ -1024,6 +992,8 @@ final class ThumbnailController {
         guard visible, model.isStack else { return screen.visibleFrame }
         return layout.annotatorRoom(visibleFrame: screen.visibleFrame)
     }
+
+    func annotatorRefitted(_ frame: NSRect) { annotationFrame = frame }
 
     /// The annotator's frame moved: a zoom step, or the fit it makes on its way out. The stack
     /// follows it straight rather than through a spring of its own, so the two move together and a
@@ -1525,7 +1495,7 @@ final class ThumbnailController {
     /// person is done with it. It does not leave while the pointer is on a card, a card is in the
     /// annotator or flying to or from it, or a send waits for its answer, which sets a time of its
     /// own (`hold`). The recent stack stays until it is dismissed.
-    private func leaveCorner(after seconds: TimeInterval) {
+    func leaveCorner(after seconds: TimeInterval) {
         guard keys.leavesOnItsOwn else { return }
         leaveTimer?.invalidate()
         // Fires on the main run loop, like every other Timer here.
