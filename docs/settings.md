@@ -76,7 +76,7 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
   screenshot on the clipboard as it lands: the image, plus its file URL and path for apps that take
   those. It is on by default. An image that arrives through `add` skips this and Instant Draw, since
   a push from an agent is not a capture.
-- **`liveInk`** is Live ink in Settings → General and in the menu bar menu. While it is on, hold
+- **`liveInk`** is Live ink in Settings → Live Ink and in the menu bar menu. While it is on, hold
   Control and Option, or the pair `liveInkChord` names, and draw over any app: a loop becomes an
   ellipse and any other stroke an arrow. Click a mark with the keys held to erase it, or use Clear
   Live Ink in the menu. Letting go opens a note where you can ask Claude or Codex about what you
@@ -84,7 +84,7 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
   Screen Recording to ask. An ask to Claude runs Claude Code on your own Claude account and costs
   about one to four cents. An ask to Codex runs on a ChatGPT sign-in of its own and counts toward
   your plan's usage limit. Off by default.
-- **`liveInkChord`** is Hold to draw in Settings → General: the pair of modifiers you hold to draw.
+- **`liveInkChord`** is Hold to draw in Settings → Live Ink: the pair of modifiers you hold to draw.
   It is `control+option` by default. The others are `control+shift`, `option+shift`,
   `control+command` and `option+command`.
 - **`liveInkSpeech`** is Speak while you draw: what you say while drawing goes into the note. It

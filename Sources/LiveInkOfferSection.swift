@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Live ink's one-time offer, at the top of the General tab.
+/// Live ink's one-time offer, at the top of the Live Ink tab.
 struct LiveInkOfferSection: View {
     let pair: String
     let answer: (Bool) -> Void

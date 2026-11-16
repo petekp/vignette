@@ -37,7 +37,7 @@ enum SetupInkCopy {
         "macOS asks this question the first time \(Identity.name) looks at the screen. Allow lets \(name(agent)) see the window you drew on."
     }
 
-    /// Why live ink asks for each permission, in the General tab.
+    /// Why live ink asks for each permission, in the Live Ink tab.
     @MainActor static var liveInkAccessibilityReason: String {
         "Lets Vignette notice \(Settings.shared.data.liveInkChordChoice.glyphs) held down in any app."
     }
@@ -47,7 +47,7 @@ enum SetupInkCopy {
     /// The one-time offer to an install that finished setup before live ink had a page, naming the
     /// agent that will answer (`ResponderStatus.namedAgent`).
     static func offer(pair: String, agent: AgentClient) -> String {
-        "Live ink is new. Holding \(pair) lets you draw over any app and ask \(name(agent)) about what you drew."
+        "Try Live Ink. Holding \(pair) lets you draw over any app and ask \(name(agent)) about what you drew."
     }
 
     /// What a note calls `agent`.

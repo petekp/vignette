@@ -103,7 +103,7 @@ to turn it on.
 | --- | --- | --- |
 | Claude Code may open sent drawings (`ClaudeReadRule`), in the Agents tab | Let Claude Code open drawings without asking | Otherwise Claude Code stops to ask you in its terminal each time you send one. This adds a permission to Claude Code's settings for these drawings only. |
 | Under setup's agents while Claude Code is on (`ClaudeReadRule.setupNote`) | | Claude Code will open the drawings you send without asking you first. You can change this in Settings. |
-| Live ink (`liveInk`), in the General tab | Live ink | Holding *pair* lets you draw over any app. A click on a mark while you hold them erases it. Then, on a line of its own, what leaves the Mac (`SetupInkCopy.costNote`), from the table at the end of this section. |
+| Live ink (`liveInk`), in the Live Ink tab | Live ink | Hold *pair* to draw anywhere on your screen. You can also share your drawings with an agent session. (`LiveInkSettings.switchLine`) |
 | Speaking while drawing (`liveInkSpeech`), under Live ink | Speak while you draw | What you say goes into the note beside your ink. Your voice stays on this Mac. |
 | When the ask goes (`liveInkSendWhenQuiet`), an experiment | Ask when you let go | |
 
@@ -117,11 +117,11 @@ to turn it on.
 | Under the stack's Keys box, for ⌘ with one key (`HotKeySpec.refusal`) | *keys* is a command in every app. You can add ⌥ or ⌃. |
 | The same, for ⌘⇧3, ⌘⇧4 or ⌘⇧5 | *keys* takes screenshots. You can pick another combination. |
 | The same, for ⌃ with Space or an arrow | macOS uses *keys*. You can pick another combination. |
-| Live ink's one-time offer, at the top of the General tab | Live ink is new. Holding *pair* lets you draw over any app and ask Claude about what you drew. Buttons: Not Now, Turn On |
-| The same, where Codex is installed and Claude Code can't answer (`ResponderStatus.namedAgent`) | Live ink is new. Holding *pair* lets you draw over any app and ask Codex about what you drew. Buttons: Not Now, Turn On |
+| Live ink's one-time offer, at the top of the Live Ink tab | Try Live Ink. Holding *pair* lets you draw over any app and ask Claude about what you drew. Buttons: Not Now, Turn On |
+| The same, where Codex is installed and Claude Code can't answer (`ResponderStatus.namedAgent`) | Try Live Ink. Holding *pair* lets you draw over any app and ask Codex about what you drew. Buttons: Not Now, Turn On |
 
-What leaves the Mac (`SetupInkCopy.costNote`) is a line under the Live ink switch and on setup's
-live ink permissions page. It names the agents that can answer.
+What leaves the Mac (`SetupInkCopy.costNote`) is a line on setup's live ink permissions page and in
+the note's prompt until the first ask. It names the agents that can answer.
 
 | Agents that can answer | Words |
 | --- | --- |

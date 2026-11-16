@@ -2,12 +2,13 @@ import AppKit
 
 /// One tab of the Settings window: a toolbar item, the window title while it is up, and one form.
 enum SettingsTab: String, CaseIterable {
-    case general, screenshots, agents, developer
+    case general, screenshots, liveInk, agents, developer
 
     var name: String {
         switch self {
         case .general: return "General"
         case .screenshots: return "Screenshots"
+        case .liveInk: return "Live Ink"
         case .agents: return "Agents"
         case .developer: return "Developer"
         }
@@ -17,6 +18,7 @@ enum SettingsTab: String, CaseIterable {
         switch self {
         case .general: return "gearshape"
         case .screenshots: return "camera.viewfinder"
+        case .liveInk: return "scribble"
         case .agents: return "sparkles"
         case .developer: return "wrench.and.screwdriver"
         }

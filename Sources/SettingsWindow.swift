@@ -180,7 +180,6 @@ struct SettingsView: View {
     let callbacks: SettingsWindowController.Callbacks
 
     @ObservedObject private var settings = Settings.shared
-    @ObservedObject private var responders = ResponderStatus.shared
     /// What is on disk for each agent, read on show and after every switch.
     @State private var agentRows = AgentPlugin.appStatuses()
     /// Why the last install or removal failed, by agent directory. The switch shows what the agent's
@@ -194,12 +193,7 @@ struct SettingsView: View {
     @State private var claudeReads = false
     @State private var claudeReadsFailure: String?
     @State private var trusted = ModifierTap.trusted(prompt: false)
-    @State private var screenRecording = ScreenRecording.granted
-    @State private var speechAllowed = SpeechPermission.granted
     @State private var folderDenied = false
-    @State private var offeringLiveInk = false
-    /// Why the last chord picked cannot be taken, or nil. Shown under the picker.
-    @State private var chordRefusal: String?
     /// Neither the Accessibility grant nor macOS's folder permission announces a change, so the
     /// rows that show them look again while the window is up.
     private let poll = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -209,6 +203,7 @@ struct SettingsView: View {
             switch tab {
             case .general: general
             case .screenshots: screenshots
+            case .liveInk: LiveInkSettings(callbacks: callbacks)
             case .agents: agents
             case .developer: developer
             }
@@ -220,30 +215,15 @@ struct SettingsView: View {
         .frame(width: SettingsView.width)
         .onAppear(perform: look)
         .onReceive(poll) { _ in look() }
-        // Asking the agents can run `claude auth status`, so the General tab asks as it appears and
-        // as its window becomes key, not on the poll.
-        .onAppear { if tab == .general { responders.look(afresh: true) } }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
-            if tab == .general, (note.object as? NSWindow)?.contentView is NSHostingView<SettingsView> { responders.look(afresh: true) }
-        }
     }
 
     private func look() {
         trusted = ModifierTap.trusted(prompt: false)
-        screenRecording = ScreenRecording.granted
-        speechAllowed = SpeechPermission.granted
         folderDenied = callbacks.folderDenied()
-        let offering = callbacks.liveInkOffered()
-        if offering != offeringLiveInk { withAnimation(Self.noticeMotion) { offeringLiveInk = offering } }
     }
 
     /// How a notice in this window, such as a refused pair or live ink's offer, comes and goes.
-    private static var noticeMotion: Animation { Anim.spring(0.25 * Settings.shared.motionScale) }
-
-    private func answerLiveInkOffer(_ on: Bool) {
-        withAnimation(Self.noticeMotion) { offeringLiveInk = false }
-        callbacks.answerLiveInkOffer(on)
-    }
+    static var noticeMotion: Animation { Anim.spring(0.25 * Settings.shared.motionScale) }
 
     // MARK: General
 
@@ -275,60 +255,6 @@ struct SettingsView: View {
             // Under the title, the wide pop-up would leave the caption half the row's width.
             footer(ShortcutSetting.caption(doubleTap: settings.data.usesDoubleTap))
         }
-        if offeringLiveInk {
-            LiveInkOfferSection(pair: settings.data.liveInkChordChoice.glyphs, answer: answerLiveInkOffer)
-        }
-        Section {
-            Toggle(isOn: Binding(get: { settings.data.liveInk }, set: { on in
-                settings.update { $0.liveInk = on }
-                if on { ScreenRecording.request() }
-            })) {
-                Text("Live ink")
-                Text("Holding \(settings.data.liveInkChordChoice.glyphs) lets you draw over any app. A click on a mark while you hold them erases it.")
-                Text(responders.costNote)
-            }
-            CodexSignInRow(status: responders, signInTitle: "Sign In…", offersSignOut: true)
-            Picker("Hold to draw", selection: Binding(get: { settings.data.liveInkChordChoice }, set: { chord in
-                let refusal = chord.refusal(against: HotKeySpec.parse(settings.data.recentHotkey))
-                withAnimation(Self.noticeMotion) { chordRefusal = refusal }
-                if refusal == nil { settings.update { $0.liveInkChord = chord.rawValue } }
-            })) {
-                ForEach(LiveInkChord.allCases, id: \.self) { chord in Text(chord.glyphs).tag(chord) }
-            }
-            // A pick refused now, or the pair a stack shortcut set elsewhere already starts with.
-            if let refusal = chordRefusal ?? settings.data.liveInkChordChoice.refusal(against: HotKeySpec.parse(settings.data.recentHotkey)) {
-                Text(refusal).font(.footnote).foregroundStyle(.secondary).transition(.opacity)
-            }
-            // The double tap's row above asks for the same permission.
-            if settings.data.liveInk, !settings.data.usesDoubleTap, !trusted {
-                PermissionRow(symbol: "lock.fill", title: "Needs Accessibility permission",
-                              reason: SetupInkCopy.liveInkAccessibilityReason, status: .refused) { Accessibility.request() }
-            }
-            if settings.data.liveInk, !screenRecording {
-                PermissionRow(symbol: "lock.fill", title: "Needs Screen Recording permission",
-                              reason: SetupInkCopy.liveInkScreenRecordingReason, status: .refused) { ScreenRecording.openSystemSettings() }
-            }
-            if settings.data.liveInk {
-                Toggle(isOn: Binding(get: { settings.data.liveInkSpeech }, set: { on in
-                    settings.update { $0.liveInkSpeech = on }
-                    if on, !SpeechPermission.granted, SpeechPermission.unanswered { SpeechPermission.request { speechAllowed = $0 } }
-                })) {
-                    Text("Speak while you draw")
-                    Text("What you say goes into the note beside your ink. Your voice stays on this Mac.")
-                }
-                if settings.data.liveInkSpeech, !speechAllowed {
-                    PermissionRow(symbol: "lock.fill", title: "Needs microphone and speech recognition permission",
-                                  reason: SetupInkCopy.liveInkSpeechReason, status: .refused) {
-                        if SpeechPermission.unanswered { SpeechPermission.request { speechAllowed = $0 } } else { SpeechPermission.openSystemSettings() }
-                    }
-                }
-                if settings.data.liveInkSpeech {
-                    Toggle("Ask when you let go", isOn: binding(\.liveInkSendWhenQuiet))
-                }
-            }
-        }
-        // A stack shortcut changed outside this window can bring or end a collision with the pair.
-        .animation(Self.noticeMotion, value: settings.data.recentHotkey)
         Section("Recent screenshots") {
             LabeledContent("How many to show") {
                 HStack(spacing: 4) {

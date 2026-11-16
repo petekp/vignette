@@ -114,7 +114,7 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
 - Codex keeps the sign-in in `auth.json` in that home and renews it there. Vignette pins the file
   store (`CodexSignIn.arguments`), so `CodexSignIn.isSignedIn` can tell whether the home is signed
   in from the file, without starting Codex. Only whether the refresh token is there is read.
-- The sign-in is a row in the General tab, under Live ink, while Codex is installed, and on setup's
+- The sign-in is a row in the Live Ink tab while Codex is installed, and on setup's
   permissions page for live ink, after Use Live Ink, while Codex is installed and Claude Code can't
   answer (`CodexSignInRow`). Without
   setup's row, a person with Codex alone would finish setup with no agent that can answer. Setup's

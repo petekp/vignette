@@ -7,8 +7,8 @@
   Accessibility. Nothing else may raise that dialog: `ModifierTap` is constructed with
   `prompt: false`, so the only
   `trusted(prompt: true)` in the app is `Accessibility.request()`, which runs from a button the user
-  pressed: this window's shortcut and live ink pages, the Settings window's shortcut and live ink
-  rows, and the status menu's Allow Accessibility for the Shortcut, Live Ink or both. A dialog raised
+  pressed: this window's shortcut and live ink pages, the Settings window's shortcut row (General) and live ink
+  rows (Live Ink), and the status menu's Allow Accessibility for the Shortcut, Live Ink or both. A dialog raised
   during launch, on a question nobody asked, is the one people dismiss. For the same reason, macOS 15's window
   picker question comes from the Screen Recording row's Allow… after the reopen, not from the
   reopen itself (`PickerQuestion`, `docs/live-ink-setup.md`). `request()` raises macOS's
