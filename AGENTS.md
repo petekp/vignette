@@ -75,10 +75,11 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   type in its Index and read the one file in `docs/state-machines/` that the row names. Those files
   map the app's state machines and the invalid states found in them. Each is under 5,000 tokens.
 - `Sources/Live*.swift`, `ModifierChord.swift` and `InkStroke.swift` are live ink, drawing on the
-  live screen. `docs/live-ink.md` has its rules, which file owns which part, and how to check a
-  change: read it before changing those files, the `vignette` skill's live ink answers, or
-  `media/live-ink-demo/`. `KeyMonitors.swift` installs the key monitors live ink and the double tap
-  share, once the app is trusted for Accessibility.
+  live screen. `docs/live-ink.md` has its rules and which file owns which part, and
+  `docs/live-ink-checks.md` how to check a change: read them before changing those files, the `vignette` skill's live ink answers, or
+  `media/live-ink-demo/`. `KeyMonitors.swift` waits until the app is trusted for Accessibility, then
+  installs the double tap's key monitors and live ink's chord tap, or the chord's monitors when
+  the app may not listen to keys or macOS refuses the tap.
 - Before changing live ink's other files (`Ink*`, `SetupInk*.swift`, `Note*.swift`,
   `*Driver.swift`, `Responder*.swift`, `JSONLinesProcess.swift`, `CodexIsolation.swift`,
   `CodexRollout.swift`, `CodexSignIn.swift`, `Microphone*.swift`, `*Transcriber.swift`,

@@ -40,22 +40,7 @@ The names in brackets are `// MARK:` sections.
 
 ## Checking a change
 
-- `Tests/LiveInkTests.swift` holds the unit tests: the chord, strokes, placement and result cards.
-  `Tests/NoteCardWaitTests.swift` holds how a note card's wait ends, in any order of reply, turn end and delivery.
-  `Tests/LiveAsksTests.swift` holds the asks' sequences: asks waiting their turn, answers on the screen together, late
-  callbacks, erasing, follow-ups, dismiss, finish and clear, and random sequences that check the invariants.
-- A script reaches the note with no hand on the keys: `live-ink-chord-down`, `live-ink-stroke` per
-  stroke, then `live-ink-chord-up` (all need `debug`). A VM's VNC cannot press ⌃⌥, so a VM check
-  opens the note only this way.
-- A take records the developer demo on a stage
-  (`docs/live-ink-dev-demo-plan-2026-10-05.md`), taking the screen for minutes. From
-  `media/live-ink-demo/`: `python3 ../trailer/trailer.py build`, then `python3 dev.py up`, left
-  running until it prints "the stage is up", then `python3 devtake.py [--only BEAT]`, then
-  `python3 dev.py down`.
-- A take prints a `[check]` line for each mark that moved on its window, each note that moved while
-  open or opened away from its ink, and each label that had no room, and keeps them as `findings`
-  in `<take>.beats.json`. Read them before reading frames. The labels come from the log:
-  `[live-ink] drew answer … labels=<drawn>/<asked>` counts the labels that found room.
+`docs/live-ink-checks.md` has the unit tests, the script that opens the note and the demo takes.
 
 ## Rules
 
@@ -178,7 +163,10 @@ The names in brackets are `// MARK:` sections.
   read from the button's state as well as the release.
 - The chord is `HeldChord`, a pure value with tests: exactly its pair, ended by any key or another
   modifier, and not begun again until its modifiers are let go, so a window manager's ⌃⌥-arrow
-  never inks, and neither does letting go of ⌘ out of ⌘⌃⌥. A key another app takes as a shortcut
+  never inks, and neither does letting go of ⌘ out of ⌘⌃⌥. `ModifierChord` hears the modifiers
+  through a listen-only event tap, or through NSEvent monitors when the app may not listen to keys,
+  and the chord closes Vignette's own open menu before inking starts
+  (`docs/live-ink-menu-chord-2026-11-16.md`). A key another app takes as a shortcut
   reaches no event monitor (measured with a Carbon hotkey), so `ModifierChord` reads keys and the
   pair's modifiers from the HID state every 50 ms while it is held: a release no monitor
   heard still ends it, as do sleep and a switch to another user. It has no hold threshold; the
