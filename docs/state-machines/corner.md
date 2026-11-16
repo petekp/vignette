@@ -96,7 +96,7 @@ Owner: `ThumbnailController.swift:221-723` and `:1299-1530`. Tests: none.
 
 Decides when the panel is on screen, when cards slide out, and when a slide-out is cancelled. Driven by `show`, the shortcut, dismissals and the annotation run.
 
-**States**: `visible` (`:57`), `panel.isVisible`, `keys.presentation.mode`, `model.isStack` (`StackModel.swift:41`; follows `mode` only when mode is not `.hidden`, `:63`), `model.slidingOut` (`:17`), `model.offscreen` (`:12`), `model.cards`, `dismissGeneration` (`:64`), `shrinkGeneration` (`:65`), `pinnedScreen`.
+**States**: `visible` (`:57`), `panel.isVisible`, `keys.presentation.mode`, `model.isStack` (`StackModel.swift:41`; follows `mode` only when mode is not `.hidden`, `:63`), `model.slidingOut` (`:17`), `model.offscreen` (`:12`), `model.cards`, `dismissGeneration` (`:64`), `shrinkGeneration` (`:65`), `pinnedDisplay`.
 
 **Transitions**
 
@@ -105,7 +105,7 @@ Decides when the panel is on screen, when cards slide out, and when a slide-out 
 | not `visible` | `show` (`:226`) | `visible = true` through `present` (`:1299`) | bumps `dismissGeneration`; sends `cardsShown`; then `leaveCorner` |
 | `visible` | `show` | card inserted through `insert` (`:1366`) | `shiftUp` (`:1430`) when the column is non-empty and the entrance is `.slide`; else plain insert; then `leaveCorner` |
 | not `visible` | `dismiss(by:)` (`:671`) | — | — (guard) |
-| `visible` | `dismiss(by:)` | `slideOut` (`:678`): `visible = false`; bumps `dismissGeneration`; ends forming flights; flies every card still flying home to its slot's place off the screen; records the annotator's card in `leavingWithColumn`; `model.slidingOut = true`; `offscreen = all cards` | after the slide: if the generation is unchanged and still `!visible`: `orderOut`, remove all cards, clear selection, `outCards`, forming and scroll, `pinnedScreen = nil`, send `slidOut` |
+| `visible` | `dismiss(by:)` | `slideOut` (`:678`): `visible = false`; bumps `dismissGeneration`; ends forming flights; flies every card still flying home to its slot's place off the screen; records the annotator's card in `leavingWithColumn`; `model.slidingOut = true`; `offscreen = all cards` | after the slide: if the generation is unchanged and still `!visible`: `orderOut`, remove all cards, clear selection, `outCards`, forming and scroll, `pinnedDisplay = nil`, send `slidOut` |
 | sliding out | `present` | the slide-out is reversed; cards turn around | `dismissGeneration` bumped, so the removal at `:710` skips |
 | lone card in the editor | `takeOutOfPanel` (`:950`) | card removed; if the column is now empty, `visible = false` | `panel.orderOut`; mode stays `.thumbnails` |
 

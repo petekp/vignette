@@ -149,11 +149,13 @@ final class ThumbnailController {
 
     /// The screen a presentation started on. `NSScreen.main` follows the active display, which is
     /// what the user is looking at; pinning it keeps every frame of one presentation on one screen.
-    private var pinnedScreen: NSScreen?
+    /// The display is pinned rather than its `NSScreen`: AppKit makes new `NSScreen` objects when the
+    /// screens change, a Dock that moves or hides included, and an old one keeps its old visible frame.
+    private var pinnedDisplay: NSNumber?
     /// Where on screen the file in `annotate`'s request was captured, until its `prepare` uses it.
     private var captureOrigin: (key: ScreenshotKey, rect: NSRect)?
     var screen: NSScreen {
-        if let pinned = pinnedScreen, NSScreen.screens.contains(pinned) { return pinned }
+        if let pinnedDisplay, let pinned = NSScreen.screens.first(where: { $0.displayNumber == pinnedDisplay }) { return pinned }
         return NSScreen.main ?? NSScreen.screens[0]
     }
     /// What every card and flight image is decoded in, so no first commit has a colour conversion to do.
@@ -165,7 +167,7 @@ final class ThumbnailController {
             if let card = annotating { onAnnotatorRefit?(targetFrame(for: currentCard(card)), annotatorRoom) }
         }
         guard visible else { return }
-        if let pinned = pinnedScreen, !NSScreen.screens.contains(pinned) { pinnedScreen = NSScreen.main ?? NSScreen.screens[0] }
+        if pinnedDisplay != nil { pinnedDisplay = screen.displayNumber }
         Log.write("[screen] changed; relayout on \(screen.localizedName)")
         relayout()
         keys.refreshBackdrop(on: screen)
@@ -225,7 +227,7 @@ final class ThumbnailController {
             ] as [String: Any],
             "transition": ["phase": "\(run.phase)", "annotating": annotating?.shot.key.path as Any, "isActive": run.isActive],
             "screen": ["name": s.localizedName, "frame": StateReport.topLeft(s.frame, primaryHeight: h),
-                       "visibleFrame": StateReport.topLeft(s.visibleFrame, primaryHeight: h), "scale": s.backingScaleFactor, "pinned": pinnedScreen != nil],
+                       "visibleFrame": StateReport.topLeft(s.visibleFrame, primaryHeight: h), "scale": s.backingScaleFactor, "pinned": pinnedDisplay != nil],
             "backdrop": keys.backdropState,
             "dim": dim.stateJSON,
         ]
@@ -687,7 +689,7 @@ final class ThumbnailController {
             self.model.slidingOut = false
             self.model.scroll = 0
             self.swipe.reset()
-            self.pinnedScreen = nil
+            self.pinnedDisplay = nil
             self.keys.send(.slidOut)
         }
     }
@@ -1283,10 +1285,10 @@ final class ThumbnailController {
     private func present(cards: [Card], entrance: Entrance = .slide, ordersPanel: Bool = true) {
         if !visible {
             // A capture opening in the editor shows on the screen it was taken on, where its flight starts.
-            pinnedScreen = captureOrigin.flatMap { origin in
+            let shown = captureOrigin.flatMap { origin in
                 NSScreen.screens.first { $0.frame.contains(CGPoint(x: origin.rect.midX, y: origin.rect.midY)) }
             }
-                ?? NSScreen.main ?? NSScreen.screens[0]
+            pinnedDisplay = (shown ?? NSScreen.main ?? NSScreen.screens[0]).displayNumber
         }
         leaveTimer?.invalidate()
         dismissGeneration += 1
@@ -1511,4 +1513,10 @@ final class ThumbnailController {
             }
         }
     }
+}
+
+extension NSScreen {
+    /// The display this screen shows, which stays the same across the `NSScreen` objects AppKit
+    /// makes for it.
+    var displayNumber: NSNumber? { deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber }
 }

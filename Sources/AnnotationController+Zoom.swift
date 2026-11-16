@@ -45,7 +45,7 @@ extension AnnotationController {
         let fitted = zoom.fitted
         let center = NSPoint(x: fitted.midX, y: fitted.midY)
         let screen = NSScreen.screens.first { $0.frame.contains(center) } ?? NSScreen.main ?? NSScreen.screens[0]
-        let sameScreen = zoomScreen.map { Self.display(of: $0) == Self.display(of: screen) } ?? false
+        let sameScreen = zoomScreen.map { $0.displayNumber == screen.displayNumber } ?? false
         Log.write("[annotate] refit \(StateReport.topLeft(fitted, primaryHeight: StateReport.primaryHeight)) room \(StateReport.topLeft(zoom.room, primaryHeight: StateReport.primaryHeight))\(sameScreen ? "" : " new screen")")
         zoomScreen = screen
         zoom.pixelScale = screen.backingScaleFactor
@@ -61,10 +61,6 @@ extension AnnotationController {
         }
         refitTween.set(0)
         refitTween.animate(to: 1, duration: motionScaled(seconds)) { [weak self] in self?.measureTitleInk() }
-    }
-
-    private static func display(of screen: NSScreen) -> NSNumber? {
-        screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
     }
 
     /// The editor's zoom keys and its double-click on empty space.
