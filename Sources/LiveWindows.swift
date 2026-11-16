@@ -44,6 +44,9 @@ final class LiveWindows {
         /// From the window list, in global top-left points.
         var frame: CGRect
         let overlay: WindowOverlay
+        /// Vignette's own window the overlay hangs from as a child window, so AppKit keeps the overlay
+        /// just above it, at its level, whenever it is ordered. Nil for another app's window.
+        weak var host: NSWindow?
         var pins: [Pin] = []
         var onScreen = true
         /// When its hidden marks show again: the window is back on the screen and has landed.
@@ -58,11 +61,12 @@ final class LiveWindows {
         let queue: DispatchQueue
         var reorders = 0
 
-        init(id: CGWindowID, pid: pid_t, app: String?, frame: CGRect) {
+        init(id: CGWindowID, pid: pid_t, app: String?, frame: CGRect, host: NSWindow?) {
             self.id = id
             self.pid = pid
             self.app = app
             self.frame = frame
+            self.host = host
             overlay = WindowOverlay(target: id)
             queue = DispatchQueue(label: "live-ink.window.\(id)", qos: .userInitiated)
         }
@@ -316,13 +320,27 @@ final class LiveWindows {
 
     private func tracked(_ target: Target) -> Tracked {
         if let window = windows[target.id] { return window }
-        let window = Tracked(id: target.id, pid: target.pid, app: target.app, frame: target.frame)
+        let host = target.pid == ProcessInfo.processInfo.processIdentifier
+            ? Self.titledWindows().first { CGWindowID($0.windowNumber) == target.id } : nil
+        let window = Tracked(id: target.id, pid: target.pid, app: target.app, frame: target.frame, host: host)
         window.overlay.alphaValue = pickerClear ? 0 : 1
         windows[target.id] = window
-        watch(window)
+        // Vignette's own window moves its child with it.
+        if host == nil { watch(window) }
         window.overlay.place(over: target.frame, extent: target.frame)
-        window.overlay.order(.above, relativeTo: Int(target.id))
+        orderAbove(window)
         return window
+    }
+
+    /// Puts the overlay just above its window, at the normal level, or back on its own window as its
+    /// child.
+    private func orderAbove(_ window: Tracked) {
+        if let host = window.host {
+            if window.overlay.parent !== host { host.addChildWindow(window.overlay, ordered: .above) }
+            return
+        }
+        window.overlay.level = .normal
+        window.overlay.order(.above, relativeTo: Int(window.id))
     }
 
     /// Clears every overlay while macOS's window picker is up (`LiveInk.watchForWindowPicker`).
@@ -469,7 +487,7 @@ final class LiveWindows {
     private func lift(_ pid: pid_t?, _ cause: Lift.Cause, only: (Tracked) -> Bool = { _ in true }) {
         let now = CACurrentMediaTime()
         activeUntil = now + 1
-        for window in windows.values where window.pid == pid && window.onScreen && only(window) {
+        for window in windows.values where window.pid == pid && window.host == nil && window.onScreen && only(window) {
             window.overlay.level = Lift.level
             window.lift = Lift(cause: cause, since: now)
         }
@@ -546,13 +564,13 @@ final class LiveWindows {
             if onScreen {
                 // Back from the Dock, another Space or a hidden app: the marks come back once the
                 // window has landed.
-                window.overlay.level = .normal
-                window.overlay.order(.above, relativeTo: Int(window.id))
+                orderAbove(window)
                 window.minimisingSince = nil
                 window.showFrom = now + Self.landing
                 fadeOut(window, duration: 0)
                 activeUntil = max(activeUntil, now + 0.6)
-            } else {
+            } else if window.host == nil {
+                // A child is ordered out with its window, and back in with it.
                 window.overlay.orderOut(nil)
             }
             Log.write("[live-ink] window=\(window.id) \(onScreen ? "back" : "away")")
@@ -582,6 +600,7 @@ final class LiveWindows {
     /// raising it, came between them. Only the window's own app's windows may sit between the two:
     /// a titled window has a small window of its own over its title bar, and a sheet is a window too.
     private func keepInPlace(_ window: Tracked, now: CFTimeInterval) {
+        guard window.host == nil else { return }
         let above = WindowList.ids(above: window.id)
         let mine = CGWindowID(window.overlay.windowNumber)
         if let lift = window.lift {
@@ -594,8 +613,7 @@ final class LiveWindows {
                     && WindowList.bounds($0).map { $0.intersects(window.frame) } == true
             }
             guard lift.ends(coveredByAnotherApp: covered, at: now) else { return }
-            window.overlay.level = .normal
-            window.overlay.order(.above, relativeTo: Int(window.id))
+            orderAbove(window)
             window.lift = nil
             return
         }
@@ -626,64 +644,6 @@ final class LiveWindows {
         }
         moved.focus = mark.focus?.moved(by: offset)
         return moved
-    }
-}
-
-/// Accessibility calls on another app. Each blocks on that app.
-enum WindowAccessibility {
-    static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
-        var value: CFTypeRef?
-        return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
-    }
-
-    /// `_AXUIElementGetWindow`, which every window manager uses to match an element to the window
-    /// list. Private, so looked up rather than linked.
-    private static let getWindow: (@convention(c) (AXUIElement, UnsafeMutablePointer<CGWindowID>) -> AXError)? = {
-        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "_AXUIElementGetWindow") else { return nil }
-        return unsafeBitCast(symbol, to: (@convention(c) (AXUIElement, UnsafeMutablePointer<CGWindowID>) -> AXError).self)
-    }()
-
-    static func windowID(_ window: AXUIElement) -> CGWindowID? {
-        var id: CGWindowID = 0
-        guard let getWindow, getWindow(window, &id) == .success else { return nil }
-        return id
-    }
-
-    static func isElectron(pid: pid_t) -> Bool {
-        guard let bundle = NSRunningApplication(processIdentifier: pid)?.bundleURL else { return false }
-        return FileManager.default.fileExists(atPath: bundle.appendingPathComponent("Contents/Frameworks/Electron Framework.framework").path)
-    }
-
-    /// An Electron app builds its page's tree only when asked, and keeps it until it quits, at a cost
-    /// in memory and CPU. The note's URL and the page an answer keeps to come from that tree, so the
-    /// app is asked when a mark lands at `point`, in global top-left points, where it has no page yet.
-    /// No other app is. False when it could not tell, without Accessibility, so a later mark asks again.
-    @discardableResult
-    static func requestTree(pid: pid_t, at point: CGPoint) -> Bool {
-        guard AXIsProcessTrusted() else { return false }
-        guard isElectron(pid: pid) else { return true }
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.25)
-        var hit: AXUIElement?
-        if AXUIElementCopyElementAtPosition(app, Float(point.x), Float(point.y), &hit) != .success { hit = nil }
-        if let hit {
-            AXUIElementSetMessagingTimeout(hit, 0.25)
-            guard !isInWebArea(hit) else { return true }
-        }
-        AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        let name = NSRunningApplication(processIdentifier: pid)?.bundleURL?.deletingPathExtension().lastPathComponent ?? "?"
-        Log.write("[live-ink] accessibility tree requested app=\(name)")
-        return true
-    }
-
-    private static func isInWebArea(_ element: AXUIElement) -> Bool {
-        var current: AXUIElement? = element
-        for _ in 0..<40 {
-            guard let element = current else { return false }
-            if attribute(element, kAXRoleAttribute) as? String == "AXWebArea" { return true }
-            current = attribute(element, kAXParentAttribute).map { $0 as! AXUIElement }
-        }
-        return false
     }
 }
 
@@ -720,6 +680,12 @@ final class WindowOverlay: NSPanel {
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    /// Leaves its window first: a window orders its children back in whenever it is ordered in.
+    override func close() {
+        parent?.removeChildWindow(self)
+        super.close()
+    }
 
     /// The marks are laid out from the frame `place` asks for, so the overlay takes it as asked. AppKit
     /// would move a frame that reaches above the menu bar down below it, and the marks with it.

@@ -124,8 +124,29 @@ final class LiveAskPictureTests: XCTestCase {
         XCTAssertNil(LiveWindows.window(under: point, in: [panel, finder], own: 1, ordinary: true))
     }
 
-    private func info(id: CGWindowID, owner: String, layer: Int, frame: CGRect) -> [String: Any] {
-        [kCGWindowNumber as String: id, kCGWindowOwnerPID as String: pid_t(id) * 10, kCGWindowOwnerName as String: owner,
+    func testVignettesTitledWindowTakesTheMarkAndItsOtherWindowsAreSeenThrough() {
+        let finder = info(id: 20, owner: "Finder", layer: 0, frame: terminal.frame)
+        let frame = CGRect(x: 300, y: 200, width: 600, height: 400)
+        let overlay = info(id: 31, owner: "Vignette", layer: 1, frame: frame, pid: 300)
+        let point = CGPoint(x: 390, y: 320)
+        for layer in [0, Int(CGWindowLevelForKey(.floatingWindow))] {
+            let settings = info(id: 30, owner: "Vignette", layer: layer, frame: frame, pid: 300)
+            let windows = [overlay, settings, finder]
+            XCTAssertEqual(LiveWindows.window(under: point, in: windows, own: 300, ownTitled: [30], ordinary: true)?.id, 30, "at layer \(layer)")
+            XCTAssertEqual(LiveWindows.window(under: point, in: windows, own: 300, ownTitled: [30], ordinary: false)?.id, 30, "at layer \(layer)")
+            XCTAssertEqual(LiveWindows.window(under: point, in: windows, own: 300, ordinary: true)?.id, 20, "at layer \(layer)")
+        }
+    }
+
+    func testVignettesAlertTakesNoMark() {
+        let finder = info(id: 20, owner: "Finder", layer: 0, frame: terminal.frame)
+        let alert = info(id: 30, owner: "Vignette", layer: Int(CGWindowLevelForKey(.modalPanelWindow)),
+                         frame: CGRect(x: 300, y: 200, width: 260, height: 160), pid: 300)
+        XCTAssertNil(LiveWindows.window(under: CGPoint(x: 390, y: 320), in: [alert, finder], own: 300, ownTitled: [30], ordinary: true))
+    }
+
+    private func info(id: CGWindowID, owner: String, layer: Int, frame: CGRect, pid: pid_t? = nil) -> [String: Any] {
+        [kCGWindowNumber as String: id, kCGWindowOwnerPID as String: pid ?? pid_t(id) * 10, kCGWindowOwnerName as String: owner,
          kCGWindowLayer as String: layer, kCGWindowAlpha as String: 1.0, kCGWindowBounds as String: frame.dictionaryRepresentation]
     }
 }
