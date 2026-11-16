@@ -181,7 +181,8 @@ extension LiveAsksEnvironment {
     func closeAnswer() {
         guard asks.cancellable(sendsWait: false) == nil else { return }
         let inSight = chance(2) ? shown : shown.filter { _ in chance(2) }
-        run(send(.answerClosed(inSight: inSight)))
+        guard let id = asks.newestAnswerToClose(inSight: inSight) else { return }
+        run(send(.dismissed(id)))
     }
 
     func finished(_ ids: Set<Mark.ID>) {
@@ -226,7 +227,6 @@ extension LiveAsksEnvironment {
         case .answerShown(let ids, let id): "answerShown \(list(ids)) #\(id)"
         case .dismissed(let id): "dismissed #\(id)"
         case .cancelled(let id, _): "cancelled #\(id)"
-        case .answerClosed(let inSight): "answerClosed inSight=\(list(inSight))"
         case .finished(let ids): "finished \(list(ids))"
         case .cleared: "cleared"
         }

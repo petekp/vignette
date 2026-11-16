@@ -139,6 +139,8 @@ Accessibility's Allow…, and Then this beside Screen Recording's Allow… and S
 | Screen Recording's reason on the permissions page (`SetupInkCopy.screenRecordingReason`) | So Claude can see the window you drew on. On that Mac: So Codex can see the window you drew on. |
 | Accessibility's reason on the permissions page | So you can draw while holding *pair*. |
 | Under the permissions page while Screen Recording is missing (`SetupInkCopy.reopenNote`) | Once you allow Screen Recording, macOS asks to quit and reopen Vignette. Setup opens again on this page. |
+| Screen Recording's reason once it is allowed, until macOS's window picker question is answered (`SetupInkCopy.pickerQuestionReason`) | macOS has one more question about the screen. |
+| Under the permissions page in that state (`SetupInkCopy.pickerQuestionNote`) | macOS asks this question the first time Vignette looks at the screen. Allow lets Claude see the window you drew on. On that Mac: … lets Codex see … |
 
 ### Setup's shortcut page, after the hold (`SetupBanter`)
 
@@ -184,6 +186,13 @@ moves the script on only while its line shows on the shortcut page.
 | 33 | F%@#! |
 | 34 | I'm out. ✌️ |
 | 35 and after | *The setup assistant has peaced out.* In muted italics, and it stays. |
+
+### The menu bar menu's shortcuts (`HotKeySpec.glyphs`, `HotKeySpec.holdLabel`)
+
+| Item | With a double tap | With a key combination |
+| --- | --- | --- |
+| Show Recent Screenshots | Right Shift ×2 | ⇧⌘6, in the menu's shortcut column |
+| Draw on Newest Screenshot | Right Shift ×2 and Hold | Hold ⇧⌘6 |
 
 ### Live ink
 

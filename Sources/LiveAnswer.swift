@@ -38,17 +38,21 @@ struct LiveAnswer: Equatable {
     }
 
     /// Reads the responder's answer, whose boxes are in thousandths of the picture as `schema` asks.
-    /// A null field is absent, as `strictSchema` writes one. A session's answer gives fractions, as
-    /// `init(json:)` reads them.
+    /// A null field is absent, as `strictSchema` writes one. Its reply keeps its first `maxSentences`
+    /// sentences, since a schema cannot count them. A session's answer gives fractions, as
+    /// `init(json:)` reads them, and keeps every sentence.
     init(responder json: Any) throws {
-        guard var object = (json as? [String: Any]).map(Self.withoutNulls), let marks = object["marks"] as? [Any] else {
+        guard var object = (json as? [String: Any]).map(Self.withoutNulls) else {
             try self.init(json: json)
             return
         }
-        object["marks"] = marks.map { item -> Any in
-            guard var mark = (item as? [String: Any]).map(Self.withoutNulls) else { return item }
-            if let box = mark["box"] as? [Any] { mark["box"] = box.compactMap(DrawingJSON.number).map { Double($0) / 1000 } }
-            return mark
+        if let say = object["say"] as? String { object["say"] = Self.firstSentences(of: say) }
+        if let marks = object["marks"] as? [Any] {
+            object["marks"] = marks.map { item -> Any in
+                guard var mark = (item as? [String: Any]).map(Self.withoutNulls) else { return item }
+                if let box = mark["box"] as? [Any] { mark["box"] = box.compactMap(DrawingJSON.number).map { Double($0) / 1000 } }
+                return mark
+            }
         }
         try self.init(json: object)
     }
@@ -202,46 +206,6 @@ struct LiveAnswer: Equatable {
         let head = text.prefix(limit - 1)
         let word = head.lastIndex(where: \.isWhitespace).map { head[..<$0] } ?? head
         return word.trimmingCharacters(in: .whitespacesAndNewlines) + "…"
-    }
-
-    /// The part of `say` that has streamed in, from the partial JSON of the answer so far. Nil until
-    /// its first character arrives. The schema's `say` comes first, and the model has written it
-    /// first in every answer measured.
-    static func partialSay(in json: String) -> String? {
-        guard let key = json.range(of: "\"say\"") else { return nil }
-        var rest = json[key.upperBound...].drop { $0 == " " || $0 == ":" || $0 == "\n" }
-        guard rest.first == "\"" else { return nil }
-        rest = rest.dropFirst()
-        var text = ""
-        var escaped = false
-        var unicode: String?
-        for character in rest {
-            if var hex = unicode {
-                hex.append(character)
-                if hex.count == 4 {
-                    if let value = UInt32(hex, radix: 16), let scalar = Unicode.Scalar(value) { text.unicodeScalars.append(scalar) }
-                    unicode = nil
-                } else {
-                    unicode = hex
-                }
-            } else if escaped {
-                escaped = false
-                switch character {
-                case "n": text.append("\n")
-                case "t": text.append("\t")
-                case "u": unicode = ""
-                default: text.append(character)
-                }
-            } else if character == "\\" {
-                escaped = true
-            } else if character == "\"" {
-                break
-            } else {
-                text.append(character)
-            }
-        }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : cut(trimmed, to: maxSay)
     }
 }
 

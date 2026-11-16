@@ -39,16 +39,6 @@ extension HotKeySpec {
         }
     }
 
-    /// The key itself on one line, for a hint that says what to hold or tap.
-    var label: String {
-        switch self {
-        case .key:
-            return glyphs
-        case let .doubleTap(keyCode):
-            return HotKeySpec.modifierLabel(forKeyCode: keyCode).map { "double-tap \($0)" } ?? ""
-        }
-    }
-
     /// How to use it, as the start of a sentence: "Tap Right Shift twice", "Press ⇧⌘2".
     var instruction: String {
         if let key = doubleTapKey { return "Tap \(key.label) twice" }
@@ -56,11 +46,11 @@ extension HotKeySpec {
     }
 
     /// What to hold to draw on the newest screenshot, for the menu item that does it: with a double
-    /// tap it is the second tap, not the key named twice.
+    /// tap it is the second tap, so the hold comes after the key named twice.
     var holdLabel: String {
         switch self {
-        case .key: return "hold \(glyphs)"
-        case .doubleTap: return "hold the second tap"
+        case .key: return "Hold \(glyphs)"
+        case .doubleTap: return "\(glyphs) and Hold"
         }
     }
 

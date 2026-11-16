@@ -73,6 +73,13 @@ extension TweakCatalog {
                 .number("liveInkHideFade", "Hide fade", \.liveInkHideFade, 0...1, step: 0.01, unit: "s", safe: 0...10),
                 .number("liveInkShowFade", "Show fade", \.liveInkShowFade, 0...1, step: 0.01, unit: "s", safe: 0...10),
             ], caption: { _ in "A window's marks fade out as it minimises or shrinks past them, and fade back in when they can show again." }),
+            TweakGroup("Thinking light", [
+                .number("thinkingBrightness", "Band brightness", \.thinkingBrightness, 0...1, step: 0.05, safe: 0...1),
+                .number("thinkingLength", "Band length", \.thinkingLength, 10...240, unit: "pt", safe: 1...2000),
+                .number("thinkingWidth", "Band width", \.thinkingWidth, 0.1...2, step: 0.05, safe: 0.01...5),
+                .number("thinkingGlow", "Band glow reach", \.thinkingGlow, 0...24, step: 0.5, unit: "pt", safe: 0...100),
+                .number("thinkingRimBrightness", "Rim brightness", \.thinkingRimBrightness, 0...1, step: 0.05, safe: 0...1),
+            ], caption: { _ in "While an ask waits for its answer, a band of light runs along its ink, and a light runs round the rim of its popover. The band is brightest at its middle and fades towards its ends. Band width is a share of the line's width." }),
         ]),
         TweakSection("Pointer", [
             TweakGroup("Ring", [

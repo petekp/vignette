@@ -166,7 +166,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         startRequests(clearingUnsent: !replacing)
         // A first launch leaves a folder macOS protects alone until setup has said why Vignette
         // needs it: the watcher's first read is what raises macOS's prompt.
-        watcherWaitsForSetup = setupWindow.isUnasked && ScreenshotWatcher.protectedArea(of: watchFolder) != nil
+        let protectedArea = setupWindow.asksForFolder ? ScreenshotWatcher.protectedArea(of: watchFolder) : nil
+        watcherWaitsForSetup = protectedArea != nil
         if watcherWaitsForSetup {
             Log.write("[watcher] waiting for setup to ask for \(watchFolder.path)")
         } else {
@@ -181,7 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             // The login item and the plugin wait for the window to close, which applies the
             // switches it shows.
             setupWindow.applyLoginItem = { [weak self] in self?.applyLoginItem() }
-            setupWindow.show(callbacks: setupCallbacks(protectedArea: watcherWaitsForSetup ? ScreenshotWatcher.protectedArea(of: watchFolder) : nil))
+            setupWindow.show(callbacks: setupCallbacks(protectedArea: protectedArea))
         } else {
             // The setting is the user's wish; macOS may have lost the registration (the app moved) or kept one the file no longer asks for.
             // A removal in System Settings is a wish too, and turns the setting off instead.
@@ -856,6 +857,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             askAccessibility: { Accessibility.request() },
             askScreenRecording: { ScreenRecording.request() },
             openScreenRecordingSettings: { ScreenRecording.openSystemSettings() },
+            askPickerQuestion: { PickerQuestion.ask() },
             saveToFolder: { Settings.shared.saveCapturesAsFiles() },
             launchAtLogin: { Settings.shared.data.launchAtLogin },
             installAgentPlugin: { [weak self] roots in self?.installAgentPluginFromSetup(roots) },
@@ -868,7 +870,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// about, or is nil when it won't.
     private func setupConditions(protectedArea: String?) -> SetupConditions {
         SetupConditions(trusted: ModifierTap.trusted(prompt: false), screenRecording: ScreenRecording.granted,
-                        protectedArea: protectedArea, folder: folderAccess, hasScreenshots: hasScreenshots,
+                        pickerQuestion: PickerQuestion.status, protectedArea: protectedArea, folder: folderAccess, hasScreenshots: hasScreenshots,
                         saveTarget: settings.appleTarget, menuBarIconVisible: visibleStatusButton != nil)
     }
 
@@ -971,7 +973,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         menu.removeAllItems()
         let shortcut = HotKeySpec.parse(settings.data.recentHotkey)
 
-        // What stops Vignette working comes first, as the way to fix it.
+        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        let liveInkItem = NSMenuItem(title: "Live Ink", action: #selector(toggleLiveInk), keyEquivalent: "")
+        liveInkItem.state = settings.data.liveInk ? .on : .off
+        liveInkItem.badge = NSMenuItemBadge(string: "Hold \(settings.data.liveInkChordChoice.glyphs)")
+        menu.addItem(liveInkItem)
+        // The same two switches, under the same heading, as the Settings window's Screenshots tab.
+        menu.addItem(.sectionHeader(title: "After a Screenshot"))
+        let copyItem = NSMenuItem(title: "Copy to Clipboard", action: #selector(toggleCopyOnCapture), keyEquivalent: "")
+        copyItem.state = settings.data.copyOnCapture ? .on : .off
+        menu.addItem(copyItem)
+        let captureItem = NSMenuItem(title: "Instant Draw", action: #selector(toggleAnnotateOnCapture), keyEquivalent: "")
+        captureItem.state = settings.data.annotateOnCapture ? .on : .off
+        menu.addItem(captureItem)
+        menu.addItem(.separator())
+
         let blocked = blockers()
         for item in blocked {
             item.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Needs permission")?
@@ -980,9 +996,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         if !blocked.isEmpty { menu.addItem(.separator()) }
 
-        if let version = updater?.waiting {
+        let waitingUpdate = updater?.waiting
+        if let waitingUpdate {
             let updateItem = NSMenuItem(title: "Update Available…", action: #selector(checkForUpdates), keyEquivalent: "")
-            updateItem.badge = NSMenuItemBadge(string: version)
+            updateItem.badge = NSMenuItemBadge(string: waitingUpdate)
             menu.addItem(updateItem)
             menu.addItem(.separator())
         }
@@ -994,46 +1011,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             recentItem.keyEquivalent = equivalent.key
             recentItem.keyEquivalentModifierMask = equivalent.modifiers
         } else if let shortcut {
-            recentItem.badge = NSMenuItemBadge(string: shortcut.label)
+            recentItem.badge = NSMenuItemBadge(string: shortcut.glyphs)
         }
         menu.addItem(recentItem)
-
         let drawItem = NSMenuItem(title: "Draw on Newest Screenshot", action: #selector(annotateLast), keyEquivalent: "")
         if let shortcut { drawItem.badge = NSMenuItemBadge(string: shortcut.holdLabel) }
         menu.addItem(drawItem)
-
-        menu.addItem(.separator())
-        let liveInkItem = NSMenuItem(title: "Live Ink", action: #selector(toggleLiveInk), keyEquivalent: "")
-        liveInkItem.state = settings.data.liveInk ? .on : .off
-        liveInkItem.badge = NSMenuItemBadge(string: "Hold \(settings.data.liveInkChordChoice.glyphs)")
-        menu.addItem(liveInkItem)
-        if settings.data.liveInk {
-            menu.addItem(NSMenuItem(title: "Clear Live Ink", action: #selector(clearLiveInk), keyEquivalent: ""))
-        }
-
-        // The same two switches, under the same heading, as the Settings window's Screenshots tab.
-        menu.addItem(.separator())
-        menu.addItem(.sectionHeader(title: "After a Screenshot"))
-        let copyItem = NSMenuItem(title: "Copy to Clipboard", action: #selector(toggleCopyOnCapture), keyEquivalent: "")
-        copyItem.state = settings.data.copyOnCapture ? .on : .off
-        menu.addItem(copyItem)
-        let captureItem = NSMenuItem(title: "Instant Draw", action: #selector(toggleAnnotateOnCapture), keyEquivalent: "")
-        captureItem.state = settings.data.annotateOnCapture ? .on : .off
-        menu.addItem(captureItem)
-
-        menu.addItem(.separator())
         let folderItem = NSMenuItem(title: "Open Screenshots Folder", action: #selector(openScreenshotsFolder), keyEquivalent: "")
         folderItem.toolTip = (settings.data.folderURL.path as NSString).abbreviatingWithTildeInPath
         menu.addItem(folderItem)
-        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
-
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
-        if ProblemReport.issuesURL != nil {
-            menu.addItem(withTitle: "Report a Problem…", action: #selector(reportProblem), keyEquivalent: "")
-        }
 
-        menu.addItem(.separator())
         if settings.data.debug {
             menu.addItem(.sectionHeader(title: "Developer"))
             menu.addItem(withTitle: "Tweak UI…", action: #selector(openTweaks), keyEquivalent: "")
@@ -1041,6 +1029,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             menu.addItem(withTitle: "Reveal settings.json", action: #selector(revealSettings), keyEquivalent: "")
             menu.addItem(.separator())
         }
+
+        if waitingUpdate == nil {
+            menu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        }
+        if ProblemReport.issuesURL != nil {
+            menu.addItem(withTitle: "Report a Problem…", action: #selector(reportProblem), keyEquivalent: "")
+        }
+        if menu.items.last?.isSeparatorItem == false { menu.addItem(.separator()) }
 
         menu.addItem(withTitle: "Quit Vignette", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         for item in menu.items where item.action != #selector(NSApplication.terminate(_:)) { item.target = self }
@@ -1137,20 +1133,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
     }
 
-    /// A template disc `size` across with a hole `hole` across. The hole is half a point smaller
-    /// than the dot it frames, so the two overlap and no background shows between them.
-    private static func ring(size: CGFloat, hole: CGFloat) -> NSImage {
-        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
-            NSBezierPath(ovalIn: rect).fill()
-            NSGraphicsContext.current?.compositingOperation = .destinationOut
-            let inner = (size - hole) / 2 + 0.25
-            NSBezierPath(ovalIn: rect.insetBy(dx: inner, dy: inner)).fill()
-            return true
-        }
-        image.isTemplate = true
-        return image
-    }
-
     private func setIcon(_ image: NSImage, on button: NSStatusBarButton, fading duration: Double) {
         image.accessibilityDescription = Identity.name
         if duration > 0, let layer = button.layer {
@@ -1160,24 +1142,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             layer.add(transition, forKey: "icon")
         }
         button.image = image
-    }
-
-    /// The icon with a clear circle filling `dot`, which is in the button's coordinates.
-    /// The button draws the icon at its own size, centred.
-    private static func icon(_ icon: NSImage, clearedAround dot: NSRect, in button: NSStatusBarButton) -> NSImage {
-        let size = icon.size
-        let origin = NSPoint(x: (button.bounds.width - size.width) / 2, y: (button.bounds.height - size.height) / 2)
-        var center = NSPoint(x: dot.midX - origin.x, y: dot.midY - origin.y)
-        if button.isFlipped { center.y = size.height - center.y }
-        let radius = dot.width / 2
-        let image = NSImage(size: size, flipped: false) { rect in
-            icon.draw(in: rect)
-            NSGraphicsContext.current?.compositingOperation = .destinationOut
-            NSBezierPath(ovalIn: NSRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)).fill()
-            return true
-        }
-        image.isTemplate = true
-        return image
     }
 
     @objc private func openSettings() {
@@ -1214,8 +1178,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if settings.data.liveInk { ScreenRecording.request() }
         Log.write("[settings] liveInk=\(settings.data.liveInk)")
     }
-
-    @objc private func clearLiveInk() { liveInk.clear() }
 
     @objc private func toggleAnnotateOnCapture() {
         settings.update { $0.annotateOnCapture.toggle() }
@@ -1391,12 +1353,10 @@ extension AppDelegate: NSMenuDelegate, NSMenuItemValidation {
     func menuNeedsUpdate(_ menu: NSMenu) { rebuildMenu(menu) }
 
     /// Showing and drawing act on a screenshot, and with an empty folder they did nothing and said
-    /// so only in the log. Greyed out is what a Mac user already reads as nothing to act on, and the
-    /// same goes for clearing live ink with no marks on the screen.
+    /// so only in the log. Greyed out is what a Mac user already reads as nothing to act on.
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
         case #selector(toggleRecent), #selector(annotateLast): return hasScreenshots
-        case #selector(clearLiveInk): return !liveInk.marks.isEmpty
         case #selector(checkForUpdates): return updater?.canCheck ?? false
         default: return true
         }

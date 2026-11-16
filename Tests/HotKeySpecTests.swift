@@ -71,11 +71,8 @@ final class HotKeySpecTests: XCTestCase {
     }
 
     func testLabelNamesTheKey() {
-        XCTAssertEqual(HotKeySpec.parse("cmd+shift+6")?.label, "⇧⌘6")
-        XCTAssertEqual(HotKeySpec.parse("double-rshift")?.label, "double-tap Right Shift")
-        XCTAssertEqual(HotKeySpec.parse("double-lcmd")?.label, "double-tap Left Command")
-        XCTAssertEqual(HotKeySpec.parse("double-rshift")?.holdLabel, "hold the second tap")
-        XCTAssertEqual(HotKeySpec.parse("cmd+shift+6")?.holdLabel, "hold ⇧⌘6")
+        XCTAssertEqual(HotKeySpec.parse("double-rshift")?.holdLabel, "Right Shift ×2 and Hold")
+        XCTAssertEqual(HotKeySpec.parse("cmd+shift+6")?.holdLabel, "Hold ⇧⌘6")
         XCTAssertEqual(HotKeySpec.parse("ctrl+opt+space")?.keycaps, ["⌃", "⌥", "Space"])
         XCTAssertEqual(HotKeySpec.parse("ctrl+opt+space")?.keycapModifiers, [.control, .option, []])
         XCTAssertEqual(HotKeySpec.parse("cmd+shift+6")?.keycapModifiers, [.shift, .command, []])

@@ -91,34 +91,7 @@ final class LiveWindows {
 
     private static func shows(_ pin: Pin, on window: Tracked) -> Bool { isDrawn(pin, on: window) && !pin.aside }
 
-    /// An app's window, from the window list.
-    struct Target {
-        let id: CGWindowID
-        let pid: pid_t
-        let app: String?
-        /// In global top-left points.
-        let frame: CGRect
-    }
-
     // MARK: Marks
-
-    /// The topmost window under `point`, in global top-left points, not Vignette's and below the Dock,
-    /// whose window covers the screen. With `ordinary`, nil unless it is an app's ordinary window: a
-    /// panel or menu over one comes and goes, so marks never go on it.
-    static func window(under point: CGPoint, ordinary: Bool = true) -> Target? {
-        let own = ProcessInfo.processInfo.processIdentifier
-        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-        for info in windows {
-            guard let id = info[kCGWindowNumber as String] as? CGWindowID,
-                  let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid != own,
-                  let level = info[kCGWindowLayer as String] as? Int, level < Int(CGWindowLevelForKey(.dockWindow)),
-                  (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
-                  let frame = WindowList.bounds(info), frame.width > 40, frame.height > 40, frame.contains(point) else { continue }
-            guard level == 0 || !ordinary else { return nil }
-            return Target(id: id, pid: pid, app: info[kCGWindowOwnerName as String] as? String, frame: frame)
-        }
-        return nil
-    }
 
     /// The window under `point`, when it is one marks can be pinned to.
     func target(under point: CGPoint) -> Target? { Self.window(under: point) }

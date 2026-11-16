@@ -342,12 +342,6 @@ struct LiveAsks: Equatable {
             end(id)
             let ink: [Effect] = present.isEmpty ? [] : [current.sentOnRelease ? .remove(present) : .reopenNote(words: current.words)]
             return interrupt + [removal] + ink
-        case .answerClosed(let inSight):
-            guard let ask = asks.last(where: { !$0.isUnderWay && answerMarks(of: $0.id).contains { !isFinishing($0) && inSight.contains($0) } })
-            else { break }
-            let ids = answerMarks(of: ask.id)
-            end(ask.id)
-            return finish(ids, .dismissed)
         case .finished(let ids):
             // A clear, or an earlier timer for the same marks, has ended it already.
             guard ids.contains(where: { records[$0]?.finishing != nil }) else { break }

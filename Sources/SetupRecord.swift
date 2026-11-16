@@ -8,4 +8,11 @@ extension SetupModel {
         if sawLiveInk { ThisMac.recordLiveInkOffer(in: &data, on: defaults) }
         if let choice = launchAtLoginChoice { data.launchAtLogin = choice }
     }
+
+    /// Set until setup is done, so a quit and reopen part way through comes back to live ink's permissions.
+    static var returnsToLiveInkSetup: Bool {
+        get { Identity.defaults.bool(forKey: returnsToLiveInkSetupKey) }
+        set { Identity.defaults.set(newValue, forKey: returnsToLiveInkSetupKey) }
+    }
+    private static let returnsToLiveInkSetupKey = "setupReturnsToLiveInkPermissions"
 }

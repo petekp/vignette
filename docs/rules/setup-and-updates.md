@@ -9,7 +9,9 @@
   `trusted(prompt: true)` in the app is `Accessibility.request()`, which runs from a button the user
   pressed: this window's shortcut and live ink pages, the Settings window's shortcut and live ink
   rows, and the status menu's Allow Accessibility for the Shortcut, Live Ink or both. A dialog raised
-  during launch, on a question nobody asked, is the one people dismiss. `request()` raises macOS's
+  during launch, on a question nobody asked, is the one people dismiss. For the same reason, macOS 15's window
+  picker question comes from the Screen Recording row's Allow… after the reopen, not from the
+  reopen itself (`PickerQuestion`, `docs/live-ink-setup.md`). `request()` raises macOS's
   own alert and nothing else, and opens the pane itself only when no `universalAccessAuthWarn`
   window is up 1.5 s later (measured: the alert came up within half a second). Opening both at
   once put the pane in front of the alert, which then waited behind it and outlived the grant. A
@@ -55,7 +57,8 @@
   still on, but only for someone who reached that page: closed earlier, `agentSkill` stays
   `unasked`, and the next launch offers the skill in the Settings window instead. The Setup Lab
   (`SetupLab.swift`, `vignette://setup-lab`, needs `debug`) runs setup as a new person sees it, all
-  of it or live ink's pages alone, from any page. It simulates the permissions, the watch folder,
+  of it or live ink's pages alone, from any page. It simulates the permissions, the window picker
+  question, the watch folder,
   Save to, the agents and the menu bar icon, which setup reads through
   `SetupWindowController.Callbacks`. A run records nothing. Allow… on a simulated permission flips
   the lab's value a second later instead of asking macOS, and closing plays the intro but writes no
@@ -112,9 +115,9 @@
   day, and nothing installs until the person presses Install in Sparkle's window. A version a
   scheduled check finds waits as a gentle reminder, Sparkle's name for one that does not take the
   focus (`supportsGentleScheduledUpdateReminders`): a dot on the status item, with a clear ring cut
-  into the icon around it, and an "Update Available…" item at the top of its menu. With the menu bar
-  icon hidden there is nowhere to show the reminder, so Sparkle shows its window, without activating
-  the app. `[update]` lines log what each check found, and `[state] app.update` says what is waiting.
+  into the icon around it, and an "Update Available…" item in its menu, above the screenshot items,
+  in place of "Check for Updates…". With the menu bar icon hidden there is nowhere to show the
+  reminder, so Sparkle shows its window, without activating the app. `[update]` lines log what each check found, and `[state] app.update` says what is waiting.
   Sparkle compares `CFBundleVersion`, which the build phase stamps with the commit count. So each
   release needs more commits behind it than the last, which a release cut from main has. Every
   download is checked against `SUPublicEDKey`. Installs trust only images signed with the private key

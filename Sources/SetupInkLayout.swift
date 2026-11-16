@@ -33,14 +33,16 @@ struct LiveInkSetupTop: ViewModifier {
 }
 
 /// The lines under setup's permissions for live ink: why macOS may reopen Vignette, while Screen
-/// Recording is missing, and what leaves the Mac, for the agents that can answer, with the room the
-/// guide's marks take on either side of them (`SetupInkGuide.Rooms`). It is always on the page, so
+/// Recording is missing; when macOS asks its window picker question, until it is answered; and what
+/// leaves the Mac, for the agents that can answer, with the room the guide's marks take on either
+/// side of them (`SetupInkGuide.Rooms`). It is always on the page, so
 /// it is what looks at the agents when the page appears.
 struct LiveInkSetupFooter: View {
     @ObservedObject var status: ResponderStatus
     let spots: ScreenSpots
     let trusted: Bool
     let screenRecording: Bool
+    let pickerQuestion: PickerQuestion.Status
 
     /// The lines' gap under the rows while the label needs no room there.
     private static let gap: CGFloat = 8
@@ -54,8 +56,8 @@ struct LiveInkSetupFooter: View {
     /// The note's room is kept only then, since the page's height is fixed: with the label's room as
     /// well, the page outgrew the window after a failed sign-in.
     private var drawsNote: Bool {
-        SetupInkGuide.Pointing(trusted: trusted, screenRecording: screenRecording, codexSignIn: status.codexSignInLeft,
-                               signingIn: status.signIn == .waiting) == .ready
+        SetupInkGuide.Pointing(trusted: trusted, screenRecording: screenRecording && pickerQuestion == .answered,
+                               codexSignIn: status.codexSignInLeft, signingIn: status.signIn == .waiting) == .ready
     }
 
     var body: some View {
@@ -63,7 +65,11 @@ struct LiveInkSetupFooter: View {
         Section {} footer: {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 6) {
-                    if !screenRecording { Text(SetupInkCopy.reopenNote) }
+                    if !screenRecording {
+                        Text(SetupInkCopy.reopenNote)
+                    } else if pickerQuestion != .answered {
+                        Text(SetupInkCopy.pickerQuestionNote(agent: status.namedAgent))
+                    }
                     Text(status.costNote)
                 }
                 .font(.caption).foregroundStyle(.secondary)

@@ -88,7 +88,9 @@
   setup and the Screenshots tab read. A first launch whose folder is inside the Desktop, Documents
   or Downloads (`ScreenshotWatcher.protectedArea`) makes no watcher until setup's Allow…, its
   Continue or its closing (`watcherWaitsForSetup`), so macOS's prompt comes up under a row that says
-  why. `recentShots` answers empty with no watcher, so nothing reads the folder before then.
+  why. Setup reopened on live ink's permissions after Screen Recording's Quit & Reopen
+  (`SetupWindowController.reopensOnLiveInk`) comes after the welcome page, which has already asked,
+  so that launch starts the watcher at once, and a capture taken on that page gets its card. `recentShots` answers empty with no watcher, so nothing reads the folder before then.
   project.yml gives macOS's folder prompt its explanation
   (`NSDesktopFolderUsageDescription` and the Documents and Downloads keys).
   `docs/install-2026-09-24.md` has the measurements. Copying puts the image's own bytes on the

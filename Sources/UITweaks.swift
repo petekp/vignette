@@ -185,6 +185,12 @@ struct UITweaks: Codable, Equatable {
     var liveInkShowFade = 0.22       // a mark fading back in once its window is back or has grown over it
     var liveInkTextSize = 15.0       // an answer's note, in points of the screen
     var liveInkTextWidth = 320.0     // the widest an answer's note wraps at, in points
+    // The thinking light while an ask waits for its answer (`LiveMarksLayer.think`, `RimLight`)
+    var thinkingBrightness = 0.45     // 0 to 1: the band of light that runs along the ink
+    var thinkingLength = 110.0        // the band's length along the line, in points
+    var thinkingWidth = 1.1           // the band's width at its middle, as a share of the line's
+    var thinkingGlow = 12.0           // how far the band's glow reaches round the line, in points
+    var thinkingRimBrightness = 0.45  // 0 to 1: the light that runs round a popover's rim
     // The person's live ink as opal gel (InkGel; docs/live-ink-gel-2026-10-12.md): a rod of milky
     // material under a thin film whose pale colours follow the line, with a glow under it.
     var inkGelLight = "#0085ff"      // the ice's hue, over dark content

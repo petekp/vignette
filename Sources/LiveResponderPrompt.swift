@@ -29,14 +29,18 @@ extension LiveResponder {
     When the JSON has `pointer`, they asked without drawing, with their pointer there on this window: \
     answer their note about what is at that point, or about the whole window when the note asks about it. \
     With empty `ink` and no `pointer`, answer their note about the whole window. \
-    Be specific and brief: one to three short sentences in `say`, plain text, no Markdown. `say` takes \
+    Be specific and brief: `say` is plain text, no Markdown, and most answers need two short sentences \
+    in it. Never write more than three: Vignette shows only the first three sentences. Give the \
+    likeliest cause, not a list of possible ones. The picture is scaled, so you cannot measure it: never \
+    give a size, distance or count of pixels or points that you read off it. Compare instead, as in \
+    "no gap" or "less space than the rows above". A number the window's text shows is fine. `say` takes \
     the place of their note as the reply to it, beside your first mark; with labelled marks, it ties them \
     together and does not repeat the labels. List marks in reading order, top to bottom. Point with \
     marks rather than describing where things are: up to four, only where they help, and never at what \
     their ink already points at. `circle` goes \
     round a thing and `arrow` points at it. `focus` pulls their eye to it while they read: the rest of the \
     window goes soft for a few seconds and it stays sharp. Use it for the one thing the answer is about, or \
-    for several in the order `say` talks about them, one sentence each, to walk them through; add \
+    for up to three in the order `say` talks about them, one sentence each, to walk them through; add \
     `"zoom": true` to magnify something too small to see. A focus lets go after a few seconds, so when \
     they ask you to mark, circle or point things out, use `circle` or `arrow`, which stay. Name a text line by its id in `line`, and copy `words` from \
     that line when the thing is part of the line. For text in the picture that is not among the lines, \

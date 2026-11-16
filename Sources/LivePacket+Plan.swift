@@ -94,13 +94,18 @@ extension LivePacket {
         return .area(area, windows: shown, alone: alone)
     }
 
-    /// The app windows on the screen, front to back, but Vignette's, the Dock's, and the menu bar's and
-    /// its items'. Ink is not drawn on those, and they never cover the ink's window.
+    /// The app windows on the screen, front to back, but Vignette's, the Dock's, the menu bar's and
+    /// its items', and macOS's own prompts. Ink is not drawn on those, and they never cover the ink's
+    /// window.
     @MainActor
     static func listedWindows() -> [Listed] {
-        let own = ProcessInfo.processInfo.processIdentifier
         let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-        return windows.compactMap { info in
+        return listed(windows, own: ProcessInfo.processInfo.processIdentifier)
+    }
+
+    /// `listedWindows()` from `windows`, the window list's entries front to back.
+    static func listed(_ windows: [[String: Any]], own: pid_t) -> [Listed] {
+        windows.filter { !SystemPrompts.isPrompt($0) }.compactMap { info in
             guard let id = info[kCGWindowNumber as String] as? CGWindowID,
                   let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid != own,
                   let layer = info[kCGWindowLayer as String] as? Int, layer < Int(CGWindowLevelForKey(.dockWindow)) || layer > menuBarLevel,

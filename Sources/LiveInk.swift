@@ -813,11 +813,10 @@ final class LiveInk {
         }
     }
 
-    /// Closes an answer, as `event` says: by its × (`dismissed`), with the ink only it was about, or by
-    /// Esc (`answerClosed`), the newest in sight; the person's ink stays. Its marks go.
-    func closeAnswer(by event: LiveAsks.Event) {
+    /// Closes ask `id`'s answer, by its × or by Esc: its marks leave, with the ink only it was about.
+    func closeAnswer(_ id: LiveAsks.Ask.ID) {
         hideDismissButton()
-        run(asks.reduce(event))
+        run(asks.reduce(.dismissed(id)))
     }
 
     /// How long a new note waits unseen for the window's text before showing where it opened.
@@ -935,7 +934,7 @@ final class LiveInk {
             let id = under.id
             button.onClick = { [weak self] in
                 Log.write("[live-ink] answer dismissed by its × id=\(id)")
-                self?.closeAnswer(by: .dismissed(id))
+                self?.closeAnswer(id)
             }
             dismissButton = button
             dismissing = id

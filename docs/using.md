@@ -17,12 +17,12 @@ If your screenshots save to the Desktop, Documents or Downloads, macOS asks once
 may read that folder. The welcome page asks for it, with Allow…, and says why. If you answered
 Don't Allow, the row says so, and its Allow… opens Privacy & Security → Files and Folders. Switch
 Vignette on there, and it starts watching the folder without a relaunch. Settings → Screenshots
-says so too, under Save to, and the menu bar menu starts with Allow Access to Your Screenshots….
+says so too, under Save to, and the menu bar menu offers Allow Access to Your Screenshots….
 
 Vignette watches the folder macOS saves screenshots to. Pick another in the Options menu of
 Cmd+Shift+5, or with Save to in Settings → Screenshots, and both change to it. If Cmd+Shift+5 is
 set to save to the Clipboard, Mail or Preview, no screenshot reaches the folder. The menu bar menu
-then starts with Save Screenshots to a Folder, and setup and Settings → Screenshots offer Save to
+then offers Save Screenshots to a Folder, and setup and Settings → Screenshots offer Save to
 Folder.
 
 Report a Problem…, in the menu bar menu, opens a new GitHub issue with Vignette's version and
@@ -184,7 +184,7 @@ the box.
 The double tap needs Vignette trusted for Accessibility, and a key combination needs no permission.
 Allow… brings up macOS's request, and its Open System Settings button opens Privacy & Security →
 Accessibility with Vignette listed. Switch it on, and the setup window comes back and waits for you
-to press the keys once. Until the double tap has the permission, the menu bar menu starts with
+to press the keys once. Until the double tap has the permission, the menu bar menu offers
 Allow Accessibility for the Shortcut….
 
 Hold the key, or the second tap, and the newest screenshot lifts out of the stack into the
@@ -202,8 +202,8 @@ or off in Settings → General, or with Live Ink in the menu bar menu.
 Hold Control and Option and draw. To use another pair, pick it under Hold to draw in Settings →
 General. A glowing ring follows the pointer while you hold the keys. A loop becomes an ellipse
 round what you circled, and any other stroke becomes an arrow, in your red. To erase a mark, click
-on it or inside its circle with the keys held. Clear Live Ink in the menu erases them all, and so
-does turning live ink off.
+on it or inside its circle with the keys held. With no note, ask or answer open, Esc with the
+pointer on a mark erases them all, and so does turning live ink off.
 
 Marks you draw on a window move with it, hide behind windows in front of it, and go when it closes.
 Ink on no window stays where it is on the screen, on the Space you drew it on. All your marks are
@@ -217,10 +217,10 @@ works: pressing its key ends the drawing. Live ink doesn't draw while the stack 
 open. Esc while you hold the keys cancels the hold. What you drew and said in it goes, and nothing
 is sent.
 
-Like the double tap, live ink needs Accessibility. Until it has it, the menu bar menu starts with
+Like the double tap, live ink needs Accessibility. Until it has it, the menu bar menu offers
 Allow Accessibility for Live Ink…. It also needs Screen Recording to see the window under your
 ink. Until that is allowed, holding the keys says so beside the pointer, and the menu bar menu
-starts with Allow Screen Recording for Live Ink….
+offers Allow Screen Recording for Live Ink….
 
 ### Asking about your ink
 
@@ -229,10 +229,11 @@ nothing, and press Return: Claude or Codex looks at the windows your ink is on a
 screen. Its reply appears beside your ink as it's written, and its own marks draw themselves on, in
 its colour, pointing at what it means. A click anywhere else closes the note and keeps your ink. Esc
 closes it and erases the ink you have not asked about. Each Esc after that goes back one step. It
-cancels the ask under way, then closes the answer, then erases every mark.
+cancels the ask under way, then closes the answer and the ink it was about, then erases every mark.
 
 Ask again with no new ink and it's a follow-up about the same thing. A new question replaces the
-last answer, and Clear Live Ink starts over. Erase an answer's mark or note as you erase your own.
+last answer. Esc with the pointer on the ink goes back a step at a time, and its last step erases every
+mark and starts over. Erase an answer's mark or note as you erase your own.
 
 The note's target starts on the agent you used last, Claude or Codex. Click it, or press the Down
 arrow, to ask the other agent or to send your ink to one of your coding agent sessions instead: the

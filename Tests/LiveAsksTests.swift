@@ -572,9 +572,10 @@ final class LiveAsksTests: XCTestCase {
         var a = A()
         let first = ink(), second = ink(50), reply = text("It's a button.", agent: true)
         let id = answer(&a, on: [first, second], reply: reply)
-        _ = reduce(&a, .answerClosed(inSight: [reply.id]))
         _ = reduce(&a, .dismissed(id))
-        XCTAssertEqual(a.finishing, [reply.id: .dismissed], "the × of an answer Esc closed does nothing more")
+        _ = reduce(&a, .dismissed(id))
+        XCTAssertEqual(a.finishing, [reply.id: .dismissed, first.id: .dismissed, second.id: .dismissed],
+                       "closing an answer twice does nothing more")
         let other = begin(&a, on: [first, second])
         _ = reduce(&a, .dismissed(other))
         XCTAssertEqual(reduce(&a, .finished([reply.id, first.id])), [.remove([reply.id, first.id])],
@@ -885,9 +886,10 @@ final class LiveAsksTests: XCTestCase {
 
     func testStoppingAnAskAboutInkAskedBeforeLeavesThatInkAsked() {
         var a = A()
-        let mark = ink(), reply = text("It's a button.", agent: true)
-        answer(&a, on: [mark], reply: reply)
-        _ = reduce(&a, .answerClosed(inSight: [reply.id]))
+        let mark = ink(), reply = text("It's a button.", agent: true), kept = text("Still here.", agent: true)
+        answer(&a, on: [mark], reply: kept)
+        let closing = answer(&a, on: [mark], reply: reply)
+        _ = reduce(&a, .dismissed(closing))
         _ = reduce(&a, .finished([reply.id]))
         let id = begin(&a, on: [mark])
         XCTAssertEqual(reduce(&a, .arrived(.packetCame, for: id)), [.send(id)])
@@ -920,7 +922,7 @@ final class LiveAsksTests: XCTestCase {
 
         var closed = A()
         let esc = answer(&closed, on: [mark], reply: reply)
-        XCTAssertEqual(reduce(&closed, .answerClosed(inSight: [mark.id, reply.id])), [.ended(esc), .finish([reply.id], .dismissed)], "Esc on an answer")
+        XCTAssertEqual(reduce(&closed, .dismissed(esc)), [.ended(esc), .finish([reply.id, mark.id], .dismissed)], "Esc on an answer")
 
         var stopped = A()
         let stop = begin(&stopped, on: [mark])
@@ -956,7 +958,7 @@ final class LiveAsksTests: XCTestCase {
 
     func testRandomSequencesKeepTheInvariants() {
         var dropped = 0, restores = 0, otherAsk = 0, overlapping = 0, refused = 0, setAside = 0, broughtBack = 0
-        var stopped = 0, withdrawals = 0, queued = 0, coexisting = 0, interrupted = 0, closed = 0, sharedInk = 0
+        var stopped = 0, withdrawals = 0, queued = 0, coexisting = 0, interrupted = 0, sharedInk = 0
         var aboutWindows = 0, followingWindows = 0
         for seed in 0..<2000 {
             var lastID = 0
@@ -1222,16 +1224,6 @@ final class LiveAsksTests: XCTestCase {
                         XCTAssertNil(after.ask(id), fail("and ends the ask"))
                     }
                     othersKept(but: id)
-                case .answerClosed(let inSight):
-                    checkFinishes()
-                    let newest = before.asks.last { !$0.isUnderWay && before.answerMarks(of: $0.id).contains { !before.isFinishing($0) && inSight.contains($0) } }
-                    if let newest {
-                        closed += 1
-                        XCTAssertEqual(effects, [.finish(before.answerMarks(of: newest.id), .dismissed)], fail("Esc closes the newest answer"))
-                        XCTAssertNil(after.ask(newest.id))
-                    } else {
-                        XCTAssertEqual(effects, [], fail("with no answer up, Esc closes nothing"))
-                    }
                 case .noteDiscarded:
                     XCTAssertEqual(effects, before.noteInk.isEmpty ? [] : [.remove(before.noteInk)], fail("Esc takes back the note's ink"))
                     XCTAssertEqual(after.noteInk, [], fail("and the note has no ink left"))
@@ -1298,7 +1290,6 @@ final class LiveAsksTests: XCTestCase {
         XCTAssertGreaterThan(queued, 300, "asks sent while others are under way are part of the mix")
         XCTAssertGreaterThan(coexisting, 100, "answers on the screen together are part of the mix")
         XCTAssertGreaterThan(interrupted, 50, "asks stopped at the responder are part of the mix")
-        XCTAssertGreaterThan(closed, 100, "answers Esc closes are part of the mix")
         XCTAssertGreaterThan(sharedInk, 50, "ink two asks are about is part of the mix")
         XCTAssertGreaterThan(withdrawals, 0, "withdrawn notes are part of the mix")
         XCTAssertGreaterThan(aboutWindows, 100, "asks about a window are part of the mix")

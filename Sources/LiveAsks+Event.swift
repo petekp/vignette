@@ -38,7 +38,7 @@ extension LiveAsks {
         case replyRedrawn(Mark)
         /// More of ask `for`'s answer, or its failure's note, came on the screen.
         case answerShown(Set<Mark.ID>, for: Ask.ID)
-        /// An answer's ×. It finishes the answer's marks, and the marks the ask is about, erased or
+        /// An answer's × or the Esc that closes it. It finishes the answer's marks, and the marks the ask is about, erased or
         /// not, that no other ask is about. The ask ends, and the responder's turn stops when it was
         /// this ask's.
         case dismissed(Ask.ID)
@@ -47,12 +47,15 @@ extension LiveAsks {
         /// on release goes instead. A reply to put back must be among `shown`. Nothing is said, since the
         /// person stopped it. A session's note stored after this is withdrawn.
         case cancelled(Ask.ID, shown: Set<Mark.ID>)
-        /// Esc with no ask to stop: the marks of the newest answer with a mark among `inSight`, the marks
-        /// on the active Space, leave, and the person's ink stays.
-        case answerClosed(inSight: Set<Mark.ID>)
         /// The time for marks to leave is up.
         case finished(Set<Mark.ID>)
         /// The screen was cleared, or live ink turned off.
         case cleared
+    }
+
+    /// The answer Esc closes next, by the same `dismissed` event as its ×: the newest settled one with a
+    /// mark not already leaving among `inSight`, the marks on the active Space.
+    func newestAnswerToClose(inSight: Set<Mark.ID>) -> Ask.ID? {
+        asks.last { !$0.isUnderWay && answerMarks(of: $0.id).contains { !isFinishing($0) && inSight.contains($0) } }?.id
     }
 }
