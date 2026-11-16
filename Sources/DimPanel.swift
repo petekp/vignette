@@ -64,6 +64,13 @@ final class DimPanel: NSPanel {
         fade(to: 1, duration: ui.dimFade, fromNothing: wasHidden)
     }
 
+    /// Gives a dim that is up the frame of `screen`, after a display was added, removed or
+    /// rearranged. The blur and the tint follow by autoresizing; the fade is untouched.
+    func refit(to screen: NSScreen) {
+        guard isVisible, frame != screen.frame else { return }
+        setFrame(screen.frame, display: false)
+    }
+
     func hide() {
         generation += 1
         let gen = generation

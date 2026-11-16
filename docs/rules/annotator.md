@@ -63,7 +63,8 @@
   list is done. When the transition goes idle after a `returnCard`, the run opens the next file in
   that same batch (`returnCard(A) next(B) prepare(B)`). So the card flies home with its Copied notice
   while the next flies out, which is a swap's two flights, and the room beside the stack is made
-  once for both. Between two files the dim stays up and the focus stays with Vignette. `endRun`
+  once for both. Between two files the dim stays up and the focus stays with Vignette. A screen change gives a dim that is up the frame of the screen the editor is on
+  now (`DimPanel.refit`, from `ThumbnailController.screensChanged`, also when the stack is not visible). `endRun`
   comes only when nothing follows: it hides the dim and carries how a person's hand ended the run
   (`RunEnding`), or nil when no hand did. The run decides nothing about the focus;
   `CornerPresentation` does, from that ending. Opening a card does not clear the selection, so after the last one Cmd+C or Cmd+S

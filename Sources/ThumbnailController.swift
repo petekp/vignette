@@ -160,7 +160,10 @@ final class ThumbnailController {
     var screenSpace: CGColorSpace? { screen.colorSpace?.cgColorSpace }
     /// A display was added, removed, or rearranged. Whatever is showing moves to a screen that exists.
     func screensChanged() {
-        defer { if let card = annotating { onAnnotatorRefit?(targetFrame(for: currentCard(card)), annotatorRoom) } }
+        defer {
+            dim.refit(to: screen)
+            if let card = annotating { onAnnotatorRefit?(targetFrame(for: currentCard(card)), annotatorRoom) }
+        }
         guard visible else { return }
         if let pinned = pinnedScreen, !NSScreen.screens.contains(pinned) { pinnedScreen = NSScreen.main ?? NSScreen.screens[0] }
         Log.write("[screen] changed; relayout on \(screen.localizedName)")
