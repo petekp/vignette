@@ -219,7 +219,7 @@ Owner: `LiveWindows.swift:11`; per window `Tracked` (`:40`); `update` `:559`. Te
 
 Pins marks to the windows they were drawn on, so marks move, fade and leave with the window. A display link drives it: 10 Hz when idle, display rate while a window is moving.
 
-**States**: per window `frame`, `onScreen`, `showFrom`, `liftedAt`, `minimisingSince`, `pins`, `overlay`. Global: `link`, `monitors`, `observers`, `watchers` (Accessibility, per pid), `activeUntil`, `buttonDown`, `askedForTree`, `pickerClear`. Derived: `isAway = minimisingSince != nil || showFrom != nil`. A pin is drawn when `!isAway && !outside`, and shown when drawn and not aside. Window states: on screen, minimising, away (`!onScreen`, overlay ordered out), landing (`showFrom` set), lifted (`liftedAt` set, level `.floating`), gone.
+**States**: per window `frame`, `onScreen`, `showFrom`, `lift`, `minimisingSince`, `pins`, `overlay`. Global: `link`, `monitors`, `observers`, `watchers` (Accessibility, per pid), `activeUntil`, `buttonDown`, `askedForTree`, `pickerClear`. Derived: `isAway = minimisingSince != nil || showFrom != nil`. A pin is drawn when `!isAway && !outside`, and shown when drawn and not aside. Window states: on screen, minimising, away (`!onScreen`, overlay ordered out), landing (`showFrom` set), lifted (`lift` set, level 1), gone.
 
 **Transitions** (`update`, `:559`)
 
@@ -232,7 +232,7 @@ Pins marks to the windows they were drawn on, so marks move, fade and leave with
 | minimising | still on screen 1 s later | landing | `showFrom = now`, marks back |
 | any | frame size changed | same | `fitMarks`, `fitOverlay`; pin `outside` toggles |
 | any | frame origin changed | same | overlay `move(over:)` |
-| any | its app activated | lifted | level `.floating` until its app raises its windows (`keepInPlace`, `:601`) |
+| any | its app activated, or the keys go back to it while it is frontmost (front window only) | lifted | level 1 until `Lift.ends` (`keepInPlace`) |
 | any | id missing from the window list | gone | overlay closed at once, `onGone(ids)` → `LiveInk.forget` |
 | any | `pin` of a mark for a moved window before the next tick | same | uses the old `frame`, so the mark is displaced for good ([hand-8](plausible-findings-requests-to-live-ink.md#hand-8)) |
 | last window gone | | link stopped | `stop()` |
@@ -243,7 +243,7 @@ Pins marks to the windows they were drawn on, so marks move, fade and leave with
 
 **Late and concurrent answers**
 
-- `liftedAt` left set when the window goes away: heals on the next `keepInPlace` (`now - lifted > 0.5`).
+- `lift` left set when the window goes away: heals on the next `keepInPlace` (`Lift.limit`).
 - Asking for a page tree: deduped by pid, retried when it could not tell, `LiveWindows.swift:134`.
 - The minimise-button Accessibility probe re-looks the window up on main, `:524`.
 - A re-pin to a retired window id makes a fresh `Tracked` and overlay, `retire` `:204`, `tracked` `:344`.
