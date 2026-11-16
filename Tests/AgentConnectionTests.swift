@@ -527,9 +527,6 @@ final class AgentConnectionTests: XCTestCase {
         SessionMenu.row(of: session, among: [session] + others, now: now)
     }
 
-    /// The title is the herdr tab's label without its repository prefix, else the session's name. The second
-    /// line is the worktree, the branch and the goal, each once, with the session's name when it adds to the
-    /// title, and no age.
     func testARowLeadsWithTheTabLabelAndThenSaysWhereAndWhy() {
         let now = Date()
         var s = session("a", used: 1, place: .repository(name: "inbox", root: "/c/inbox", worktree: "map-port", subfolder: "Sources"), now: now)
@@ -537,19 +534,19 @@ final class AgentConnectionTests: XCTestCase {
                              hostLabel: "Inbox: map port", goal: "Move the map to the plugin")
         let withGoal = row(s, now: now)
         XCTAssertEqual(withGoal.title, "map port", "the repository's prefix goes, whatever its case")
-        XCTAssertEqual(withGoal.subtitle, "map-port · progress-tab · Move the map to the plugin")
+        XCTAssertEqual(withGoal.details, "map-port · progress-tab · Move the map to the plugin")
         XCTAssertEqual(withGoal.tooltip, "map port\nmap-port · progress-tab · Move the map to the plugin\ninbox")
 
         s.goal = nil
-        XCTAssertEqual(row(s, now: now).subtitle, "map-port · progress-tab · Port the map", "with no goal, its name")
+        XCTAssertEqual(row(s, now: now).details, "map-port · progress-tab · Port the map", "with no goal, its name")
         s.hostLabel = "Port the map"
-        XCTAssertEqual(row(s, now: now).subtitle, "map-port · progress-tab", "a part that repeats the title is left out")
+        XCTAssertEqual(row(s, now: now).details, "map-port · progress-tab", "a part that repeats the title is left out")
 
         var folder = s
         folder.place = .folder(fromHome: "~/Code")
         folder.branch = nil
         folder.goal = "Plan the week"
-        XCTAssertEqual(row(folder, now: now).subtitle, "~/Code · Plan the week")
+        XCTAssertEqual(row(folder, now: now).details, "~/Code · Plan the week")
     }
 
     /// With no tab and no goal, a row is the session's name over its worktree, subfolder and branch.
@@ -560,7 +557,7 @@ final class AgentConnectionTests: XCTestCase {
                                  branch: "codex/selector")
         let fallback = row(s, now: now)
         XCTAssertEqual(fallback.title, "Codex thread")
-        XCTAssertEqual(fallback.subtitle, "Codex worktree · apps/ui · codex/selector")
+        XCTAssertEqual(fallback.details, "Codex worktree · apps/ui · codex/selector")
         XCTAssertEqual(fallback.activity, .lastActive("2 hr ago"))
         XCTAssertEqual(fallback.tooltip, "Codex thread\nCodex worktree · apps/ui · codex/selector · 2 hr ago\nevercars")
     }

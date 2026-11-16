@@ -25,11 +25,12 @@ enum SessionMenu {
         /// The herdr tab's label without its repository prefix, else the session's name, with a
         /// suffix when another session in the group has the same title.
         let title: String
-        /// Worktree, branch and goal, or the path from home and goal, joined by " · ".
-        let subtitle: String
+        /// Worktree, branch and goal, or the path from home and goal, joined by " · ". The row does
+        /// not draw them; its tooltip shows them and search looks through them.
+        let details: String
         /// What the row says at its right edge: working, or when the session was last active, or none.
         let activity: Activity?
-        /// The title, the second line, then the repository.
+        /// The title, the details, then the repository, one to a line.
         let tooltip: String
     }
 
@@ -59,13 +60,13 @@ enum SessionMenu {
     /// The groups of `groups` whose rows match `query`, in the same order, except that a group with a
     /// running session comes before one of rows that start a session, so Return never starts one
     /// while a running session matches. A row matches when every word of the query is found,
-    /// ignoring case and accents, in its title, its second line, the words at its right or its group's
+    /// ignoring case and accents, in its title, its details, the words at its right or its group's
     /// header. A query with no words matches every row.
     static func matching(_ query: String, in groups: [Group]) -> [Group] {
         let words = fold(query).split(whereSeparator: \.isWhitespace).map(String.init)
         let found = words.isEmpty ? groups : groups.compactMap { group in
             let rows = group.rows.filter { row in
-                let text = fold([row.title, row.subtitle, badge(of: row), group.header].compactMap { $0 }.joined(separator: " "))
+                let text = fold([row.title, row.details, badge(of: row), group.header].compactMap { $0 }.joined(separator: " "))
                 return words.allSatisfy { text.contains($0) }
             }
             return rows.isEmpty ? nil : Group(header: group.header, key: group.key, rows: rows)
@@ -157,7 +158,7 @@ enum SessionMenu {
         case .new: title = newSession(in: destination.project)
         case nil: return row
         }
-        return Row(destination: row.destination, title: title, subtitle: row.subtitle, activity: row.activity, tooltip: row.tooltip)
+        return Row(destination: row.destination, title: title, details: row.details, activity: row.activity, tooltip: row.tooltip)
     }
 
     /// The sessions every row is worded over: the active ones, and `destination` when it is not among them.
@@ -305,7 +306,7 @@ enum SessionMenu {
             let purpose = session.goal ?? named
             let lastActive = session.lastUsed.map { age(since: $0, now: now) }
             var parts: [String?]
-            // The time at the row's right, which the tooltip keeps on the second line.
+            // The time at the row's right, which the tooltip keeps beside the details.
             var tooltipAge: String?
             if let start = session.start {
                 // Where it would run, then which session it continues.
@@ -322,9 +323,9 @@ enum SessionMenu {
                 parts = placeParts(session, withSubfolder: false)
                 parts.append(purpose)
             }
-            let line = distinct(parts).joined(separator: " · ")
+            let details = distinct(parts).joined(separator: " · ")
             let tooltip = [title, distinct(parts + [tooltipAge]).joined(separator: " · "), header].filter { !$0.isEmpty }.joined(separator: "\n")
-            return Row(destination: session, title: title, subtitle: line, activity: activity(for: session, lastActive: lastActive), tooltip: tooltip)
+            return Row(destination: session, title: title, details: details, activity: activity(for: session, lastActive: lastActive), tooltip: tooltip)
         }
 
         /// Working while the session is busy, else when it was last active. A New session row has
