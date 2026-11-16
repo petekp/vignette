@@ -140,11 +140,12 @@ struct CardView: View, Equatable {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if let agent = card.agent, inSlot {
+            if let tab = CardTab(card), inSlot {
                 // The fold decides the badge's shape from the card's width, but a zoom can narrow the
                 // card faster than the fold's spring closes. Clipped to the card, it never shows past it.
                 ZStack {
-                    AgentBadge(agent: agent, size: ui.selectionCircleSize, cardWidth: size.width, foldDuration: ui.relayoutDuration)
+                    AgentBadge(agent: tab.agent, label: tab.label, glyph: tab.glyph, size: ui.selectionCircleSize,
+                               cardWidth: size.width, foldDuration: ui.relayoutDuration)
                         .padding(AgentBadgeFit.inset)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)

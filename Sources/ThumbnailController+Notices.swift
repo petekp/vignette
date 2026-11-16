@@ -23,7 +23,14 @@ extension ThumbnailController {
     /// The client answered for the request `request` about `shot`. A card no longer on screen says
     /// nothing more about a delivery that worked, and comes back as a lone thumbnail about any other.
     func delivered(_ shot: Screenshot, request: String, _ state: SendNotice.State, reason: String?) {
+        if state == .sent || state == .queued { setSent(sent(of: shot.url), of: shot) }
         post(.answered(request: request, state: state, reason: reason), on: shot)
+    }
+
+    /// What the card's tab says about the last send of the file at `url` (`Agent.sent(of:)`).
+    func sent(of url: URL) -> Card.Sent? {
+        guard let sent = Agent.sent(of: url) else { return nil }
+        return Card.Sent.of(sent, agent: Agent.of(url), origin: origin(url))
     }
 
     /// The session's turn on the live ink note `shot` ended with nothing to show as a result card.

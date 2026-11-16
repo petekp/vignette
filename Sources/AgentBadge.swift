@@ -23,6 +23,9 @@ struct AgentBadgeFit {
     static let gap: CGFloat = 0.22
     static let padding: CGFloat = 0.4
     static let foldedPadding: CGFloat = (1 - logoSide) / 2
+    static let glyphSize: CGFloat = 0.42
+    static let glyphGap: CGFloat = 0.12
+    static let glyphSide: CGFloat = 0.5
 
     var fullWidth: CGFloat { size * (Self.padding * 2 + Self.logoSide + Self.gap) + textWidth }
     /// The narrowest card that shows the words: the capsule, the selection circle, which is `size`
@@ -31,6 +34,15 @@ struct AgentBadgeFit {
 
     func folds(cardWidth: CGFloat, wasFolded: Bool) -> Bool {
         cardWidth < cardWidthForWords + (wasFolded ? Self.hysteresis : 0)
+    }
+
+    /// The folded tab with a glyph beside the logo: the logo's circle, the gap and the glyph.
+    var foldedWidthWithGlyph: CGFloat { size * (1 + Self.glyphGap + Self.glyphSide) }
+
+    /// Whether a folded tab keeps its glyph: only while it stays clear of the selection circle, by the
+    /// same margins as the words. Narrower, it is the logo alone.
+    func keepsGlyph(cardWidth: CGFloat) -> Bool {
+        cardWidth >= foldedWidthWithGlyph + size + Self.inset * 3
     }
 
     /// The fit for `label` at `size`. The words are measured once per label and size: the stack
@@ -52,12 +64,17 @@ struct AgentBadgeFit {
     @MainActor private static var textWidths: [TextKey: CGFloat] = [:]
 }
 
-/// Marks a card an agent pushed in with `add?agent=`: a white tab saying who, with the vendor's
-/// logo when the bundle has one (`Agent.logo(for:)`). On a card too narrow for the words it folds
-/// to the logo alone in a circle (`AgentBadgeFit`); its trailing edge stays put and the words fade
-/// as the capsule closes over them.
+/// Marks a card an agent pushed in with `add?agent=`, or a card that was sent (`Card.Sent`): a white
+/// tab saying who or where, with the vendor's logo when the bundle has one (`Agent.logo(for:)`). On a
+/// card too narrow for the words it folds to the logo, alone in a circle or beside `glyph`
+/// (`AgentBadgeFit`); its trailing edge stays put and the words fade as the capsule closes over them.
 struct AgentBadge: View {
+    /// The vendor whose logo the tab shows.
     let agent: String
+    /// "From Claude", "Sent to vignette", "From Claude · Replied".
+    let label: String
+    /// An SF Symbol the folded tab keeps beside the logo: a paper plane for sent, a check for replied.
+    var glyph: String? = nil
     let size: CGFloat
     /// The card's width as drawn: the stack's narrowing included.
     let cardWidth: CGFloat
@@ -66,8 +83,9 @@ struct AgentBadge: View {
     @State private var wasFolded = false
 
     var body: some View {
-        let label = Agent.label(for: agent)
-        let folded = AgentBadgeFit.of(label, size: size).folds(cardWidth: cardWidth, wasFolded: wasFolded)
+        let fit = AgentBadgeFit.of(label, size: size)
+        let folded = fit.folds(cardWidth: cardWidth, wasFolded: wasFolded)
+        let showsGlyph = folded && glyph != nil && fit.keepsGlyph(cardWidth: cardWidth)
         HStack(spacing: folded ? 0 : size * AgentBadgeFit.gap) {
             logo.frame(width: size * AgentBadgeFit.logoSide, height: size * AgentBadgeFit.logoSide)
             Text(label).font(.system(size: AgentBadgeFit.textSize(size), weight: .semibold))
@@ -75,6 +93,13 @@ struct AgentBadge: View {
                 .frame(width: folded ? 0 : nil, alignment: .trailing)
                 .clipped()
                 .opacity(folded ? 0 : 1)
+            if showsGlyph, let glyph {
+                Image(systemName: glyph).font(.system(size: size * AgentBadgeFit.glyphSize, weight: .heavy))
+                    .foregroundStyle(.black.opacity(0.8))
+                    .frame(width: size * AgentBadgeFit.glyphSide)
+                    .padding(.leading, size * AgentBadgeFit.glyphGap)
+                    .transition(.opacity)
+            }
         }
         .padding(.horizontal, size * (folded ? AgentBadgeFit.foldedPadding : AgentBadgeFit.padding))
         .frame(height: size)
@@ -102,6 +127,28 @@ struct AgentBadge: View {
         } else {
             Image(systemName: Agent.fallbackSymbol).font(.system(size: size * 0.5, weight: .bold))
                 .foregroundStyle(.black.opacity(0.8))
+        }
+    }
+}
+
+/// What a card's tab says: the agent the card is from, the session it was sent to, or that it was
+/// sent back to the session it came from (`Card.Sent`).
+struct CardTab: Equatable {
+    let agent: String
+    let label: String
+    let glyph: String?
+
+    /// Nil for a card with no tab: a person's screenshot that was never sent.
+    init?(_ card: Card) {
+        switch (card.agent, card.sent) {
+        case (let agent?, .replied?):
+            (self.agent, label, glyph) = (agent, Agent.label(for: agent) + " · Replied", "checkmark")
+        case (let agent?, _):
+            (self.agent, label, glyph) = (agent, Agent.label(for: agent), nil)
+        case (nil, .to(let client, let title)?):
+            (self.agent, label, glyph) = (client.rawValue, "Sent to " + title, "paperplane.fill")
+        case (nil, .replied?), (nil, nil):
+            return nil
         }
     }
 }

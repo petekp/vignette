@@ -210,12 +210,6 @@ final class ScreenshotRequests {
         replies.values.contains { $0.requestID == request && $0.stage != .failed && $0.stage != .cancelled }
     }
 
-    /// The screenshot a request was sent from. A record from before `sourceKey` keeps only its
-    /// name, and a send is made from the watch folder.
-    func sourceKey(of record: Record) -> ScreenshotKey {
-        record.sourceKey.map { ScreenshotKey(asGiven: $0) } ?? ScreenshotKey(folder: callbacks.watchFolder(), name: record.source)
-    }
-
     /// Files renamed inside the watch folder. A published reply's record follows its file, so its
     /// card keeps Reply. A request follows the screenshot it was sent from, so a reply that fails
     /// still finds that card, and a send still in its grace follows it, so Don't send still reaches it.
@@ -258,11 +252,12 @@ final class ScreenshotRequests {
     /// the annotator may close. The client gets the line `grace` seconds later, or at once when that
     /// is 0 (`SendGrace`); the submission then runs off the main thread and reports through `[send]`
     /// and `callbacks.delivered`. Throws a `Refusal` when no live request was admitted. `watchingTurn`
-    /// says a live ink note will read the session's turn once the line is in.
+    /// says a live ink note will read the session's turn once the line is in. `cardTitle` is what the
+    /// card calls the session, recorded on the screenshot once the send reaches its client.
     @discardableResult
     func send(_ picture: Picture, source: ScreenshotKey, to destination: AgentDestination, message: String? = nil,
               instructions: String = SettingsData.defaultSendInstructions, grace: TimeInterval = 0,
-              watchingTurn: Bool = false) throws -> Record {
+              watchingTurn: Bool = false, cardTitle: String? = nil) throws -> Record {
         let open = requests.values.filter { $0.status != .cleared }.sorted { $0.created < $1.created }
         guard open.count <= Self.maxLiveRequests else {
             Log.write("[send] error \(CommandError.writeFailed.rawValue) too many open requests: \(open.count)")
@@ -281,7 +276,7 @@ final class ScreenshotRequests {
                             destinationName: destination.name, address: address,
                             addressGuard: address.guardTier, source: source.url.lastPathComponent,
                             sourceKey: source.path, status: .prepared, detail: "", start: destination.start,
-                            unchanged: picture.isUnchanged ? true : nil)
+                            unchanged: picture.isUnchanged ? true : nil, cardTitle: cardTitle)
         let ticket = ReplyProtocol.Ticket(requestID: id, secret: ReplyProtocol.newSecret(),
                                           requestDirectory: directory.path, app: Bundle.main.bundlePath)
         do {
@@ -398,7 +393,8 @@ final class ScreenshotRequests {
         callbacks.delivered(record, outcome)
     }
 
-    /// Writes what the client answered into the request's record and logs it. Answers the record.
+    /// Writes what the client answered into the request's record, and a send that reached the client
+    /// on the screenshot, cleared since or not, and logs it. Answers the record.
     private func recordOutcome(_ outcome: SubmissionOutcome, for id: String) -> Record? {
         guard var record = requests[id] else { return nil }
         if record.status != .cleared {
@@ -412,6 +408,7 @@ final class ScreenshotRequests {
             do { try write(record) }
             catch { Log.write("[send] error \(CommandError.writeFailed.rawValue) could not store submission \(id): \(error.localizedDescription)") }
         }
+        if outcome.isAccepted { Agent.record(sent: record.sent, on: sourceKey(of: record).url) }
         switch outcome {
         case .accepted(let detail):
             Log.write("[send] ok \(id) \(record.destinationName) \(detail)")

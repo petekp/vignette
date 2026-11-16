@@ -73,14 +73,14 @@ final class LiveNoteCards {
             guard let self, let shot else { return done(.failure(refused)) }
             let pixels = PixelSize(width: note.capture.width, height: note.capture.height)
             let pointScale = min(max(note.pointScale, Drawing.pointScales.lowerBound), Drawing.pointScales.upperBound)
-            let style = Settings.shared.data.ui.textStyle
-            let marks = note.marks.compactMap { $0.placed(in: pixels, pointScale: pointScale, style: style) }
+            let ui = Settings.shared.data.ui
+            let marks = note.marks.compactMap { $0.placed(in: pixels, pointScale: pointScale, style: ui.textStyle) }
             let drawing = Drawing(key: shot.key.path, pixels: pixels, pointScale: pointScale, marks: marks)
             drawings.write(drawing, reason: "built")
             let record: ScreenshotRequests.Record
             do {
                 record = try requests.send(png: note.picture, source: shot.key, to: destination, message: message,
-                                           instructions: Settings.shared.data.sendInstructions, grace: Settings.shared.data.ui.sendGraceSeconds, watchingTurn: true)
+                                           instructions: Settings.shared.data.sendInstructions, grace: ui.sendGraceSeconds, watchingTurn: true, cardTitle: title)
             } catch {
                 folder.takeBack(shot)
                 return done(.failure((error as? ScreenshotRequests.Refusal) ?? refused))

@@ -28,13 +28,24 @@ since the tab keeps its margin from every edge. Its accessibility
 label is the full words in either shape. Flights, the drag image and a stitch's converge never draw
 the tab: it fades out as the card leaves its slot and fades in, in the shape that card's slot
 calls for, as it lands. A lone thumbnail follows the same rule at its own width.
+The same tab says a card was sent (`CardTab`, `Card.Sent`): "Sent to <title>" with the client's
+logo on a person's screenshot, and "From <Name> · Replied" on an agent's card sent back to the
+session it came from. Folded, it keeps a paper plane or a check beside the logo
+(`AgentBadge.glyph`), only while the folded tab stays clear of the selection circle by the words'
+margins (`AgentBadgeFit.keepsGlyph`); narrower, it is the logo alone. An agent's card sent to any other session keeps its "From <Name>" tab. The
+send is the `com.petepetrash.vignette.sent` attribute, JSON `{client, id, title, at}`
+(`Agent.record(sent:on:)`), which `docs/rules/send.md` says when it is written. A card reads it as
+it reads the agent's name, once when the card is made, and the card's tab changes when a send of it
+is recorded (`ThumbnailController.delivered`). Replied compares the send's client and id with
+`ScreenshotRequests.origin(of:)`, not `Agent.origin(of:)`: a published reply's file has no session
+attribute, and its origin is its request. The editor shows no tab.
 `&session=<id>` names the agent session pushing it. With `agent=claude` it is a Claude Code
 session, recorded beside the name as `com.petepetrash.vignette.session`. With `agent=codex` it is
 a Codex thread, recorded as `com.petepetrash.vignette.thread`, the attribute live ink uses for
 one. The card's bar is then Reply and goes back there. `Agent.record(agent:origin:)` is the one
 writer of the name and those attributes. It removes a session an earlier push recorded that this
 one does not name, so a push with `agent=` and no `session=` of a file already in the folder
-leaves it with no Reply.
+leaves it with no Reply. It also removes the file's send, which was of the picture this push replaces.
 `ScreenshotRequests.origin(of:)` is the one reader: a reply's request, else the file's
 attributes (`Agent.origin(of:)`). The id is the pusher's claim. Sending to it
 still checks that a live plugin inbox holds that Claude Code session
