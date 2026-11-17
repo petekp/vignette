@@ -1,6 +1,6 @@
 # Send
 
-- `Sources/AgentConnection.swift`, `Sources/ScreenshotRequests.swift`, `Sources/ReplyProtocol.swift`,
+- `Sources/AgentAddress.swift`, `Sources/AgentConnection.swift`, `Sources/ScreenshotRequests.swift`, `Sources/ReplyProtocol.swift`,
   `Sources/ReplyCommand.swift` and `skills/vignette/scripts/reply` are the closed loop: a drawing
   sent to an agent session and that agent's drawing sent back. `Sources/SessionListing.swift` lists
   the sessions Send can go to, `Sources/SendGrace.swift` decides what a send does while its line waits, and `Sources/HerdrFocus.swift` reads the Herdr app's focus. See the rules below, `docs/rules/replies.md` and
@@ -128,3 +128,28 @@
   still waiting and clears the request. An editor card keeps its screenshot and goes back to no
   notice. A live ink note card is Vignette's own file, so it is discarded with its drawing
   (`FolderWrites.discard`). `docs/send-grace-2026-10-10.md` has the reasons and the checks.
+- A Codex send's line is watched in the thread's queue until Codex takes it (`QueueWatch` in
+  `CodexQueue.swift`). `codex queue` prints the line's id, and `ScreenshotRequests` asks a `codex
+  app-server` of its own for `thread/queue/list` (experimental, so the client says
+  `experimentalApi`): every 3 s in the first minute, then every 10 s, 30 s and 60 s, since a line
+  behind a stopped turn can wait for hours. The reason comes from the thread's rollout and its writer
+  lock: a turn running, a question open, the last turn stopped, no engine with the thread open, or
+  the thread archived. A command approval leaves no mark in the rollout, so it reads as a running
+  turn. An open thread whose last turn ended is said to hold the line only after 15 s, since its
+  engine looks at the queue every 10 s. A line gone from the queue is taken when the thread's rollout
+  holds the request's id, which the line names in its folder, and removed in Codex when it does not.
+  A compressed rollout reads as unread, and the watch looks again.
+- The send's answer is its notice: Queued for the session, with the reason and Don't send. Every
+  later change only redraws the card's tab (`Callbacks.queueChanged`), so a card off screen does not
+  come back for it. While the watch says the line is held, the tab reads "Queued for *session*" with
+  an orange clock (`Card.Sent.queued`, from `ScreenshotRequests.queuedSend(of:)`). Hovering the tab
+  turns the clock into Don't send, whose help is the reason. The Queued state comes from the live
+  watch, never the `Agent.Sent` attribute, so after a relaunch the tab says Sent as before. Don't
+  send on a queued line runs the same `unsend` action: it takes the overlay down at once and asks for
+  `thread/queue/delete`. Removed clears the request and the attribute, and the card says nothing,
+  as for a send in its grace. Already taken says "Codex had already started on it." under Sent, and
+  a refusal says "Vignette couldn't remove it. You can delete it in Codex." under Queued
+  (`Callbacks.laterAnswer`), with the watch going on. A line the person deletes in Codex clears the
+  request and the attribute without a word. A thread Codex can no longer find ends the watch with a
+  failure on the card. A clear stops the watch and leaves the line in the queue.
+  `docs/codex-queued-sends-2026-11-16.md` has the live runs behind each reading.

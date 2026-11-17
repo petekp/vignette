@@ -258,6 +258,9 @@ final class ThumbnailController {
     var onTakesScreen: (() -> Void)?
     /// The session a card came from, which a send back to it makes "Replied" (`ScreenshotRequests.origin(of:)`).
     var origin: (URL) -> AgentDestination? = Agent.origin(of:)
+    /// Why the session's queue holds the last send of the file at a URL, nil when it holds none
+    /// (`ScreenshotRequests.queuedSend(of:)`).
+    var queuedSend: (URL) -> Card.Queued? = { _ in nil }
 
     /// The card with the keyboard focus ring, while the stack is up.
     var focusedShot: Screenshot? { model.cards.first { $0.id == model.focused }?.shot }

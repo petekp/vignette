@@ -1169,7 +1169,7 @@ private final class HeldSubmission: AgentConnection, @unchecked Sendable {
 }
 
 /// What happened, in order, from callbacks on the main thread and connections on another.
-private final class GraceEvents: @unchecked Sendable {
+final class GraceEvents: @unchecked Sendable {
     private let lock = NSLock()
     private var events: [String] = []
     func add(_ event: String) { lock.lock(); events.append(event); lock.unlock() }
@@ -1177,7 +1177,7 @@ private final class GraceEvents: @unchecked Sendable {
 }
 
 /// The clock and the timers a grace period runs on, moved by hand.
-private final class GraceClock {
+final class GraceClock {
     var time: TimeInterval = 1000
     var timers: [@MainActor @Sendable () -> Void] = []
 

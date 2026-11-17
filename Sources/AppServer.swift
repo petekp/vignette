@@ -5,8 +5,9 @@ import os
 /// `thread/list` reads the thread store on disk, so a server started here for the length of one
 /// listing answers for every session, whoever owns it.
 ///
-/// What it asks of the person's own Codex home only reads: it never starts a thread, sends a turn,
-/// or changes anything a session holds. Live ink's responder and its sign-in talk to a server in
+/// What it asks of the person's own Codex home only reads, but for one call: it takes a line Vignette
+/// queued out of the queue when the person asks (`withdrawRequests`). It never starts a thread, sends
+/// a turn, or changes anything else a session holds. Live ink's responder and its sign-in talk to a server in
 /// Vignette's own Codex home, through `AppServerSession` and `logoutRequests`.
 enum AppServer {
     /// How many threads discovery asks for, the ones used last. The store's list call costs about
@@ -58,6 +59,20 @@ enum AppServer {
         handshake + [request(id: 2, "account/logout", nil)]
     }
 
+    /// The request lines for a look at a thread's queue and a read of the thread, which names its
+    /// rollout. The queue calls are experimental in 0.169 and answer only a client that asks for
+    /// `experimentalApi`.
+    static func queueRequests(_ thread: String) -> [String] {
+        experimentalHandshake + [request(id: queueID, "thread/queue/list", ["threadId": thread, "limit": queueLimit]),
+                                 request(id: readID, "thread/read", ["threadId": thread])]
+    }
+
+    /// The request lines that take one line out of a thread's queue, by the id `codex queue` printed.
+    /// It is the one call here that changes what a session holds, and only a line Vignette put there.
+    static func withdrawRequests(_ line: QueuedLine) -> [String] {
+        experimentalHandshake + [request(id: queueID, "thread/queue/delete", ["threadId": line.thread, "queuedSubmissionId": line.id])]
+    }
+
     /// What Vignette says of itself in `initialize`, here and in an `AppServerSession`.
     static var initializeParams: [String: Any] {
         ["clientInfo": ["name": "Vignette", "version": BuildInfo.current.version]]
@@ -67,9 +82,49 @@ enum AppServer {
         [request(id: 1, "initialize", initializeParams), #"{"method":"initialized"}"#]
     }
 
+    private static var experimentalHandshake: [String] {
+        var params = initializeParams
+        params["capabilities"] = ["experimentalApi": true]
+        return [request(id: 1, "initialize", params), #"{"method":"initialized"}"#]
+    }
+
     /// The id of the listing's answer, and of the first read's.
     static let listingID = 2
     static let readID = 3
+    /// The id of a queue call's answer.
+    static let queueID = 2
+    /// How many queued lines one look asks for. A thread's queue holds what was sent while it was
+    /// busy, a handful at most.
+    static let queueLimit = 200
+
+    /// What a look at a thread's queue found.
+    enum QueueAnswer: Equatable {
+        /// The ids of the lines the queue holds, in order. `more`: the queue has lines past these.
+        case listed([String], more: Bool)
+        /// The server refused the call, in its own words.
+        case refused(String)
+        /// No answer arrived.
+        case none
+    }
+
+    /// The answer to `queueRequests`' look at the queue.
+    static func queue(in lines: [String]) -> QueueAnswer {
+        if let refusal = refusal(queueID, in: lines) { return .refused(refusal) }
+        guard let result = answer(queueID, in: lines), let items = result["data"] as? [[String: Any]] else { return .none }
+        let more = result["nextCursor"] as? String != nil
+        return .listed(items.compactMap { $0["id"] as? String }, more: more)
+    }
+
+    /// The answer to `withdrawRequests`: whether the queue had the line and removed it.
+    static func withdrawal(in lines: [String]) -> Result<Bool, QueueRefusal> {
+        if let refusal = refusal(queueID, in: lines) { return .failure(QueueRefusal(message: refusal)) }
+        guard let deleted = answer(queueID, in: lines)?["deleted"] as? Bool else { return .failure(QueueRefusal(message: "no answer")) }
+        return .success(deleted)
+    }
+
+    struct QueueRefusal: Error, Equatable {
+        let message: String
+    }
 
     private static func request(id: Int, _ method: String, _ params: [String: Any]?) -> String {
         var request: [String: Any] = ["id": id, "method": method]
@@ -113,6 +168,17 @@ enum AppServer {
                   let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                   message["id"] as? Int == id else { continue }
             return message["result"] as? [String: Any]
+        }
+        return nil
+    }
+
+    /// The message of the error the server answered the request with this id, if it refused it.
+    private static func refusal(_ id: Int, in lines: [String]) -> String? {
+        for line in lines {
+            guard let data = line.data(using: .utf8),
+                  let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  message["id"] as? Int == id, let error = message["error"] else { continue }
+            return (error as? [String: Any])?["message"] as? String ?? "refused"
         }
         return nil
     }

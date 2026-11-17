@@ -72,6 +72,11 @@ final class CodexConnectionTests: XCTestCase {
         guard case .destinationChanged = CodexConnection.failure(output: "failed to connect to ws://127.0.0.1:9", thread: "t") else {
             return XCTFail("an engine that cannot be reached is not a retryable failure")
         }
+        let archived = "Error: failed to queue session message: thread/queue/add failed: session 01a1e7ce-4d16-77c1-9d80-f88df63cfeac is archived. Run `codex unarchive 01a1e7ce-4d16-77c1-9d80-f88df63cfeac` to unarchive it first. (code -32600)"
+        guard case .destinationChanged(_, let unarchive) = CodexConnection.failure(output: archived, thread: "t") else {
+            return XCTFail("an archived thread takes nothing until it is unarchived")
+        }
+        XCTAssertEqual(unarchive, "This thread is archived. You can unarchive it in Codex or send to another one.")
         guard case .notSubmitted = CodexConnection.failure(output: "Error: invalid message", thread: "t") else {
             return XCTFail("anything else definitely did not arrive")
         }
@@ -87,7 +92,7 @@ final class CodexConnectionTests: XCTestCase {
         connection.converse = { _, _, _ in [] }
         let destination = AgentDestination(id: thread, name: "t", address: .codexThread(uuid: thread))
         connection.isLoaded = { _ in false }
-        guard case .queued(_, let reason) = connection.submit("look", to: destination) else {
+        guard case .queued(_, let reason, _) = connection.submit("look", to: destination) else {
             return XCTFail("a thread no engine has loaded only stores the message")
         }
         XCTAssertEqual(reason, "Codex reads it when you open this thread.")
@@ -124,7 +129,8 @@ final class CodexConnectionTests: XCTestCase {
         XCTAssertNil(connection.turn(of: destination), "no line has gone to the thread")
 
         guard case .accepted = connection.submit("unwatched", to: destination) else { return XCTFail("a loaded thread takes it") }
-        XCTAssertEqual(order.withLock { $0 }, ["queue"], "a send nobody watches reads no rollout")
+        XCTAssertEqual(order.withLock { $0 }, ["queue", #"app-server {"id":3,"method":"thread\/read","params":{"threadId":"\#(thread)"}}"#],
+                       "a send nobody's note watches looks at the queue once the line is in it")
         XCTAssertNil(connection.turn(of: destination))
 
         order.withLock { $0 = [] }
@@ -142,6 +148,80 @@ final class CodexConnectionTests: XCTestCase {
             + #"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"look"}]}}"# + "\n").utf8))
         try handle.close()
         XCTAssertEqual(connection.turn(of: destination), .busy, "the refused line does not wait")
+    }
+
+    private func rollout(_ events: [String]) throws -> URL {
+        let file = temporaryFolder().appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data((events.joined(separator: "\n") + "\n").utf8).write(to: file)
+        return file
+    }
+
+    func testASendCodexHoldsSaysWhyAndNamesItsLine() throws {
+        let thread = "01a1e7b5-5855-7441-80ab-7a49ae2b5b8b"
+        let line = QueuedLine(id: "01a1e7c0-000a", thread: thread)
+        let destination = AgentDestination(id: thread, name: "t", address: .codexThread(uuid: thread))
+        let asks = OSAllocatedUnfairLock(initialState: [[String]]())
+        let answers = OSAllocatedUnfairLock(initialState: [String]())
+        var connection = CodexConnection()
+        connection.binary = { "/bin/codex" }
+        connection.isLoaded = { _ in true }
+        connection.run = { _, _, _ in (0, "Queued message \(line.id) for thread \(thread).", false) }
+        connection.converse = { _, _, requests in
+            asks.withLock { $0.append(requests) }
+            return answers.withLock { $0 }
+        }
+        func answer(queue ids: [String], rollout: URL?) {
+            let listed = ids.map { #"{"id":"\#($0)","input":[]}"# }.joined(separator: ",")
+            var lines = [#"{"id":2,"result":{"data":[\#(listed)],"nextCursor":null}}"#]
+            if let rollout { lines.append(#"{"id":3,"result":{"thread":{"id":"\#(thread)","cwd":"/x","path":"\#(rollout.path)"}}}"#) }
+            answers.withLock { $0 = lines }
+        }
+
+        answer(queue: ["other", line.id], rollout: try rollout([RolloutLines.started]))
+        guard case .queued(_, let running, let held) = connection.submit("look", to: destination) else { return XCTFail("a turn is running") }
+        XCTAssertEqual(running, "Codex reads it when its current turn ends.")
+        XCTAssertEqual(held, line)
+        let look = try XCTUnwrap(asks.withLock { $0.last })
+        XCTAssertTrue(look[0].contains(#""capabilities":{"experimentalApi":true}"#), look[0])
+        XCTAssertEqual(look[2], #"{"id":2,"method":"thread\/queue\/list","params":{"limit":200,"threadId":"\#(thread)"}}"#)
+
+        answer(queue: [line.id], rollout: try rollout([RolloutLines.started, RolloutLines.asked]))
+        guard case .queued(_, let question, _) = connection.submit("look", to: destination) else { return XCTFail("a question is open") }
+        XCTAssertEqual(question, "Codex is waiting for your answer, then reads this.")
+
+        answer(queue: [line.id], rollout: try rollout([RolloutLines.started, RolloutLines.aborted]))
+        guard case .queued(_, let stopped, _) = connection.submit("look", to: destination) else { return XCTFail("the turn was stopped") }
+        XCTAssertEqual(stopped, "Codex stopped its last turn. You can resume it in Codex.")
+
+        answer(queue: [line.id], rollout: try rollout([RolloutLines.started, RolloutLines.completed]))
+        guard case .accepted(_, let idle) = connection.submit("look", to: destination) else { return XCTFail("an idle thread takes it") }
+        XCTAssertEqual(idle, line, "an idle thread's line is still watched until the engine takes it")
+
+        answer(queue: [], rollout: nil)
+        guard case .accepted(_, let gone) = connection.submit("look", to: destination) else { return XCTFail("the engine took it") }
+        XCTAssertNil(gone)
+
+        let request = "6b1f0c2e-3c4d-4e5f-8a9b-0c1d2e3f4a5b"
+        let history = try rollout([RolloutLines.started, #"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"From Vignette: \"/requests/\#(request)/image.png\"."}]}}"#])
+        answer(queue: ["other"], rollout: history)
+        XCTAssertEqual(connection.look(at: line, carrying: request), .taken)
+        XCTAssertEqual(connection.look(at: line, carrying: "0d9e8f7a-0000-4000-8000-000000000000"), .removed)
+        XCTAssertEqual(connection.look(at: line, carrying: nil), .taken)
+
+        answers.withLock { $0 = [#"{"id":2,"error":{"code":-32600,"message":"thread/queue/list requires experimentalApi capability"}}"#] }
+        guard case .accepted(_, let unread) = connection.submit("look", to: destination) else { return XCTFail("a loaded thread takes it") }
+        XCTAssertEqual(unread, line)
+        connection.isLoaded = { _ in false }
+        guard case .queued(_, let closed, let stillWatched) = connection.submit("look", to: destination) else { return XCTFail("nobody has it open") }
+        XCTAssertEqual(closed, "Codex reads it when you open this thread.")
+        XCTAssertEqual(stillWatched, line)
+
+        let before = asks.withLock { $0.count }
+        connection.run = { _, _, _ in (0, "", false) }
+        guard case .queued(_, _, let unnamed) = connection.submit("look", to: destination) else { return XCTFail("nobody has it open") }
+        XCTAssertNil(unnamed, "a CLI that names no line leaves nothing to watch")
+        XCTAssertEqual(asks.withLock { $0.count }, before)
     }
 
     /// Every thread the listing reports becomes a destination, named, with its own project and

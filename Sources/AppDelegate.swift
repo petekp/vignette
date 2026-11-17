@@ -113,7 +113,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             return (index.recent.map(Screenshot.init(key:)), "files=\(index.files) ")
         }
         listOlderShots()
-        thumbnail.origin = { [unowned self] in requests.origin(of: $0) }
         connectAnnotator()
         thumbnail.onTakesScreen = { [weak self] in self?.liveInk.standAside() }
         liveInk.listSessions = { [weak self] answer in self?.sessions.list(answer) }
@@ -1237,6 +1236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 else { _ = noteCards.cancelled(record.id) }
             },
             storedDrawing: { [weak self] in self?.storedDrawing($0) })
+        connectSendsToCards()
         requests.load(clearingUnsent: clearingUnsent)
     }
 

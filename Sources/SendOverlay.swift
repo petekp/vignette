@@ -96,7 +96,9 @@ struct SendOverlay: View {
 
     /// What goes with the logo. While the send waits: the words, then Don't send, giving up the
     /// words, then the button's label, before the button, so a send in its grace can always be
-    /// cancelled. After: the words, with a failure's reason under them while the card has room.
+    /// cancelled. A line the session's queue holds: the words and why, then Don't send, giving up
+    /// the reason before the words. After: the words, with a failure's reason under them while the
+    /// card has room.
     @ViewBuilder
     private func details(stacked: Bool) -> some View {
         if state == .inGrace {
@@ -118,16 +120,50 @@ struct SendOverlay: View {
                 }
             }
             .transition(.opacity)
+        } else if state == .queued, notice.withdrawable {
+            Group {
+                if stacked {
+                    let unsend = ViewThatFits(in: .horizontal) {
+                        unsendButton
+                        unsendMark
+                    }
+                    ViewThatFits(in: .vertical) {
+                        if let reason = notice.reason {
+                            VStack(spacing: 5) {
+                                VStack(spacing: 3) {
+                                    headline
+                                    reasonText(reason)
+                                }
+                                .allowsHitTesting(false)
+                                unsend
+                            }
+                        }
+                        VStack(spacing: 5) {
+                            headline.allowsHitTesting(false)
+                            unsend
+                        }
+                        unsend
+                    }
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) {
+                            headline.allowsHitTesting(false)
+                            unsendMark
+                        }
+                        unsendMark
+                    }
+                }
+            }
+            .id(words)
+            .transition(.blurReplace)
         } else {
             Group {
                 if stacked {
                     ViewThatFits(in: .vertical) {
-                        if let reason = notice.reason, state != .sending && state != .sent {
+                        if let reason = notice.reason, state != .sending {
                             VStack(spacing: 3) {
                                 headline
-                                Text(reason).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.85))
-                                    .multilineTextAlignment(.center).lineLimit(3)
-                                    .fixedSize(horizontal: false, vertical: true)
+                                reasonText(reason)
                             }
                         }
                         headline
@@ -141,6 +177,12 @@ struct SendOverlay: View {
             .transition(.blurReplace)
             .allowsHitTesting(false)
         }
+    }
+
+    private func reasonText(_ reason: String) -> some View {
+        Text(reason).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.85))
+            .multilineTextAlignment(.center).lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var unsendButton: some View {

@@ -5,7 +5,7 @@ struct SendNotice: Equatable {
     /// `inGrace`: the send is stored and its line has not gone to the client; the card shows the grace
     /// running out and a way to cancel (`Grace`).
     /// `replyFailed`: the agent's reply to this send arrived and could not be made a card.
-    /// `queued`: the client holds the send, but nothing reads it until the session is opened.
+    /// `queued`: the client holds the send in the session's queue; `reason` says why.
     /// `done`: the session's turn on a live ink note ended with nothing to show as a result card.
     enum State: Equatable { case inGrace, sending, sent, queued, uncertain, failed, replyFailed, done }
     let request: String   // the request's id, so an answer to an earlier send is never taken for this one's
@@ -20,6 +20,8 @@ struct SendNotice: Equatable {
     var grace: Grace? = nil
     /// The send starts its session before the line goes in: the session was not running at Send.
     var starts = false
+    /// A queued send whose line Don't send can take back out of the session's queue.
+    var withdrawable = false
 
     /// A send's grace period, in `ProcessInfo.systemUptime` seconds: the clock of the deadline the
     /// request will be handed over at, so a card shown late still counts down to the same moment.
@@ -74,8 +76,13 @@ struct CardNotices {
         case released(request: String)
         /// `request` was cancelled before its line went: its notice goes and no answer is waited for.
         case cancelled(request: String)
-        /// The client answered for `request`.
-        case answered(request: String, state: SendNotice.State, reason: String?)
+        /// The client answered for `request`. `withdrawable`: a queued line Don't send can take out.
+        case answered(request: String, state: SendNotice.State, reason: String?, withdrawable: Bool = false)
+        /// Don't send is taking `request`'s queued line out. Its notice goes, as for a send in its
+        /// grace: the press is the confirmation.
+        case withdrawing(request: String)
+        /// More to say about `request`, whose answer the card already showed.
+        case later(request: String, client: AgentClient, sessionTitle: String, state: SendNotice.State, reason: String)
         /// The agent's reply to `request` arrived and could not be made a card.
         case replyFailed(request: String, client: AgentClient, reason: String)
         /// The session's turn on `request`, a live ink note, ended with no result card.
@@ -123,17 +130,24 @@ struct CardNotices {
             if awaitingAnswer[file]?.request == request { awaitingAnswer[file] = nil }
             if case .send(let shownSend)? = shown[file]?.notice, shownSend.request == request { shown[file] = nil }
             return nil
-        case .answered(let request, let state, let reason):
+        case .answered(let request, let state, let reason, let withdrawable):
             guard var send = awaitingAnswer[file], send.request == request else { return nil }
             awaitingAnswer[file] = nil
             send.state = state
             send.reason = reason
+            send.withdrawable = withdrawable
             // A card no longer on screen says nothing more about a delivery that worked.
             guard seen || Self.explains(state) else {
                 if case .send(let shownSend)? = shown[file]?.notice, shownSend.request == request { shown[file] = nil }
                 return nil
             }
             notice = .send(send)
+        case .withdrawing(let request):
+            if case .send(let shownSend)? = shown[file]?.notice, shownSend.request == request { shown[file] = nil }
+            return nil
+        case .later(let request, let client, let sessionTitle, let state, let reason):
+            if let later = awaitingAnswer[file], later.request != request { return nil }
+            notice = .send(SendNotice(request: request, client: client, sessionTitle: sessionTitle, state: state, reason: reason))
         case .replyFailed(let request, let client, let reason):
             if let later = awaitingAnswer[file], later.request != request { return nil }
             notice = .send(SendNotice(request: request, client: client, sessionTitle: client.label, state: .replyFailed, reason: reason))
@@ -177,8 +191,12 @@ struct CardNotices {
         switch notice {
         case .copied: return false
         case .notCopied: return true
-        case .send(let send): return explains(send.state)
+        case .send(let send): return explains(send)
         }
+    }
+
+    private static func explains(_ notice: SendNotice) -> Bool {
+        explains(notice.state) || (notice.state == .sent && notice.reason != nil)
     }
 
     private static func explains(_ state: SendNotice.State) -> Bool { state != .inGrace && state != .sending && state != .sent && state != .done }

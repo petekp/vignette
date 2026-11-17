@@ -30,9 +30,10 @@ enum Config {
                    placement: .strip, minimumCount: 2, kinds: [.image, .recording]) { shots, app in app.stitch(shots) },
         ShotAction(id: "trash", symbol: "trash", label: "Delete", key: .init("\u{7f}", [.command]),
                    placement: .everywhere, kinds: [.image, .recording]) { shots, app in app.moveToTrash(shots) },
-        // A send's card draws its own button for this (`SendOverlay`), so it has no symbol or key.
+        // A send's card draws its own button for this (`SendOverlay`, and a queued send's tab), so it
+        // has no symbol or key.
         ShotAction(id: "unsend", label: "Don't send", placement: .shortcut,
-                   help: "cancels a send of the file still in its grace period") { shots, app in app.unsend(shots) },
+                   help: "cancels a send of the file still in its grace period, and takes its line out of a Codex thread's queue") { shots, app in app.unsend(shots) },
     ]
 
     static func action(id: String) -> ShotAction? { actions.first { $0.id == id } }

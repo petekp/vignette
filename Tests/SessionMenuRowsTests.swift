@@ -20,6 +20,18 @@ final class SessionMenuRowsTests: XCTestCase {
         XCTAssertNil(row(s, now: now).activity)
     }
 
+    func testARowWithNoTabOrGoalFallsBackToTheNameAndPlace() {
+        let now = Date()
+        let s = AgentDestination(id: "t", name: "Codex thread", address: .codexThread(uuid: "t"), lastUsed: now.addingTimeInterval(-7200),
+                                 place: .repository(name: "evercars", root: nil, worktree: "Codex worktree", subfolder: "apps/ui"),
+                                 branch: "codex/selector")
+        let fallback = row(s, now: now)
+        XCTAssertEqual(fallback.title, "Codex thread")
+        XCTAssertEqual(fallback.details, "Codex worktree · apps/ui · codex/selector")
+        XCTAssertEqual(fallback.activity, .lastActive("2 hr ago"))
+        XCTAssertEqual(fallback.tooltip, "Codex thread\nCodex worktree · apps/ui · codex/selector · 2 hr ago\nevercars")
+    }
+
     func testTheWordsAtTheRightEndInOneColumnPastEveryRowsText() {
         let now = Date()
         func session(_ id: String, _ title: String, folder: String, busy: Bool = false) -> AgentDestination {

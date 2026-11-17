@@ -2,6 +2,17 @@
 
 The progress on the issues in `docs/codex-issues.md`, newest first.
 
+## 2026-11-16, the queue watch (branch codex-queued)
+
+- Built C7's fix: the queue watch, the Queued tab with Don't send on hover, and Don't send through
+  `thread/queue/delete`. Live checks on a scratch thread named "Vignette queue watch probe", made in
+  `.scratch/live/work`, with one short turn: `thread/queue/list` on a queued line, `thread/queue/delete`
+  answering true then false, an archived thread refusing both, and a missing thread. The thread was
+  emptied and archived.
+- Pete confirmed that the Codex app lists a thread's queued lines above the composer, with Steer,
+  Edit, Delete, and Resume after Stop. A line deleted there is read as removed: gone from the queue
+  and missing from the thread's history.
+
 ## 2026-11-16, Codex dialogs and queued sends (CLI 0.169.0-alpha.11.1, app 26.1111)
 
 - Read the queue's source at `rust-v0.169.0-alpha.11.1` and ran five live checks from an

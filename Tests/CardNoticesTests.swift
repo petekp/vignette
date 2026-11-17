@@ -210,4 +210,29 @@ final class CardNoticesTests: XCTestCase {
         XCTAssertEqual(SendNotice.steps(from: .inGrace, to: .sending), [.sending])
         XCTAssertEqual(SendNotice.steps(from: .sending, to: .failed), [.failed])
     }
+
+    func testAQueuedAnswerCarriesDontSendAndWithdrawingTakesItsNoticeDown() {
+        var notices = CardNotices()
+        post(&notices, sending("q"))
+        post(&notices, .answered(request: "q", state: .queued, reason: "Why.", withdrawable: true))
+        guard case .send(let shown)? = notices.notice(on: file) else { return XCTFail("the queued notice is up") }
+        XCTAssertTrue(shown.withdrawable)
+
+        post(&notices, .withdrawing(request: "other"))
+        XCTAssertNotNil(notices.notice(on: file), "another request's Don't send leaves this notice")
+        XCTAssertNil(post(&notices, .withdrawing(request: "q")))
+        XCTAssertNil(notices.notice(on: file))
+    }
+
+    func testALaterAnswerShowsWithItsReasonUnlessANewerSendWaits() {
+        var notices = CardNotices()
+        let started = post(&notices, .later(request: "q", client: .codex, sessionTitle: "work", state: .sent, reason: "Codex had already started on it."))
+        XCTAssertEqual(started?.hold, hold * 3, "a Sent that says why holds as long as a failure")
+        XCTAssertEqual(sendState(notices), .sent)
+
+        post(&notices, sending("newer"))
+        XCTAssertNil(post(&notices, .later(request: "q", client: .codex, sessionTitle: "work", state: .failed, reason: "Gone.")))
+        XCTAssertEqual(sendState(notices), .sending)
+        XCTAssertNotNil(post(&notices, .later(request: "newer", client: .codex, sessionTitle: "work", state: .queued, reason: "Why.")))
+    }
 }

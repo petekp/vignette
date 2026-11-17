@@ -174,7 +174,7 @@ final class SessionStartsTests: XCTestCase {
             return .started(tab: "tb9", terminal: "t9")
         }
         let destination = AgentDestination(id: past, name: "x", address: .claudeSession(past), start: .resume(folder: "/site"))
-        guard case .accepted(let detail) = await submit("From Vignette: look", to: destination, through: up) else { return XCTFail("started and delivered") }
+        guard case .accepted(let detail, _) = await submit("From Vignette: look", to: destination, through: up) else { return XCTFail("started and delivered") }
         XCTAssertTrue(detail.contains("inbox=301"), detail)
         XCTAssertEqual(clock.launches.map(\.1), [past])
         XCTAssertEqual(lines(in: root.appendingPathComponent("301")).count, 1)

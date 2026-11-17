@@ -274,7 +274,7 @@ final class AgentConnectionTests: XCTestCase {
         try inbox(root, pid: 101, session: "0f0f0f0f-0000-4000-8000-000000000000")
         let connection = claude(inboxes: root)
         let destination = AgentDestination(id: session, name: "x", address: .claudeSession(session))
-        guard case .accepted(let detail) = connection.submit("look here [From Vignette]", to: destination) else {
+        guard case .accepted(let detail, _) = connection.submit("look here [From Vignette]", to: destination) else {
             return XCTFail("a session with a live inbox is submittable")
         }
         XCTAssertTrue(detail.contains("inbox=102"))
@@ -547,19 +547,6 @@ final class AgentConnectionTests: XCTestCase {
         folder.branch = nil
         folder.goal = "Plan the week"
         XCTAssertEqual(row(folder, now: now).details, "~/Code · Plan the week")
-    }
-
-    /// With no tab and no goal, a row is the session's name over its worktree, subfolder and branch.
-    func testARowWithNoTabOrGoalFallsBackToTheNameAndPlace() {
-        let now = Date()
-        let s = AgentDestination(id: "t", name: "Codex thread", address: .codexThread(uuid: "t"), lastUsed: now.addingTimeInterval(-7200),
-                                 place: .repository(name: "evercars", root: nil, worktree: "Codex worktree", subfolder: "apps/ui"),
-                                 branch: "codex/selector")
-        let fallback = row(s, now: now)
-        XCTAssertEqual(fallback.title, "Codex thread")
-        XCTAssertEqual(fallback.details, "Codex worktree · apps/ui · codex/selector")
-        XCTAssertEqual(fallback.activity, .lastActive("2 hr ago"))
-        XCTAssertEqual(fallback.tooltip, "Codex thread\nCodex worktree · apps/ui · codex/selector · 2 hr ago\nevercars")
     }
 
     /// Equal titles in one group take the first of tab, worktree and branch that tells all of them apart, else

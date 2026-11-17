@@ -11,44 +11,6 @@ import Foundation
 /// listing, so an interrupted import leaves nothing half-shown.
 @MainActor
 final class ScreenshotRequests {
-    /// What the coordinator needs from the rest of the app. Closures, like ThumbnailController's,
-    /// so nothing here reaches into the annotator or the stack.
-    struct Callbacks {
-        /// Adds marks to a screenshot's drawing and stores it, without showing anything, then answers
-        /// nil, or why not. Publication waits for the answer, so a card never appears without its marks.
-        /// The name is the agent's, which its notes' badges show. `answersLiveInk` is true for an
-        /// answer to live ink, whose marks were laid out on `cardCanvas`.
-        var installDrawing: (Screenshot, [AgentMark], _ agent: String?, _ answersLiveInk: Bool,
-                             @escaping (Drawings.Failure?) -> Void) -> Void = { _, _, _, _, done in
-            done(Drawings.Failure(code: .writeFailed, description: "nothing stores drawings"))
-        }
-        /// The picture at a URL as `installDrawing` will draw an agent's answer on it, so the answer's
-        /// words and labels are measured and placed there; nil leaves them in the corner and under their marks.
-        var cardCanvas: (URL, _ agent: String?) -> LiveAnswer.Canvas? = { _, _ in nil }
-        /// Shows a published reply's card. Managed replies never reach the watcher's capture path.
-        var present: (Screenshot) -> Void = { _ in }
-        /// Makes an answer to live ink its result card, from a fresh capture of the window the ink was
-        /// on, then answers the indexes of the marks it could not find there, or nil when it could not
-        /// capture that window and the reply is published on the request's own picture instead.
-        var presentLive: (Record, LiveAnswer, @escaping ([Int]?) -> Void) -> Void = { _, _, done in done(nil) }
-        var watchFolder: () -> URL = { FileManager.default.temporaryDirectory }
-        /// What the client answered for a request, which the card that was sent shows.
-        var delivered: (Record, SubmissionOutcome) -> Void = { _, _ in }
-        /// A reply to this request was accepted and could not be made a card, which the card that
-        /// was sent shows, since there is no card of the reply's own to show it on. The reason is
-        /// what the person can do about it.
-        var replyFailed: (Record, String) -> Void = { _, _ in }
-        /// A send that waited out its grace is going to its client now. Called on the timer's turn,
-        /// before the client is asked, so before `delivered`. Never called for a send with no grace.
-        var released: (Record) -> Void = { _ in }
-        /// A send that was waiting ended without reaching its client: Don't send, or a clear took
-        /// its request.
-        var cancelled: (Record) -> Void = { _ in }
-        /// A screenshot's drawing as the editor would open it, so a published reply records what
-        /// the agent sent (`Agent.record(sentDrawing:on:)`).
-        var storedDrawing: (ScreenshotKey) -> Drawing? = { _ in nil }
-    }
-
     var callbacks = Callbacks()
     /// The connections, by client, which `send` submits through. Injected so a test never runs codex.
     let connections: [AgentClient: any AgentConnection]
@@ -68,7 +30,7 @@ final class ScreenshotRequests {
     nonisolated static let defaultRoot = Identity.applicationSupportURL.appendingPathComponent("requests")
 
     let root: URL
-    private var requests: [String: Record] = [:]
+    private(set) var requests: [String: Record] = [:]
     private var replies: [String: Reply] = [:]
     /// Accepted replies not yet published, imported serially in arrival order within a launch.
     /// A relaunch rebuilds the order from the store.
@@ -83,8 +45,11 @@ final class ScreenshotRequests {
     private var sendGrace = SendGrace()
     /// The requests not handed over yet whose session's turn a note will read (`send`'s `watchingTurn`).
     private var watchedTurns: Set<String> = []
-    private let now: () -> TimeInterval
-    private let schedule: (TimeInterval, @escaping @MainActor @Sendable () -> Void) -> Void
+    /// The requests whose line a session's queue holds, by request id, until the session takes it.
+    /// A relaunch watches none: the cards that would say what became of them are gone.
+    var queueWatches: [String: QueueWatch] = [:]
+    let now: () -> TimeInterval
+    let schedule: (TimeInterval, @escaping @MainActor @Sendable () -> Void) -> Void
 
     /// `now` and `schedule` are the clock and the timer a grace period runs on: a test sets both.
     /// The clock is `systemUptime`, which stops during sleep as the timer does, so a deadline and its
@@ -390,12 +355,18 @@ final class ScreenshotRequests {
 
     private func finishSubmission(_ id: String, _ outcome: SubmissionOutcome) {
         guard let record = recordOutcome(outcome, for: id) else { return }
+        if let line = outcome.queuedLine, record.status == .submitted {
+            var shown: String?
+            if case .queued(_, let reason, _) = outcome { shown = reason }
+            queueWatches[id] = QueueWatch(line: line, queued: now(), shown: shown)
+            lookAgain(id)
+        }
         callbacks.delivered(record, outcome)
     }
 
     /// Writes what the client answered into the request's record, and a send that reached the client
     /// on the screenshot, cleared since or not, and logs it. Answers the record.
-    private func recordOutcome(_ outcome: SubmissionOutcome, for id: String) -> Record? {
+    func recordOutcome(_ outcome: SubmissionOutcome, for id: String) -> Record? {
         guard var record = requests[id] else { return nil }
         if record.status != .cleared {
             switch outcome {
@@ -410,9 +381,9 @@ final class ScreenshotRequests {
         }
         if outcome.isAccepted { Agent.record(sent: record.sent, on: sourceKey(of: record).url) }
         switch outcome {
-        case .accepted(let detail):
+        case .accepted(let detail, _):
             Log.write("[send] ok \(id) \(record.destinationName) \(detail)")
-        case .queued(let detail, _):
+        case .queued(let detail, _, _):
             Log.write("[send] queued \(id) \(record.destinationName) \(detail)")
         case .uncertain(let detail, _):
             Log.write("[send] uncertain \(id) \(record.destinationName) \(detail)")
@@ -425,18 +396,19 @@ final class ScreenshotRequests {
     }
 
     /// Don't send: cancels every send of `file` still in its grace, clears their requests and tells
-    /// the cards. Answers the requests it cancelled, and nothing when none was waiting: the line was
-    /// handed over already, or there was no send.
+    /// the cards, and takes every line of it a session's queue holds back out. Answers the requests it
+    /// cancelled or is taking back, and nothing when none was waiting: the session has the line
+    /// already, or there was no send.
     @discardableResult
     func unsend(file: ScreenshotKey) -> [Record] {
-        let sent = requests.values.filter { sourceKey(of: $0) == file }.map(\.id)
+        let sent = requests.values.filter { sourceKey(of: $0) == file }.sorted { $0.created < $1.created }.map(\.id)
         let effects = sendGrace.handle(.cancelled(requests: sent))
         let cancelled = effects.compactMap { effect -> Record? in
             if case .discard(let id) = effect { return requests[id] }
             return nil
         }
         run(effects)
-        return cancelled
+        return cancelled + sent.compactMap(withdraw)
     }
 
     /// The deadline, in `now`'s clock, and length of a send still in its grace; nil once it was
@@ -799,12 +771,16 @@ final class ScreenshotRequests {
 
     /// Terminal state commits before any owned payload is removed.
     @discardableResult
-    private func clear(_ id: String) throws -> Bool {
+    func clear(_ id: String) throws -> Bool {
         // The one place a request is cleared, so a clear by URL or by admission stops a waiting send
         // too. The cards hear of it once the clear has been tried: the line is not going either way.
         let stopped = sendGrace.handle(.cleared(request: id))
         defer { run(stopped) }
+        // The line stays in the session's queue: a clear ends what Vignette tracks, as for a line
+        // the session has. Only Don't send takes it out.
+        let watched = queueWatches.removeValue(forKey: id) != nil
         guard var record = requests[id] else { return false }
+        defer { if watched { callbacks.queueChanged(record) } }
         if record.status != .cleared {
             record.status = .cleared
             try write(record)
@@ -861,6 +837,10 @@ final class ScreenshotRequests {
                                            "address": record.address.description, "guard": record.addressGuard.rawValue, "source": record.source]
                 if record.unchanged == true { json["unchanged"] = true }
                 if let grace = self.grace(of: record.id) { json["graceMs"] = Int(max(0, grace.deadline - self.now()) * 1000) }
+                if let watch = self.queueWatches[record.id] {
+                    json["queuedLine"] = watch.line.id
+                    if let shown = watch.shown { json["queuedReason"] = shown }
+                }
                 return json
             },
             "replies": replies.values.sorted { $0.id < $1.id }.map { reply -> [String: Any] in

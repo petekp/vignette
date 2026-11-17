@@ -153,10 +153,72 @@ struct CodexConnection: AgentConnection {
             turns.unsent(line, to: uuid)
             return Self.failure(output: result.output, thread: uuid)
         }
-        guard isLoaded(uuid) else {
-            return .queued(detail: "thread=\(uuid) not loaded", reason: "Codex reads it when you open this thread.")
+        let loaded = isLoaded(uuid)
+        // A live ink note watches its turn through `turns`, not the queue. A CLI that prints no id
+        // leaves nothing to watch.
+        guard !watchingTurn, let queued = QueuedLine.of(output: result.output, thread: uuid) else {
+            guard loaded else { return .queued(detail: "thread=\(uuid) not loaded", reason: QueuedLine.Hold.notOpen.reason) }
+            return .accepted(detail: "thread=\(uuid)")
         }
-        return .accepted(detail: "thread=\(uuid)")
+        let detail = "thread=\(uuid) line=\(queued.id)"
+        switch look(at: queued, carrying: nil, codex: codex, loaded: loaded) {
+        case .taken, .removed:
+            return .accepted(detail: "\(detail) taken")
+        case .held(.nothing):
+            return .accepted(detail: detail, line: queued)
+        case .held(let hold):
+            return .queued(detail: "\(detail) \(hold.forLog)", reason: hold.reason, line: queued)
+        // `codex queue` found the thread a moment ago, so a refusal now is the look failing.
+        case .threadGone(let why), .unread(let why):
+            guard loaded else { return .queued(detail: "\(detail) not loaded, \(why)", reason: QueuedLine.Hold.notOpen.reason, line: queued) }
+            return .accepted(detail: "\(detail) \(why)", line: queued)
+        }
+    }
+
+    func look(at line: QueuedLine, carrying text: String?) -> QueuedLine.State? {
+        guard let codex = binary() else { return .unread(detail: "no codex") }
+        return look(at: line, carrying: text, codex: codex, loaded: isLoaded(line.thread))
+    }
+
+    /// One app-server lists the thread's queue and reads the thread, whose rollout says why the
+    /// queue still holds the line, or whether a line gone from it was started.
+    private func look(at line: QueuedLine, carrying text: String?, codex: String, loaded: Bool) -> QueuedLine.State {
+        let lines = converse(codex, ["app-server"], AppServer.queueRequests(line.thread))
+        switch AppServer.queue(in: lines) {
+        case .none:
+            return .unread(detail: "no answer to thread/queue/list")
+        case .refused(let message):
+            if Self.isArchived(message) { return .held(.archived) }
+            return Self.isMissing(message) ? .threadGone(detail: message) : .unread(detail: message)
+        case .listed(let ids, let more):
+            if more && !ids.contains(line.id) { return .unread(detail: "queue longer than \(AppServer.queueLimit)") }
+            let rollout: String? = if case .at(let path) = AppServer.rolloutPath(in: lines) { path } else { nil }
+            guard ids.contains(line.id) else {
+                guard let text else { return .taken }
+                guard let rollout else { return .unread(detail: "gone from the queue, and the thread names no rollout") }
+                return Self.history(at: rollout, has: text)
+            }
+            guard let rollout else { return .held(.of(.unknown, loaded: loaded)) }
+            return .held(.of(RolloutEnd.of(file: rollout) ?? .unknown, loaded: loaded))
+        }
+    }
+
+    /// Whether a thread's rollout holds `text`: a line Codex started is a user message there. The
+    /// whole file is read, once per line that left the queue, since a turn can write past any tail
+    /// before the next look.
+    static func history(at rollout: String, has text: String) -> QueuedLine.State {
+        guard !rollout.hasSuffix(".zst") else { return .unread(detail: "compressed rollout \(rollout)") }
+        guard let data = FileManager.default.contents(atPath: rollout) else { return .unread(detail: "could not read \(rollout)") }
+        return data.range(of: Data(text.utf8)) == nil ? .removed : .taken
+    }
+
+    func withdraw(_ line: QueuedLine) -> QueuedLine.Withdrawal {
+        guard let codex = binary() else { return .failed(detail: "no codex") }
+        switch AppServer.withdrawal(in: converse(codex, ["app-server"], AppServer.withdrawRequests(line))) {
+        case .success(true): return .removed
+        case .success(false): return .alreadyTaken
+        case .failure(let refusal): return .failed(detail: refusal.message)
+        }
     }
 
     /// Where the thread is in its turns, from its rollout, once a line went to it this launch. It
@@ -188,14 +250,28 @@ struct CodexConnection: AgentConnection {
     static func failure(output: String, thread: String) -> SubmissionOutcome {
         let detail = Subprocess.detail(output) ?? "codex said nothing"
         let lower = detail.lowercased()
-        let missing = ["no rollout found", "thread not found", "no such thread", "session not found", "unknown thread"]
         let unreachable = ["connection refused", "failed to connect", "connection reset"]
-        if missing.contains(where: lower.contains) {
+        if isArchived(detail) {
+            return .destinationChanged(detail: detail, reason: "This thread is archived. You can unarchive it in Codex or send to another one.")
+        }
+        if isMissing(detail) {
             return .destinationChanged(detail: detail, reason: "Codex can't find this thread. You can send it to another one.")
         }
         if unreachable.contains(where: lower.contains) {
             return .destinationChanged(detail: detail, reason: "Codex isn't running. You can send again once it's open.")
         }
         return .notSubmitted(code: .sendFailed, detail: detail, reason: SubmissionOutcome.quoted("Codex", detail))
+    }
+
+    /// Whether Codex's words say the thread is archived: ``session <id> is archived. Run `codex
+    /// unarchive <id>` to unarchive it first.`` (0.169).
+    static func isArchived(_ message: String) -> Bool {
+        message.lowercased().contains(" is archived")
+    }
+
+    /// Whether Codex's words say it has no such thread.
+    static func isMissing(_ message: String) -> Bool {
+        let lower = message.lowercased()
+        return ["no rollout found", "thread not found", "no such thread", "session not found", "unknown thread"].contains(where: lower.contains)
     }
 }

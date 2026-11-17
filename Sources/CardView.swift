@@ -145,7 +145,9 @@ struct CardView: View, Equatable {
                 // card faster than the fold's spring closes. Clipped to the card, it never shows past it.
                 ZStack {
                     AgentBadge(agent: tab.agent, label: tab.label, glyph: tab.glyph, size: ui.selectionCircleSize,
-                               cardWidth: size.width, foldDuration: ui.relayoutDuration)
+                               cardWidth: size.width, foldDuration: ui.relayoutDuration, queued: tab.queued,
+                               onUnsend: { if let unsend = Config.action(id: "unsend") { model.onAction(unsend, [card]) } },
+                               onOverControl: { model.overControl = $0 })
                         .padding(AgentBadgeFit.inset)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
