@@ -203,14 +203,11 @@ struct LivePacket: @unchecked Sendable {
                     ?? content.displays.first(where: { $0.frame.contains(point) }) ?? content.displays.first {
             let own = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
             asSeen = SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
-            // Only what the ink is on: its windows, a menu it is over, and the desktop, which
-            // `shareableContent` never lists. A prompt of macOS's own over the ink is not.
-            let holders = Set((area?.windows ?? []) + (area?.alone ?? []).map(\.window))
-            let prompts = SystemPrompts.windowIDs()
-            let kept = content.windows.filter { window in
-                holders.contains(window.windowID) || (window.windowLayer > Self.menuBarLevel && !prompts.contains(window.windowID)
-                    && ink.contains { window.frame.intersects($0.shapeExtent ?? .null) })
-            }
+            // The desktop shows too: `shareableContent` never lists it.
+            let showing = shownInArea(content.windows.map(Listed.init), holders: Set((area?.windows ?? []) + (area?.alone ?? []).map(\.window)),
+                                    prompts: SystemPrompts.windowIDs(), ink: ink.map { $0.shapeExtent ?? .null },
+                                    own: ProcessInfo.processInfo.processIdentifier)
+            let kept = content.windows.filter { showing.contains($0.windowID) }
             filter = SCContentFilter(display: display, excludingWindows: content.windows.filter { !kept.contains($0) })
             let margin = -Self.screenInkMargin
             shownRegions = kept.map(\.frame) + ink.filter { inkWindows[$0.id] == nil }.compactMap { $0.shapeExtent?.insetBy(dx: margin, dy: margin) }

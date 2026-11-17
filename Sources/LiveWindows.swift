@@ -648,7 +648,7 @@ final class LiveWindows {
 }
 
 /// The overlay of one window with marks: clear, borderless, at the normal level, ordered just above
-/// its window, never taking a press, and left out of captures as the screen's overlay is.
+/// its window, never taking a press, and shown in captures as the screen's overlay is.
 @MainActor
 final class WindowOverlay: NSPanel {
     let marks: LiveMarksLayer
@@ -670,12 +670,10 @@ final class WindowOverlay: NSPanel {
         hidesOnDeactivate = false
         animationBehavior = .none
         collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .transient, .ignoresCycle]
-        sharingType = LiveInkOverlay.sharedWithCaptures ? .readOnly : .none
         content.wantsLayer = true
         contentView = content
         content.layer?.addSublayer(marks)
         marks.host = content
-        marks.sharing = sharingType
     }
 
     override var canBecomeKey: Bool { false }

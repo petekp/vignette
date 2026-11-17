@@ -223,14 +223,12 @@ final class ReplyPopover {
     private var popover: NSPopover { hanging.popover }
     private let view = ReplyView(frame: .zero)
     private weak var host: NSView?
-    private let sharing: NSWindow.SharingType
     private var shown: (text: String, quote: String?, notice: String?, agent: String?, answerer: String, foot: CGSize)?
     private var closing = false
     private var watching: [NSObjectProtocol] = []
 
-    init(host: NSView, sharing: NSWindow.SharingType) {
+    init(host: NSView) {
         self.host = host
-        self.sharing = sharing
         let controller = NSViewController()
         controller.view = view
         popover.contentViewController = controller
@@ -284,12 +282,11 @@ final class ReplyPopover {
         NotificationCenter.default.post(name: .liveReplyChanged, object: nil)
     }
 
-    /// Its window, each time AppKit shows it: it lets every click through, shares with captures as the
-    /// overlay does, and tells the answer's panels when it moves.
+    /// Its window, each time AppKit shows it: it lets every click through and tells the answer's panels
+    /// when it moves.
     private func watchWindow() {
         if let window {
             window.ignoresMouseEvents = true
-            window.sharingType = sharing
             watching.forEach(NotificationCenter.default.removeObserver)
             watching = [NSWindow.didMoveNotification, NSWindow.didResizeNotification].map { name in
                 NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in

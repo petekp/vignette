@@ -248,7 +248,7 @@ def set_stage(stage):
     # DEV_CLAUDE names a claude for Claude on the screen, such as scripts/e2e/fake_claude.py's
     # wrapper; without it, the stage's Vignette has none and only sessions answer.
     responder = ['--env', f"VIGNETTE_CLAUDE={os.environ['DEV_CLAUDE']}"] if os.environ.get('DEV_CLAUDE') else []
-    subprocess.run(['open', '-g', '--env', f"VIGNETTE_SETTINGS={p['settings']}", '--env', 'VIGNETTE_SHARE_LIVE_INK=1',
+    subprocess.run(['open', '-g', '--env', f"VIGNETTE_SETTINGS={p['settings']}",
                     *responder, stage.app['path']], check=True)
     stage.wait_log('[app] ready', offset, timeout=20)
     s = stage.state()
