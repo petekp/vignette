@@ -207,8 +207,8 @@ pointer on a mark erases them all, and so does turning live ink off.
 
 Marks you draw on a window move with it, hide behind windows in front of it, and go when it closes.
 Ink on no window stays where it is on the screen, on the Space you drew it on. All your marks are
-gone when Vignette quits. Screenshots leave them out, and they step out of sight while you take one,
-so Cmd+Shift+4 and Space pick the window under a mark. Menus, the Dock and floating windows cover
+gone when Vignette quits. Screenshots, recordings and screen sharing show them as you see them. To
+capture a window with Cmd+Shift+4 and Space, point at the window beside a mark. Menus, the Dock and floating windows cover
 them until you hold the keys again.
 
 While you hold the keys, a click draws instead of reaching the app under it. Let go and every click

@@ -2,20 +2,6 @@ import AppKit
 
 /// Live ink's geometry and screen facts that read no state of its own.
 extension LiveInk {
-    /// A `screencapture` process is running, or `screencaptureui` has a window on screen. The second
-    /// can outlive its capture, so its process alone does not count.
-    static func isCapturing() -> Bool {
-        var pids = [pid_t](repeating: 0, count: 4096)
-        let count = Int(proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size)))
-        var name = [CChar](repeating: 0, count: 64)
-        let capturing = pids.prefix(max(0, count)).contains { pid in
-            proc_name(pid, &name, UInt32(name.count)) > 0 && String(cString: name) == "screencapture"
-        }
-        if capturing { return true }
-        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-        return windows.contains { ($0[kCGWindowOwnerName as String] as? String) == "screencaptureui" }
-    }
-
     /// The rect a mark draws in, its stroke, edge and shadows included.
     static func drawnExtent(of mark: Mark, sizes: LiveAnswerLayout.Sizes) -> CGRect? {
         if case .text = mark.geometry { return LiveAnswerLayout.noteBox(mark, sizes: sizes)?.insetBy(dx: -Mark.shadowSize, dy: -Mark.shadowSize) }

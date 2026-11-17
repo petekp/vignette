@@ -94,6 +94,18 @@ extension LivePacket {
         return .area(area, windows: shown, alone: alone)
     }
 
+    /// Of `windows`, the ones an area's picture shows: `holders`, the windows the ink is on, and a
+    /// window above the menu bar over `ink`, such as an open menu. Vignette's own windows are never
+    /// shown: its overlays would put the ink in twice, since the picture draws the ink in itself.
+    /// Neither is one of `prompts`, macOS's own prompts.
+    static func shownInArea(_ windows: [Listed], holders: Set<CGWindowID>, prompts: Set<CGWindowID>, ink: [CGRect],
+                            own: pid_t) -> Set<CGWindowID> {
+        Set(windows.filter { window in
+            window.pid != own && (holders.contains(window.id) || (window.layer > menuBarLevel && !prompts.contains(window.id)
+                && ink.contains { window.frame.intersects($0) }))
+        }.map(\.id))
+    }
+
     /// The app windows on the screen, front to back, but Vignette's, the Dock's, the menu bar's and
     /// its items', and macOS's own prompts.
     @MainActor
@@ -112,5 +124,11 @@ extension LivePacket {
                   let frame = WindowList.bounds(info) else { return nil }
             return Listed(id: id, pid: pid, layer: layer, frame: frame)
         }
+    }
+}
+
+extension LivePacket.Listed {
+    init(_ window: SCWindow) {
+        self.init(id: window.windowID, pid: window.owningApplication?.processID ?? 0, layer: window.windowLayer, frame: window.frame)
     }
 }

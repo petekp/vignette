@@ -56,9 +56,9 @@ def wait_ink(app, test, what, timeout=15):
 
 
 def launch(app, **env):
-    """Live ink on, Send with no grace, and every capture able to see the marks, for the report."""
+    """Live ink on and Send with no grace."""
     app.write_settings(liveInk=True, debug=True, ui={'sendGraceSeconds': 0})
-    start(app, VIGNETTE_SHARE_LIVE_INK='1', **env)
+    start(app, **env)
 
 
 def require_screen_recording(app, granted):

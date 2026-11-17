@@ -145,6 +145,19 @@ final class LiveAskPictureTests: XCTestCase {
         XCTAssertNil(LiveWindows.window(under: CGPoint(x: 390, y: 320), in: [alert, finder], own: 300, ownTitled: [30], ordinary: true))
     }
 
+    func testAnAreaShowsTheInksWindowsAndAMenuOverItButNoneOfVignettesWindows() {
+        let ink = CGRect(x: 350, y: 300, width: 80, height: 40)
+        let above = Int(CGWindowLevelForKey(.popUpMenuWindow))
+        let menu = LivePacket.Listed(id: 40, pid: 400, layer: above, frame: CGRect(x: 300, y: 250, width: 200, height: 300))
+        let prompt = LivePacket.Listed(id: 41, pid: 410, layer: above, frame: menu.frame)
+        let offInk = LivePacket.Listed(id: 42, pid: 420, layer: above, frame: CGRect(x: 1200, y: 800, width: 100, height: 100))
+        let inkingOverlay = LivePacket.Listed(id: 50, pid: 500, layer: Int(CGWindowLevelForKey(.screenSaverWindow)), frame: screen)
+        let windowOverlay = LivePacket.Listed(id: 51, pid: 500, layer: 0, frame: terminal.frame)
+        let shown = LivePacket.shownInArea([inkingOverlay, windowOverlay, menu, prompt, offInk, browser, terminal],
+                                           holders: [terminal.id, windowOverlay.id], prompts: [prompt.id], ink: [ink], own: 500)
+        XCTAssertEqual(shown, [terminal.id, menu.id])
+    }
+
     private func info(id: CGWindowID, owner: String, layer: Int, frame: CGRect, pid: pid_t? = nil) -> [String: Any] {
         [kCGWindowNumber as String: id, kCGWindowOwnerPID as String: pid ?? pid_t(id) * 10, kCGWindowOwnerName as String: owner,
          kCGWindowLayer as String: layer, kCGWindowAlpha as String: 1.0, kCGWindowBounds as String: frame.dictionaryRepresentation]

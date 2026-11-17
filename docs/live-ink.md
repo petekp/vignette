@@ -64,13 +64,11 @@ The names in brackets are `// MARK:` sections.
 - An overlay joins no other Space, so macOS keeps it where it was put up; it is closed, never
   ordered out, since ordered in again it would come up on the active Space. A surface exists while
   it has marks, and the active Space's while the chord is held, so an idle live ink puts no
-  full-screen window over every app. An overlay is shared with no capture (`sharingType = .none`), so
-  a screenshot leaves the marks out. macOS's window picker (Space during ⌘⇧4, or ⌘⇧5's window
-  capture) still takes the window whose pixels are under the pointer, at any level, and reads the
-  windows when Space is pressed; over a mark it took the overlay and could not capture it. So after
-  ⌘⇧ (`CaptureOrigin.onCaptureKeys`), while there are marks, live ink clears its overlays (alpha 0,
-  which the picker passes over) for as long as a `screencapture` process runs or `screencaptureui`
-  has a window up (`LiveInk.watchForWindowPicker`). At rest it sits at level 1, above normal windows and below
+  full-screen window over every app. Captures show every live ink window as the person sees it. An
+  ask's own pictures leave Vignette's windows out, since the packet draws the ink in itself
+  (`LivePacket.shownInArea`). macOS's window picker (Space during ⌘⇧4, or ⌘⇧5's window
+  capture) takes the window whose pixels are under the pointer, at any level (measured on macOS 15),
+  so on a mark it takes the overlay and off one the app's window. At rest it sits at level 1, above normal windows and below
   the dim (2) and Vignette's floating windows, so the stack and the annotator cover the marks, and
   so do menus, the Dock and other apps' floating windows. It passes every press then
   (`ignoresMouseEvents`). While the chord is held it is inking: it rises to `.screenSaver` with the
@@ -591,6 +589,4 @@ The names in brackets are `// MARK:` sections.
   (the newest of them), `queued` (how many asks to the responder wait for an earlier one), `escape`,
   `escapeHeld` and `escapeAfterRelease`, and each mark's
   `id` and `agent`. A script that polls asks for `state?section=liveInk`: the whole report runs to tens of KB, and twice a second it rotated the 5 MB log twice in one take; `app.screenRecording`
-  says whether captures are allowed. A test launch with `VIGNETTE_SHARE_LIVE_INK` set lets captures
-  see the overlays, so a script can look at what was drawn; the overlay rests under floating
-  windows, so a test window that floats keeps the ask on it and must be lowered to be looked at.
+  says whether captures are allowed. The overlay rests under floating windows, so a test window that floats keeps the ask on it and must be lowered to be looked at.

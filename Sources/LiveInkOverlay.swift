@@ -3,9 +3,8 @@ import QuartzCore
 
 /// One screen's surface for live ink on one Space: a borderless, non-activating panel over the whole
 /// screen that shows the marks, and while the chord is held takes every press there to draw them. It
-/// does not join other Spaces, so macOS keeps it, and its marks, on the Space it was put up on. It
-/// is shared with no capture, so a screenshot shows the screen without it and ⌘⇧4's window picker
-/// passes over it.
+/// does not join other Spaces, so macOS keeps it, and its marks, on the Space it was put up on.
+/// Screenshots, recordings and screen sharing show it as the person sees it.
 ///
 /// At rest it sits at `restingLevel`, just above ordinary windows and below the dim and Vignette's
 /// floating windows, so the stack and the annotator cover the marks; so do menus, the Dock and other
@@ -17,9 +16,6 @@ import QuartzCore
 final class LiveInkOverlay: NSPanel {
     /// Level 1: above normal windows (0), below the dim (2) and Vignette's floating windows.
     static let restingLevel = NSWindow.Level(rawValue: 1)
-    /// A test launch with `VIGNETTE_SHARE_LIVE_INK` in its environment lets captures see the marks,
-    /// so a test can look at what it drew.
-    static let sharedWithCaptures = Launch.isTest && ProcessInfo.processInfo.environment["VIGNETTE_SHARE_LIVE_INK"] != nil
 
     /// The screen it covers.
     let display: CGDirectDisplayID
@@ -65,14 +61,12 @@ final class LiveInkOverlay: NSPanel {
         hasShadow = false
         level = Self.restingLevel
         collectionBehavior = [.fullScreenAuxiliary, .stationary, .ignoresCycle]
-        sharingType = Self.sharedWithCaptures ? .readOnly : .none
         ignoresMouseEvents = true
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
         animationBehavior = .none
         contentView = canvas
         canvas.marksLayer.host = canvas
-        canvas.marksLayer.sharing = sharingType
         fit(to: screen)
         orderFrontRegardless()
     }
@@ -207,9 +201,8 @@ final class LiveMarksLayer: CALayer {
     private var markStyle: MarkStyle?
     private let scale: CGFloat
     /// An answer's reply is a popover from this view, the one whose layer holds the marks, rather
-    /// than a note drawn here. Its window shares with captures as `sharing` says, as the overlay does.
+    /// than a note drawn here.
     weak var host: NSView?
-    var sharing: NSWindow.SharingType = .none
     private var popovers: [Mark.ID: ReplyPopover] = [:]
     /// The person's note, hung from one of these marks as a reply is, or from a point by the pointer
     /// when its `anchor` is nil: `place` is in the marks' coordinates.
@@ -259,7 +252,7 @@ final class LiveMarksLayer: CALayer {
             }
             record.mark = mark
             if mark.popover != nil, let host {
-                if popovers[mark.id] == nil { popovers[mark.id] = ReplyPopover(host: host, sharing: sharing) }
+                if popovers[mark.id] == nil { popovers[mark.id] = ReplyPopover(host: host) }
                 if drawingOn.contains(mark.id) { appearing.insert(mark.id) }
             } else if let place = mark.focus {
                 let focus = record.focus ?? FocusLayer()

@@ -142,7 +142,6 @@ This file is the index. Each file below is under `docs/state-machines/`; the tab
 | LiveInk stroke | `LiveInk`, `LiveInkOverlay` | [live-ink-inking](state-machines/live-ink-inking.md) |
 | LiveInkTap | `LiveInkTap` | [live-ink-inking](state-machines/live-ink-inking.md) |
 | Overlay surfaces | `LiveInk`, `LiveInkOverlay` | [live-ink-surfaces-and-tours](state-machines/live-ink-surfaces-and-tours.md) |
-| Window picker watch | `LiveInk` | [live-ink-surfaces-and-tours](state-machines/live-ink-surfaces-and-tours.md) |
 | Menu hand-off: overMenus and LiveMenus | `LiveInk`, `LiveMenus` | [live-ink-surfaces-and-tours](state-machines/live-ink-surfaces-and-tours.md) |
 | LiveEscape (explicit) and the Esc hotkey | `LiveEscape`, `LiveEscapeAfterRelease`, `LiveInk` | [live-ink-surfaces-and-tours](state-machines/live-ink-surfaces-and-tours.md) |
 | FocusRun, the focus tour | `LiveInk` | [live-ink-surfaces-and-tours](state-machines/live-ink-surfaces-and-tours.md) |
