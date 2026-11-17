@@ -54,7 +54,7 @@ anything works inside.
 | Not confirmed in time | Check *session* | Codex didn't confirm it. It may still have arrived. |
 | Not sent | Not sent | One of the reasons below |
 | A reply that could not be shown | Reply not shown | You can ask *agent* to send it again. / Vignette couldn't save the reply. The log has details. |
-| A live ink note whose session finished with nothing to show as a result card | Done in *session* | |
+| A live ink note whose session finished with nothing to show as a result card, or whose window changed while the person was using it | Done in *session* | |
 
 *session* is the session's title as the toolbar or the live ink note showed it when Send was pressed: the herdr tab's label, else the session's name, with a suffix when two sessions share a title. `SessionMenu.cardTitle` decides it. A session that Send starts has no title yet, so the card names its project folder instead. On a card too narrow for the headline, the title stands alone. A title too long even for that is cut in the middle.
 

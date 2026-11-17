@@ -381,30 +381,8 @@ The names in brackets are `// MARK:` sections.
   card's drawing is made at mark scale 1 (`LiveNoteCards.send`). A result card's and a reply card's
   are made by the rule. An agent's note on any card keeps the floor every agent's note has: a model
   that resizes the card reads its text at no less than `ui.smallestNoteText` px.
-- When a session's turn ends with no reply, Vignette looks at the window again (`LiveNoteCards`,
-  `LiveChange`).
-  - **The before picture.** The note's own capture gives the part of the window round the ink: the
-    ink's shapes with 64 pt round them, inside the web page when there is one (`LiveNoteCards.before`).
-  - **The comparison.** At the turn's end it captures the window twice, half a second apart, and
-    compares that same part of the window on a grid of 3 pt cells of colour. A cell counts when its
-    red, green or blue moved more than 24 of 255 and did not move between the two later captures.
-    That leaves out a caret or a spinner. Grey alone missed a green button turned red, since the
-    two are about as bright. Only the cells under the ink, its shapes with a 12 pt margin, decide.
-    The ink's part changed when at least 2% of those cells counted, and at least 4.
-  - **Changed.** The window as it is now becomes the result card, from the session
-    (`[live-ink] result card`, with `notes=` for the notes on that window it answers). The notes it
-    answers say nothing more, whether or not their own part changed, and each takes a late answer
-    on the card. An answer that comes after it, for as long as a turn may run (30 minutes), is
-    drawn on that card, each mark at the words it names in the card's picture,
-    with no page to keep the words to. It joins the card's drawing rather than making a second card.
-  - **Unchanged, or can't tell.** No result card. The note's card says Done in *project*
-    (`[live-ink] done with no result card`). A window that closed, was minimized or changed size
-    can't be told.
-  - **Vignette stopped waiting.** Nothing more. The card already said Sent to.
-  - **One known gap.** The part compared stays at its place in the window. So content the session
-    moved away counts as a change there, and so does content the person scrolled.
-  - **The log.** `[live-ink] landed changed=` or `[live-ink] nothing changed under the ink` gives
-    the outcome.
+- When a session's turn ends with no reply, Vignette looks at the window again and may make a
+  result card: `docs/live-ink-result-cards.md` has the rule.
 - Asks go to the responder one at a time, in the order sent, in the same conversation, so each
   knows the ones before it (`LiveAsks`, `Effect.send`). Each takes its picture as it is sent, so it
   shows what the person circled then, and waits with its ink carrying the thinking light until the

@@ -114,7 +114,7 @@ One Codex sign-in or sign-out process. **States**: `done` (completion, once), `s
 
 ### LiveNoteCards (implicit)
 
-Owner: `LiveNoteCards.swift:7`. Tests: none (the pure parts are tested under `NoteCardWait`).
+Owner: `LiveNoteCards.swift:7`. Tests: none (the pure parts are tested under `NoteCardWait`; the window-in-front check, `isInFront`, by `NoteCardWaitTests.testOnlyTheFrontAppsFrontWindowOnTheScreenIsInFront`).
 
 Glue between `ScreenshotRequests` and `NoteCardGroups`. After a person sends a live-ink note to a session, it watches the session's turn, then draws the result: a look at the window again, a result card, "Done", or the session's own reply.
 
@@ -141,11 +141,11 @@ Glue between `ScreenshotRequests` and `NoteCardGroups`. After a person sends a l
 
 ### NoteCardWait (explicit)
 
-Owner: `LiveNoteCardWait.swift:5`, with `Phase` at line 6. Tests: `NoteCardWaitTests.testAnyOrderOfEventsEndsTheWaitOnce` (166), `testAHeldNoteWatchesNoTurnUntilItsLineIsReleased`, `testACancelledHeldNoteIsNeverWaitedFor`, `testANoteIsForgottenOnlyOnceDeliveredAndOver`, `testAFailedDeliveryEndsTheWaitSilently`, and the tests at `NoteCardWaitTests:275-535`.
+Owner: `LiveNoteCardWait.swift:5`, with `Phase` at line 6. Tests: `NoteCardWaitTests.testAnyOrderOfEventsEndsTheWaitOnce` (166), `testAHeldNoteWatchesNoTurnUntilItsLineIsReleased`, `testACancelledHeldNoteIsNeverWaitedFor`, `testANoteIsForgottenOnlyOnceDeliveredAndOver`, `testAFailedDeliveryEndsTheWaitSilently`, `testAWindowInFrontSaysDoneAndALateAnswerGoesOnAFreshCapture`, and the `NoteCardGroups` tests.
 
 The wait of one sent note. It decides when the note's turn is over and what to draw.
 
-**States**: `Phase`: `unsent` (initial, never stored), `watching(TurnWatch)`, `unwatched(sent)`, `lookingAgain`, `resultCard(made)`, `over`. Flag `delivered`.
+**States**: `Phase`: `unsent` (initial, never stored), `watching(TurnWatch)`, `unwatched(sent)`, `lookingAgain`, `resultCard(made)`, `seenInFront(looked)`, `over`. Flag `delivered`.
 
 **Events**: `sent`, `delivered(failed)`, `turn(turn, replied)`, `lookedAgain(outcome)`, `cardFailed`, `answer`.
 
@@ -162,24 +162,27 @@ The wait of one sent note. It decides when the note's turn is over and what to d
 | `lookingAgain` | `lookedAgain` replied | `over` | reply |
 | `lookingAgain` | `lookedAgain` `cardMade` | `resultCard` | — |
 | `lookingAgain` | `lookedAgain` `noCard` | `over` | `sayDone` |
+| `lookingAgain` | `lookedAgain` `windowInFront` | `seenInFront` | `windowInFront`, `sayDone` |
 | `resultCard` | `cardFailed` | `over` | `sayDone` |
-| `watching`, `unwatched`, `lookingAgain`, `resultCard` | `delivered(failed: true)` | `over` | none (silent) |
+| `watching`, `unwatched`, `lookingAgain`, `resultCard`, `seenInFront` | `delivered(failed: true)` | `over` | none (silent) |
 | any | `delivered` | `delivered = true` | — |
 | `over` | `delivered(failed)` | — (ignored) | — |
 | `watching`, with window | `answer` | `watching` | `drawReplyOnFreshCapture` |
 | `watching` without window, `lookingAgain`, `over` | `answer` | unchanged | `drawReplyOnSentPicture` |
 | `resultCard`, within 30 min | `answer` | `resultCard` | `drawReplyOnResultCard` |
 | `resultCard`, later | `answer` | `over` | `drawReplyOnSentPicture` |
+| `seenInFront`, within 30 min | `answer` | `seenInFront` | fresh capture if there is a window, else sent picture |
+| `seenInFront`, later | `answer` | `over` | `drawReplyOnSentPicture` |
 | `unwatched`, within 3 min | `answer` | `unwatched` | fresh capture if there is a window, else sent picture |
 | `unwatched`, later | `answer` | `over` | `drawReplyOnSentPicture` |
 
-`isFinished(at:)` (89) needs `delivered`. `over` is finished at once, `unwatched` after 3 min, `resultCard` after 30 min. `lookingAgain` is never finished.
+`isFinished(at:)` (89) needs `delivered`. `over` is finished at once, `unwatched` after 3 min, `resultCard` and `seenInFront` after 30 min. `lookingAgain` is never finished.
 
 **Invariants**
 
 - A note ends once, with a card, Done or the reply, after one look. Checked by: `testAnyOrderOfEventsEndsTheWaitOnce` (single wait only).
 - A held note watches no turn until released, and a cancelled held note is never waited for. Checked by: `testAHeldNoteWatchesNoTurnUntilItsLineIsReleased`, `testACancelledHeldNoteIsNeverWaitedFor`.
-- One look and one card per turn end; notes sent minutes apart end together; a reply is its own result. Checked by: the tests at `NoteCardWaitTests:275-535`.
+- One look and one card per turn end; notes sent minutes apart end together; a reply is its own result. Checked by: `NoteCardGroupsTests` and `NoteCardGroupsEndingTests`.
 - `drawReplyOnResultCard` only after a card exists. Checked by: the random test, which asserts `madeCard` equals phase `resultCard`. That is weaker than the need (the card file exists), see [asks-4](plausible-findings-requests-to-live-ink.md#asks-4).
 - Nothing bounds `lookingAgain` in time. Checked by: nothing.
 
@@ -210,13 +213,13 @@ Decides from readings of a session (`waiting`, `busy`, `idle`, or nil when it ca
 
 ### NoteCardGroups (explicit)
 
-Owner: `LiveNoteCardGroups.swift:7`. Tests: `NoteCardWaitTests` (as above), `testANoteWhoseSendFailedDuringTheLookIsLeftOut`.
+Owner: `LiveNoteCardGroups.swift:7`. Tests: `NoteCardGroupsTests` (which notes end together), `NoteCardGroupsEndingTests` (how a look ends them, `testAChangeInTheWindowInFrontMakesNoCard` among them) and `NoteCardGroupsRandomTests` (any order of events).
 
 Holds the waits of all sent notes and decides which note makes the result card when several end together.
 
 **States**: `held[request]` (in its grace, not yet a wait), `entries[request]` (a `NoteCardWait` plus session, window and sequence).
 
-**Events** (`Input`): `sent`, `held`, `released`, `cancelled`, `delivered`, `turns`, `looked`, `cardFailed`, `answer`. Each is routed to the entry's `NoteCardWait`. `looked` resolves one maker (the first changed, unreplied, compared member), one `makeResultCard`, and a `sayDone` for each other note made quiet except the newest (`sayingDoneOnce`, 155). Finished entries are pruned at the end of every `handle` (149).
+**Events** (`Input`): `sent`, `held`, `released`, `cancelled`, `delivered`, `turns`, `looked`, `cardFailed`, `answer`. Each is routed to the entry's `NoteCardWait`. `looked` resolves one maker (the first changed, unreplied, compared member), one `makeResultCard`, or none when the look found the window in front (`inFront`: every member the card would have answered gets `windowInFront`), and a `sayDone` for each other note made quiet except the newest (`sayingDoneOnce`, 155). Finished entries are pruned at the end of every `handle` (149).
 
 **Invariants**
 
