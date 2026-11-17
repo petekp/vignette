@@ -167,11 +167,11 @@ Before you drive the app:
   account; the launch logs `[tools] test launch: codex=… claude=… herdr-app=… hc=…`. The plugin's skill names the copy's own URL scheme and log
   (`AgentPlugin.stage`), and every `open` in it names that copy's path with `-a`, so an agent's
   command never starts another build of the same bundle id on the person's settings.
-- Stop a test copy by its PID before you launch another copy of the same bundle id. On 2026-09-26,
-  `open -a <a Release copy> <url>` after a Debug copy had run launched a second Release instance
-  on the user's real settings file.
-- A launch through LaunchServices with no environment (Quit & Reopen after a permission grant,
-  Sparkle's relaunch, a bare `open`) is not a test launch: `Launch.isTest` reads false. The copy reads `~/.config/<its URL scheme>/settings.json`,
+- Stop a test copy by its PID before you launch another copy of the same bundle id: `open -a <copy> <url>`
+  can start a second instance without `VIGNETTE_SETTINGS`, on the user's real settings file.
+- A launch through LaunchServices with no environment is not a test launch. macOS's Quit & Reopen
+  after a permission grant, Sparkle's relaunch and a bare `open` are all such launches.
+  `Launch.isTest` then reads false. The copy reads `~/.config/<its URL scheme>/settings.json`,
   writes Apple's own screenshot settings, can register a login item, runs the updater and reaches
   the person's `~/.claude` and `~/.codex`. The end-to-end copies name a scratch home and settings
   file under `LSEnvironment` in their Info.plist, `/tmp/<bundle id>/home` (`scripts/e2e/build.sh`),
