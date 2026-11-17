@@ -17,6 +17,9 @@ struct Card: Identifiable, Equatable {
     enum Sent: Equatable {
         /// A person's screenshot: "Sent to" the session, with the client's logo.
         case to(AgentClient, title: String)
+        /// A person's screenshot whose line the session still holds in its queue: "Queued for" the
+        /// session, with Don't send on the tab.
+        case queued(AgentClient, title: String, Queued)
         /// An agent's card sent back to the session it came from: "From Claude · Replied".
         case replied
 
@@ -26,6 +29,12 @@ struct Card: Identifiable, Equatable {
             guard agent != nil else { return .to(sent.client, title: sent.title) }
             return origin?.address == sent.address ? .replied : nil
         }
+    }
+
+    /// Why the session's queue holds the line, and whether Don't send is taking it out.
+    struct Queued: Equatable {
+        let reason: String
+        let withdrawing: Bool
     }
 
     func with(image: NSImage?) -> Card { var card = self; card.image = image; return card }

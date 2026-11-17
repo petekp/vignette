@@ -43,7 +43,14 @@ anything works inside.
 | Sending | Sending to *session* | |
 | Starting the session, which was not running at Send | Starting in *session* | |
 | Sent | Sent to *session* | |
+| Queued: Codex holds the line while a turn runs, or while a command waits for approval | Queued for *session* | Codex reads it when its current turn ends. |
+| Queued: Codex holds the line while its question waits for an answer | Queued for *session* | Codex is waiting for your answer, then reads this. |
+| Queued: the thread's last turn was stopped | Queued for *session* | Codex stopped its last turn. You can resume it in Codex. |
 | Queued: no Codex engine has the thread open | Queued for *session* | Codex reads it when you open this thread. |
+| Queued: the thread is archived | Queued for *session* | This thread is archived. Codex reads it once you unarchive it. |
+| Queued: Codex has the thread open and has not taken the line after 15 seconds | Queued for *session* | Codex hasn't picked it up yet. You can check the thread in Codex. |
+| Queued, Don't send pressed, Codex had already started the line | Sent to *session* | Codex had already started on it. |
+| Queued, Don't send pressed, Codex refused to remove the line | Queued for *session* | Vignette couldn't remove it. You can delete it in Codex. |
 | Not confirmed in time | Check *session* | Codex didn't confirm it. It may still have arrived. |
 | Not sent | Not sent | One of the reasons below |
 | A reply that could not be shown | Reply not shown | You can ask *agent* to send it again. / Vignette couldn't save the reply. The log has details. |
@@ -52,7 +59,9 @@ anything works inside.
 *session* is the session's title as the toolbar or the live ink note showed it when Send was pressed: the herdr tab's label, else the session's name, with a suffix when two sessions share a title. `SessionMenu.cardTitle` decides it. A session that Send starts has no title yet, so the card names its project folder instead. On a card too narrow for the headline, the title stands alone. A title too long even for that is cut in the middle.
 
 Pressing Don't send says nothing. The press is the confirmation, the ring and the button go with
-it, and "Not sent" is the headline for a failure, not for a choice.
+it, and "Not sent" is the headline for a failure, not for a choice. On a queued line the overlay
+goes the same way, and the tab's clock turns to a spinner until Codex has removed the line. A line
+the person deletes in Codex also says nothing, since they did it there.
 
 ### The tab on a card (`CardTab`)
 
@@ -60,6 +69,7 @@ it, and "Not sent" is the headline for a failure, not for a choice.
 | --- | --- | --- |
 | An agent pushed it | From *Agent* ("From an agent" with no name) | The logo |
 | A person's screenshot that was sent | Sent to *session* | The logo and a paper plane |
+| A person's screenshot whose line Codex still holds in its queue | Queued for *session*; on hover the clock is a Don't send button whose help is the queued reason | The logo and a clock |
 | An agent's card sent back to the session it came from | From *Agent* · Replied | The logo and a check |
 
 *session* is the title the send's notice showed, as above. A newer send replaces it. The tab
@@ -73,6 +83,7 @@ cancelled with Don't send leaves the tab as it was.
 | The Claude Code session ended | This session has ended. You can send it to another one. |
 | The Claude Code session was cleared | This session was cleared. You can send it to another one. |
 | Codex has no such thread | Codex can't find this thread. You can send it to another one. |
+| The Codex thread is archived | This thread is archived. You can unarchive it in Codex or send to another one. |
 | Codex's engine can't be reached | Codex isn't running. You can send again once it's open. |
 | No Codex on this Mac | Sending to Codex needs the Codex app or its CLI. |
 | Herdr did not open a tab for a session that was not running | Vignette couldn't open a Herdr tab for Claude Code. The log has details. |

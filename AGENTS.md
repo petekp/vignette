@@ -56,9 +56,9 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   `docs/editor.md` is how the editor behaves.
 - Before changing code that decodes or holds an image, read `docs/rules/memory.md`.
 - Before changing Send, a send's notice on its card, or a session list (`CardNotices.swift`,
-  `AgentConnection.swift`, `CodexConnection.swift`, `ClaudeInbox.swift`, `ClaudeReadRule.swift`,
+  `AgentAddress.swift`, `AgentConnection.swift`, `CodexConnection.swift`, `ClaudeInbox.swift`, `ClaudeReadRule.swift`,
   `ClaudeSessionStart.swift`, `AppServer*.swift`, `HerdrFocus.swift`, `SessionListing.swift`,
-  `SessionStarts.swift`, `SessionPlaces.swift`, `SendGrace.swift`, `SendOverlay.swift`,
+  `SessionStarts.swift`, `SessionPlaces.swift`, `SendGrace.swift`, `SendOverlay.swift`, `CodexQueue.swift`,
   `SubmissionOutcome.swift`, `Subprocess.swift`), read `docs/rules/send.md`.
 - `docs/codex-issues.md` tracks the known problems with Codex and the Codex app, with a progress log.
   Read it before changing anything that talks to Codex, and add to it what you find or fix.

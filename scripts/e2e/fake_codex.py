@@ -7,11 +7,17 @@ Vignette ends the server once it has its answers, so nothing after the last one 
 Each line carries its arguments, its process and the time it was written, and an exception is a
 line of its own, since Vignette drops codex's standard error.
 
-It speaks only what Vignette asks of codex: `app-server` answers `initialize`, `thread/list` and
-`thread/read` (`AppServer.swift`), and `queue --thread <id> --message <line>` succeeds, as the real
-one does once the thread's engine has the line (`CodexConnection.submit`). A thread whose id is a
-line of `<folder>/gone` was deleted: queueing to it fails with the real CLI's words. Anything else
-succeeds and does nothing.
+It speaks only what Vignette asks of codex: `app-server` answers `initialize`, `thread/list`,
+`thread/read`, `thread/queue/list` and `thread/queue/delete` (`AppServer.swift`), and
+`queue --thread <id> --message <line>` prints the real CLI's `Queued message <id> for thread <id>.`
+(`QueuedLine.of`). A thread whose id is a line of `<folder>/gone` was deleted: queueing to it fails
+with the real CLI's words. Anything else succeeds and does nothing.
+
+The engine takes a queued line at once, unless `<folder>/hold` exists. Then the line waits in
+`<folder>/queue/<thread>.jsonl`, the queue `thread/queue/list` answers, behind a turn that started and
+has not ended, as a real queue holds a line behind a running turn. `thread/queue/delete` takes it
+out. Once `<folder>/release` exists, the next `thread/queue/list` ends that turn and takes every
+held line, so the queue it answers is empty.
 
 Each thread's rollout is `<folder>/rollouts/rollout-<id>.jsonl`, which `thread/read` names as its
 `path`. A queued line becomes a turn there, as the real engine writes one (`CodexRollout.swift`):
@@ -54,7 +60,13 @@ def main():
               f'invalid thread-store request: no rollout found for thread id {args[2]} (code -32603)', file=sys.stderr)
         sys.exit(1)
     elif args[:2] == ['queue', '--thread'] and '--message' in args:
-        take_turn(folder, args[2], args[args.index('--message') + 1])
+        thread, line = args[2], args[args.index('--message') + 1]
+        queued = f'queued-{time.time_ns()}'
+        if os.path.exists(os.path.join(folder, 'hold')):
+            hold(folder, thread, queued, line)
+        else:
+            take_turn(folder, thread, line)
+        print(f'Queued message {queued} for thread {thread}.')
 
 
 def rollout(folder, thread):
@@ -76,6 +88,38 @@ def take_turn(folder, thread, line):
     end = json.dumps({'type': 'event_msg', 'payload': {'type': 'task_complete', 'turn_id': turn, 'last_agent_message': 'Done.'}})
     subprocess.Popen(['/bin/sh', '-c', f'sleep {shlex.quote(seconds)}; printf "%s\\n" {shlex.quote(end)} >> {shlex.quote(path)}'],
                      start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def queue_path(folder, thread):
+    return os.path.join(folder, 'queue', f'{thread}.jsonl')
+
+
+def held(folder, thread):
+    path = queue_path(folder, thread)
+    return [json.loads(line) for line in open(path)] if os.path.exists(path) else []
+
+
+def hold(folder, thread, queued, line):
+    """Keeps `line` in the thread's queue, behind a turn that started and has not ended."""
+    path = rollout(folder, thread)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'a') as f:
+        f.write(json.dumps({'type': 'event_msg', 'payload': {'type': 'task_started', 'turn_id': 'holding'}}) + '\n')
+    os.makedirs(os.path.dirname(queue_path(folder, thread)), exist_ok=True)
+    with open(queue_path(folder, thread), 'a') as f:
+        f.write(json.dumps({'id': queued, 'line': line}) + '\n')
+
+
+def release(folder, thread):
+    """Ends the turn the queue's lines wait behind and takes each of them, in order."""
+    lines = held(folder, thread)
+    if not lines:
+        return
+    with open(rollout(folder, thread), 'a') as f:
+        f.write(json.dumps({'type': 'event_msg', 'payload': {'type': 'task_complete', 'turn_id': 'holding'}}) + '\n')
+    os.remove(queue_path(folder, thread))
+    for entry in lines:
+        take_turn(folder, thread, entry['line'])
 
 
 def gone(folder):
@@ -108,6 +152,22 @@ def serve(folder, args):
             found = next((t for t in threads if t['id'] == params.get('threadId')), None)
             answer = ({'id': message['id'], 'result': {'thread': dict(found, path=rollout(folder, found['id']))}} if found else
                       {'id': message['id'], 'error': {'code': -32603, 'message': f"no rollout found for thread id {params.get('threadId')}"}})
+        elif method == 'thread/queue/list':
+            thread = params.get('threadId')
+            if os.path.exists(os.path.join(folder, 'release')):
+                release(folder, thread)
+            data = [{'id': entry['id'], 'input': [{'type': 'text', 'text': entry['line']}]} for entry in held(folder, thread)]
+            answer = {'id': message['id'], 'result': {'data': data, 'nextCursor': None}}
+        elif method == 'thread/queue/delete':
+            thread, queued = params.get('threadId'), params.get('queuedSubmissionId')
+            lines = held(folder, thread)
+            kept = [entry for entry in lines if entry['id'] != queued]
+            if kept:
+                with open(queue_path(folder, thread), 'w') as f:
+                    f.write(''.join(json.dumps(entry) + '\n' for entry in kept))
+            elif lines:
+                os.remove(queue_path(folder, thread))
+            answer = {'id': message['id'], 'result': {'deleted': len(kept) < len(lines)}}
         elif method == 'initialize':
             answer = {'id': message['id'], 'result': {'userAgent': 'fake-codex'}}
         elif method == 'account/read':

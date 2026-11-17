@@ -118,6 +118,26 @@ extension AppDelegate {
         }
     }
 
+    /// A card's tab reads where its screenshot came from and whether Codex still holds its last send
+    /// in a queue, and a queued send's later changes reach the card.
+    func connectSendsToCards() {
+        thumbnail.origin = { [unowned self] in requests.origin(of: $0) }
+        thumbnail.queuedSend = { [unowned self] in requests.queuedSend(of: ScreenshotKey(asGiven: $0.path)) }
+        requests.callbacks.withdrawing = { [weak self] record in
+            guard let self else { return }
+            thumbnail.withdrawing(Screenshot(key: requests.sourceKey(of: record)), request: record.id)
+        }
+        requests.callbacks.queueChanged = { [weak self] record in
+            guard let self else { return }
+            thumbnail.refreshSent(of: Screenshot(key: requests.sourceKey(of: record)))
+        }
+        requests.callbacks.laterAnswer = { [weak self] record, state, reason in
+            guard let self else { return }
+            thumbnail.later(Screenshot(key: requests.sourceKey(of: record)), request: record.id, client: record.address.client,
+                            titled: record.cardTitle ?? record.destinationName, state, reason: reason)
+        }
+    }
+
     /// A screenshot's drawing as the editor opens it (`AnnotationController.storedDrawing`).
     func storedDrawing(_ key: ScreenshotKey) -> Drawing? {
         PixelSize(imageAt: key.url).flatMap { drawings.read(key, pixels: $0, style: settings.data.ui.textStyle) }

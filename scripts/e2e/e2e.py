@@ -39,6 +39,7 @@ import urllib.parse
 import uuid
 
 from report import Report
+from scenario_list import all_scenarios
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -487,13 +488,6 @@ def restore_pasteboard():
         return
     subprocess.run([PROBE, 'pasteboard', 'restore', SAVED_PASTEBOARD], check=True, stdout=subprocess.DEVNULL)
     shutil.rmtree(SAVED_PASTEBOARD)
-
-
-def all_scenarios():
-    import live_ink
-    import scenarios
-    import session_starts
-    return scenarios.ALL + session_starts.ALL + live_ink.ALL
 
 
 def run(names, with_input, build):

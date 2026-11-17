@@ -19,7 +19,7 @@ and gets an end-to-end scenario wherever the fake can show it.
 | C4 | "Sent" can mean the message is only waiting | Medium | Fixed; Sent verified live, Queued with the fake codex |
 | C5 | Opening the editor from the Codex app waits 0.3 to 0.5 s for nothing | Low | Fixed with C1: 9 to 20 ms |
 | C6 | Two spellings of one path reach two drawings | Low | Fixed |
-| C7 | "Sent" while Codex still holds the line, and a stopped turn holds it until the next message | Medium | Open: measured live, not fixed |
+| C7 | "Sent" while Codex still holds the line, and a stopped turn holds it until the next message | Medium | Fixed on branch codex-queued, not merged |
 | X1 | The CLI on this Mac's PATH cannot run the configured model | Not Vignette's | Noted |
 
 Still untested:
@@ -177,9 +177,11 @@ holds the line. The line waits behind a running turn, or behind one of Codex's d
 person answers it. When the thread's last turn was stopped, the line waits until the person's next
 message has run, with no time limit. C4 covers a thread no engine has open.
 
-**Recommended.** Watch each Codex send with `thread/queue/list` until Codex takes the line. The card
-says "Queued for *session*" with the reason from the rollout, and offers Don't send. This is not
-built yet.
+**Fix.** Vignette watches each Codex send with `thread/queue/list` until Codex takes the line. The
+card says "Queued for *session*" with the reason from the rollout, then the tab says it with a
+clock, and Don't send on the tab removes the line with `thread/queue/delete`. A stopped turn still
+holds the line until the person's next message: the card says so and points to Codex.
+`docs/rules/send.md` has the rules.
 
 `docs/codex-queued-sends-2026-11-16.md` has the dialogs, the queue's source, five live runs, what
 Vignette can see from outside the engine, the card's wording and the options.
