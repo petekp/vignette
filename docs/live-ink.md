@@ -67,11 +67,8 @@ The names in brackets are `// MARK:` sections.
   full-screen window over every app. Captures show every live ink window as the person sees it. An
   ask's own pictures leave Vignette's windows out, since the packet draws the ink in itself
   (`LivePacket.shownInArea`). macOS's window picker (Space during ⌘⇧4, or ⌘⇧5's window
-  capture) still takes the window whose pixels are under the pointer, at any level, and reads the
-  windows when Space is pressed; over a mark it took the overlay and could not capture it. So after
-  ⌘⇧ (`CaptureOrigin.onCaptureKeys`), while there are marks, live ink clears its overlays (alpha 0,
-  which the picker passes over) for as long as a `screencapture` process runs or `screencaptureui`
-  has a window up (`LiveInk.watchForWindowPicker`). At rest it sits at level 1, above normal windows and below
+  capture) takes the window whose pixels are under the pointer, at any level (measured on macOS 15),
+  so on a mark it takes the overlay and off one the app's window. At rest it sits at level 1, above normal windows and below
   the dim (2) and Vignette's floating windows, so the stack and the annotator cover the marks, and
   so do menus, the Dock and other apps' floating windows. It passes every press then
   (`ignoresMouseEvents`). While the chord is held it is inking: it rises to `.screenSaver` with the

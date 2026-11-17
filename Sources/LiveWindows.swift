@@ -323,7 +323,6 @@ final class LiveWindows {
         let host = target.pid == ProcessInfo.processInfo.processIdentifier
             ? Self.titledWindows().first { CGWindowID($0.windowNumber) == target.id } : nil
         let window = Tracked(id: target.id, pid: target.pid, app: target.app, frame: target.frame, host: host)
-        window.overlay.alphaValue = pickerClear ? 0 : 1
         windows[target.id] = window
         // Vignette's own window moves its child with it.
         if host == nil { watch(window) }
@@ -341,11 +340,6 @@ final class LiveWindows {
         }
         window.overlay.level = .normal
         window.overlay.order(.above, relativeTo: Int(window.id))
-    }
-
-    /// Clears every overlay while macOS's window picker is up (`LiveInk.watchForWindowPicker`).
-    var pickerClear = false {
-        didSet { windows.values.forEach { $0.overlay.alphaValue = pickerClear ? 0 : 1 } }
     }
 
     /// The overlay covers the window and every mark that reaches past its edge.

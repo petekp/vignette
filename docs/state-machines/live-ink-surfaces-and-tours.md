@@ -8,7 +8,7 @@ Owner: `LiveInk.swift:2030` (`activeSurfaces`), `:2050` (`closeEmpty`); `LiveInk
 
 One overlay window per screen per Space holds the strokes and the field. `activeSurfaces` creates them lazily; `closeEmpty` removes those with no marks.
 
-**States**: `surfaces`, `inking`. Per overlay: `takesInk`, `holdsField`, `keptAboveMenus`, `level` (`raise`, `LiveInkOverlay.swift:167`: `.screenSaver` if kept above menus, else the resting level), `ignoresMouseEvents = !inking`, `alphaValue` (0 while `pickerUp`), `notice`.
+**States**: `surfaces`, `inking`. Per overlay: `takesInk`, `holdsField`, `keptAboveMenus`, `level` (`raise`, `LiveInkOverlay.swift:167`: `.screenSaver` if kept above menus, else the resting level), `ignoresMouseEvents = !inking`, `notice`.
 
 **Transitions**
 
@@ -28,29 +28,6 @@ One overlay window per screen per Space holds the strokes and the field. `active
 
 - Inking again while a surface fades out: `activeSurfaces` looks only at `surfaces`, so a new overlay is made.
 - A fading field on a surface that stays is brought back by `holdField(true)` → `comeUp`, which clears `fadeOut` (`PointerField.swift:166`).
-
-### Window picker watch (implicit)
-
-Owner: `LiveInk+WindowPicker.swift:14`. Tests: none.
-
-While a capture may be starting, hides the overlays when macOS's window picker is up so the picker is not covered.
-
-**States**: `pickerWatch: Timer?` (`LiveInk.swift:32`), `pickerWatchUntil` (`:33`), `pickerUp` (`:35`). States: idle, watching, picker up.
-
-**Transitions**
-
-| State | Event | Next state | Effects |
-|---|---|---|---|
-| idle | `watchForWindowPicker()` (from `CaptureOrigin.onCaptureKeys`), marks exist | watching | 0.1 s timer `checkWindowPicker` (`:24`) |
-| watching | `isCapturing()` true | picker up | surface `alphaValue = 0`, `windows.pickerClear` |
-| picker up | `isCapturing()` false | watching | alpha restored |
-| watching | not up and past `pickerWatchUntil` | idle | timer stopped |
-| watching, picker up | `setOn(false)` | idle | `stopWatchingForWindowPicker` |
-
-**Invariants**
-
-- New overlays and window overlays take their alpha from `pickerUp` and `pickerClear`. Checked by: `LiveInk.swift:2035`, `LiveWindows.swift:249`.
-- Overlays at alpha 0 still take ink and the tap still swallows clicks, so a chord held while the picker is up draws invisible ink. Checked by: nothing.
 
 ### Menu hand-off: overMenus and LiveMenus (implicit)
 
@@ -219,7 +196,7 @@ Owner: `LiveWindows.swift:11`; per window `Tracked` (`:40`); `update` `:559`. Te
 
 Pins marks to the windows they were drawn on, so marks move, fade and leave with the window. A display link drives it: 10 Hz when idle, display rate while a window is moving.
 
-**States**: per window `frame`, `onScreen`, `showFrom`, `lift`, `minimisingSince`, `pins`, `overlay`. Global: `link`, `monitors`, `observers`, `watchers` (Accessibility, per pid), `activeUntil`, `buttonDown`, `askedForTree`, `pickerClear`. Derived: `isAway = minimisingSince != nil || showFrom != nil`. A pin is drawn when `!isAway && !outside`, and shown when drawn and not aside. Window states: on screen, minimising, away (`!onScreen`, overlay ordered out), landing (`showFrom` set), lifted (`lift` set, level 1), gone.
+**States**: per window `frame`, `onScreen`, `showFrom`, `lift`, `minimisingSince`, `pins`, `overlay`. Global: `link`, `monitors`, `observers`, `watchers` (Accessibility, per pid), `activeUntil`, `buttonDown`, `askedForTree`. Derived: `isAway = minimisingSince != nil || showFrom != nil`. A pin is drawn when `!isAway && !outside`, and shown when drawn and not aside. Window states: on screen, minimising, away (`!onScreen`, overlay ordered out), landing (`showFrom` set), lifted (`lift` set, level 1), gone.
 
 **Transitions** (`update`, `:559`)
 
@@ -261,7 +238,7 @@ Turns live ink on and off. `isOn` is `chord != nil`.
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | off | `setOn(true)` | on | chord and observers made |
-| on | `setOn(false)` | off | `stopInking` if inking, window picker watch stopped, `endConversation`, marks and surfaces dropped, `windows.removeAll` |
+| on | `setOn(false)` | off | `stopInking` if inking, `endConversation`, marks and surfaces dropped, `windows.removeAll` |
 | on or off | `setOn` with the same value | — | `guard on != isOn` |
 | on | `takeChord()` (`:248`) | on | the chord object replaced; inking cut short |
 

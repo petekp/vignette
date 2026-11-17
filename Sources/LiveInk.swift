@@ -29,11 +29,6 @@ final class LiveInk {
     /// The surface the press under way began on, which takes its drags and its release, as the window
     /// server sends them to the window that took the press.
     var pressedSurface: Surface?
-    /// Runs after ⌘⇧ while there are marks, looking for macOS's window picker.
-    var pickerWatch: Timer?
-    var pickerWatchUntil = Date.distantPast
-    /// macOS's window picker is up, and the overlays are clear for it.
-    var pickerUp = false
     /// Asked when the chord goes down: false while the stack or the annotator holds the screen, which
     /// the raised overlays would cover and take presses from.
     let mayInk: () -> Bool
@@ -245,7 +240,6 @@ final class LiveInk {
             }
         } else {
             if isInking { stopInking(because: "live ink turned off") }
-            stopWatchingForWindowPicker()
             endConversation()
             chord = nil
             for (center, observer) in observers { center.removeObserver(observer) }
@@ -1716,7 +1710,6 @@ final class LiveInk {
             guard let display = Self.display(of: screen) else { return nil }
             if let surface = surfaces.first(where: { $0.overlay.display == display && $0.overlay.isOnActiveSpace }) { return surface }
             let overlay = LiveInkOverlay(screen: screen, display: display)
-            overlay.alphaValue = pickerUp ? 0 : 1
             let surface = Surface(overlay)
             overlay.onStrokeMoved = { [weak self] points in self?.strokeMoved(points) }
             overlay.onHover = { [weak self] point in self?.hover(at: point) }
