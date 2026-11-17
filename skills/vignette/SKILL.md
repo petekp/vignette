@@ -1,8 +1,9 @@
 ---
 name: vignette
-description: Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
+description: >-
+  Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "29"
+  version: "30"
 ---
 
 # Vignette
@@ -39,10 +40,13 @@ open -g "vignette://add?file=$file&title=$title&description=$description&agent=c
 - `open -g` keeps the focus where it is. Always percent-encode the path yourself; `open` will not.
 - When the commands here name an app with `-a`, that is the copy of Vignette that installed this
   skill. Name it in every command you send: a bare `open` can start another build of Vignette.
-- If `open -a` answers that the app cannot be opened or does not exist, that copy is gone. Do not
-  send the command again without `-a`: that starts whichever build macOS finds, on the user's own
-  settings, and it replaces the Vignette they are running. Tell the user the copy at that path is
-  missing, and go on without the image.
+- In Codex, invoke `open` as a direct tool command. Python may encode URL arguments. A sandboxed
+  Python subprocess can return `kLSNoExecutableErr` for an intact app; request approved host
+  execution if Python must launch it.
+- If `open -a` fails, read `CFBundleExecutable` from that app's `Contents/Info.plist` and check
+  `Contents/MacOS/<executable>` before reporting a missing installation. If the bundle or executable
+  is absent, tell the user its path is missing and go on without the image. Keep `-a` on retries:
+  a bare `open` can start another build on the user's settings.
 - The file may be anywhere. Every other command takes files inside the watch folder only.
 - Wait for `[add] ok <name>` in the log. The name gains a counter (`x 2.png`) when one is taken.
   Errors end with `missing-file`, `unreadable-image`, `unsupported-type` (png, jpg, jpeg, or heic
