@@ -32,8 +32,9 @@ struct NoteCardGroups: Equatable {
         case turns([Reading])
         /// A group's look answered: `changed`, the members whose own region changed (empty when the
         /// window could not be compared); `replied`, the members the session has replied to by now;
-        /// `uncompared`, the members whose region could not be compared, as when their window changed size.
-        case looked([String], changed: Set<String>, replied: Set<String>, uncompared: Set<String> = [])
+        /// `uncompared`, the members whose region could not be compared, as when their window changed size;
+        /// `inFront`, the window was the frontmost app's frontmost window, so the person sees it.
+        case looked([String], changed: Set<String>, replied: Set<String>, uncompared: Set<String> = [], inFront: Bool = false)
         /// The result card for these requests could not be written.
         case cardFailed([String])
         case answer(String)
@@ -123,16 +124,19 @@ struct NoteCardGroups: Equatable {
             }
             actions += windows.compactMap { looks[$0].map(Action.look) }
 
-        case .looked(let requests, let changed, let replied, let uncompared):
+        case .looked(let requests, let changed, let replied, let uncompared, let inFront):
             let looking = requests.compactMap { id in entries[id].flatMap { $0.wait.isLookingAgain ? (id, $0.sequence) : nil } }
             let live = looking.sorted { $0.1 < $1.1 }.map(\.0)
             // A reply is its note's own result, and a region that could not be compared says nothing
             // about the card, so neither makes the card nor is answered by it.
             let members = live.filter { !replied.contains($0) && !uncompared.contains($0) }
-            let maker = members.first { changed.contains($0) }
+            let changedMember = members.first { changed.contains($0) }
+            // The person sees a window in front change, so a picture of it would tell them nothing.
+            let maker = inFront ? nil : changedMember
+            let answered: NoteCardWait.LookOutcome = inFront ? .windowInFront : .cardMade
             var done: [Action] = []
             for id in live {
-                let outcome: NoteCardWait.LookOutcome = replied.contains(id) ? .replied : (maker != nil && members.contains(id) ? .cardMade : .noCard)
+                let outcome: NoteCardWait.LookOutcome = replied.contains(id) ? .replied : (changedMember != nil && members.contains(id) ? answered : .noCard)
                 done += step(id, .lookedAgain(outcome), at: now)
             }
             // The card is asked for before any Done notice.

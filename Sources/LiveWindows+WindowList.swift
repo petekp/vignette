@@ -30,7 +30,11 @@ enum WindowList {
     /// The app's frontmost window on the screen, past the small one macOS 15 puts over a titled
     /// window's title bar.
     static func front(of pid: pid_t) -> CGWindowID? {
-        let infos = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        front(of: pid, in: CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? [])
+    }
+
+    /// `front(of:)` in `infos`, the on-screen window list's entries front to back.
+    static func front(of pid: pid_t, in infos: [[String: Any]]) -> CGWindowID? {
         let front = infos.first {
             ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && ($0[kCGWindowLayer as String] as? Int) == 0
                 && (bounds($0).map { $0.width > 60 && $0.height > 60 } ?? false)

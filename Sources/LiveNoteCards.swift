@@ -30,7 +30,7 @@ final class LiveNoteCards {
 
     private enum Input {
         case event(NoteCardGroups.Input, at: Date)
-        case looked([String], seen: (changed: Set<String>, uncompared: Set<String>, capture: Capture)?, at: Date)
+        case looked([String], seen: (changed: Set<String>, uncompared: Set<String>, capture: Capture, inFront: Bool)?, at: Date)
         case answer(ScreenshotRequests.Record, LiveAnswer, at: Date, done: ([Int]?) -> Void)
     }
 
@@ -174,7 +174,8 @@ final class LiveNoteCards {
         case .event(let happened, let at): (event, now) = (happened, at)
         case .looked(let ids, let seen, let at):
             let replied = Set(ids.filter { requests.hasReply(to: $0) })
-            (event, now) = (.looked(ids, changed: seen?.changed ?? [], replied: replied, uncompared: seen?.uncompared ?? []), at)
+            (event, now) = (.looked(ids, changed: seen?.changed ?? [], replied: replied, uncompared: seen?.uncompared ?? [],
+                                    inFront: seen?.inFront ?? false), at)
         case .answer(let record, _, let at, let done):
             guard waits[record.id] != nil, notes[record.id] != nil else { return done(nil) }
             (event, now) = (.answer(record.id), at)
@@ -232,6 +233,8 @@ final class LiveNoteCards {
             Log.write("[live-ink] stopped waiting on the session request=\(id)")
         case .replyIsTheResult:
             Log.write("[live-ink] the session's reply is the result request=\(id)")
+        case .windowInFront:
+            Log.write("[live-ink] no result card: the window is in front request=\(id)")
         case .sayDone, .sayDoneQuietly:
             guard FileManager.default.fileExists(atPath: note.shot.url.path) else { return }
             let quietly = effect == .sayDoneQuietly
@@ -285,8 +288,9 @@ final class LiveNoteCards {
 
     /// The window now, twice `LiveChange.settle` apart, against what each note's `before` kept of
     /// it: the notes of one window, each compared on its own part (`compare`). `capture` is the window
-    /// as it is now. Nil when the window is gone.
-    private static func look(again members: [(request: String, before: Before)]) async -> (changed: Set<String>, uncompared: Set<String>, capture: Capture)? {
+    /// as it is now, and `inFront` whether it is the window in front then. Nil when the window is gone.
+    private static func look(again members: [(request: String, before: Before)]) async
+        -> (changed: Set<String>, uncompared: Set<String>, capture: Capture, inFront: Bool)? {
         guard let window = members.first?.before.windowID else { return nil }
         do {
             let after = try await LivePacket.capture(window: window)
@@ -294,42 +298,13 @@ final class LiveNoteCards {
             let again = try await LivePacket.capture(window: window)
             let capture = Capture(image: again.image, frame: again.frame, pointScale: CGFloat(again.image.width) / again.frame.width)
             let compared = await Task.detached(priority: .userInitiated) { compare(members, after: after, again: again) }.value
-            return (compared.changed, compared.uncompared, capture)
+            let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+            let inFront = isInFront(window, frontApp: NSWorkspace.shared.frontmostApplication?.processIdentifier, windows: windows)
+            return (compared.changed, compared.uncompared, capture, inFront)
         } catch {
             Log.write("[live-ink] can't tell whether it landed: \(error)")
             return nil
         }
-    }
-
-    /// Which of the notes of one window changed under their ink, from the window as `after` and
-    /// `again`, a moment later, captured it; `again` rules out what moves on its own. A note whose
-    /// window has changed size since is `uncompared`, as is one whose part the capture lacks.
-    nonisolated static func compare(_ members: [(request: String, before: Before)], after: (image: CGImage, frame: CGRect),
-                                    again: (image: CGImage, frame: CGRect)) -> (changed: Set<String>, uncompared: Set<String>) {
-        var changed = Set<String>(), uncompared = Set<String>()
-        for (request, before) in members {
-            guard abs(after.frame.width - before.windowSize.width) < 1, abs(after.frame.height - before.windowSize.height) < 1 else {
-                Log.write("[live-ink] can't tell whether it landed: the window changed size")
-                uncompared.insert(request)
-                continue
-            }
-            let region = before.region.offsetBy(dx: after.frame.minX, dy: after.frame.minY)
-            let regionAgain = before.region.offsetBy(dx: again.frame.minX, dy: again.frame.minY)
-            let ink = before.ink.offsetBy(dx: -before.region.minX, dy: -before.region.minY)
-            guard let now = LiveChange.crop(after.image, frame: after.frame, to: region) else {
-                uncompared.insert(request)
-                continue
-            }
-            let later = LiveChange.crop(again.image, frame: again.frame, to: regionAgain)
-            switch LiveChange.compare(before: before.picture, after: now, again: later, size: region.size, ink: ink) {
-            case .changed(let share, _):
-                Log.write("[live-ink] landed changed=\(String(format: "%.3f", share))")
-                changed.insert(request)
-            case .unchanged(let share):
-                Log.write("[live-ink] nothing changed under the ink changed=\(String(format: "%.3f", share))")
-            }
-        }
-        return (changed, uncompared)
     }
 
     // MARK: Result cards

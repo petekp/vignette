@@ -4,6 +4,7 @@ These are the checks for a change to live ink. Its rules are in `docs/live-ink.m
 
 - `Tests/LiveInkTests.swift` holds the unit tests: the chord, strokes, placement and result cards.
   `Tests/NoteCardWaitTests.swift` holds how a note card's wait ends, in any order of reply, turn end and delivery.
+  `Tests/NoteCardGroups*.swift` hold how the notes one turn end answers end together.
   `Tests/LiveAsksTests.swift` holds the asks' sequences: asks waiting their turn, answers on the screen together, late
   callbacks, erasing, follow-ups, dismiss, finish and clear, and random sequences that check the invariants.
 - A script reaches the note with no hand on the keys: `live-ink-chord-down`, `live-ink-stroke` per

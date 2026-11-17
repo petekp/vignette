@@ -12,6 +12,9 @@ struct NoteCardWait: Equatable {
         case lookingAgain
         /// A result card answers the note. An answer that comes later goes on it.
         case resultCard(made: Date)
+        /// The window changed under the ink while it was in front, so the person saw it and no
+        /// result card was made. An answer that comes later goes on a fresh capture of the window.
+        case seenInFront(looked: Date)
         case over
     }
 
@@ -37,6 +40,8 @@ struct NoteCardWait: Equatable {
         case cardMade
         /// Nothing changed under the ink of any note that the session has not replied to.
         case noCard
+        /// A result card would answer the note, but its window was the one in front.
+        case windowInFront
     }
 
     enum Effect: Hashable {
@@ -48,6 +53,8 @@ struct NoteCardWait: Equatable {
         /// it across the notes one turn end answers.
         case lookAgain
         case replyIsTheResult
+        /// No result card, since the window was in front when the turn ended.
+        case windowInFront
         /// The note card says the session is done, while its file is there.
         case sayDone
         /// `sayDone` without bringing the card up if it is off screen. `NoteCardGroups` answers a note's
@@ -92,6 +99,7 @@ struct NoteCardWait: Equatable {
         case .over: return true
         case .unwatched(let sent): return now.timeIntervalSince(sent) > TurnWatch.workingLimit
         case .resultCard(let made): return now.timeIntervalSince(made) > TurnWatch.turnLimit
+        case .seenInFront(let looked): return now.timeIntervalSince(looked) > TurnWatch.turnLimit
         case .unsent, .watching, .lookingAgain: return false
         }
     }
@@ -135,6 +143,9 @@ struct NoteCardWait: Equatable {
             case .noCard:
                 phase = .over
                 return [.sayDone]
+            case .windowInFront:
+                phase = .seenInFront(looked: now)
+                return [.windowInFront, .sayDone]
             }
 
         case (.resultCard, .cardFailed):
@@ -145,7 +156,7 @@ struct NoteCardWait: Equatable {
         case (_, .delivered(let failed)):
             delivered = true
             switch phase {
-            case .watching, .unwatched, .lookingAgain, .resultCard: if failed { phase = .over }
+            case .watching, .unwatched, .lookingAgain, .resultCard, .seenInFront: if failed { phase = .over }
             case .unsent, .over: break
             }
             return []
@@ -159,6 +170,12 @@ struct NoteCardWait: Equatable {
                 return [.drawReplyOnSentPicture]
             }
             return [.drawReplyOnResultCard]
+        case (.seenInFront(let looked), .answer):
+            guard now.timeIntervalSince(looked) <= TurnWatch.turnLimit else {
+                phase = .over
+                return [.drawReplyOnSentPicture]
+            }
+            return [hasWindow ? .drawReplyOnFreshCapture : .drawReplyOnSentPicture]
         case (.unwatched(let sent), .answer):
             guard now.timeIntervalSince(sent) <= TurnWatch.workingLimit else {
                 phase = .over
