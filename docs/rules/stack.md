@@ -94,6 +94,15 @@
   shows in the stack: AppKit shows a window's tooltips only while its app is active, unless the
   window sets `allowsToolTipsWhenApplicationIsInactive`, which the panel does not. Text the user
   must see there is drawn, like a greyed strip row's reason (`UnavailableReason`).
+- The app the focus goes back to is the app that was in front when Vignette took the keys, so
+  closing Vignette leaves the screen as Vignette found it. `FocusReturn` follows every activation
+  of a regular app other than Vignette and System Settings. It does not judge how that app came
+  forward, by the person's hand or on its own: macOS does not say, and a wrong guess sends the
+  person to an app they had left (`docs/focus-return-codex-2026-11-18.md`). Each hand-back logs
+  `[focus] <reason>: returned to <app>, in front since <time>`, the time that app last became
+  active, or `in front when Vignette launched`. The hand-back is the only time Vignette brings
+  another app forward on its own; the rest open what the person asked for.
+  `scripts/check-app-activation.py` holds that.
 - `CornerPresentation`, a pure reducer, decides four things about the corner. It decides whether
   the corner shows lone thumbnails or the stack, and when the panel takes the keys and gives them
   up. It decides when the backdrop and the watch for a click outside are on. And it decides when

@@ -7,6 +7,10 @@
   `docs/closed-agent-loop-implementation-2026-09-20.md`. `agent-plugin/` is the plugin Claude Code
   and Codex install, which carries the skill and, for Claude Code, delivers what Send sends, and
   `Sources/AgentPlugin.swift` installs it (`docs/claude-code-without-herdr-2026-09-27.md`).
+- Send never brings the destination's app forward. The card says what happened, and the person
+  decides where to look. When they sent from the destination's app, the hand-back returns them
+  there (`FocusReturn`, `docs/rules/stack.md`). `scripts/check-app-activation.py` fails a call
+  that activates, launches or opens an app outside its allowed list.
 - A destination is an agent session, never the terminal displaying it. Codex is addressed by its
   thread UUID and nothing else: `codex queue --thread` resolves the UUID in the thread store or
   fails, which is `AddressGuard.runtimeEnforced`, and stores the message in Codex's queue. An engine

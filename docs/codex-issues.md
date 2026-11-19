@@ -21,6 +21,7 @@ and gets an end-to-end scenario wherever the fake can show it.
 | C6 | Two spellings of one path reach two drawings | Low | Fixed |
 | C7 | "Sent" while Codex still holds the line, and a stopped turn holds it until the next message | Medium | Fixed on branch codex-queued, not merged |
 | X1 | The CLI on this Mac's PATH cannot run the configured model | Not Vignette's | Noted |
+| X2 | The in-app browser agent's right-click opens a menu over the app in front and takes its keys | Not Vignette's | Proposed upstream, not reported |
 
 Still untested:
 
@@ -192,6 +193,30 @@ Vignette can see from outside the engine, the card's wording and the options.
 account (400), and the app's CLI runs it. Vignette's own calls (`app-server`, `queue`, `plugin`) run
 no model, and since C2 Vignette uses the app's CLI. A CLI session started from the PATH fails its
 first turn. Updating that CLI is the fix, and it is outside Vignette.
+
+### X2: The in-app browser agent's right-click opens a menu over the app in front and takes its keys
+
+**What happens.** When an agent's script right-clicks in Codex's in-app browser
+(`click({button:'right'})`) while the Codex app is behind another app, a native menu window opens
+over the app the person is using. It takes that app's keyboard without bringing Codex forward.
+WindowServer logs the theft as a key thief. Keys typed in the meantime go to Codex. The window stays
+until the person clicks it away or switches apps; on 2026-11-18 one stayed up six minutes. Codex app
+26.1111.21308, macOS 27.2.1.
+
+**Evidence.** On 2026-11-18, thread `01a1ec12` right-clicked 13 times while Codex was behind
+another app, and each time Codex took the keys 0.1 to 11 s later. Its 3 right-clicks while Codex
+was in front logged no theft. Five times Pete went to Codex himself within 3.3 s of a menu closing.
+He reported it as being pulled into Codex with a context menu open.
+`docs/focus-return-codex-2026-11-18.md` has the table and how to find it in the logs.
+
+**What Vignette can do.** Nothing in Codex's menus or another app's key theft. Vignette brings
+Codex forward only when it hands the focus back to the app that was in front before Vignette
+opened. On 2026-11-18 it did so 10 times, and each time Codex had been in front.
+
+**Proposal, not reported.** Codex's browser agent should not open the app's native context menu on
+a scripted right-click, or should not open it while the app is behind another app. Until then, an
+agent can open a page's right-click feature by dispatching a `contextmenu` event in the page.
+Whether that avoids the native menu is unverified. Filing the report needs Pete's yes.
 
 ## Progress log
 
