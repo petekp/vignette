@@ -217,6 +217,8 @@ Before you drive the app:
   Its `ALLOWED` list names the links tied to one screen on purpose, each with why.
 - A type keeps a display's number, never an `NSScreen` (`docs/rules/stack.md`).
   `scripts/check-screen-stores.py`, run by `build.sh --test`, fails a stored one.
+- `scripts/check-app-activation.py`, run by `build.sh --test`, fails a call that brings an app
+  forward outside its list (`docs/rules/send.md`).
 - `docs/glossary.md` is Vignette's vocabulary: screenshots and the corner, drawing, and the agent
   loop. It says what each word means and what not to call it. Use its words in code, docs and
   labels. The distinction it guards most is that an agent session is a conversation and a pane is

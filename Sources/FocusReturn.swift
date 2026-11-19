@@ -6,6 +6,9 @@ import AppKit
 final class FocusReturn {
     static let shared = FocusReturn()
     private(set) var previousApp: NSRunningApplication?
+    /// When `previousApp` last became the active app, for the hand-back's log line. Nil for the app
+    /// that was in front when Vignette launched.
+    private var previousAppSince: Date?
     /// When `restore` last handed the keys to `previousApp`, in seconds of system uptime. The app's
     /// activation follows, and tells nobody it was not the person's.
     private(set) var handedBackAt: TimeInterval?
@@ -15,6 +18,7 @@ final class FocusReturn {
     private var observer: Any?
     /// Posted just before `restore` hands the keys to the app that is the notification's object.
     static let handingBack = Notification.Name("FocusReturn.handingBack")
+    private static let clock: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm:ss.SSS"; return f }()
 
     private init() {
         previousApp = NSWorkspace.shared.frontmostApplication
@@ -31,6 +35,7 @@ final class FocusReturn {
             // NSWorkspace delivers notifications registered with queue: .main on the main thread.
             MainActor.assumeIsolated {
                 self?.previousApp = app
+                self?.previousAppSince = Date()
                 self?.ownWindow = nil
             }
         }
@@ -57,6 +62,7 @@ final class FocusReturn {
         // frontmost app leaves the keys with Vignette; letting go hands them back.
         if NSWorkspace.shared.frontmostApplication == app { NSApp.deactivate() } else { app.activate() }
         handedBackAt = ProcessInfo.processInfo.systemUptime
-        Log.write("[focus] \(reason): returned to \(app.localizedName ?? "?")")
+        let since = previousAppSince.map { "in front since \(Self.clock.string(from: $0))" } ?? "in front when Vignette launched"
+        Log.write("[focus] \(reason): returned to \(app.localizedName ?? "?"), \(since)")
     }
 }

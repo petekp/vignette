@@ -241,11 +241,12 @@ Nothing about which app the focus returns to. When the proposal is built:
 ### What would hold it
 
 `scripts/check-app-activation.py`, run by `scripts/build.sh --test` like the display link check. It
-fails a call that brings a running app forward, `NSRunningApplication.activate` or
-`openApplication(at:`, outside an `ALLOWED` list. The list holds `FocusReturn.restore`,
-`AppLocation`'s relaunch and `SettingsWindow.bringForward`, each with why. The future failure it
-catches is a change, in Send or elsewhere, that activates an agent's app. `NSWorkspace.shared.open`
-of a file or URL stays outside the check, since the person asked for each of those.
+counts each call that activates, launches or opens an app: `activate` on another app,
+`openApplication`, `NSWorkspace.shared.open` and a `/usr/bin/open` process. Its `ALLOWED` list
+gives each file its number of calls and why. It holds `FocusReturn.restore`, `AppLocation`'s
+relaunch and `SettingsWindow.bringForward`, and each place that opens what the person asked for. A
+new call fails until it is given a reason. The future failure it catches is a change, in Send or
+elsewhere, that brings an agent's app forward, such as opening a `codex://` link.
 
 Unit tests for `FocusReturn`'s choice are left out. It has none today
 (`docs/state-machines/annotation-run-effects.md`), and testing it would need its decision split
