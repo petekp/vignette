@@ -2,6 +2,15 @@
 
 The progress on the issues in `docs/codex-issues.md`, newest first.
 
+## 2026-11-18, X2: the browser agent's right-click menu (app 26.1111.21308)
+
+- Pete was pulled into Codex with a context menu open, several times within minutes. WindowServer's
+  log showed Codex taking the keys from the front app 13 times, each after a right-click in the
+  in-app browser by thread `01a1ec12`. Five times Pete went to Codex within seconds of a menu.
+  Vignette's 10 hand-backs to Codex that day each went to Codex because Codex had been in front.
+  Added X2.
+  `docs/focus-return-codex-2026-11-18.md` has the diagnosis and the proposal.
+
 ## 2026-11-16, the queue watch (branch codex-queued)
 
 - Built C7's fix: the queue watch, the Queued tab with Don't send on hover, and Don't send through
