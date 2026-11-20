@@ -124,60 +124,15 @@ extension AppDelegate {
         CATransaction.commit()
     }
 
-    /// Swaps the icon with a crossfade on springs: a picture of the old icon fades out while a picture
-    /// of the new one fades in, added together so each pixel is a true blend and nothing dims. The
-    /// button draws no image of its own until they finish. The pictures are taken with the update
-    /// dot hidden, since the dot moves on its own. A swap that starts mid-fade begins from the blend
-    /// on screen at that moment.
     private func setIcon(_ image: NSImage, on button: NSStatusBarButton, fading duration: Double) {
         image.accessibilityDescription = Identity.name
-        button.setAccessibilityLabel(Identity.name)
-        let layer = button.layer
-        let running = layer?.sublayers?.compactMap { $0 as? IconFade }.first
-        let onScreen = running?.currentPicture()
-        if let running {
-            running.removeFromSuperlayer()
-        }
-        let dots = [updateDot, dotExit?.badge].compactMap { $0 }
-        guard duration > 0, let layer, let before = onScreen ?? Self.picture(of: button, hiding: dots) else {
-            button.image = image
-            return
+        if duration > 0, let layer = button.layer {
+            let transition = CATransition()
+            transition.type = .fade
+            transition.duration = duration
+            layer.add(transition, forKey: "icon")
         }
         button.image = image
-        guard let after = Self.picture(of: button, hiding: dots) else { return }
-        button.image = nil
-        let fade = IconFade(target: image, before: before, after: after)
-        fade.frame = button.bounds
-        layer.insertSublayer(fade, at: 0)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        CATransaction.setCompletionBlock { [weak fade] in
-            guard let fade, fade.superlayer != nil else { return }
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            button.image = fade.target
-            fade.removeFromSuperlayer()
-            CATransaction.commit()
-        }
-        for (picture, from, to) in [(before, Float(1), Float(0)), (after, Float(0), Float(1))] {
-            let spring = CASpringAnimation(perceptualDuration: duration, bounce: 0)
-            spring.keyPath = "opacity"
-            spring.fromValue = from
-            spring.toValue = to
-            spring.duration = spring.settlingDuration
-            picture.opacity = to
-            picture.add(spring, forKey: "fade")
-        }
-        CATransaction.commit()
-    }
-
-    private static func picture(of button: NSStatusBarButton, hiding dots: [NSView]) -> CALayer? {
-        guard let rep = button.bitmapImageRepForCachingDisplay(in: button.bounds) else { return nil }
-        let shown = dots.filter { !$0.isHidden }
-        shown.forEach { $0.isHidden = true }
-        button.cacheDisplay(in: button.bounds, to: rep)
-        shown.forEach { $0.isHidden = false }
-        return IconFade.layer(showing: rep.cgImage, frame: button.bounds)
     }
 }
 
@@ -185,46 +140,4 @@ extension AppDelegate {
 final class DotExit {
     let badge: NSView
     init(_ badge: NSView) { self.badge = badge }
-}
-
-/// An icon crossfade in flight: two pictures of the button, added together, and the icon the
-/// button takes when it ends.
-final class IconFade: CALayer {
-    private(set) var target: NSImage?
-    private var before: CALayer?
-    private var after: CALayer?
-
-    convenience init(target: NSImage, before: CALayer, after: CALayer) {
-        self.init()
-        self.target = target
-        self.before = before
-        self.after = after
-        addSublayer(before)
-        addSublayer(after)
-    }
-
-    static func layer(showing image: CGImage?, frame: CGRect) -> CALayer {
-        let picture = CALayer()
-        picture.frame = frame
-        picture.contents = image
-        picture.compositingFilter = "plusL"
-        return picture
-    }
-
-    /// What the two pictures add up to now, as one picture.
-    func currentPicture() -> CALayer? {
-        let pictures = [before, after].compactMap { $0 }
-        let images = pictures.compactMap { $0.contents.map { $0 as! CGImage } }
-        guard let first = images.first, images.count == pictures.count,
-              let context = CGContext(data: nil, width: first.width, height: first.height, bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-        else { return nil }
-        context.setBlendMode(.plusLighter)
-        let rect = CGRect(x: 0, y: 0, width: first.width, height: first.height)
-        for (picture, image) in zip(pictures, images) {
-            context.setAlpha(CGFloat(picture.presentation()?.opacity ?? picture.opacity))
-            context.draw(image, in: rect)
-        }
-        return IconFade.layer(showing: context.makeImage(), frame: frame)
-    }
 }
