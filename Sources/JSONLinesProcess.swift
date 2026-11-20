@@ -32,8 +32,11 @@ final class JSONLinesProcess {
         let lines = LineReader { line in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] else { return }
-                    relay.onLine?(object)
+                    guard let onLine = relay.onLine else { return }
+                    guard let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] else {
+                        return Log.write("[live-ink] responder output not JSON: \(String(decoding: line.prefix(200), as: UTF8.self))")
+                    }
+                    onLine(object)
                 }
             }
         }
