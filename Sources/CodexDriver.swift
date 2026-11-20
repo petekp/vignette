@@ -74,6 +74,15 @@ final class CodexDriver: ResponderDriver {
 
     nonisolated static let signedOut = "Codex isn't signed in for live ink. You can sign in under Live Ink in Settings."
 
+    /// Why `account/read`'s answer stops the start, if it does. An error keeps its own message, which
+    /// `reason(forError:)` reads for the words the person sees.
+    nonisolated static func accountProblem(_ answer: Result<[String: Any], AppServerSession.ServerError>) -> String? {
+        switch answer {
+        case .failure(let error): "account/read: \(error.message)"
+        case .success(let read): read["account"] is [String: Any] ? nil : "not signed in: no account"
+        }
+    }
+
     /// A note offers Codex only where it is installed.
     static let alwaysOffered = false
 
@@ -221,7 +230,7 @@ private final class CodexRun {
         if case .failure(let error) = answer { return fail("initialize: \(error.message)") }
         session?.call("account/read", [:]) { [weak self] answer in
             guard let self else { return }
-            guard (try? answer.get())?["account"] is [String: Any] else { return fail("not signed in: no account") }
+            if let problem = CodexDriver.accountProblem(answer) { return fail(problem) }
             session?.call("model/list", [:]) { [weak self] answer in self?.listed(answer) }
         }
     }

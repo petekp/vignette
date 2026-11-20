@@ -80,7 +80,9 @@ why Codex answers too. `docs/live-ink.md` has the rest of live ink's rules, and
   model catalog from `codex debug models` with the fields that add tools taken out
   (`CodexIsolation.strippedCatalog`). An unknown feature name stops the server at once, and the
   responder reports it.
-- After `initialize`, `account/read` must name an account. Then `model/list` picks the model:
+- After `initialize`, `account/read` must name an account. An error from it ends the start with its
+  own message, so it says Codex isn't signed in only when that message is about signing in
+  (`CodexDriver.accountProblem`). Then `model/list` picks the model:
   `gpt-6-astra` when it is offered, else the account's default, at `low` effort.
 - The warm-up is the isolation check. Its thread's model provider is `vignette_check`, a listener
   on localhost inside Vignette (`CodexCheckProvider`). The real thread opens only when the request

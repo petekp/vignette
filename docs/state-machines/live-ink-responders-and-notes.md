@@ -40,7 +40,7 @@ A child process read and written as lines. Lines hop to the main thread with `Di
 
 ### CodexDriver and CodexRun (explicit phase inside an implicit machine)
 
-Owner: `CodexDriver.swift:16`; the run is `CodexRun` at `CodexDriver.swift:108`, with `Phase` at line 111. Tests: none.
+Owner: `CodexDriver.swift:16`; the run is `CodexRun` at `CodexDriver.swift:117`, with `Phase` at line 120. Tests: `CodexDriverTests`, for the account check only.
 
 Runs a Codex thread through a local provider and `AppServerSession`.
 
@@ -60,8 +60,8 @@ Runs a Codex thread through a local provider and `AppServerSession`.
 
 **Invariants**
 
-- Only the ask thread's `turn/completed` completes asks (`notified`, `case .ready(let thread) where onThread == thread`, `CodexDriver.swift:338`). Checked by: nothing.
-- `send` does nothing unless `phase == .ready` (`guard case .ready`, 161). `LiveResponder` only sends after `.ready`. Checked by: nothing.
+- Only the ask thread's `turn/completed` completes asks (`notified`, `case .ready(let thread) where onThread == thread`, `CodexDriver.swift:347`). Checked by: nothing.
+- `send` does nothing unless `phase == .ready` (`guard case .ready`, 170). `LiveResponder` only sends after `.ready`. Checked by: nothing.
 
 **Late and concurrent answers**
 

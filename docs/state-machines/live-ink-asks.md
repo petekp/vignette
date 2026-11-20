@@ -171,5 +171,5 @@ Valid combinations: `asking` implies `current != nil` or `interrupting`; `curren
 - The interrupted turn's own answer or failure is swallowed (346-351); its stream is ignored (`guard !interrupting`, 303).
 - Stop during binary lookup: the `starts` check (200). Restart during start or interrupt waits: `restartIfIdle` guard (152).
 - Late events from a killed process: relay cleared (`JSONLinesProcess.swift:75-80`).
-- Codex asked to interrupt before the turn id is known: `interruptOnStart` (`CodexDriver.swift:128, 178-183, 317-320`).
+- Codex asked to interrupt before the turn id is known: `interruptOnStart` (`CodexDriver.swift:137, 187-192, 326-329`).
 - Timeout and interrupt share `askTimer`; each arm replaces the last (267).
