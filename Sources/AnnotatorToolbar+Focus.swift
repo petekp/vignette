@@ -53,11 +53,18 @@ extension AnnotatorToolbar {
     }
 
     /// The image opened and the hand has not reached it: the message field, when the bar has one,
-    /// takes the keys, so typing goes to the agent. False when there is no field to take them.
+    /// takes the keys, so typing goes to the agent. False when there is no field to take them, or
+    /// the panel did not become key: the focus is let go then, so Tab, Space, Left and Right stay
+    /// the image's, and a later offer tries again.
     func typeOnOpen() -> Bool {
         guard model.controls.contains(.message), model.focus == nil, !panel.isKeyWindow else { return false }
         focus(on: .message)
-        model.tookKeysOnOpen = panel.isKeyWindow
+        guard panel.isKeyWindow else {
+            Log.write("[annotate] message field did not get the keys")
+            model.focus = nil
+            return false
+        }
+        model.tookKeysOnOpen = true
         return true
     }
 

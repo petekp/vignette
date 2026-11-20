@@ -246,4 +246,14 @@ final class ToolbarOfferTests: XCTestCase {
         model.message = "fix this"
         XCTAssertFalse(model.fieldUntouched, "a field with words copies its words")
     }
+
+    func testAFieldWhosePanelDoesNotTakeTheKeysOnOpenLetsTheFocusGoSoALaterOfferCanTryAgain() {
+        let toolbar = AnnotatorToolbar()
+        toolbar.model.begin(replyTo: nil, carryingTarget: false)
+        XCTAssertFalse(toolbar.typeOnOpen(), "no field yet")
+        toolbar.model.answered(answer([session("mew")], complete: true, herdr: inPane("mew")))
+        XCTAssertFalse(toolbar.typeOnOpen(), "a panel off screen never becomes key")
+        XCTAssertNil(toolbar.model.focus)
+        XCTAssertFalse(toolbar.model.tookKeysOnOpen)
+    }
 }

@@ -190,9 +190,10 @@ Decides whether the bar's panel or the editor has the keys. Only a press on the 
 | any | `didResignKey` | `keyed = false`, `tookKeysOnOpen = false`, `caretToEnd = false`; `focus = nil` if it was `.message` | `makeFirstResponder(nil)` |
 | any | `begin` | `focus = nil`, `tookKeysOnOpen = false`, `toolLetter` reset | `keyed` and `panel.isKeyWindow` untouched |
 | bar shown, a field on it | a pick in the target's menu (`typeAfterPick`, `AnnotatorToolbar+Focus.swift:45`) | `tookKeysOnOpen = false` (`Model.pick`); `focus = .message` | the controller's `editorUntouched = false` first; the panel takes the keys |
-| panel already key | `typeOnOpen` (`AnnotatorToolbar+Focus.swift:57`, from `offerTyping`, `AnnotationController+ShowingAndHiding.swift:34`) | — | refused (`:58`) |
+| panel not key | `typeOnOpen` (`AnnotatorToolbar+Focus.swift:57`, from `offerTyping`) | `focus = .message`, `tookKeysOnOpen = true` if the panel became key, else `focus = nil` | false when it did not: logs, and `editorUntouched` stays, so a later offer tries again |
+| panel already key | `typeOnOpen` | — | refused (`:58`) |
 | panel key | Cmd+W, Cmd+Plus, Cmd+Minus, Cmd+0; Cmd+C in an untouched field with no words selected | — | `FieldCommand`: the window's close, the zoom, or the drawing copied; other Command keys go to the field |
-| any | Tab, Shift+Tab (`move`, `AnnotatorToolbar+Focus.swift:12`); Space (`activate`, `:22`); M or P (`focusMessage`, `:38`); press (`onPress`, `AnnotatorToolbar.swift:288`); `keyDown` (`+Focus.swift:73`) | `focus` moves | — |
+| any | Tab, Shift+Tab (`move`); Space (`activate`); M or P (`focusMessage`); press (`onPress`); `keyDown` | `focus` moves | — |
 
 **Invariants**
 
@@ -200,7 +201,7 @@ Decides whether the bar's panel or the editor has the keys. Only a press on the 
 
 **Late and concurrent answers**
 
-- `offerTyping` runs once per image (`editorUntouched`), and not after a pick. `tookKeysOnOpen` is cleared on resign and by a pick.
+- `offerTyping` gives the field the keys at most once per image (`editorUntouched`), and not after a pick. `tookKeysOnOpen` is cleared on resign and by a pick.
 
 ### HeldToolLetter (explicit)
 

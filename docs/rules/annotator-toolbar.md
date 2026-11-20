@@ -21,8 +21,10 @@
   (`ToolbarPanel.sendEvent`), since SwiftUI's buttons ask for them as a field does; a press on a
   button leaves them with the editor. The panel also takes them once the image's window is up, when
   the bar has a message field and no key or press has reached the editor yet
-  (`AnnotationController.offerTyping`), so typing goes to the agent at once. A pick in the target's
-  menu, however it is made, gives the field the keys too, with the caret after any words in it
+  (`AnnotationController.offerTyping`), so typing goes to the agent at once. When the panel does not
+  become key then, the field lets the focus go and logs `[annotate] message field did not get the
+  keys`, so the image keeps Tab, Space and the arrows, and a later offer tries again. A pick in the
+  target's menu, however it is made, gives the field the keys too, with the caret after any words in it
   (`AnnotatorToolbar.typeAfterPick`, `ToolbarPanel.caretToEnd`). It takes them a turn after the menu
   closes, after the bar starts to spring to the new target's width. The field counts as
   typed in only while the panel is key
