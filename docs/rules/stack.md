@@ -16,7 +16,9 @@
   change, a Dock that moves or hides included, and an old object keeps the visible frame it had.
   `screen` looks up the current object for the pinned display each time, so the stack, the dim and
   the annotator's re-fit read the visible frame as it is now. `AnnotationController` does the same
-  with `zoomDisplay`. `scripts/check-screen-stores.py` fails any other stored `NSScreen`.
+  with `zoomDisplay`. `scripts/check-screen-stores.py` fails any other stored `NSScreen` outside
+  its `ALLOWED` list. That list names `TransitionLayer.screen` (`TransitionLayer.swift:71`), which
+  reads only `frame` and is set again before every flight and swallow.
 - A card in the stack and the same card in flight have to cast the same shadow. The column is
   masked with a fade over the panel's inset at each end (`StackView.column`), and the bottom fade
   starts below the newest card's shadow: solid for `StackLayout.cardShadowRoom` and fading over the

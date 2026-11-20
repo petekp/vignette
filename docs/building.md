@@ -19,6 +19,22 @@ The app runs on macOS 14 or later. `Info.plist` is generated from `project.yml`,
 `run.sh` quits any running Vignette, including an installed copy. It then opens the new build from
 `build/Build/Products/Debug/`, which uses your real settings file and screenshots folder.
 
+To run one test class, regenerate the project and give `xcodebuild` an `-only-testing` filter. A
+derived data folder of its own leaves `build/` alone, and so does not rewrite a copy running from it:
+
+```
+xcodegen generate
+xcodebuild -project Vignette.xcodeproj -scheme Vignette -destination 'platform=macOS' \
+  -derivedDataPath .derived-data test -only-testing:VignetteTests/CardNoticesTests
+```
+
+Add `/<test name>` after the class to run one test. The checks that `build.sh --test` runs before
+the build need no build. Run them from the repository's root:
+
+```
+for check in scripts/check-*.py; do python3 "$check" || echo "failed: $check"; done
+```
+
 ## Where things live
 
 `Sources/` is the whole app, in Swift: the menu bar item, the folder watcher, the panels, the

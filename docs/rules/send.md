@@ -61,7 +61,8 @@
   running sessions; the top rows, the project submenus and their counts hold running sessions only,
   unless none is running, when these rows fill the top rows (`SessionMenu.menu`). Sending to one opens a tab in
   the space the Herdr window shows (`HerdrLauncher`, through `hc run`), starts `claude --resume <id>` or `claude --session-id <id>` there, waits up to
-  45 s for its inbox, then writes the line as any send does. Only a person's pick starts a process:
+  45 s for its inbox, then writes the line as any send does. An `hc run` that gives no answer in
+  time may still have opened the tab, so its inbox is waited for the same way. Only a person's pick starts a process:
   the rows travel apart from the running sessions (`Candidates.startable`), so `DestinationChoice`
   never sees them, and only the menus join the two. Without the Herdr app and `hc` no row is offered.
   `docs/session-starts-2026-10-25.md` has the design.
@@ -94,7 +95,8 @@
   motion: the scale and Reduce Motion never shorten it. When it ends the line goes through the
   same `submit` as before, so nothing written changes. Quitting hands every waiting line over at
   once and waits up to 2 s for the clients (`releaseHeld`). Every hand-over records its request
-  uncertain before the line leaves, so `prepared` means the line never went. And a clear of the request, by
+  uncertain before the line leaves, so `prepared` means the line never went. When that record
+  can't be written, the line does not go and the card says "Not sent". And a clear of the request, by
   `requests?clear=` or by the 50-request limit, stops its waiting send. So does a file leaving
   the watch folder, which is how deleting a card during the wait cancels its send
   (`ScreenshotRequests.fileRemoved`). A rename inside the folder carries its waiting sends to the

@@ -54,7 +54,7 @@ under way for session S**, held in `SessionStartsUnderWay` (`ClaudeSessionStart.
   later send after a failure starts again.
 
 The start code moved to `ClaudeSessionStart.swift`, which keeps `AgentConnection.swift` under its
-size. Test: `SessionStartsTests.testASecondSendWhileItsSessionIsStillStartingJoinsThatStart`. Pete
+size. Test: `ClaudeSessionStartTests.testASecondSendWhileItsSessionIsStillStartingJoinsThatStart`. Pete
 approved the new state on 2026-11-07. **Status**: fixed in `f1ea7c3`.
 
 <a id="issue-4"></a>

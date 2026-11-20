@@ -198,6 +198,7 @@ struct CardView: View, Equatable {
                     switch notice {
                     case .copied(let label): CopiedOverlay(corner: ui.cardCornerRadius, label: label)
                     case .notCopied(let reason): CopiedOverlay(corner: ui.cardCornerRadius, label: "Not copied", failure: reason)
+                    case .notSaved(let reason): CopiedOverlay(corner: ui.cardCornerRadius, label: "Not saved", failure: reason)
                     case .send(let send):
                         SendOverlay(notice: send, corner: ui.cardCornerRadius,
                                     onUnsend: { if let unsend = Config.action(id: "unsend") { model.onAction(unsend, [card]) } },

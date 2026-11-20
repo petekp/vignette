@@ -4,7 +4,9 @@ Vignette is meant to be modified. This file is the onboarding for a person or an
 guardrails, and a map to the rules and contracts in `docs/rules/`. The dated notes in `docs/`
 hold the measurements and the reasoning; a rule points at its note. `docs/adr/` records the
 decisions that are hard to reverse, one file each, with what was weighed. Add one when a change
-makes such a decision, and mark the old one superseded when a change reverses it.
+makes such a decision, and mark the old one superseded when a change reverses it. A dated note or
+a superseded ADR says what was true when it was written: where one disagrees with `docs/rules/`
+or the code, the rule and the code are current.
 
 ## Before you change an area
 
@@ -148,25 +150,11 @@ Before you drive the app:
   `vignette://cancel`.
 - Delete test files from the watch folder afterwards. It is the user's real screenshot folder.
 - A test copy never touches the person's own `~/.claude`, `~/.codex` and `~/.agents`, or the
-  folders under `~/Library` their own app stores data in: with
-  `VIGNETTE_SETTINGS` set, `AgentPlugin.roots` leaves out the first two, `AgentPlugins` leaves out
-  the third, refuses an install into the person's own folders and runs no agent tool on the
-  person's own home, and the launch logs a `[plugin] test launch:` line for each. On the person's
-  own home it keeps its Application Support, Caches and WebKit folders under its settings file's
-  folder, or the temporary folder when that one would reach theirs (`Launch.dataHome`), and logs
-  `[app] test launch: … stores its data under <folder>/Library`. It keeps the app's own defaults in
-  `<bundle id>.test-launch` there (`Identity.defaults`); only AppKit's record of the status item's place
-  stays in the app's own domain, under a key of the test launch's own. `scripts/check-app-data-paths.py` fails a
-  path into `Library` with the bundle id built outside `Identity.swift`. It neither registers nor removes a login item. It runs no updater, and logs
-  `[update] test launch: no updater`, unless `VIGNETTE_FEED` names a feed. With one, it checks that
-  feed in place of the release feed. Each of these gates reads `Launch.isTest`. To test the plugin, also launch with
-  `CFFIXED_USER_HOME=<scratch home>` (`docs/test-isolation-2026-09-29.md`). It runs no codex,
-  claude, herdr-app or hc unless `VIGNETTE_CODEX`, `VIGNETTE_CLAUDE`,
-  `VIGNETTE_HERDR_APP` or `VIGNETTE_HC` names one
-  (`AgentTools.forSessions`), since any other found on the Mac reaches the person's own sessions or
-  account; the launch logs `[tools] test launch: codex=… claude=… herdr-app=… hc=…`. The plugin's skill names the copy's own URL scheme and log
-  (`AgentPlugin.stage`), and every `open` in it names that copy's path with `-a`, so an agent's
-  command never starts another build of the same bundle id on the person's settings.
+  folders under `~/Library` their own app stores data in. It neither registers nor removes a login
+  item, runs no updater unless `VIGNETTE_FEED` names a feed, and runs no codex, claude, herdr-app or
+  hc unless a `VIGNETTE_*` variable names one. Each of these gates reads `Launch.isTest`, and
+  `docs/rules/driving-the-app.md` says how each works and what it logs. To test the plugin, also
+  launch with `CFFIXED_USER_HOME=<scratch home>`.
 - Stop a test copy by its PID before you launch another copy of the same bundle id: `open -a <copy> <url>`
   can start a second instance without `VIGNETTE_SETTINGS`, on the user's real settings file.
 - A launch through LaunchServices with no environment is not a test launch. macOS's Quit & Reopen
@@ -208,7 +196,10 @@ Before you drive the app:
   the scale says. `"ui": {"motion": 0}` makes the stack appear and leave at once, which is what a
   script wants. Every SwiftUI animation is a spring made by `Anim.spring` (`slideInCurve` "spring"
   included), and the AppKit tweens use `Tween`'s spring curve: an interrupted motion keeps its
-  velocity and blends into the new target instead of jumping. `Tween.spring` is the closed form of
+  velocity and blends into the new target instead of jumping. These ease instead: live ink's Core
+  Animation layers and its popovers' fades (ADR 0027 says why for a closing popover), the toolbar's
+  words giving way (`AnnotatorToolbar.words`, `nameSwap`), a mark's draw-on (`MarkLayers.drawOn`)
+  and the menu bar intro. `Tween.spring` is the closed form of
   a critically damped spring, so a late tick lands where the spring really is by then. Do not step
   it forward by hand: integrating it overshoots by hundreds of points after one late tick.
 - A display link comes from `ScreenLink`, which moves it to the main screen when the screens change.

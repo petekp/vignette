@@ -36,7 +36,8 @@ extension ClaudeCodeConnection {
 
     /// Starts session `session` in a new Herdr tab and answers once a live inbox holds it, looking
     /// every `startPoll` for up to `startTimeout`. Only the inbox folders made since the launch are
-    /// looked at, and only their `session` file until one names it. It blocks on herdr to launch.
+    /// looked at, and only their `session` file until one names it. It blocks on herdr to launch. A
+    /// launch that did not answer in time may have started the session, so it is looked for too.
     /// A send for a session already starting waits for that start's answer instead.
     func startSession(_ start: SessionStart, session: String, answer: @escaping @Sendable (StartAnswer) -> Void) {
         guard UUID(uuidString: session) != nil else {
@@ -55,6 +56,8 @@ extension ClaudeCodeConnection {
                                                 reason: Self.notStarted)))
         case .started(let tab, let terminal):
             Log.write("[send] started claude \(start.arguments(session: session).joined(separator: " ")) in \(start.folder) tab=\(tab) terminal=\(terminal)")
+        case .timedOut(let tab, let detail):
+            Log.write("[send] \(detail) starting \(session) in \(start.folder) tab=\(tab); it may have started, so Vignette looks for it")
         }
         look(for: session, in: start, besides: before, since: began, answer: answer)
     }

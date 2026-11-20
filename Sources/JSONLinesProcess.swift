@@ -32,8 +32,11 @@ final class JSONLinesProcess {
         let lines = LineReader { line in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] else { return }
-                    relay.onLine?(object)
+                    guard let onLine = relay.onLine else { return }
+                    guard let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] else {
+                        return Log.write("[live-ink] responder output not JSON: \(String(decoding: line.prefix(200), as: UTF8.self))")
+                    }
+                    onLine(object)
                 }
             }
         }
@@ -45,9 +48,8 @@ final class JSONLinesProcess {
         stderr.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             if data.isEmpty { handle.readabilityHandler = nil; return }
-            guard let text = String(data: data, encoding: .utf8) else { return }
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { relay.errorTail = String((relay.errorTail + text).suffix(2000)) }
+                MainActor.assumeIsolated { relay.errorTail = (relay.errorTail + data).suffix(2000) }
             }
         }
         process.terminationHandler = { ended in
@@ -82,7 +84,7 @@ final class JSONLinesProcess {
 
     /// The last line of standard error, cut for the log and for words about why it ended.
     var lastErrorLine: String {
-        relay.errorTail.split(separator: "\n").last.map { String($0.prefix(200)) } ?? ""
+        String(decoding: relay.errorTail, as: UTF8.self).split(separator: "\n").last.map { String($0.prefix(200)) } ?? ""
     }
 }
 
@@ -90,8 +92,8 @@ final class JSONLinesProcess {
 private final class Relay: @unchecked Sendable {
     var onLine: (@MainActor ([String: Any]) -> Void)?
     var onEnd: (@MainActor (Int32) -> Void)?
-    /// The last of the process's standard error.
-    var errorTail = ""
+    /// The last of the process's standard error, as bytes, since a read can end inside a character.
+    var errorTail = Data()
     init(onLine: @escaping @MainActor ([String: Any]) -> Void, onEnd: @escaping @MainActor (Int32) -> Void) {
         self.onLine = onLine
         self.onEnd = onEnd

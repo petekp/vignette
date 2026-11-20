@@ -150,19 +150,19 @@ Takes lone thumbnails off screen after a delay.
 
 ### CardNotices and its posting timers (explicit value, implicit timers)
 
-Owner: `CardNotices.swift:50`, held as `StackModel.notices` (`StackModel.swift:34`); timers in `ThumbnailController.post` (`:661`). Tests: `CardNoticesTests.testEachNoticeReplacesTheOneBefore`, `testAFailedSendIsShownAfterACopyMadeWhileItWaited`, `testAnEarlierTimerLeavesALaterNoticeUp`, `testAnAnswerToAnEarlierSendIsDropped`, `testAFailedReplyWaitsBehindALaterSendButNotAFinishedOne`, `testWhatACardNobodySeesComesBackFor`, `testHolds`, `testNoticesAreKeptPerFile`, `testASendInItsGraceWaitsAndReleaseMovesItOnToSending`, `testACancelledSendLosesItsNoticeAndTheWaitForAnAnswer`, `testCancellingAnEarlierSendLeavesALaterOneInItsGrace`, `testACopiedNoticeGivesTheCountdownBackWhenItExpires`, `testANoticeOnAFileRenamedDuringItsHoldStillExpires`, `testAReleaseUnderACopiedLeavesNothingToShowWhenTheCopiedExpires`, `testTheGraceRemainingIsClampedToTheSendsOwnLength`, `testALineReleasedAndAnsweredTogetherStillShowsSending`.
+Owner: `CardNotices.swift:50`, held as `StackModel.notices` (`StackModel.swift:34`); timers in `ThumbnailController.post` (`:655`). Tests: `CardNoticesTests.testEachNoticeReplacesTheOneBefore`, `testAFailedSendIsShownAfterACopyMadeWhileItWaited`, `testAnEarlierTimerLeavesALaterNoticeUp`, `testAnAnswerToAnEarlierSendIsDropped`, `testAFailedReplyWaitsBehindALaterSendButNotAFinishedOne`, `testWhatACardNobodySeesComesBackFor`, `testHolds`, `testNoticesAreKeptPerFile`, `testASendInItsGraceWaitsAndReleaseMovesItOnToSending`, `testACancelledSendLosesItsNoticeAndTheWaitForAnAnswer`, `testCancellingAnEarlierSendLeavesALaterOneInItsGrace`, `testACopiedNoticeGivesTheCountdownBackWhenItExpires`, `testANoticeOnAFileRenamedDuringItsHoldStillExpires`, `testAReleaseUnderACopiedLeavesNothingToShowWhenTheCopiedExpires`, `testTheGraceRemainingIsClampedToTheSendsOwnLength`, `testALineReleasedAndAnsweredTogetherStillShowsSending`.
 
 A value that holds the one notice each card shows, such as "Copied" or a send's state, and the send each card still waits on. The controller turns its `hold` into a timer that calls `expire`.
 
-**States**: `shown: [ScreenshotKey: (id, Notice)]` (`:92`), `awaitingAnswer: [ScreenshotKey: SendNotice]` (`:93`), `lastID`. `Notice` is `.copied`, `.notCopied` or `.send(SendNotice)`. `SendNotice.State` (`:10`) is `inGrace`, `sending`, `sent`, `queued`, `uncertain`, `failed`, `replyFailed`, `done`. A notice "explains" when it carries a reason; it holds three times as long.
+**States**: `shown: [ScreenshotKey: (id, Notice)]` (`:103`), `awaitingAnswer: [ScreenshotKey: SendNotice]` (`:104`), `lastID`. `Notice` is `.copied`, `.notCopied`, `.notSaved` or `.send(SendNotice)`. `SendNotice.State` (`:10`) is `inGrace`, `sending`, `sent`, `queued`, `uncertain`, `failed`, `replyFailed`, `done`. A notice "explains" when it carries a reason; it holds three times as long.
 
-Events (`post`, `:101`): `copied`, `notCopied`, `sending`, `released`, `cancelled`, `answered`, `replyFailed`, `finished`. Also `expire(id, on:)` (`:149`) and `rename(from:to:)` (`:156`). The controller's senders are `showCopied`, `showNotCopied`, `showSending`, `released`, `cancelled`, `delivered`, `finished`, `replyFailed` (`:595-651`), called from `AppDelegate`.
+Events (`post`, `:112`): `copied`, `notCopied`, `notSaved`, `sending`, `released`, `cancelled`, `answered`, `replyFailed`, `finished`. Also `expire(id, on:)` (`:170`) and `rename(from:to:)` (`:177`). The controller's senders are `showCopied` and `showFailed` (`ThumbnailController.swift:626-640`), and `showNotCopied`, `showNotSaved`, `showSending`, `released`, `cancelled`, `delivered`, `finished` and `replyFailed` in `ThumbnailController+Notices.swift`, called from `AppDelegate`.
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| any | `copied`, `notCopied` | `shown[file]` replaced with a new id | hold 1x, or 3x if it explains |
+| any | `copied`, `notCopied`, `notSaved` | `shown[file]` replaced with a new id | hold 1x, or 3x if it explains |
 | any | `replyFailed`, `finished` | as above when no later send waits; else — | hold; — |
 | any | `sending` | `awaitingAnswer[file]` set; `shown` replaced; state `inGrace` if a grace is given | no hold |
 | waiting request is `r` and `inGrace` | `released(r)` | waiting state becomes `sending`; `shown` updated only if it still shows that send | — |

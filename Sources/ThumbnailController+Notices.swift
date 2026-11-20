@@ -1,6 +1,19 @@
 import AppKit
 
 extension ThumbnailController {
+    /// A copy of `shot` that failed: the card says why, and a card still on its way back from the
+    /// annotator does not take the Copied notice when it lands. A card not on screen comes up as the
+    /// lone thumbnail; one in the annotator, or on its way home, shows the notice when it lands.
+    func showNotCopied(_ shot: Screenshot, reason: String, in opening: Opening? = nil) {
+        showFailed(.notCopied(reason: reason), on: shot, in: opening)
+    }
+
+    /// `shot`'s drawing could not be written after the editor let go of it: the card says so, and
+    /// when the card is parking after Done it lands without Copied, as for a failed copy.
+    func showNotSaved(_ shot: Screenshot) {
+        showFailed(.notSaved(reason: Drawings.notSaved), on: shot, in: opening(of: shot))
+    }
+
     /// The request for `shot` is stored and its card is going home: the card shows where it is going
     /// from the moment it lands, calling the session `title`.
     func showSending(_ shot: Screenshot, request: String, to destination: AgentDestination, titled title: String, grace: SendNotice.Grace? = nil) {

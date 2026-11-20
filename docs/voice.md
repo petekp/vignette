@@ -87,7 +87,7 @@ cancelled with Don't send leaves the tab as it was.
 | Codex's engine can't be reached | Codex isn't running. You can send again once it's open. |
 | No Codex on this Mac | Sending to Codex needs the Codex app or its CLI. |
 | Herdr did not open a tab for a session that was not running | Vignette couldn't open a Herdr tab for Claude Code. The log has details. |
-| The started session had no inbox 45 s later | Claude Code didn't open in time. You can send again once it's running. |
+| The started session, or one whose `hc run` gave no answer, had no inbox 45 s later | Claude Code didn't open in time. You can send again once it's running. |
 | Codex did not start | Codex couldn't start. The log has details. |
 | Codex refused it for a reason Vignette has no words for | Codex: *its own words* |
 | Anything else | Something went wrong in Vignette. The log has details. |
@@ -97,7 +97,7 @@ cancelled with Don't send leaves the tab as it was.
 | When | Reason |
 | --- | --- |
 | The drawing did not render | Vignette couldn't render the drawing. The log has details. |
-| The request could not be written | Vignette couldn't save the request. *the system's words* |
+| The request could not be written, when it was made or as its line was about to go (`SubmissionOutcome.notSaved`) | Vignette couldn't save the request. *the system's words* |
 | Anything else | Vignette couldn't send the drawing. The log has details. |
 | The screenshot is gone | Vignette can't read *name*. It may have been moved or deleted. |
 
@@ -227,3 +227,11 @@ Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
 | --- | --- |
 | The screenshot did not read | Vignette couldn't read the screenshot. |
 | The rendering could not be written | Vignette couldn't save the drawing. |
+
+### A drawing, on its card ("Not saved")
+
+| When | Reason |
+| --- | --- |
+| The editor's drawing could not be written after the editor let go of it (`Drawings.notSaved`) | Vignette couldn't save the drawing. The log has details. |
+
+After Done, "Not saved" takes the place of Copied.

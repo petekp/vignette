@@ -29,18 +29,19 @@ Speaks Claude Code's streaming JSON through a `JSONLinesProcess`.
 
 ### JSONLinesProcess (implicit)
 
-Owner: `JSONLinesProcess.swift:6`. Tests: none.
+Owner: `JSONLinesProcess.swift:6`. Tests: `JSONLinesProcessTests`.
 
 A child process read and written as lines. Lines hop to the main thread with `DispatchQueue.main.async` and check `relay.onLine` there. `stop()` nils both callbacks, terminates, and closes stdin on the writer queue.
 
 **Late and concurrent answers**
 
-- A write to a dead process: SIGPIPE is disabled, the error is logged and `onEnd` reports, `JSONLinesProcess.swift:44, 82`.
-- A line in flight when `stop()` runs: dropped because `relay.onLine` is nil (75-80).
+- A write to a dead process: SIGPIPE is disabled, the error is logged and `onEnd` reports, `JSONLinesProcess.swift:29, 71`.
+- A line in flight when `stop()` runs: dropped because `relay.onLine` is nil (77-83).
+- A line of output that is not a JSON object: logged as `[live-ink] responder output not JSON`, cut to 200 bytes, and not reported.
 
 ### CodexDriver and CodexRun (explicit phase inside an implicit machine)
 
-Owner: `CodexDriver.swift:16`; the run is `CodexRun` at `CodexDriver.swift:108`, with `Phase` at line 111. Tests: none.
+Owner: `CodexDriver.swift:16`; the run is `CodexRun` at `CodexDriver.swift:117`, with `Phase` at line 120. Tests: `CodexDriverTests`, for the account check only.
 
 Runs a Codex thread through a local provider and `AppServerSession`.
 
@@ -60,8 +61,8 @@ Runs a Codex thread through a local provider and `AppServerSession`.
 
 **Invariants**
 
-- Only the ask thread's `turn/completed` completes asks (`notified`, `case .ready(let thread) where onThread == thread`, `CodexDriver.swift:338`). Checked by: nothing.
-- `send` does nothing unless `phase == .ready` (`guard case .ready`, 161). `LiveResponder` only sends after `.ready`. Checked by: nothing.
+- Only the ask thread's `turn/completed` completes asks (`notified`, `case .ready(let thread) where onThread == thread`, `CodexDriver.swift:347`). Checked by: nothing.
+- `send` does nothing unless `phase == .ready` (`guard case .ready`, 170). `LiveResponder` only sends after `.ready`. Checked by: nothing.
 
 **Late and concurrent answers**
 
