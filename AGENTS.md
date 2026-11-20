@@ -4,7 +4,9 @@ Vignette is meant to be modified. This file is the onboarding for a person or an
 guardrails, and a map to the rules and contracts in `docs/rules/`. The dated notes in `docs/`
 hold the measurements and the reasoning; a rule points at its note. `docs/adr/` records the
 decisions that are hard to reverse, one file each, with what was weighed. Add one when a change
-makes such a decision, and mark the old one superseded when a change reverses it.
+makes such a decision, and mark the old one superseded when a change reverses it. A dated note or
+a superseded ADR says what was true when it was written: where one disagrees with `docs/rules/`
+or the code, the rule and the code are current.
 
 ## Before you change an area
 
