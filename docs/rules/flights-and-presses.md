@@ -136,9 +136,9 @@
   press, whatever its pixels.
 - Every animation springs, except those that ease on purpose: live ink's Core Animation layers and
   its popovers' fades (ADR 0027 says why for a closing popover), the toolbar's words giving way
-  (`AnnotatorToolbar.words`, `nameSwap`), a mark's draw-on (`MarkLayers.drawOn`) and the menu bar
-  intro. Three more ease that this list did not name when `scripts/check-animations.py` was
-  written on 11-20: the card slide-in's eased choices for `ui.slideInCurve` (`Anim.swiftUI`), the
+  (`AnnotatorToolbar.words`, `nameSwap`), a mark's draw-on (`MarkLayers.drawOn`), the menu bar
+  intro and the menu bar icon's crossfade when the update dot comes or goes (`setIcon`). Three more ease that this list did not name when
+  `scripts/check-animations.py` was written on 11-20: the card slide-in's eased choices for `ui.slideInCurve` (`Anim.swiftUI`), the
   fade-in of the panel that holds an answer's buttons (`LiveAnswerActions`), and the note's target
   and return key moving to their row (`LiveNoteContent.layOut`). The check, run by
   `build.sh --test`, counts each `CAMediaTimingFunction(` and each eased or linear SwiftUI curve in

@@ -15,11 +15,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         app.run()
     }
 
-    private var statusItem: NSStatusItem?
+    var statusItem: NSStatusItem?
     /// The dot on the status item while an update waits (Updater).
-    private var updateDot: NSView?
+    var updateDot: NSView?
+    var dotExit: DotExit?
     private let menuBarIntro = MenuBarIntro()
-    private var updater: Updater?
+    var updater: Updater?
     var watcher: ScreenshotWatcher?
     private var captureOrigin: CaptureOrigin?
     /// True on a first launch whose folder macOS protects, until setup asks for it.
@@ -1046,71 +1047,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         updater.hasStatusItem = { [weak self] in self?.statusItem != nil }
         updater.onChange = { [weak self] in self?.showUpdateDot() }
         self.updater = updater
-    }
-
-    /// A dot at the icon's top right while an update waits, in the accent colour so it reads as
-    /// news rather than as part of the icon. An outline in the icon's own colour keeps it visible on
-    /// any menu bar, and a clear gap cut into the icon keeps it off the glyph's stroke. They appear
-    /// and leave together.
-    private func showUpdateDot() {
-        let wanted = updater?.waiting != nil
-        guard let button = statusItem?.button, let icon = NSImage(named: "MenuBarIcon") else { updateDot = nil; return }
-        let duration = 0.3 * settings.motionScale
-        let dotSize: CGFloat = 4, outline: CGFloat = 1, gap: CGFloat = 1
-        let size = dotSize + outline * 2
-        let bounds = button.bounds
-        let frame = NSRect(x: bounds.maxX - 1 - size, y: button.isFlipped ? 0 : bounds.height - size, width: size, height: size)
-        if wanted, updateDot == nil {
-            let badge = NSView(frame: frame)
-            badge.autoresizingMask = [.minXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
-            badge.wantsLayer = true
-            // A template image, so the menu bar draws the outline in the icon's colour: white on a
-            // dark bar, black on a light one.
-            let ring = NSImageView(frame: badge.bounds)
-            ring.imageScaling = .scaleNone
-            ring.image = Self.ring(size: size, hole: dotSize)
-            badge.addSubview(ring)
-            let dot = NSView(frame: badge.bounds.insetBy(dx: outline, dy: outline))
-            dot.wantsLayer = true
-            dot.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
-            dot.layer?.cornerRadius = dotSize / 2
-            badge.addSubview(dot)
-            button.addSubview(badge)
-            updateDot = badge
-            setIcon(Self.icon(icon, clearedAround: frame.insetBy(dx: -gap, dy: -gap), in: button), on: button, fading: duration)
-            guard duration > 0, let layer = badge.layer else { return }
-            let small = CATransform3D.scale(0.3, about: CGPoint(x: size / 2, y: size / 2))
-            let appear = CASpringAnimation(perceptualDuration: duration, bounce: 0.3)
-            appear.keyPath = "transform"
-            appear.fromValue = small
-            appear.toValue = CATransform3DIdentity
-            appear.duration = appear.settlingDuration
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = 0
-            fade.toValue = 1
-            fade.duration = duration / 2
-            layer.add(appear, forKey: "appear")
-            layer.add(fade, forKey: "fade")
-        } else if !wanted, let badge = updateDot {
-            updateDot = nil
-            icon.isTemplate = true
-            setIcon(icon, on: button, fading: duration)
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = duration
-                badge.animator().alphaValue = 0
-            }, completionHandler: { badge.removeFromSuperview() })
-        }
-    }
-
-    private func setIcon(_ image: NSImage, on button: NSStatusBarButton, fading duration: Double) {
-        image.accessibilityDescription = Identity.name
-        if duration > 0, let layer = button.layer {
-            let transition = CATransition()
-            transition.type = .fade
-            transition.duration = duration
-            layer.add(transition, forKey: "icon")
-        }
-        button.image = image
     }
 
     @objc private func openSettings() {
