@@ -83,11 +83,11 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 
 ### HeldKey (implicit)
 
-Owner: `EditorCore.startsNote` (`EditorCore.swift:1388`), `holdsKey` (`:448`), `EditorView.heldKeys` (`EditorView.swift:104`). Tests: none.
+Owner: `EditorCore.startsNote` (`EditorCore.swift:1371`), which asks `HeldToolLetter` about each key while a box or arrow is armed, `holdsKey` (`:437`), `EditorView.heldKeys` (`EditorView.swift:104`). Tests: `EditorCoreHeldLetterTests.testAToolKeyRightAfterABoxPicksItsToolUnlessACharacterFollows`, `EditorCoreTests.testACharacterTypedRightAfterABoxStartsANoteBesideIt`.
 
 A tool key pressed right after a box or arrow is drawn may be the first letter of a note. The core switches the tool at once, and the view holds the key event until the next key shows whether the person is typing.
 
-**States**: `noteMark` and `noteMark.toolBefore` in the core; `heldKeys: [NSEvent]` in the view.
+**States**: `noteMark` and `noteMark.toolLetter.toolBefore` in the core; `heldKeys: [NSEvent]` in the view.
 
 - None: `noteMark == nil`.
 - Armed: `noteMark != nil`, `toolBefore == nil`. Set in `released` (`:1040`) when a drawn box or arrow commits by a real release.
@@ -102,15 +102,16 @@ A tool key pressed right after a box or arrow is drawn may be the first letter o
 | Armed | whitespace | None | Falls through; `noteMark = nil` (`:1332`). |
 | Armed | repeat | None | Falls through and clears. |
 | Held | repeat | Held | Taken. |
-| Held | any character | None | `tool = toolBefore`, `newNote`, `.passKeysToText` replays `heldKeys` plus the event into the text view (`EditorView.swift:276-282`). |
+| Held | a character with no modifier but Shift | None | `tool = toolBefore`, `newNote`, `.passKeysToText` replays `heldKeys` plus the event into the text view (`EditorView.swift:276-282`). |
+| Held | any other key: Option, Command or Control held, or a key that types no character | None | `HeldToolLetter` answers `pass`: the tool stays as picked and no note starts, as in the message field. |
 | Held | pointer move, key up, modifiers, zoom, tweaks, rescale, timer | Held | — (`keepsNoteMark`, `:1631`). |
 | Armed or Held | any other input (press, `setTool`, typing, `paste`, `agentMarks`, `done`, `park`, undo key) | None | `tool` stays as picked. `EditorView.handle` clears `heldKeys` when `!core.holdsKey` (`:264`). |
 | Held | `park` | Held | `park` does not clear `noteMark`; `heldKeys` stay until the next `open`. Harmless. |
 
 **Invariants**
 
-- `holdsKey` implies the view holds at least one event. Only `keyDown(with:)` passes an event (`.holdKey` ignores nil, `EditorView.swift:275`), and Cmd keys are excluded from `startsNote` (`:1389`). Checked by: nothing.
-- A key held for good, with no further key or press, leaves the tool switched. That is the design (comment at `:1384`).
+- `holdsKey` implies the view holds at least one event. Only `keyDown(with:)` passes an event (`.holdKey` ignores nil, `EditorView.swift:275`), and a key with Option, Command or Control has no character for `HeldToolLetter`, so it never holds. Checked by: nothing.
+- A key held for good, with no further key or press, leaves the tool switched. That is the design (`HeldToolLetter.swift:3-6`).
 
 **Late and concurrent answers**
 
@@ -120,4 +121,4 @@ A tool key pressed right after a box or arrow is drawn may be the first letter o
 
 Owner: `HeldToolLetter.swift:7`. Tests: `ToolbarOfferTests` (not covered by this area; [the toolbar section](toolbar.md#heldtoolletter-explicit) owns the field's use).
 
-The same hold for the toolbar's message field. State: `toolBefore: Tool?` (`HeldToolLetter.swift:9`). `key(...)` returns `hold`, `type(restoring:)`, `pass` or `swallow`. `keepTool()` runs on a press or lost keys. `Model.begin` resets it (`AnnotatorToolbar.swift:153`).
+The hold itself, written once: the editor's `startsNote` asks it while a box or arrow is armed, and the toolbar's message field while the field is untouched. What arms each stays with its owner. State: `toolBefore: Tool?` (`HeldToolLetter.swift:9`). `key(...)` returns `hold`, `type(restoring:)`, `pass` or `swallow`. `keepTool()` runs on a press or lost keys. `Model.begin` resets it (`AnnotatorToolbar.swift:153`).

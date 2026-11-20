@@ -19,7 +19,9 @@
   every key until it is confirmed. A character right after a box is drawn starts a note for it
   (`startsNote`): the core begins typing and answers `passKeysToText`, and the view replays the key
   event into the text view, so an input method or a dead key composes as usual. A tool key then is
-  held (`holdKey`, `heldKeys` in the view) until the next key shows whether it began a word. A Cmd key the core does not take goes on to the menu.
+  held (`holdKey`, `heldKeys` in the view) until the next key shows whether it began a word. The
+  hold is `HeldToolLetter`, the same value the toolbar's message field holds a letter with, so the
+  rule is written once. A Cmd key the core does not take goes on to the menu.
   `docs/editor.md` is the behaviour: keys, gestures, what a press hits, the clipboard, the file.
 - A mark has one geometry, and the renderer owns it. `Mark.shape(pointScale:markStyle:)` gives a
   rectangle's, an ellipse's or an arrow's paths, which the renderer draws and `MarkLayers` puts in

@@ -430,13 +430,11 @@ struct EditorCore {
 
     struct NoteMark {
         let id: Mark.ID
-        /// Set while a tool key pressed after the mark waits to learn whether it began a word: the tool
-        /// to go back to if it did.
-        var toolBefore: Tool?
+        var toolLetter = HeldToolLetter()
     }
 
     /// A tool key is waiting to learn whether it began a note (`holdKey`).
-    var holdsKey: Bool { noteMark?.toolBefore != nil }
+    var holdsKey: Bool { noteMark?.toolLetter.toolBefore != nil }
 
     struct Typing: Equatable {
         let id: Mark.ID
@@ -1368,22 +1366,27 @@ struct EditorCore {
     }
 
     /// A key after a box or an arrow was drawn, while it is still the selection. A character begins a
-    /// note for it, except a tool key, which picks its tool and waits: a press next keeps the tool,
-    /// and a character next makes both keys the note's first two, with the tool back as it was.
-    /// True when the key was taken.
+    /// note for it, except a tool key, which `HeldToolLetter` holds until the next key shows whether
+    /// it began a word. True when the key was taken.
     private mutating func startsNote(for note: NoteMark, _ key: Key, _ modifiers: Modifiers, isRepeat: Bool) -> Bool {
-        guard case .character(let character) = key, modifiers.isDisjoint(with: [.command, .control]),
-              selection == [note.id], mark(note.id) != nil else { return false }
-        if isRepeat { return note.toolBefore != nil }
-        if note.toolBefore == nil, let picked = toolKey(key, modifiers) {
-            noteMark = NoteMark(id: note.id, toolBefore: tool)
+        guard selection == [note.id], mark(note.id) != nil else { return false }
+        var letter = note.toolLetter
+        let held = letter.toolBefore != nil
+        switch letter.key(HeldToolLetter.character(key, modifiers), isRepeat: isRepeat, canHold: true, tool: tool) {
+        case .hold(let picked):
+            noteMark = NoteMark(id: note.id, toolLetter: letter)
             tool = picked
             emit(.holdKey)
             return true
+        case .swallow:
+            return true
+        case .type(let before):
+            tool = before
+        case .pass:
+            guard !held, !isRepeat, case .character(let character) = key, modifiers.isDisjoint(with: [.command, .control]),
+                  !character.isWhitespace else { return false }
         }
-        guard note.toolBefore != nil || !character.isWhitespace else { return false }
         noteMark = nil
-        if let before = note.toolBefore { tool = before }
         newNote(for: note.id)
         emit(.passKeysToText)
         return true
@@ -1403,7 +1406,7 @@ struct EditorCore {
         return Tool.allCases.first { $0.key == character }
     }
 
-    private static func zoomRequest(for character: Character) -> ZoomRequest? {
+    static func zoomRequest(for character: Character) -> ZoomRequest? {
         switch character {
         case "=", "+": return .zoomIn
         case "-": return .zoomOut

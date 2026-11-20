@@ -193,23 +193,93 @@ final class ToolbarOfferTests: XCTestCase {
 
     func testAToolLetterTypedFirstPicksItsToolUntilAWordShowsItBeganOne() {
         var held = HeldToolLetter()
-        XCTAssertEqual(held.key("a", isRepeat: false, fieldUntouched: true, tool: .rectangle), .hold(.arrow))
-        XCTAssertEqual(held.key("a", isRepeat: true, fieldUntouched: true, tool: .arrow), .swallow)
-        XCTAssertEqual(held.key("d", isRepeat: false, fieldUntouched: true, tool: .arrow), .type(restoring: .rectangle))
-        XCTAssertEqual(held.key("d", isRepeat: false, fieldUntouched: false, tool: .rectangle), .pass)
+        XCTAssertEqual(held.key("a", isRepeat: false, canHold: true, tool: .rectangle), .hold(.arrow))
+        XCTAssertEqual(held.key("a", isRepeat: true, canHold: true, tool: .arrow), .swallow)
+        XCTAssertEqual(held.key("d", isRepeat: false, canHold: true, tool: .arrow), .type(restoring: .rectangle))
+        XCTAssertEqual(held.key("d", isRepeat: false, canHold: false, tool: .rectangle), .pass)
 
         held = HeldToolLetter()
-        XCTAssertEqual(held.key("r", isRepeat: false, fieldUntouched: true, tool: .select), .hold(.rectangle))
+        XCTAssertEqual(held.key("r", isRepeat: false, canHold: true, tool: .select), .hold(.rectangle))
         held.keepTool()
-        XCTAssertEqual(held.key("e", isRepeat: false, fieldUntouched: true, tool: .rectangle), .pass)
+        XCTAssertEqual(held.key("e", isRepeat: false, canHold: true, tool: .rectangle), .pass)
 
         held = HeldToolLetter()
-        XCTAssertEqual(held.key("t", isRepeat: false, fieldUntouched: true, tool: .rectangle), .hold(.text))
-        XCTAssertEqual(held.key(nil, isRepeat: false, fieldUntouched: true, tool: .text), .pass)
+        XCTAssertEqual(held.key("t", isRepeat: false, canHold: true, tool: .rectangle), .hold(.text))
+        XCTAssertEqual(held.key(nil, isRepeat: false, canHold: true, tool: .text), .pass)
         XCTAssertEqual(held.toolBefore, nil)
 
         held = HeldToolLetter()
-        XCTAssertEqual(held.key("h", isRepeat: false, fieldUntouched: true, tool: .rectangle), .pass)
-        XCTAssertEqual(held.key("a", isRepeat: false, fieldUntouched: false, tool: .rectangle), .pass)
+        XCTAssertEqual(held.key("h", isRepeat: false, canHold: true, tool: .rectangle), .pass)
+        XCTAssertEqual(held.key("a", isRepeat: false, canHold: false, tool: .rectangle), .pass)
+    }
+
+    private func command(_ key: EditorCore.Key, _ modifiers: EditorCore.Modifiers, empty: Bool = false) -> FieldCommand? {
+        FieldCommand(key, modifiers, fieldEmpty: empty)
+    }
+
+    func testInTheMessageFieldCmdWAndTheZoomKeysAreTheAnnotatorsAndTheEditingKeysStayWithTheField() {
+        XCTAssertEqual(command(.character("w"), .command), .close)
+        XCTAssertEqual(command(.character("="), .command), .zoom(.zoomIn))
+        XCTAssertEqual(command(.character("+"), [.command, .shift]), .zoom(.zoomIn))
+        XCTAssertEqual(command(.character("-"), .command), .zoom(.zoomOut))
+        XCTAssertEqual(command(.character("0"), .command), .zoom(.fit))
+        for editing: Character in ["v", "a", "x", "z", "c"] {
+            XCTAssertNil(command(.character(editing), .command), "Cmd+\(editing) stays with the field")
+            XCTAssertEqual(command(.character(editing), .command, empty: true) == .copyDrawing, editing == "c")
+        }
+        XCTAssertNil(command(.character("z"), [.command, .shift]))
+        XCTAssertNil(command(.character("w"), [.command, .shift]))
+        XCTAssertNil(command(.character("w"), []))
+        XCTAssertNil(command(.returnKey, .command))
+    }
+
+    func testCmdCInAnEmptyMessageFieldCopiesTheDrawingAndInAFieldWithWordsStaysWithTheField() {
+        XCTAssertEqual(command(.character("c"), .command, empty: true), .copyDrawing)
+        XCTAssertNil(command(.character("c"), .command, empty: false), "a field with words copies its words")
+        XCTAssertNil(command(.character("c"), [.command, .shift], empty: true))
+
+        let model = AnnotatorToolbar.Model()
+        model.begin(replyTo: nil, carryingTarget: false)
+        model.answered(answer([session("mew")], complete: true, herdr: inPane("mew")))
+        XCTAssertFalse(model.tookKeysOnOpen)
+        XCTAssertTrue(model.fieldEmpty, "a field pressed into later")
+        model.pick(session("mew"))
+        XCTAssertTrue(model.fieldEmpty, "a field after a pick")
+        model.message = "  \n"
+        XCTAssertTrue(model.fieldEmpty, "spaces are no words, as for Return and Esc")
+        model.message = "fix this"
+        XCTAssertFalse(model.fieldEmpty)
+    }
+
+    func testAFieldWhosePanelDoesNotTakeTheKeysOnOpenLetsTheFocusGoSoALaterOfferCanTryAgain() {
+        let toolbar = AnnotatorToolbar()
+        toolbar.model.begin(replyTo: nil, carryingTarget: false)
+        XCTAssertFalse(toolbar.typeOnOpen(), "no field yet")
+        toolbar.model.answered(answer([session("mew")], complete: true, herdr: inPane("mew")))
+        XCTAssertFalse(toolbar.typeOnOpen(), "a panel off screen never becomes key")
+        XCTAssertNil(toolbar.model.focus)
+        XCTAssertFalse(toolbar.model.tookKeysOnOpen)
+    }
+
+    func testAPickInTheTargetsMenuLandsOnlyOnTheImageWhoseMenuItCameFrom() {
+        let toolbar = AnnotatorToolbar()
+        let model = toolbar.model
+        let a = session("a"), b = session("b")
+        model.shown = true
+        model.begin(replyTo: nil, carryingTarget: false)
+        toolbar.targetMenuActions.onPick?(b, nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(model.target?.id, b.id)
+
+        toolbar.targetMenuActions.onPick?(a, nil)
+        model.begin(replyTo: nil, carryingTarget: true)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(model.target?.id, b.id, "the next image keeps the target it carried")
+        XCTAssertFalse(model.isHandPick(a))
+
+        toolbar.targetMenuActions.onPick?(a, nil)
+        model.shown = false
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(model.target?.id, b.id, "a closed bar takes no pick")
     }
 }

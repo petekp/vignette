@@ -21,12 +21,20 @@
   (`ToolbarPanel.sendEvent`), since SwiftUI's buttons ask for them as a field does; a press on a
   button leaves them with the editor. The panel also takes them once the image's window is up, when
   the bar has a message field and no key or press has reached the editor yet
-  (`AnnotationController.offerTyping`), so typing goes to the agent at once. A pick in the target's
-  menu, however it is made, gives the field the keys too, with the caret after any words in it
+  (`AnnotationController.offerTyping`), so typing goes to the agent at once. When the panel does not
+  become key then, the field lets the focus go and logs `[annotate] message field did not get the
+  keys`, so the image keeps Tab, Space and the arrows, and a later offer tries again. A pick in the
+  target's menu, however it is made, gives the field the keys too, with the caret after any words in it
   (`AnnotatorToolbar.typeAfterPick`, `ToolbarPanel.caretToEnd`). It takes them a turn after the menu
   closes, after the bar starts to spring to the new target's width. The field counts as
   typed in only while the panel is key
-  (`Model.keyed`), because AppKit makes it the panel's first responder when the bar comes up. There is no
+  (`Model.keyed`), because AppKit makes it the panel's first responder when the bar comes up. The
+  panel forgets a press on the field when it resigns the keys, so only a new press or an ask makes
+  it key again (`ToolbarPanel.resignKey`).
+  While the field has the keys, Cmd+W and the zoom keys do what they do on the image: the panel
+  hands them to `AnnotationController.fieldCommand` before the field sees them (`FieldCommand`),
+  which sends Cmd+W to the window's `performClose` and the zoom keys to the zoom. Other Command
+  keys stay with the field, Cmd+C too unless the field is empty. There is no
   palette: a mark's colour says who drew it. Send starts on the kept pick when there is one: the
   session the person picked in the target's menu and then sent to (`DestinationChoice.KeptPick`,
   `AnnotationController.keptPick`). It holds for 10 minutes after the send that set it, and each
@@ -71,7 +79,8 @@
   The target shows the agent's logo and the session's title, cut in the middle past 132 pt, with
   the title, the session's details and the repository in its tooltip (`SessionMenu.row(of:among:)`). Its width is set rather than left to the text, so it springs with the bar. A
   pick from its menu is applied a turn later, after the menu's own event loop ends, since a change
-  made inside it jumped instead of animating. Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
+  made inside it jumped instead of animating. A pick whose image closed or was replaced in that
+  turn is dropped and logs `[send] pick dropped` (`Model.imageNumber`). Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
   sessions the person sent to in the last 4 hours, newest send first, then the rest by when the agent last worked; five of them, with
   the target always among them, grouped under a header for each repository with Other folders last, then, after a separator, one submenu per project, titled as its header, with its count at its right and every
   running session of that project in it, the top rows too (live ink's Tab steps through the five only).
@@ -127,9 +136,13 @@
   sends or replies (`EditorCore.finishes`). On the image, Return never sends to a session Vignette
   picked. In the message field Return sends, as in a chat app, with the target beside it. A field
   that took the keys on its own and is still empty has nothing that asks to send, so Return and Esc
-  there do what they do on the image (`Model.fieldReturn`, `fieldEscCloses`). A pick ends that
-  (`Model.pick`): choosing a session is asking to write to it, so the field then acts as pressed. A
-  letter types, Return sends, and Esc hands the keys to the image, from which a second Esc closes.
+  there do what they do on the image (`Model.fieldUntouched`, `fieldReturn`, `fieldEscCloses`). A
+  pick ends that (`Model.pick`): choosing a session is asking to write to it, so the field then acts
+  as pressed. A letter types, Return sends, and Esc hands the keys to the image, from which a second
+  Esc closes. Cmd+C in any empty field, one with no words (`Model.fieldEmpty`, the same empty
+  as above), copies the drawing (`FieldCommand.copyDrawing`), whatever
+  marks the image has selected: one that took the keys on its own, one pressed into later, or one
+  after a pick. While a word is being composed in it, the field is not empty.
   `docs/send-and-reply-2026-09-24.md` has the rules. While one image follows another with no gap (a click on
   another card, or the queue moving on) the bar stays on screen and springs to the next image's
   place, and keeps the image before's target until the next image's settles (`Model.begin`'s

@@ -21,7 +21,7 @@ A `decided` answer is one `DestinationChoice` marks as settled: complete, or any
 
 **Transitions**
 
-Events: `begin(replyTo:carryingTarget:)` (`:148`, sent by `beginDestinations` with `carryingTarget: toolbar.model.shown`, right after `annotator.prepare`, `AppDelegate.swift:116-118`); `answered(_:)` (`:167`, once per `SessionListing.deliver`); `pick(_:)` (`:186`, from the target menu a turn later, `AnnotatorToolbar.swift:260-266`).
+Events: `begin(replyTo:carryingTarget:)` (`:152`, sent by `beginDestinations` with `carryingTarget: toolbar.model.shown`, right after `annotator.prepare`, `AppDelegate.swift:116-118`); `answered(_:)` (`:172`, once per `SessionListing.deliver`); `pick(_:)` (`:186`, from the target menu a turn later, `AnnotatorToolbar.swift:260-266`).
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
@@ -32,7 +32,7 @@ Events: `begin(replyTo:carryingTarget:)` (`:148`, sent by `beginDestinations` wi
 | not picked, not carried, `target == nil` | `answered`, decided | `target = answer.pick` | — |
 | not picked, not carried, target set | `answered` | target kept, unless the answer is complete, the target is absent from it (`gone`) and the answer is decided: then `target = answer.pick` (`:181`) | — |
 | picked | `answered` | lists, `listed`, `whole` update; `target` only refreshed to the object with the same id (`:173`), never replaced | — |
-| any | `pick(d)` | `target = d`, `picked = true`, `carried = false`. No check that `d` is in a list or belongs to this image ([toolbar-4](plausible-findings-run-to-toolbar.md#toolbar-4)) | — |
+| any | `pick(d)` | `target = d`, `picked = true`, `carried = false`. No check that `d` is in a list | — |
 
 **Invariants**
 
@@ -40,13 +40,13 @@ Events: `begin(replyTo:carryingTarget:)` (`:148`, sent by `beginDestinations` wi
 - A pick stays even when the list no longer has it. Checked by: the same two tests.
 - A swap keeps the old target until this image's first deciding answer. Checked by: `ToolbarOfferTests.testASwapKeepsTheTargetOnTheBarUntilTheNextImagesSettles`.
 - Reply stays Send until the whole list answers. Checked by: the same test.
-- The target belongs to the open image, and a carried target still exists. Checked by: nothing ([toolbar-4](plausible-findings-run-to-toolbar.md#toolbar-4)).
+- A carried target still exists. Checked by: nothing.
 
 **Late and concurrent answers**
 
 - A list answer for an ended opening: dropped, guard at `AppDelegate+Send.swift:113` (`annotator.opening == opening`), and again after the off-main read at `:96`. `Opening` ids are never reused, so closing and reopening the same file is another opening. `annotator.opening` is nil when `current == nil` (`AnnotationController.swift:594`).
 - A carried target whose session is gone: Send still shows. A send to it fails at the preflight (`AgentConnection.swift:416-420`, "closed" or "cleared") and never lands on another session.
-- A menu pick applied after a newer `begin`: accepted without a check, guard none (`AnnotatorToolbar.swift:260-266`) ([toolbar-4](plausible-findings-run-to-toolbar.md#toolbar-4)).
+- A menu pick applied after a newer `begin` or a hide: dropped (target menu below).
 
 ### Kept pick: AnnotationController.keptPick (implicit)
 
@@ -176,7 +176,7 @@ Events: `place(below:gap:)` (`:436`), `show()` (`:521`), `hideSoon()` (`:532`), 
 
 ### Keyboard focus: focus, keyed, tookKeysOnOpen, toolLetter, heldLetter (implicit)
 
-Owner: `Model.focus` (`AnnotatorToolbar.swift:102`), `keyed` (`:73`), `tookKeysOnOpen` (`:75`), `toolLetter` (`:77`), `messageAsks` (`:104`); `AnnotatorToolbar.heldLetter` (`:221`); `ToolbarPanel.pressOnField` (`AnnotatorToolbar+Panel.swift:8`), `wantsKeys` (`:9`), `caretToEnd` (`:36`). Tests: none for the panel; `HeldToolLetter` below has one.
+Owner: `Model.focus` (`AnnotatorToolbar.swift:104`), `keyed` (`:75`), `tookKeysOnOpen` (`:77`), `toolLetter` (`:79`), `messageAsks` (`:106`); `AnnotatorToolbar.heldLetter` (`:226`); `ToolbarPanel.pressOnField` (`AnnotatorToolbar+Panel.swift:10`), `wantsKeys` (`:11`), `caretToEnd` (`:46`). Tests: none for the panel; `HeldToolLetter` below has one.
 
 Decides whether the bar's panel or the editor has the keys. Only a press on the message field or an explicit ask lets the panel take them.
 
@@ -188,24 +188,26 @@ Decides whether the bar's panel or the editor has the keys. Only a press on the 
 |---|---|---|---|
 | any | `didBecomeKey` | `keyed = true`, `focus = .message` | whatever made the panel key |
 | any | `didResignKey` | `keyed = false`, `tookKeysOnOpen = false`, `caretToEnd = false`; `focus = nil` if it was `.message` | `makeFirstResponder(nil)` |
-| any | `begin` | `focus = nil`, `tookKeysOnOpen = false`, `toolLetter` reset | `keyed` and `panel.isKeyWindow` untouched |
-| bar shown, a field on it | a pick in the target's menu (`typeAfterPick`, `:363`) | `tookKeysOnOpen = false` (`Model.pick`); `focus = .message` | the controller's `editorUntouched = false` first; the panel takes the keys |
-| panel already key | `typeOnOpen` (`:375`, from `offerTyping`, `AnnotationController+ShowingAndHiding.swift:34`) | — | refused (`:376`) |
-| any | Tab, Shift+Tab (`move`, `:330`); Space (`activate`, `:340`); M or P (`focusMessage`, `:356`); press (`onPress`, `:288`); `keyDown` (`:391`) | `focus` moves | — |
+| any | `begin` | `imageNumber += 1`, `focus = nil`, `tookKeysOnOpen = false`, `toolLetter` reset | `keyed` and `panel.isKeyWindow` untouched |
+| bar shown, a field on it | a pick in the target's menu (`typeAfterPick`, `AnnotatorToolbar+Focus.swift:45`) | `tookKeysOnOpen = false` (`Model.pick`); `focus = .message` | the controller's `editorUntouched = false` first; the panel takes the keys |
+| panel not key | `typeOnOpen` (`AnnotatorToolbar+Focus.swift:59`, from `offerTyping`) | `focus = .message`, `tookKeysOnOpen = true` if the panel became key, else `focus = nil` | false when it did not: logs, and `editorUntouched` stays, so a later offer tries again |
+| panel already key | `typeOnOpen` | — | refused (`:60`) |
+| panel key | Cmd+W, Cmd+Plus, Cmd+Minus, Cmd+0; Cmd+C in an empty field, nothing being composed | — | `FieldCommand`: the window's close, the zoom, or the drawing copied; other Command keys go to the field |
+| any | Tab, Shift+Tab (`move`); Space (`activate`); M or P (`focusMessage`); press (`onPress`); `keyDown` | `focus` moves | — |
 
 **Invariants**
 
-- The panel can be key only by `canBecomeKey = pressOnField || wantsKeys || isKeyWindow` (`AnnotatorToolbar+Panel.swift:20`). Checked by: the guard there. `pressOnField` is not reset until the next left press ([toolbar-6](plausible-findings-run-to-toolbar.md#toolbar-6)).
+- The panel can be key only by `canBecomeKey = pressOnField || wantsKeys || isKeyWindow` (`AnnotatorToolbar+Panel.swift:25`). Checked by: the guard there. `resignKey` clears `pressOnField`, so after a resign only a press or `takeKeys` makes it key.
 
 **Late and concurrent answers**
 
-- `offerTyping` runs once per image (`editorUntouched`), and not after a pick. `tookKeysOnOpen` is cleared on resign and by a pick.
+- `offerTyping` gives the field the keys at most once per image (`editorUntouched`), and not after a pick. `tookKeysOnOpen` is cleared on resign and by a pick.
 
 ### HeldToolLetter (explicit)
 
 Owner: `HeldToolLetter.swift:7`. Tests: `ToolbarOfferTests.testAToolLetterTypedFirstPicksItsToolUntilAWordShowsItBeganOne`.
 
-Holds a tool letter typed first on an untouched field, until the next key shows whether it began a word.
+Holds a tool letter typed first on an untouched field, until the next key shows whether it began a word. The editor's `startsNote` uses the same value after a box or arrow ([editor-core](editor-core.md#heldkey-implicit)), so both read a key's character the same way (`HeldToolLetter.character`).
 
 **States**: `toolBefore` is nil (nothing held) or the tool that was active before the held letter.
 
@@ -216,7 +218,7 @@ Holds a tool letter typed first on an untouched field, until the next key shows 
 | nil | `key`, an eligible letter on an untouched field | `toolBefore` set | the key is kept in `heldLetter` |
 | held | `key`, a repeat | held | swallow |
 | held | `key`, another character | nil | restore the tool, replay the held key into the field |
-| held | `key`, a non-character | held | pass |
+| held | `key`, no character: Option, Command or Control held, or a key that types none | nil | pass: the held key is dropped and the tool stays |
 | held | `keepTool()` (press, resign) | nil | the tool stays |
 
 **Invariants**
@@ -229,7 +231,7 @@ Holds a tool letter typed first on an untouched field, until the next key shows 
 
 ### Target menu pick (implicit)
 
-Owner: `AnnotatorToolbar.swift:260-266` (`onPick`), `:269-274` (`onMenuKey`), `:333` (Space), `:416` (`showTargetMenu`). Tests: none.
+Owner: `AnnotatorToolbar.swift:274-287` (`onPick`), `:290-295` (`onMenuKey`), `AnnotatorToolbar+Focus.swift:29` (Space), `AnnotatorToolbar.swift:332` (`showTargetMenu`). Tests: none.
 
 Opens the target menu and applies a pick one turn later.
 
@@ -240,15 +242,15 @@ Opens the target menu and applies a pick one turn later.
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | closed | Space, Up or Down in the field, or a click | closed, one turn later | `showTargetMenu` builds an `NSMenu` from `model.destinations + model.startable` and calls `popUp` |
-| closed | `showTargetMenu` with no target offer or `targetFrame == nil` | closed | refused (`:417`) |
-| open | item chosen | pick queued | `TargetMenuActions.pick` (`:1327`) calls `DispatchQueue.main.async` |
-| pick queued | the block runs | closed | `model.pick(destination)` under `withAnimation`; no opening or `shown` check ([toolbar-4](plausible-findings-run-to-toolbar.md#toolbar-4)) |
+| closed | `showTargetMenu` with no target offer or `targetFrame == nil` | closed | refused (`AnnotatorToolbar.swift:333`) |
+| open | item chosen | pick queued | `TargetMenuActions.pick` (`SessionMenuPicks.swift:10`) calls `DispatchQueue.main.async` |
+| pick queued | the block runs | closed | `model.pick(destination)` under `withAnimation`, if `shown` and `imageNumber` is the menu's; else `[send] pick dropped` |
 
 **Invariants**
 
-- Space opens the menu a turn later so the menu takes keys (comment `:331-333`). Checked by: nothing.
-- A pick belongs to the opening that showed the menu. Checked by: nothing ([toolbar-4](plausible-findings-run-to-toolbar.md#toolbar-4)). `targetFrame` comes from SwiftUI geometry and is never cleared (`:248`).
+- Space opens the menu a turn later so the menu takes keys (comment `AnnotatorToolbar+Focus.swift:26-28`). Checked by: nothing.
+- A pick belongs to the image that showed the menu. Checked by: `ToolbarOfferTests.testAPickInTheTargetsMenuLandsOnlyOnTheImageWhoseMenuItCameFrom`. `targetFrame` comes from SwiftUI geometry and is never cleared (`:248`).
 
 **Late and concurrent answers**
 
-- A `begin` between the menu action and the queued pick: the pick lands on the new image ([toolbar-4](plausible-findings-run-to-toolbar.md#toolbar-4)).
+- A `begin` or a hide between the menu action and the queued pick: the pick is dropped.

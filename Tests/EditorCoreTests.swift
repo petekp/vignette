@@ -352,25 +352,6 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertFalse(core.key(.character("f")).contains(.passKeysToText))
     }
 
-    func testAToolKeyRightAfterABoxPicksItsToolUnlessACharacterFollows() throws {
-        var core = core()
-        core.drag(from: (100, 100), to: (300, 200))
-        XCTAssertTrue(core.key(.character("a")).contains(.holdKey))
-        XCTAssertEqual(core.tool, .arrow)
-        XCTAssertEqual(core.drawing.marks.count, 1)
-        XCTAssertTrue(core.key(.character("d")).contains(.passKeysToText))
-        XCTAssertEqual(core.tool, .rectangle)
-        XCTAssertNotNil(textOf(core.drawing.marks.last))
-
-        // A press after the tool key keeps the tool.
-        var other = self.core()
-        other.drag(from: (100, 100), to: (300, 200))
-        other.key(.character("a"))
-        other.drag(from: (500, 300), to: (700, 400))
-        XCTAssertEqual(other.tool, .arrow)
-        guard case .arrow? = other.drawing.marks.last?.geometry else { return XCTFail("no arrow") }
-    }
-
     func testANoteGoesBelowABoxWithNoRoomBesideItAndAboveOneWithNoRoomBelow() throws {
         let edge = MarkStyle.standard.strokeWidth / 2 + Core.noteGap
         var core = core()

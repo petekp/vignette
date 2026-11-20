@@ -146,8 +146,8 @@ Before you drive the app:
   back after every round.
 - A build the user runs from a worktree's build folder is copied to a path no build touches
   before that worktree is rebuilt; a rebuild rewrites the bundle under the running process.
-- Never send a synthetic Esc to close the stack or the annotator. Use `vignette://dismiss` and
-  `vignette://cancel`.
+- Never send a synthetic Esc to close the stack or the annotator outside a gated end-to-end
+  scenario. Use `vignette://dismiss` and `vignette://cancel`.
 - Delete test files from the watch folder afterwards. It is the user's real screenshot folder.
 - A test copy never touches the person's own `~/.claude`, `~/.codex` and `~/.agents`, or the
   folders under `~/Library` their own app stores data in. It neither registers nor removes a login

@@ -42,6 +42,8 @@ final class AnnotatorToolbar {
         /// The target is the image before's, kept while the bar stays up so Send does not leave it
         /// for the 60 to 90 ms the listing takes. The first answer that settles a target replaces it.
         private var carried = false
+        /// One more at each `begin`, so a late menu pick lands only on its own image.
+        private(set) var imageNumber = 0
         /// From Send's press until the bar leaves. The button shows the send and takes no second click.
         /// A new press puts a failure's reason away.
         @Published var sending = false { didSet { if sending { failure = nil } } }
@@ -76,16 +78,16 @@ final class AnnotatorToolbar {
         /// A tool letter typed first into that field, waiting to learn whether it began a word.
         var toolLetter = HeldToolLetter()
 
-        /// What Return in the message field does. A field that took the keys on its own and is still
-        /// empty has nothing that asks to send, so Return there does what it does on the image, which
-        /// never sends to a session Vignette picked.
-        var fieldReturn: EditorCore.Finish {
-            tookKeysOnOpen && sentMessage == nil ? offer.finishes.returnKey : .send
-        }
+        /// The message field took the keys on its own and is still empty, so nothing in it asks to
+        /// send: Return and Esc do what they do on the image.
+        var fieldUntouched: Bool { tookKeysOnOpen && fieldEmpty }
 
-        /// Esc in the message field closes the editor, as on the image, when the field took the keys on
-        /// its own and is still empty. Otherwise it hands the keys back to the image.
-        var fieldEscCloses: Bool { tookKeysOnOpen && sentMessage == nil }
+        /// What Return in the message field does. In an untouched field, what it does on the image,
+        /// which never sends to a session Vignette picked.
+        var fieldReturn: EditorCore.Finish { fieldUntouched ? offer.finishes.returnKey : .send }
+
+        /// Esc in an untouched field closes the editor, as on the image. Otherwise it hands the keys back.
+        var fieldEscCloses: Bool { fieldUntouched }
 
         /// A control Tab reaches, in the bar's order.
         enum Control: Hashable {
@@ -149,6 +151,7 @@ final class AnnotatorToolbar {
         /// on screen for the image before, keeps that image's list and target until this one's settle.
         func begin(replyTo: AgentDestination?, carryingTarget: Bool) {
             self.replyTo = replyTo
+            imageNumber += 1
             message = ""
             focus = nil
             tookKeysOnOpen = false
@@ -214,13 +217,13 @@ final class AnnotatorToolbar {
     var onLeave: ((_ backward: Bool) -> Bool)?
     /// The target's frame in the hosting view, where its menu drops down from.
     private var targetFrame: CGRect?
-    private let targetMenuActions = TargetMenuActions()
+    let targetMenuActions = TargetMenuActions()
     private var hosting: NSHostingView<ToolbarView>!
     /// The panel's size for the bar as SwiftUI lays it out now, with `padding` on every side.
     var fittingSize: NSSize { hosting.fittingSize }
     private var keyObservers: [NSObjectProtocol] = []
     /// The key `model.toolLetter` holds, replayed into the field when a character follows it.
-    private var heldLetter: NSEvent?
+    var heldLetter: NSEvent?
     /// Where `place` last put the bar, so a bar whose contents change width can centre again.
     var placedBelow: (frame: NSRect, gap: CGFloat)?
     /// Where a zoom or re-fit put the middle of the bar's top edge (`follow`), nil at its place.
@@ -230,8 +233,8 @@ final class AnnotatorToolbar {
     /// Room around the bar inside its panel for the shadow and the entrance motion.
     static let padding: CGFloat = 28
     /// The room above and below the bar that the message field grows into while it is typed in. The
-    /// panel always has it, and it is clear, so it passes presses through: a panel that grew when the
-    /// field took focus drew a frame at the new height before `position` moved it, and the bar jumped.
+    /// panel always has it, and it is clear, so it passes presses through: a panel that grew with the
+    /// field would draw a frame at the new height before `position` moved it.
     static let messageRoom: CGFloat = 110
 
     /// The panel's frame without the message field's room: the bar, its padding, and its shadow.
@@ -262,19 +265,20 @@ final class AnnotatorToolbar {
                                                       onMessageEnd: { [weak self] in self?.onMessageEnd?() },
                                                       onClose: { [weak self] in self?.onClose?() }))
         // `position` alone sizes the panel, about the bar's centre (`onWidth`). As the window's
-        // content view, the hosting view resized the window to its new content from the window's
-        // left edge, and a bar that grew from Reply to Send stayed off centre.
+        // content view, the hosting view would resize the window from its left edge.
         hosting.sizingOptions = [.intrinsicContentSize]
         hosting.autoresizingMask = [.width, .height]
         let content = NSView()
         content.addSubview(hosting)
         panel.contentView = content
         targetMenuActions.onPick = { [weak self] destination, menuLine in
-            // A turn later, once the menu's own event loop has ended, and on the bar's spring.
+            let image = self?.model.imageNumber
+            // A turn later, once the menu's own event loop has ended.
             DispatchQueue.main.async {
                 guard let self else { return }
                 Log.write("[send] picked \(destination.address.description) project=\(destination.detail) role=\(destination.role ?? "none")")
                 if let menuLine { Log.write(menuLine) }
+                guard self.model.shown, self.model.imageNumber == image else { return Log.write("[send] pick dropped") }
                 // Before the pick changes the offer, which may offer the field the keys as on open.
                 self.onPick?()
                 withAnimation(Anim.spring(0.35 * Settings.shared.motionScale)) { self.model.pick(destination) }
@@ -323,127 +327,9 @@ final class AnnotatorToolbar {
         ]
     }
 
-    // MARK: Keyboard focus
-
-    /// Tab came from the editor past its last mark, or Shift+Tab past its first.
-    func enter(backward: Bool) {
-        focus(on: backward ? model.controls.last : model.controls.first)
-    }
-
-    /// Tab or Shift+Tab on the bar: the next control, or back to the editor past either end.
-    func move(backward: Bool) {
-        let controls = model.controls
-        guard let current = model.focus, let index = controls.firstIndex(of: current) else { return enter(backward: backward) }
-        let next = index + (backward ? -1 : 1)
-        if controls.indices.contains(next) { return focus(on: controls[next]) }
-        focus(on: nil)
-        if onLeave?(backward) != true { enter(backward: backward) }
-    }
-
-    /// Space on the focused control presses it, as a click would.
-    func activate() {
-        switch model.focus {
-        case .tool(let tool)?: onTool?(tool)
-        case .copy?: onDone?()
-        case .target?:
-            // Opened from inside the editor's keyDown, the menu took no keys and read a press on its
-            // items as one outside the editor. A turn later it is opened as a click opens it.
-            DispatchQueue.main.async { [weak self] in self?.showTargetMenu() }
-        case .action?:
-            guard !model.sending, !model.nothingToReply, let destination = model.offer.destination else { return }
-            onSend?(destination)
-        case .message?, nil: break
-        }
-    }
-
-    /// M or P in the editor: the keys go to the message field, when the bar has one.
-    func focusMessage() {
-        guard model.controls.contains(.message) else { return }
-        focus(on: .message)
-    }
-
-    /// A pick in the target's menu chooses whom to write to, so the message field takes the keys as a
-    /// press on it gives them: a letter types, Return sends, and Esc hands the keys to the image.
-    private func typeAfterPick() {
-        guard model.shown, model.controls.contains(.message) else { return }
-        if panel.isKeyWindow, let text = panel.firstResponder as? NSTextView {
-            text.setSelectedRange(NSRange(location: (text.string as NSString).length, length: 0))
-        } else {
-            panel.caretToEnd = true
-        }
-        focus(on: .message)
-    }
-
-    /// The image opened and the hand has not reached it: the message field, when the bar has one,
-    /// takes the keys, so typing goes to the agent. False when there is no field to take them.
-    func typeOnOpen() -> Bool {
-        guard model.controls.contains(.message), model.focus == nil, !panel.isKeyWindow else { return false }
-        focus(on: .message)
-        model.tookKeysOnOpen = panel.isKeyWindow
-        return true
-    }
-
-    /// A press on the image takes the focus back from a control. The message field loses it when the
-    /// panel gives up the keys.
-    func clearFocus() {
-        keepHeldTool()
-        if model.focus != .message { model.focus = nil }
-    }
-
-    /// A key in the message field, before the field sees it: a tool letter typed first is held
-    /// (`HeldToolLetter`), and Left or Right in a field still untouched pages. True when it was taken.
-    private func keyDown(_ event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        var character: Character?
-        if case .character(let typed)? = EditorCore.Key(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers),
-           modifiers.isSubset(of: [.shift, .capsLock, .numericPad, .function]) {
-            character = typed
-        }
-        let composing = (panel.firstResponder as? NSTextView)?.hasMarkedText() == true
-        let untouched = model.tookKeysOnOpen && model.message.isEmpty && !composing
-        if untouched, modifiers.isDisjoint(with: [.shift, .control, .option, .command]),
-           let key = EditorCore.Key(keyCode: event.keyCode, characters: nil), let page = EditorCore.Page(key) {
-            onPage?(page, event.isARepeat)
-            return true
-        }
-        switch model.toolLetter.key(character, isRepeat: event.isARepeat, fieldUntouched: untouched, tool: model.tool) {
-        case .hold(let tool):
-            heldLetter = event
-            onTool?(tool)
-            return true
-        case .type(let before):
-            onTool?(before)
-            if let held = heldLetter { panel.replay(held) }
-            heldLetter = nil
-            return false
-        case .pass:
-            heldLetter = nil
-            return false
-        case .swallow:
-            return true
-        }
-    }
-
-    private func keepHeldTool() {
-        model.toolLetter.keepTool()
-        heldLetter = nil
-    }
-
-    private func focus(on control: Model.Control?) {
-        let typing = model.focus == .message && panel.isKeyWindow
-        model.focus = control
-        if control == .message {
-            panel.takeKeys()
-            model.askForMessage()
-        } else if typing {
-            onMessageEnd?()
-        }
-    }
-
-    /// The target's menu, under it: five sessions sent to or used last, the target among
-    /// them with a check, each group under its repository (`SessionMenu`), then one submenu
-    /// per project with all of its running sessions. AppKit's own menu, so Space on the focused target opens it as a click does.
-    private func showTargetMenu() {
+    /// The target's menu under it, with the rows `SessionMenu` orders and the target checked.
+    /// AppKit's own menu, so Space on the focused target opens it as a click does.
+    func showTargetMenu() {
         guard model.offer.offersTarget, let frame = targetFrame else { return }
         let target = model.offer.destination
         let menu = NSMenu()
@@ -483,7 +369,7 @@ final class AnnotatorToolbar {
     var sliding = false
 
     /// Orders the panel in hidden and lets the bar rise into place a turn later, so the
-    /// entrance animates from the hidden state instead of appearing already in place.
+    /// entrance animates.
     func show() {
         hideGeneration += 1
         panel.orderFront(nil)

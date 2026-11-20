@@ -29,7 +29,7 @@ images opening measured no narrowing at all, and `stack.widthScale` in `[state]`
 
 The end-to-end tests: `scripts/e2e/e2e.py run` builds the test copy (`scripts/e2e/build.sh`: its
 own bundle id, name and URL scheme, given on the `xcodebuild` line) and runs the scenarios in
-`scripts/e2e/scenarios.py`, `codex_queue.py`, `session_starts.py` and `live_ink.py`, each on a fresh scratch home, settings file and watch
+`scripts/e2e/scenarios.py`, `field_keys.py`, `codex_queue.py`, `session_starts.py` and `live_ink.py`, each on a fresh scratch home, settings file and watch
 folder. A new module of scenarios goes in `scenario_list.py`. Before each launch the runner links the home the copy's Info.plist names to the scenario's,
 and unlinks it after, so a launch with no environment comes back on the scenario's files. Before the
 first scenario it runs the copy once, as `<executable> reply --help`, which exits before the app

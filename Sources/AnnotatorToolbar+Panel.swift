@@ -5,10 +5,15 @@ import AppKit
 /// ask for the keys as a text field does, so `becomesKeyOnlyIfNeeded` cannot tell them apart.
 @MainActor
 final class ToolbarPanel: NSPanel {
+    /// The last left press was on the message field, until the panel resigns the keys: after that
+    /// only a new press or `takeKeys` makes it key, never AppKit choosing the next key window.
     private var pressOnField = false
     private var wantsKeys = false
     /// Cmd+Return while the message field has the keys: Send, as in the editor.
     var onCommandReturn: (() -> Void)?
+    /// Any other Command key while the message field has the keys, before the field sees it. True
+    /// when it was taken (`FieldCommand`).
+    var onCommandKey: ((NSEvent) -> Bool)?
     /// Tab or Shift+Tab (true) while the message field has the keys.
     var onTab: ((_ backward: Bool) -> Void)?
     /// A press on the bar, and whether it is on the message field.
@@ -31,6 +36,11 @@ final class ToolbarPanel: NSPanel {
     }
     override var canBecomeMain: Bool { false }
 
+    override func resignKey() {
+        super.resignKey()
+        pressOnField = false
+    }
+
     /// The next time the message field becomes first responder, its caret goes to the end of its
     /// words. AppKit selects them all instead, and the first letter typed would replace them.
     var caretToEnd = false
@@ -50,6 +60,7 @@ final class ToolbarPanel: NSPanel {
             onCommandReturn?()
             return true
         }
+        if event.type == .keyDown, onCommandKey?(event) == true { return true }
         return super.performKeyEquivalent(with: event)
     }
 
@@ -78,6 +89,31 @@ final class ToolbarPanel: NSPanel {
             }
         }
         super.sendEvent(event)
+    }
+}
+
+/// A Command key the message field has no use for, which does what it does on the image instead.
+/// The rest, such as Cmd+V, Cmd+A, Cmd+X and Cmd+Z, stay with the field.
+enum FieldCommand: Equatable {
+    /// Cmd+W: the annotator closes, as through the main menu's Close.
+    case close
+    /// Cmd+Plus, Cmd+Minus and Cmd+0, by the editor's own rule.
+    case zoom(EditorCore.ZoomRequest)
+    /// Cmd+C in an empty field: the drawing, as Cmd+C copies it on the image with nothing selected.
+    case copyDrawing
+
+    /// `fieldEmpty`: `Model.fieldEmpty`, and no word is being composed in the field.
+    init?(_ key: EditorCore.Key?, _ modifiers: EditorCore.Modifiers, fieldEmpty: Bool) {
+        guard modifiers.contains(.command), case .character(let character)? = key else { return nil }
+        if let zoom = EditorCore.zoomRequest(for: character) {
+            self = .zoom(zoom)
+        } else if character == "w", modifiers == .command {
+            self = .close
+        } else if character == "c", modifiers == .command, fieldEmpty {
+            self = .copyDrawing
+        } else {
+            return nil
+        }
     }
 }
 
