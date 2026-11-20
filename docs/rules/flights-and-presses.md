@@ -134,3 +134,15 @@
   flight's are click-through. All of this holds for the annotator and the flight layer only while
   `ignoresMouseEvents` is never set on either: set either way, the window takes or passes every
   press, whatever its pixels.
+- Every animation springs, except those that ease on purpose: live ink's Core Animation layers and
+  its popovers' fades (ADR 0027 says why for a closing popover), the toolbar's words giving way
+  (`AnnotatorToolbar.words`, `nameSwap`), a mark's draw-on (`MarkLayers.drawOn`) and the menu bar
+  intro. Three more ease that this list did not name when `scripts/check-animations.py` was
+  written on 11-20: the card slide-in's eased choices for `ui.slideInCurve` (`Anim.swiftUI`), the
+  fade-in of the panel that holds an answer's buttons (`LiveAnswerActions`), and the note's target
+  and return key moving to their row (`LiveNoteContent.layOut`). The check, run by
+  `build.sh --test`, counts each `CAMediaTimingFunction(` and each eased or linear SwiftUI curve in
+  `Sources/`, and fails a file whose count differs from its entry in `ALLOWED`. Each entry says why
+  that file eases. `.linear(duration: 0)` is a change made at once, and is not counted. An
+  animation that names no curve is not seen: a `CABasicAnimation` without a `timingFunction` is
+  linear, and an `NSAnimationContext` group without one takes AppKit's default.

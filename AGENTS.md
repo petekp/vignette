@@ -199,7 +199,8 @@ Before you drive the app:
   velocity and blends into the new target instead of jumping. These ease instead: live ink's Core
   Animation layers and its popovers' fades (ADR 0027 says why for a closing popover), the toolbar's
   words giving way (`AnnotatorToolbar.words`, `nameSwap`), a mark's draw-on (`MarkLayers.drawOn`)
-  and the menu bar intro. `Tween.spring` is the closed form of
+  and the menu bar intro. `scripts/check-animations.py`, run by `build.sh --test`, fails any other
+  eased curve (`docs/rules/flights-and-presses.md`). `Tween.spring` is the closed form of
   a critically damped spring, so a late tick lands where the spring really is by then. Do not step
   it forward by hand: integrating it overshoots by hundreds of points after one late tick.
 - A display link comes from `ScreenLink`, which moves it to the main screen when the screens change.
