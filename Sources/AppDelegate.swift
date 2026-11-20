@@ -501,13 +501,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         return writes
     }()
 
-    /// Connects stored drawings before request recovery or the watcher can update cards.
-    private func startDrawings() {
-        thumbnail.drawings = drawings
-        drawings.open = annotator.editor
-        drawings.onChange = { [weak self] key, drawing in self?.thumbnail.setDrawing(drawing, for: key) }
-    }
-
     /// The screen an agent's new drawing is sized for: the main screen, the best guess with no
     /// annotator open.
     private static var newDrawingScreen: DrawingScreen { DrawingScreen(NSScreen.main ?? NSScreen.screens[0]) }
