@@ -49,6 +49,9 @@ struct SettingsSync {
     /// cannot be written at all. Nothing is written then, and `readOnlyReason` says why. Never cleared.
     private(set) var readOnly: Bool
     private var readOnlyReason: String
+    /// True from a failed write until a later write succeeds. The app's settings are not in the
+    /// file then, and they last only until it quits unless a later write goes through.
+    private(set) var lastWriteFailed = false
     /// The file as this app last wrote or read it: the state the file and the app last agreed on.
     private var syncedBytes: Data?
     private var syncedData: SettingsData
@@ -91,6 +94,7 @@ struct SettingsSync {
         case .wrote(let raw, let failure):
             guard let writing else { return [] }
             self.writing = nil
+            lastWriteFailed = failure != nil
             if let failure { return [.log("error write-failed \(failure)")] }
             let changed = Self.uiChanges(from: syncedData.ui, to: writing.data.ui)
             syncedBytes = raw

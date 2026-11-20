@@ -4,13 +4,13 @@ This file continues [Setup, settings and launch: setup](setup.md), which has the
 
 ### SettingsSync (explicit) and Settings (shell)
 
-Owner: `SettingsSync.swift:5` (reducer), `Settings.swift:514` (timers, watchers, `data`). Tests: `SettingsSyncRandomTests.testRandomSequencesKeepTheInvariants`; in `SettingsSyncTests`, `testAnUpdateMadeDuringAWritesTakeInIsInThatWrite`, `testWriteComesAfterTheDelayAndItsOwnEchoAppliesNothing`, `testAFileThatDoesNotParseKeepsTheSettingsAndTheNextWriteReplacesIt`, `testNothingIsWrittenWhileReadOnlyButFileEditsStillArrive`, `testAFileFromANewerVersionMakesTheAppReadOnlyMidRun`, `testAFlushTakesInAPendingFileEditBeforeItWrites`.
+Owner: `SettingsSync.swift:5` (reducer), `Settings.swift:514` (timers, watchers, `data`). Tests: `SettingsSyncRandomTests.testRandomSequencesKeepTheInvariants`; in `SettingsSyncTests`, `testAnUpdateMadeDuringAWritesTakeInIsInThatWrite`, `testWriteComesAfterTheDelayAndItsOwnEchoAppliesNothing`, `testAFileThatDoesNotParseKeepsTheSettingsAndTheNextWriteReplacesIt`, `testNothingIsWrittenWhileReadOnlyButFileEditsStillArrive`, `testAFileFromANewerVersionMakesTheAppReadOnlyMidRun`, `testAFlushTakesInAPendingFileEditBeforeItWrites`, `testAFolderThatCannotBeWrittenKeepsTheWriteFailedUntilAWriteGoesThrough`.
 
 Keeps `settings.json` and the app's settings in step. The reducer decides; `Settings` runs the timers, the file watchers and the disk reads.
 
 **States**
 
-- Reducer: `syncedBytes` and `syncedData` (what the file and app last agreed on), `writing` (a write awaiting `wrote`), `changedSinceFlush`, `readOnly` (never cleared).
+- Reducer: `syncedBytes` and `syncedData` (what the file and app last agreed on), `writing` (a write awaiting `wrote`), `changedSinceFlush`, `readOnly` (never cleared), `lastWriteFailed` (from a failed `wrote` until a later one succeeds; `Settings` publishes it for the General tab's warning).
 - Shell: `writeWork` and `reloadWork` (`DispatchWorkItem`s), `directorySource`, `fileSource`, `hold: EventHold`.
 
 **Transitions**
@@ -25,7 +25,7 @@ Keeps `settings.json` and the app's settings in step. The reducer decides; `Sett
 | `!changedSinceFlush` | `quit` | — | — |
 | `changedSinceFlush` | `quit` | — | `cancelWrite`, `readFileAndFlush` |
 | not read-only | `appData(d)` | `writing` set | `write(raw)`, answered by `wrote` |
-| `writing` | `wrote(raw, failure)` | when it succeeded, `syncedBytes` and `syncedData` set | a failure logs `error write-failed` |
+| `writing` | `wrote(raw, failure)` | `lastWriteFailed = failure != nil`; when it succeeded, `syncedBytes` and `syncedData` set | a failure logs `error write-failed` |
 | read-only | `appData(d)` | — | refused: no write |
 
 `takeIn`:

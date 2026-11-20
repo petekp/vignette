@@ -27,6 +27,33 @@ final class SettingsSyncTests: XCTestCase {
         XCTAssertEqual(rig.decoded(rig.disk).ui.cardMaxWidth, 300)
     }
 
+    func testAFolderThatCannotBeWrittenKeepsTheWriteFailedUntilAWriteGoesThrough() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("vignette-sync-\(UUID().uuidString)")
+        let file = folder.appendingPathComponent("settings.json")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        var rig = SyncRig()
+        rig.file = file
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
+
+        rig.appEdits { $0.recentCount = 12 }
+        XCTAssertFalse(rig.sync.lastWriteFailed)
+        XCTAssertEqual(rig.writeFires().logLines.map { $0.hasPrefix("error write-failed settings.json:") }, [true])
+        XCTAssertTrue(rig.sync.lastWriteFailed)
+        rig.appEdits { $0.recentCount = 13 }
+        rig.writeFires()
+        XCTAssertTrue(rig.sync.lastWriteFailed)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path)
+        XCTAssertTrue(rig.quit().hasWrite)
+        XCTAssertFalse(rig.sync.lastWriteFailed)
+        XCTAssertEqual(rig.decoded(try Data(contentsOf: file)).recentCount, 13)
+    }
+
     /// Catches a write that does not take in the file first (C E W R): it replaces the file's edit,
     /// and its echo is then skipped as the app's own bytes.
     func testAnAppChangeAndAFileEditOnOtherKeysBothSurviveInEveryOrder() {

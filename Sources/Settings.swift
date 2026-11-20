@@ -43,15 +43,24 @@ final class Settings: ObservableObject {
     /// What the Settings window says when this launch had to set the file aside. nil when all was well.
     let startupNotice: Notice?
 
-    /// What went wrong with the file at launch, as the General tab says it.
+    /// What went wrong with the file, as the General tab says it.
     struct Notice {
         var title: String
         var detail: String
+    }
+
+    /// What the General tab says while `lastWriteFailed`.
+    static var notSavedNotice: Notice {
+        let file = (fileURL.path as NSString).abbreviatingWithTildeInPath
+        return Notice(title: "Settings not saved",
+                      detail: "Vignette couldn't write to \(file). It tries again with your next change.")
     }
     private var sync: SettingsSync
     private let hold = EventHold<SettingsSync.Event>()
     /// True when nothing is written to the file (`SettingsSync.readOnly`).
     var readOnly: Bool { sync.readOnly }
+    /// `SettingsSync.lastWriteFailed`, published for the General tab's warning.
+    @Published private(set) var lastWriteFailed = false
 
     private var directorySource: DispatchSourceFileSystemObject?
     private var fileSource: DispatchSourceFileSystemObject?
@@ -195,6 +204,7 @@ final class Settings: ObservableObject {
         // `.writeAppData` or `.readFileAndFlush`) is reduced after the current event's effects.
         hold.send(event) { event in
             let effects = sync.reduce(event)
+            if lastWriteFailed != sync.lastWriteFailed { lastWriteFailed = sync.lastWriteFailed }
             for effect in effects { run(effect) }
         }
     }

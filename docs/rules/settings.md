@@ -39,6 +39,11 @@
   real build, merge back any `ui` keys that changed (`[settings] wrote ui.…` in the log lists them).
   A file that cannot be created (a `~/.config` another tool owns) leaves the launch read-only, with
   `[settings] error cannot create` and a notice in the General tab, and never reads as a first launch.
+  A write that fails later logs `[settings] error write-failed` and is tried again with the next
+  change, and at quit when the app changed a setting during the run. From the failure until a write
+  succeeds (`SettingsSync.lastWriteFailed`), the General tab says Settings not saved, above the
+  launch's notice when there is one, since each says something the other does not. It comes and
+  goes with the window's notice spring.
   A file that does not parse is moved to `settings.json.invalid` and replaced with defaults; bad
   numbers are clamped in memory and logged as `[settings] warning clamped`. `appleOriginal` records
   Apple's screencapture values before Vignette changed them; `open -g vignette://restore-apple-defaults`
