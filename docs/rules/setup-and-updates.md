@@ -118,6 +118,10 @@
   into the icon around it, and an "Update Available…" item in its menu, above the screenshot items,
   in place of "Check for Updates…". With the menu bar icon hidden there is nowhere to show the
   reminder, so Sparkle shows its window, without activating the app. `[update]` lines log what each check found, and `[state] app.update` says what is waiting.
+  The dot springs in (scaling up from 0.3 with a little bounce) and springs out the same way
+  without the bounce. The icon's old picture fades out on a spring over the new one. All of it
+  scales with `ui.motion` and is instant under Reduce Motion. A dot wanted again mid-exit reverses
+  from where it is drawn (`springDot`), and is removed from the button only when its exit ends.
   Sparkle compares `CFBundleVersion`, which the build phase stamps with the commit count. So each
   release needs more commits behind it than the last, which a release cut from main has. Every
   download is checked against `SUPublicEDKey`. Installs trust only images signed with the private key
