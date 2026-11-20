@@ -49,7 +49,7 @@ struct SettingsSync {
     /// cannot be written at all. Nothing is written then, and `readOnlyReason` says why. Never cleared.
     private(set) var readOnly: Bool
     private var readOnlyReason: String
-    /// True from a failed write until a later write succeeds. The app's settings are not in the
+    /// True from a failed write, including one at launch, until a later write succeeds. The app's settings are not in the
     /// file then, and they last only until it quits unless a later write goes through.
     private(set) var lastWriteFailed = false
     /// The file as this app last wrote or read it: the state the file and the app last agreed on.
@@ -62,7 +62,8 @@ struct SettingsSync {
     /// after the timer's write ran.
     private var changedSinceFlush = false
 
-    init(bytes: Data?, data: SettingsData, readOnly: Bool, readOnlyReason: String) {
+    init(bytes: Data?, data: SettingsData, readOnly: Bool, readOnlyReason: String, lastWriteFailed: Bool = false) {
+        self.lastWriteFailed = lastWriteFailed
         syncedBytes = bytes
         syncedData = data
         self.readOnly = readOnly

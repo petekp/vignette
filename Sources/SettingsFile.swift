@@ -9,6 +9,16 @@ extension Settings {
         var readOnly = false
         var readOnlyReason = ""
         var written: Data?
+        /// True when a write the launch made failed. The sync starts with `lastWriteFailed` set.
+        var writeFailed = false
+
+        /// Writes `raw` to `url`, and logs the failure like a later failed write does.
+        mutating func write(_ raw: Data, to url: URL) -> Data? {
+            guard let reason = Settings.failure(writing: raw, to: url) else { return raw }
+            writeFailed = true
+            log.append("error write-failed \(reason)")
+            return nil
+        }
     }
 
     /// Reads, migrates, validates, and repairs the file at `url`. A missing file is created from
@@ -34,7 +44,7 @@ extension Settings {
             // Fill in any settings the file lacks so each is visible to whoever edits it next. `ui`
             // is the exception: it holds only what differs from the defaults.
             if let full = try? encoder().encode(loaded.data), full != (try? Data(contentsOf: url)) {
-                boot.written = write(full, to: url)
+                boot.written = boot.write(full, to: url)
             }
             let validated = loaded.data.validated()
             boot.data = validated.data
@@ -78,7 +88,7 @@ extension Settings {
             boot.log.append("error settings-invalid \(url.path): \(reason)")
             if moved {
                 boot.log.append("moved the invalid file to \(aside.path) and replaced it with defaults")
-                boot.written = (try? encoder().encode(d)).flatMap { write($0, to: url) }
+                boot.written = (try? encoder().encode(d)).flatMap { boot.write($0, to: url) }
                 boot.notice = Notice(title: "settings.json could not be read",
                                      detail: "Vignette is using the default settings. Your file was kept as settings.json.invalid.")
             } else {
@@ -183,11 +193,6 @@ extension Settings {
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
         enc.userInfo[UITweaks.differencesOnly] = true
         return enc
-    }
-
-    /// `raw` when it was written, nil when it was not.
-    static func write(_ raw: Data, to url: URL) -> Data? {
-        failure(writing: raw, to: url) == nil ? raw : nil
     }
 
     /// Why writing `raw` failed, or nil when it was written.
