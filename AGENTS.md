@@ -194,7 +194,10 @@ Before you drive the app:
   the scale says. `"ui": {"motion": 0}` makes the stack appear and leave at once, which is what a
   script wants. Every SwiftUI animation is a spring made by `Anim.spring` (`slideInCurve` "spring"
   included), and the AppKit tweens use `Tween`'s spring curve: an interrupted motion keeps its
-  velocity and blends into the new target instead of jumping. `Tween.spring` is the closed form of
+  velocity and blends into the new target instead of jumping. These ease instead: live ink's Core
+  Animation layers and its popovers' fades (ADR 0027 says why for a closing popover), the toolbar's
+  words giving way (`AnnotatorToolbar.words`, `nameSwap`), a mark's draw-on (`MarkLayers.drawOn`)
+  and the menu bar intro. `Tween.spring` is the closed form of
   a critically damped spring, so a late tick lands where the spring really is by then. Do not step
   it forward by hand: integrating it overshoots by hundreds of points after one late tick.
 - A display link comes from `ScreenLink`, which moves it to the main screen when the screens change.
