@@ -84,7 +84,7 @@ extension AppDelegate {
 
     /// Springs the dot in or out from wherever it is drawn now, so a dot wanted again mid-exit
     /// reverses with its motion kept. A dot that left is removed once its exit finishes, unless
-    /// the dot was not wanted again in the meantime, which replaces `dotExit`.
+    /// it is wanted again in the meantime, which clears `dotExit`.
     private func springDot(_ badge: NSView, appearing: Bool, duration: Double, exit: DotExit? = nil) {
         guard let layer = badge.layer else { return }
         let shown = layer.presentation() ?? layer

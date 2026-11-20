@@ -119,7 +119,7 @@
   in place of "Check for Updates…". With the menu bar icon hidden there is nowhere to show the
   reminder, so Sparkle shows its window, without activating the app. `[update]` lines log what each check found, and `[state] app.update` says what is waiting.
   The dot springs in (scaling up from 0.3 with a little bounce) and springs out the same way
-  without the bounce. The icon swaps with Core Animation's own fade (`CATransition`), which eases on purpose. All of it
+  without the bounce. The icon swaps with Core Animation's own fade (`CATransition`), which does not spring. All of it
   scales with `ui.motion` and is instant under Reduce Motion. A dot wanted again mid-exit reverses
   from where it is drawn (`springDot`), and is removed from the button only when its exit ends.
   Sparkle compares `CFBundleVersion`, which the build phase stamps with the commit count. So each
