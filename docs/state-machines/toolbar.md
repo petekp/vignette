@@ -205,7 +205,7 @@ Decides whether the bar's panel or the editor has the keys. Only a press on the 
 
 Owner: `HeldToolLetter.swift:7`. Tests: `ToolbarOfferTests.testAToolLetterTypedFirstPicksItsToolUntilAWordShowsItBeganOne`.
 
-Holds a tool letter typed first on an untouched field, until the next key shows whether it began a word.
+Holds a tool letter typed first on an untouched field, until the next key shows whether it began a word. The editor's `startsNote` uses the same value after a box or arrow ([editor-core](editor-core.md#heldkey-implicit)), so both read a key's character the same way (`HeldToolLetter.character`).
 
 **States**: `toolBefore` is nil (nothing held) or the tool that was active before the held letter.
 
@@ -216,7 +216,7 @@ Holds a tool letter typed first on an untouched field, until the next key shows 
 | nil | `key`, an eligible letter on an untouched field | `toolBefore` set | the key is kept in `heldLetter` |
 | held | `key`, a repeat | held | swallow |
 | held | `key`, another character | nil | restore the tool, replay the held key into the field |
-| held | `key`, a non-character | held | pass |
+| held | `key`, no character: Option, Command or Control held, or a key that types none | nil | pass: the held key is dropped and the tool stays |
 | held | `keepTool()` (press, resign) | nil | the tool stays |
 
 **Invariants**

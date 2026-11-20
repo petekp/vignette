@@ -193,23 +193,23 @@ final class ToolbarOfferTests: XCTestCase {
 
     func testAToolLetterTypedFirstPicksItsToolUntilAWordShowsItBeganOne() {
         var held = HeldToolLetter()
-        XCTAssertEqual(held.key("a", isRepeat: false, fieldUntouched: true, tool: .rectangle), .hold(.arrow))
-        XCTAssertEqual(held.key("a", isRepeat: true, fieldUntouched: true, tool: .arrow), .swallow)
-        XCTAssertEqual(held.key("d", isRepeat: false, fieldUntouched: true, tool: .arrow), .type(restoring: .rectangle))
-        XCTAssertEqual(held.key("d", isRepeat: false, fieldUntouched: false, tool: .rectangle), .pass)
+        XCTAssertEqual(held.key("a", isRepeat: false, canHold: true, tool: .rectangle), .hold(.arrow))
+        XCTAssertEqual(held.key("a", isRepeat: true, canHold: true, tool: .arrow), .swallow)
+        XCTAssertEqual(held.key("d", isRepeat: false, canHold: true, tool: .arrow), .type(restoring: .rectangle))
+        XCTAssertEqual(held.key("d", isRepeat: false, canHold: false, tool: .rectangle), .pass)
 
         held = HeldToolLetter()
-        XCTAssertEqual(held.key("r", isRepeat: false, fieldUntouched: true, tool: .select), .hold(.rectangle))
+        XCTAssertEqual(held.key("r", isRepeat: false, canHold: true, tool: .select), .hold(.rectangle))
         held.keepTool()
-        XCTAssertEqual(held.key("e", isRepeat: false, fieldUntouched: true, tool: .rectangle), .pass)
+        XCTAssertEqual(held.key("e", isRepeat: false, canHold: true, tool: .rectangle), .pass)
 
         held = HeldToolLetter()
-        XCTAssertEqual(held.key("t", isRepeat: false, fieldUntouched: true, tool: .rectangle), .hold(.text))
-        XCTAssertEqual(held.key(nil, isRepeat: false, fieldUntouched: true, tool: .text), .pass)
+        XCTAssertEqual(held.key("t", isRepeat: false, canHold: true, tool: .rectangle), .hold(.text))
+        XCTAssertEqual(held.key(nil, isRepeat: false, canHold: true, tool: .text), .pass)
         XCTAssertEqual(held.toolBefore, nil)
 
         held = HeldToolLetter()
-        XCTAssertEqual(held.key("h", isRepeat: false, fieldUntouched: true, tool: .rectangle), .pass)
-        XCTAssertEqual(held.key("a", isRepeat: false, fieldUntouched: false, tool: .rectangle), .pass)
+        XCTAssertEqual(held.key("h", isRepeat: false, canHold: true, tool: .rectangle), .pass)
+        XCTAssertEqual(held.key("a", isRepeat: false, canHold: false, tool: .rectangle), .pass)
     }
 }

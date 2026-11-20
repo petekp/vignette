@@ -394,11 +394,8 @@ final class AnnotatorToolbar {
     /// (`HeldToolLetter`), and Left or Right in a field still untouched pages. True when it was taken.
     private func keyDown(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        var character: Character?
-        if case .character(let typed)? = EditorCore.Key(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers),
-           modifiers.isSubset(of: [.shift, .capsLock, .numericPad, .function]) {
-            character = typed
-        }
+        let character = HeldToolLetter.character(EditorCore.Key(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers),
+                                                 EditorCore.Modifiers(eventFlags: event.modifierFlags.rawValue))
         let composing = (panel.firstResponder as? NSTextView)?.hasMarkedText() == true
         let untouched = model.tookKeysOnOpen && model.message.isEmpty && !composing
         if untouched, modifiers.isDisjoint(with: [.shift, .control, .option, .command]),
@@ -406,7 +403,7 @@ final class AnnotatorToolbar {
             onPage?(page, event.isARepeat)
             return true
         }
-        switch model.toolLetter.key(character, isRepeat: event.isARepeat, fieldUntouched: untouched, tool: model.tool) {
+        switch model.toolLetter.key(character, isRepeat: event.isARepeat, canHold: untouched, tool: model.tool) {
         case .hold(let tool):
             heldLetter = event
             onTool?(tool)
