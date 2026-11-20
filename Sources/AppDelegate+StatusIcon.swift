@@ -39,14 +39,14 @@ extension AppDelegate {
     /// and leave together.
     func showUpdateDot() {
         let wanted = updater?.waiting != nil
-        guard let button = statusItem?.button, let icon = NSImage(named: "MenuBarIcon") else { updateDot = nil; return }
+        guard let button = statusItem?.button, let icon = NSImage(named: "MenuBarIcon") else { updateDot = nil; dotExit = nil; return }
         let duration = 0.3 * settings.motionScale
         let dotSize: CGFloat = 4, outline: CGFloat = 1, gap: CGFloat = 1
         let size = dotSize + outline * 2
         let bounds = button.bounds
         let frame = NSRect(x: bounds.maxX - 1 - size, y: button.isFlipped ? 0 : bounds.height - size, width: size, height: size)
-        if wanted, updateDot == nil, let leaving = leavingDot {
-            leavingDot = nil
+        if wanted, updateDot == nil, let leaving = dotExit?.badge {
+            dotExit = nil
             updateDot = leaving
             setIcon(Self.icon(icon, clearedAround: frame.insetBy(dx: -gap, dy: -gap), in: button), on: button, fading: duration)
             springDot(leaving, appearing: true, duration: duration)
@@ -68,21 +68,24 @@ extension AppDelegate {
             setIcon(Self.icon(icon, clearedAround: frame.insetBy(dx: -gap, dy: -gap), in: button), on: button, fading: duration)
             button.addSubview(badge)
             updateDot = badge
-            guard duration > 0 else { return }
+            guard duration > 0, let layer = badge.layer else { return }
+            layer.opacity = 0
+            layer.transform = CATransform3D.scale(0.3, about: CGPoint(x: size / 2, y: size / 2))
             springDot(badge, appearing: true, duration: duration)
         } else if !wanted, let badge = updateDot {
             updateDot = nil
-            leavingDot = badge
+            let exit = DotExit(badge)
+            dotExit = exit
             icon.isTemplate = true
             setIcon(icon, on: button, fading: duration)
-            springDot(badge, appearing: false, duration: duration)
+            springDot(badge, appearing: false, duration: duration, exit: exit)
         }
     }
 
     /// Springs the dot in or out from wherever it is drawn now, so a dot wanted again mid-exit
     /// reverses with its motion kept. A dot that left is removed once its exit finishes, unless
-    /// `updateDot` has become that same dot again by then.
-    private func springDot(_ badge: NSView, appearing: Bool, duration: Double) {
+    /// the dot was not wanted again in the meantime, which replaces `dotExit`.
+    private func springDot(_ badge: NSView, appearing: Bool, duration: Double, exit: DotExit? = nil) {
         guard let layer = badge.layer else { return }
         let shown = layer.presentation() ?? layer
         let fromOpacity = shown.opacity
@@ -93,6 +96,13 @@ extension AppDelegate {
         let toTransform = appearing ? CATransform3DIdentity : small
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        if let exit {
+            CATransaction.setCompletionBlock { [weak self] in
+                guard let self, self.dotExit === exit else { return }
+                self.dotExit = nil
+                exit.badge.removeFromSuperview()
+            }
+        }
         layer.removeAnimation(forKey: "scale")
         layer.removeAnimation(forKey: "fade")
         layer.opacity = toOpacity
@@ -111,13 +121,6 @@ extension AppDelegate {
             layer.add(scale, forKey: "scale")
             layer.add(fade, forKey: "fade")
         }
-        if !appearing {
-            CATransaction.setCompletionBlock { [weak self, weak badge] in
-                guard let self, let badge, self.leavingDot === badge else { return }
-                self.leavingDot = nil
-                badge.removeFromSuperview()
-            }
-        }
         CATransaction.commit()
     }
 
@@ -135,7 +138,7 @@ extension AppDelegate {
             snapshot.frame = button.bounds
             snapshot.contents = rep.cgImage
             snapshot.contentsScale = button.window?.backingScaleFactor ?? 2
-            layer.addSublayer(snapshot)
+            layer.insertSublayer(snapshot, at: 0)
             old = snapshot
         }
         button.image = image
@@ -152,4 +155,10 @@ extension AppDelegate {
         old.add(fade, forKey: "fade")
         CATransaction.commit()
     }
+}
+
+/// A dot on its way out. Replacing or clearing `AppDelegate.dotExit` cancels the removal.
+final class DotExit {
+    let badge: NSView
+    init(_ badge: NSView) { self.badge = badge }
 }

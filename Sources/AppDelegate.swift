@@ -18,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     var statusItem: NSStatusItem?
     /// The dot on the status item while an update waits (Updater).
     var updateDot: NSView?
-    var leavingDot: NSView?
+    var dotExit: DotExit?
     private let menuBarIntro = MenuBarIntro()
     var updater: Updater?
     var watcher: ScreenshotWatcher?
