@@ -71,15 +71,14 @@ struct SyncRig {
     /// An app edit made inside the next `.apply`, as an `onChange` handler that calls `update` makes it.
     var onApply: ((inout SettingsData) -> Void)?
 
-    init(readOnly: Bool = false, reason: String = "", startedWithFailedWrite: Bool = false) {
+    init(readOnly: Bool = false, reason: String = "") {
         var base = SettingsData()
         base.appleOriginal = Self.original
         let raw = try! Settings.encoder().encode(base)
         app = base
         disk = raw
         lastValid = raw
-        sync = SettingsSync(bytes: raw, data: base, readOnly: readOnly, readOnlyReason: reason,
-                            lastWriteFailed: startedWithFailedWrite)
+        sync = SettingsSync(bytes: raw, data: base, readOnly: readOnly, readOnlyReason: reason)
     }
 
     @discardableResult

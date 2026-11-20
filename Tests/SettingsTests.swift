@@ -123,6 +123,7 @@ final class SettingsTests: XCTestCase {
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path) }
         let boot = Settings.bootstrap(at: file)
         XCTAssertTrue(boot.writeFailed)
+        XCTAssertNil(boot.written)
         XCTAssertTrue(boot.log.contains { $0.hasPrefix("error write-failed settings.json:") })
         XCTAssertFalse(boot.readOnly)
     }

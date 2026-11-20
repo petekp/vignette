@@ -36,7 +36,7 @@ Keeps `settings.json` and the app's settings in step. The reducer decides; `Sett
 
 Effects: `log`, `apply`, `write`, `writeAppData`, `readFileAndFlush`, `scheduleWrite`, `cancelWrite`, `scheduleReload`.
 
-Bootstrap (`Settings.bootstrap`, `SettingsFile.swift`): `loaded` (a failed fill-in write sets `lastWriteFailed`); `missing` (create it, or read-only); `invalid` (move aside, use defaults, or read-only; a failed write of defaults sets `lastWriteFailed`). A newer file is read-only. Tests: `SettingsTests.testAFailedFillInWriteIsLoggedAndMarksTheWriteFailed`, `testAFileThatCannotBeCreatedIsReadOnlyWithANotice`.
+Bootstrap (`Settings.bootstrap`, `SettingsFile.swift`): `loaded` (a failed fill-in write sets `lastWriteFailed`); `missing` (create it, or read-only); `invalid` (move aside, use defaults, or read-only; a failed write of defaults sets `lastWriteFailed`). A newer file is read-only. Tests: `testAFailedFillInWriteIsLoggedAndMarksTheWriteFailed`, `testInvalidFileIsSetAsideNotOverwritten`, `testNewerVersionIsReadOnly`.
 
 **Invariants**
 
