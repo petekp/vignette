@@ -65,7 +65,7 @@ Owner: `DestinationChoice.swift`. Tests: `DestinationChoiceTests`; Send's rules 
 
 ### ClaudeCodeConnection: submit, preflight, start (implicit)
 
-Owner: `AgentConnection.swift:195`; inbox reads `ClaudeInbox.swift:23-52`. Tests: `SessionStartsTests.testASendToASessionThatIsNotRunningStartsItThenWritesTheLineIntoItsInbox`, `SessionStartsTests.testAStartThatFailsOrNeverComesUpSendsNothing`, `AgentConnectionTests+Started`.
+Owner: `AgentConnection.swift:195`; inbox reads `ClaudeInbox.swift:23-52`. Tests: `ClaudeSessionStartTests.testASendToASessionThatIsNotRunningStartsItThenWritesTheLineIntoItsInbox`, `ClaudeSessionStartTests.testAStartThatFailsOrNeverComesUpSendsNothing`, `AgentConnectionTests+Started`.
 
 Takes a line for a Claude Code session. A running session is listed, checked by a preflight (`:405`), then written (`:443`). A startable row is started in a new Herdr tab, polled for its inbox, then written. A Claude Code process has an inbox folder; its monitor touches an `alive` file, and `isLive` means touched within 10 s.
 
@@ -91,8 +91,8 @@ Takes a line for a Claude Code session. A running session is listed, checked by 
 **Invariants**
 
 - A line is written only if the inbox still holds that exact session immediately before the write (`AddressGuard.preflight`, `:405`). Checked by: the guard.
-- A second send after the inbox is live does not launch again. Checked by: `SessionStartsTests.testASendToASessionThatIsNotRunningStartsItThenWritesTheLineIntoItsInbox`.
-- One start runs per session at a time: a send to a session already starting joins that start (`SessionStartsUnderWay`). Checked by: `SessionStartsTests.testASecondSendWhileItsSessionIsStillStartingJoinsThatStart` (**fixed**, [toolbar-3](findings.md#toolbar-3)).
+- A second send after the inbox is live does not launch again. Checked by: `ClaudeSessionStartTests.testASendToASessionThatIsNotRunningStartsItThenWritesTheLineIntoItsInbox`.
+- One start runs per session at a time: a send to a session already starting joins that start (`SessionStartsUnderWay`). Checked by: `ClaudeSessionStartTests.testASecondSendWhileItsSessionIsStillStartingJoinsThatStart` (**fixed**, [toolbar-3](findings.md#toolbar-3)).
 
 **Late and concurrent answers**
 
@@ -104,7 +104,7 @@ Takes a line for a Claude Code session. A running session is listed, checked by 
 
 ### HerdrLauncher.start (implicit)
 
-Owner: `SessionStarts.swift:191-271` (`start` at `:220`, the rename at `:251`). Tests: `SessionStartsTests` (from line 241).
+Owner: `SessionStarts.swift:191-271` (`start` at `:220`, the rename at `:251`). Tests: the `HerdrLauncher` tests in `ClaudeSessionStartTests`.
 
 Runs `claude` in a new terminal in the project's folder, in a new tab of the space the Herdr window shows, and names the tab. It runs on a pool thread only; the rename runs later, on its own.
 
@@ -125,8 +125,8 @@ Runs `claude` in a new terminal in the project's folder, in a new tab of the spa
 
 **Invariants**
 
-- No terminal is started without `herdr.space`, which would hide it. Checked by: `SessionStartsTests.testWithoutASpaceOrWhenHcRefusesNothingStartsAndAFailedRenameIsNoFailedStart`.
-- Every word of the command is its own argument. Checked by: `SessionStartsTests.testTheSessionRunsInANewTabOfTheSpaceTheWindowShowsWithEveryWordItsOwnArgument`.
+- No terminal is started without `herdr.space`, which would hide it. Checked by: `ClaudeSessionStartTests.testWithoutASpaceOrWhenHcRefusesNothingStartsAndAFailedRenameIsNoFailedStart`.
+- Every word of the command is its own argument. Checked by: `ClaudeSessionStartTests.testTheSessionRunsInANewTabOfTheSpaceTheWindowShowsWithEveryWordItsOwnArgument`.
 
 **Late and concurrent answers**
 

@@ -40,7 +40,7 @@ Line references are to commit 358d988 unless a finding says otherwise. Those in 
   tab is left. When the first inbox exists but is not live yet, the second start never finds it
   (`look` takes only folders made since its own launch, `:289`) and fails after 45 s. That second
   case is traced, not tested; the test shows the double launch.
-- **Test**: `SessionStartsTests.testASecondSendWhileItsSessionIsStillStartingJoinsThatStart`, which sends
+- **Test**: `ClaudeSessionStartTests.testASecondSendWhileItsSessionIsStillStartingJoinsThatStart`, which sends
   twice while the first start looks for its inbox and expects one launch.
 - **Fix**: one start per session id at a time. A send for a session already starting waits for that
   start's answer and writes its line into the same inbox. It adds a state, a start under way, which
