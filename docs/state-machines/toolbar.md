@@ -189,10 +189,10 @@ Decides whether the bar's panel or the editor has the keys. Only a press on the 
 | any | `didBecomeKey` | `keyed = true`, `focus = .message` | whatever made the panel key |
 | any | `didResignKey` | `keyed = false`, `tookKeysOnOpen = false`, `caretToEnd = false`; `focus = nil` if it was `.message` | `makeFirstResponder(nil)` |
 | any | `begin` | `focus = nil`, `tookKeysOnOpen = false`, `toolLetter` reset | `keyed` and `panel.isKeyWindow` untouched |
-| bar shown, a field on it | a pick in the target's menu (`typeAfterPick`, `:363`) | `tookKeysOnOpen = false` (`Model.pick`); `focus = .message` | the controller's `editorUntouched = false` first; the panel takes the keys |
-| panel already key | `typeOnOpen` (`:375`, from `offerTyping`, `AnnotationController+ShowingAndHiding.swift:34`) | — | refused (`:376`) |
+| bar shown, a field on it | a pick in the target's menu (`typeAfterPick`, `AnnotatorToolbar+Focus.swift:45`) | `tookKeysOnOpen = false` (`Model.pick`); `focus = .message` | the controller's `editorUntouched = false` first; the panel takes the keys |
+| panel already key | `typeOnOpen` (`AnnotatorToolbar+Focus.swift:57`, from `offerTyping`, `AnnotationController+ShowingAndHiding.swift:34`) | — | refused (`:58`) |
 | panel key | Cmd+W, Cmd+Plus, Cmd+Minus, Cmd+0; Cmd+C in an untouched field with no words selected | — | `FieldCommand`: the window's close, the zoom, or the drawing copied; other Command keys go to the field |
-| any | Tab, Shift+Tab (`move`, `:330`); Space (`activate`, `:340`); M or P (`focusMessage`, `:356`); press (`onPress`, `:288`); `keyDown` (`:391`) | `focus` moves | — |
+| any | Tab, Shift+Tab (`move`, `AnnotatorToolbar+Focus.swift:12`); Space (`activate`, `:22`); M or P (`focusMessage`, `:38`); press (`onPress`, `AnnotatorToolbar.swift:288`); `keyDown` (`+Focus.swift:73`) | `focus` moves | — |
 
 **Invariants**
 
@@ -230,7 +230,7 @@ Holds a tool letter typed first on an untouched field, until the next key shows 
 
 ### Target menu pick (implicit)
 
-Owner: `AnnotatorToolbar.swift:260-266` (`onPick`), `:269-274` (`onMenuKey`), `:333` (Space), `:416` (`showTargetMenu`). Tests: none.
+Owner: `AnnotatorToolbar.swift:260-266` (`onPick`), `:269-274` (`onMenuKey`), `AnnotatorToolbar+Focus.swift:29` (Space), `AnnotatorToolbar.swift:329` (`showTargetMenu`). Tests: none.
 
 Opens the target menu and applies a pick one turn later.
 
@@ -241,13 +241,13 @@ Opens the target menu and applies a pick one turn later.
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | closed | Space, Up or Down in the field, or a click | closed, one turn later | `showTargetMenu` builds an `NSMenu` from `model.destinations + model.startable` and calls `popUp` |
-| closed | `showTargetMenu` with no target offer or `targetFrame == nil` | closed | refused (`:417`) |
+| closed | `showTargetMenu` with no target offer or `targetFrame == nil` | closed | refused (`AnnotatorToolbar.swift:330`) |
 | open | item chosen | pick queued | `TargetMenuActions.pick` (`:1327`) calls `DispatchQueue.main.async` |
 | pick queued | the block runs | closed | `model.pick(destination)` under `withAnimation`; no opening or `shown` check ([toolbar-4](plausible-findings-run-to-toolbar.md#toolbar-4)) |
 
 **Invariants**
 
-- Space opens the menu a turn later so the menu takes keys (comment `:331-333`). Checked by: nothing.
+- Space opens the menu a turn later so the menu takes keys (comment `AnnotatorToolbar+Focus.swift:26-28`). Checked by: nothing.
 - A pick belongs to the opening that showed the menu. Checked by: nothing ([toolbar-4](plausible-findings-run-to-toolbar.md#toolbar-4)). `targetFrame` comes from SwiftUI geometry and is never cleared (`:248`).
 
 **Late and concurrent answers**
