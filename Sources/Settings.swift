@@ -211,8 +211,9 @@ final class Settings: ObservableObject {
         case .apply(let next, let source):
             apply(next, source: source)
         case .write(let raw):
-            Settings.write(raw, to: Settings.fileURL)
+            let failure = Settings.failure(writing: raw, to: Settings.fileURL)
             watchFile()   // atomic write replaced the inode
+            send(.wrote(raw, failure: failure))
         case .writeAppData:
             send(.appData(data))
         case .readFileAndFlush:

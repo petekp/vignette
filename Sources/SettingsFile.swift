@@ -185,9 +185,15 @@ extension Settings {
         return enc
     }
 
-    @discardableResult
+    /// `raw` when it was written, nil when it was not.
     static func write(_ raw: Data, to url: URL) -> Data? {
-        (try? writeOrThrow(raw, to: url)).map { raw }
+        failure(writing: raw, to: url) == nil ? raw : nil
+    }
+
+    /// Why writing `raw` failed, or nil when it was written.
+    static func failure(writing raw: Data, to url: URL) -> String? {
+        do { try writeOrThrow(raw, to: url) } catch { return "\(url.lastPathComponent): \(error.localizedDescription)" }
+        return nil
     }
 
     private static func writeOrThrow(_ raw: Data, to url: URL) throws {

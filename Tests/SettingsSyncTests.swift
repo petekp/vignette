@@ -14,6 +14,19 @@ final class SettingsSyncTests: XCTestCase {
         XCTAssertEqual(rig.reloadFires(), [])
     }
 
+    func testAFailedWriteIsLoggedAndALaterReloadKeepsTheAppsChange() {
+        var rig = SyncRig()
+        rig.appEdits { $0.ui.cardMaxWidth = 300 }
+        rig.writesFail = 1
+        XCTAssertEqual(rig.writeFires().logLines, ["error write-failed settings.json: the disk is full"])
+        XCTAssertEqual(rig.writes, [])
+        rig.send(.fileChanged)
+        XCTAssertEqual(rig.reloadFires(), [])
+        XCTAssertEqual(rig.app.ui.cardMaxWidth, 300)
+        XCTAssertEqual(rig.quit().logLines, ["wrote ui.cardMaxWidth=300"])
+        XCTAssertEqual(rig.decoded(rig.disk).ui.cardMaxWidth, 300)
+    }
+
     /// Catches a write that does not take in the file first (C E W R): it replaces the file's edit,
     /// and its echo is then skipped as the app's own bytes.
     func testAnAppChangeAndAFileEditOnOtherKeysBothSurviveInEveryOrder() {

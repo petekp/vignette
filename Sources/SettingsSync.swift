@@ -22,6 +22,8 @@ struct SettingsSync {
         case flush(file: Data?, app: SettingsData)
         /// The answer to `.writeAppData`: the app's data after the effects before it.
         case appData(SettingsData)
+        /// The answer to `.write`: the bytes it wrote, and why the write failed when it did.
+        case wrote(Data, failure: String?)
     }
 
     enum Effect: Equatable {
@@ -29,7 +31,7 @@ struct SettingsSync {
         case log(String)
         /// `Settings.apply(_:source:)`, which pushes Apple's keys.
         case apply(SettingsData, source: String)
-        /// Write the file, then watch the new file.
+        /// Write the file, watch the new file, and answer with `.wrote`.
         case write(Data)
         /// Answer with `.appData`. Always the last effect. An `onChange` handler may call `update`
         /// during the `.apply` before it, so the write takes the app's data as it is afterwards.
@@ -50,6 +52,9 @@ struct SettingsSync {
     /// The file as this app last wrote or read it: the state the file and the app last agreed on.
     private var syncedBytes: Data?
     private var syncedData: SettingsData
+    /// The data behind the `.write` whose answer has not come yet. The file and the app agree on it
+    /// only once that write succeeded.
+    private var writing: (raw: Data, data: SettingsData)?
     /// An app change since the last flush. Only a flush clears it, so a flush at quit writes even
     /// after the timer's write ran.
     private var changedSinceFlush = false
@@ -83,20 +88,24 @@ struct SettingsSync {
             return takeIn(file, app: app) + [.writeAppData]
         case .appData(let d):
             return write(d)
+        case .wrote(let raw, let failure):
+            guard let writing else { return [] }
+            self.writing = nil
+            if let failure { return [.log("error write-failed \(failure)")] }
+            let changed = Self.uiChanges(from: syncedData.ui, to: writing.data.ui)
+            syncedBytes = raw
+            syncedData = writing.data
+            return changed.isEmpty ? [] : [.log("wrote \(changed.joined(separator: " "))")]
         }
     }
 
     private mutating func write(_ d: SettingsData) -> [Effect] {
         if readOnly { return [.log("warning not written: \(readOnlyReason)")] }
         guard let raw = try? Settings.encoder().encode(d) else { return [] }
-        var effects: [Effect] = []
-        // Tweak-panel changes are not logged as they happen (a drag is many of them); the write is.
-        let changed = Self.uiChanges(from: syncedData.ui, to: d.ui)
-        if !changed.isEmpty { effects.append(.log("wrote \(changed.joined(separator: " "))")) }
-        syncedBytes = raw
-        syncedData = d
-        effects.append(.write(raw))
-        return effects
+        // Tweak-panel changes are not logged as they happen (a drag is many of them); the write is,
+        // once it succeeded.
+        writing = (raw, d)
+        return [.write(raw)]
     }
 
     /// `ui.key=value` for every UI number that differs, in key order.

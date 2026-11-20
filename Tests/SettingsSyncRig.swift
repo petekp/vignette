@@ -66,6 +66,7 @@ struct SyncRig {
     var log: [String] = []
     var writeTimer = false
     var reloadTimer = false
+    var writesFail = 0
     /// An app edit made inside the next `.apply`, as an `onChange` handler that calls `update` makes it.
     var onApply: ((inout SettingsData) -> Void)?
 
@@ -101,10 +102,16 @@ struct SyncRig {
                 appEdits(edit)
             }
         case .write(let raw):
+            if writesFail > 0 {
+                writesFail -= 1
+                send(.wrote(raw, failure: "settings.json: the disk is full"))
+                return
+            }
             disk = raw
             lastValid = raw
             writes.append(raw)
             reloadTimer = true   // the watcher sees the app's own write
+            send(.wrote(raw, failure: nil))
         case .writeAppData: send(.appData(app))
         case .readFileAndFlush: send(.flush(file: disk, app: app))
         case .scheduleWrite: writeTimer = true

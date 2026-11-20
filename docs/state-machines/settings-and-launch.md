@@ -10,7 +10,7 @@ Keeps `settings.json` and the app's settings in step. The reducer decides; `Sett
 
 **States**
 
-- Reducer: `syncedBytes` and `syncedData` (what the file and app last agreed on), `changedSinceFlush`, `readOnly` (never cleared).
+- Reducer: `syncedBytes` and `syncedData` (what the file and app last agreed on), `writing` (a write awaiting `wrote`), `changedSinceFlush`, `readOnly` (never cleared).
 - Shell: `writeWork` and `reloadWork` (`DispatchWorkItem`s), `directorySource`, `fileSource`, `hold: EventHold`.
 
 **Transitions**
@@ -24,7 +24,8 @@ Keeps `settings.json` and the app's settings in step. The reducer decides; `Sett
 | any | `flush(file, app)` | — | `takeIn`, then `writeAppData` |
 | `!changedSinceFlush` | `quit` | — | — |
 | `changedSinceFlush` | `quit` | — | `cancelWrite`, `readFileAndFlush` |
-| not read-only | `appData(d)` | `syncedBytes` and `syncedData` set | `write(raw)`; the shell's write can fail unreported ([setup-3](plausible-findings-requests-to-live-ink.md#setup-3)) |
+| not read-only | `appData(d)` | `writing` set | `write(raw)`, answered by `wrote` |
+| `writing` | `wrote(raw, failure)` | when it succeeded, `syncedBytes` and `syncedData` set | a failure logs `error write-failed` |
 | read-only | `appData(d)` | — | refused: no write |
 
 `takeIn`:
@@ -40,7 +41,7 @@ Bootstrap (`Settings.bootstrap`, `SettingsFile.swift`): `loaded`; `missing` (cre
 **Invariants**
 
 - Nothing is written while read-only; no value is clamped silently; a conflict is logged for exactly the keys both sides changed; every edit survives or loses to a logged file conflict. Checked by: `SettingsSyncRandomTests.testRandomSequencesKeepTheInvariants`.
-- A failed `write` is noticed. Checked by: nothing; `Settings.write` discards the error (`Settings.swift:951-953`, `:883`) and a later reload reverts the app to the old file ([setup-3](plausible-findings-requests-to-live-ink.md#setup-3)).
+- A failed `write` is logged and a later reload keeps the app's change. Checked by: `testAFailedWriteIsLoggedAndALaterReloadKeepsTheAppsChange`.
 - The directory watch survives the folder being replaced. Checked by: nothing; `directorySource` is made once with mask `.write` (`Settings.swift:975-982`) ([setup-15](plausible-findings-requests-to-live-ink.md#setup-15)).
 
 **Late and concurrent answers**

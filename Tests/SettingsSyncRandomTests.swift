@@ -9,7 +9,7 @@ final class SettingsSyncRandomTests: XCTestCase {
     /// write, the merge base or the echo skip that loses an edit from either side or hands it to
     /// the other, and any write after read-only.
     func testRandomSequencesKeepTheInvariants() {
-        var conflicts = 0, stamps = 0, readOnlyRuns = 0, invalidTakeIns = 0, flushesOverReload = 0
+        var conflicts = 0, stamps = 0, readOnlyRuns = 0, invalidTakeIns = 0, flushesOverReload = 0, failedWrites = 0
         seeds: for seed in 0..<100 {
             var rng = SeededGenerator(seed: UInt64(seed))
             var rig = SyncRig()
@@ -32,10 +32,15 @@ final class SettingsSyncRandomTests: XCTestCase {
                 trace.append((name, effects, rig.sync.readOnly))
                 if rig.sync.readOnly, effects.hasWrite, fail("nothing is written while read-only") { return nil }
                 var said: Set<SyncKey> = []
+                var writing: [SyncKey: String]?
                 for effect in effects {
                     switch effect {
                     case .log(let line):
                         if line.contains("warning clamped"), fail("nothing is clamped: \(line)") { return nil }
+                        if line.hasPrefix("error write-failed") {
+                            writing = nil
+                            failedWrites += 1
+                        }
                         if line.hasPrefix("migrated from") { stamps += 1 }
                         if line.hasPrefix("error settings-invalid") { invalidTakeIns += 1 }
                         guard line.hasPrefix("kept the file's ") else { continue }
@@ -47,6 +52,8 @@ final class SettingsSyncRandomTests: XCTestCase {
                         said.insert(key)
                         conflicts += 1
                     case .apply(_, "file"):
+                        if let written = writing { base = written }
+                        writing = nil
                         guard let file = rig.parsed(disk).map(SyncKey.values) else {
                             _ = fail("a take-in with no file")
                             return nil
@@ -59,11 +66,13 @@ final class SettingsSyncRandomTests: XCTestCase {
                         said = []
                         base = file
                     case .write(let raw):
-                        base = SyncKey.values(in: rig.decoded(raw))
+                        if let written = writing { base = written }
+                        writing = SyncKey.values(in: rig.decoded(raw))
                     default:
                         break
                     }
                 }
+                if let written = writing { base = written }
                 if !said.isEmpty, fail("a conflict with no take-in") { return nil }
                 return effects
             }
@@ -73,7 +82,7 @@ final class SettingsSyncRandomTests: XCTestCase {
                     effects = step("newer file") { rig in rig.putJSON { json in json["version"] = Settings.currentVersion + 1 } }
                 } else {
                     var pick: Int
-                    repeat { pick = Int.random(in: 0..<16, using: &rng) } while
+                    repeat { pick = Int.random(in: 0..<17, using: &rng) } while
                         (pick >= 9 && pick < 11 && !rig.reloadTimer) || (pick >= 11 && pick < 13 && !rig.writeTimer)
                     switch pick {
                     case 0..<5:
@@ -98,6 +107,11 @@ final class SettingsSyncRandomTests: XCTestCase {
                         if reloadPending, effects?.hasWrite == true { flushesOverReload += 1 }
                     case 14:
                         effects = step("pre-version file") { rig in rig.putJSON { json in json["version"] = nil } }
+                    case 16:
+                        effects = step("the next write fails") { rig in
+                            rig.writesFail = 1
+                            return []
+                        }
                     default:
                         let broken = Bool.random(using: &rng)
                         effects = step(broken ? "invalid file" : "deleted file") { rig in
@@ -109,6 +123,7 @@ final class SettingsSyncRandomTests: XCTestCase {
                 }
                 if effects == nil { break seeds }
             }
+            rig.writesFail = 0
             if rig.reloadTimer, step("drain: reload", { rig in rig.reloadFires() }) == nil { break seeds }
             if rig.sync.readOnly {
                 readOnlyRuns += 1
@@ -136,5 +151,6 @@ final class SettingsSyncRandomTests: XCTestCase {
         XCTAssertGreaterThan(readOnlyRuns, 20, "runs that go read-only are part of the mix")
         XCTAssertGreaterThan(invalidTakeIns, 20, "invalid files are part of the mix")
         XCTAssertGreaterThan(flushesOverReload, 20, "flushes with a reload pending are part of the mix")
+        XCTAssertGreaterThan(failedWrites, 20, "failed writes are part of the mix")
     }
 }
