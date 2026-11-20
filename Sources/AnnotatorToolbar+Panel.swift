@@ -9,6 +9,9 @@ final class ToolbarPanel: NSPanel {
     private var wantsKeys = false
     /// Cmd+Return while the message field has the keys: Send, as in the editor.
     var onCommandReturn: (() -> Void)?
+    /// Any other Command key while the message field has the keys, before the field sees it. True
+    /// when it was taken (`FieldCommand`).
+    var onCommandKey: ((NSEvent) -> Bool)?
     /// Tab or Shift+Tab (true) while the message field has the keys.
     var onTab: ((_ backward: Bool) -> Void)?
     /// A press on the bar, and whether it is on the message field.
@@ -50,6 +53,7 @@ final class ToolbarPanel: NSPanel {
             onCommandReturn?()
             return true
         }
+        if event.type == .keyDown, onCommandKey?(event) == true { return true }
         return super.performKeyEquivalent(with: event)
     }
 
@@ -78,6 +82,26 @@ final class ToolbarPanel: NSPanel {
             }
         }
         super.sendEvent(event)
+    }
+}
+
+/// A Command key the message field has no use for, which does what it does on the image instead.
+/// The rest, such as Cmd+V, Cmd+A, Cmd+X and Cmd+Z, stay with the field.
+enum FieldCommand: Equatable {
+    /// Cmd+W: the annotator closes, as through the main menu's Close.
+    case close
+    /// Cmd+Plus, Cmd+Minus and Cmd+0, by the editor's own rule.
+    case zoom(EditorCore.ZoomRequest)
+
+    init?(_ key: EditorCore.Key?, _ modifiers: EditorCore.Modifiers) {
+        guard modifiers.contains(.command), case .character(let character)? = key else { return nil }
+        if let zoom = EditorCore.zoomRequest(for: character) {
+            self = .zoom(zoom)
+        } else if character == "w", modifiers == .command {
+            self = .close
+        } else {
+            return nil
+        }
     }
 }
 

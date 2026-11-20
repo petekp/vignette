@@ -212,4 +212,19 @@ final class ToolbarOfferTests: XCTestCase {
         XCTAssertEqual(held.key("h", isRepeat: false, canHold: true, tool: .rectangle), .pass)
         XCTAssertEqual(held.key("a", isRepeat: false, canHold: false, tool: .rectangle), .pass)
     }
+
+    func testInTheMessageFieldCmdWAndTheZoomKeysAreTheAnnotatorsAndTheEditingKeysStayWithTheField() {
+        XCTAssertEqual(FieldCommand(.character("w"), .command), .close)
+        XCTAssertEqual(FieldCommand(.character("="), .command), .zoom(.zoomIn))
+        XCTAssertEqual(FieldCommand(.character("+"), [.command, .shift]), .zoom(.zoomIn))
+        XCTAssertEqual(FieldCommand(.character("-"), .command), .zoom(.zoomOut))
+        XCTAssertEqual(FieldCommand(.character("0"), .command), .zoom(.fit))
+        for editing: Character in ["v", "a", "x", "z", "c"] {
+            XCTAssertNil(FieldCommand(.character(editing), .command), "Cmd+\(editing) stays with the field")
+        }
+        XCTAssertNil(FieldCommand(.character("z"), [.command, .shift]))
+        XCTAssertNil(FieldCommand(.character("w"), [.command, .shift]))
+        XCTAssertNil(FieldCommand(.character("w"), []))
+        XCTAssertNil(FieldCommand(.returnKey, .command))
+    }
 }

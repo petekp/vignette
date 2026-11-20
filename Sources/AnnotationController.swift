@@ -131,6 +131,7 @@ final class AnnotationController {
         editor.onKey = { [weak self] in self?.editorUntouched = false }
         toolbar.onPick = { [weak self] in self?.editorUntouched = false }
         toolbar.onClose = { [weak self] in self?.cancel() }
+        toolbar.panel.onCommandKey = { [weak self] event in self?.fieldCommand(event) ?? false }
         editor.takesKey = { [weak self] key, modifiers in
             guard let toolbar = self?.toolbar, toolbar.model.focus != nil, modifiers.isSubset(of: .shift) else { return false }
             switch key {
@@ -186,4 +187,15 @@ final class AnnotationController {
         editor.noteSettleDuration = Settings.shared.motionUI.noteSettleDuration
     }
 
+    /// A Command key in the message field that the field has no use for does what it does on the
+    /// image. Cmd+W goes through the window's close, as the main menu's Close sends it from the image.
+    private func fieldCommand(_ event: NSEvent) -> Bool {
+        let key = EditorCore.Key(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers)
+        guard current != nil, let command = FieldCommand(key, EditorCore.Modifiers(eventFlags: event.modifierFlags.rawValue)) else { return false }
+        switch command {
+        case .close: window?.performClose(nil)
+        case .zoom(let request): zoomRequested(request)
+        }
+        return true
+    }
 }

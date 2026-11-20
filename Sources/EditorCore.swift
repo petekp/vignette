@@ -1406,7 +1406,7 @@ struct EditorCore {
         return Tool.allCases.first { $0.key == character }
     }
 
-    private static func zoomRequest(for character: Character) -> ZoomRequest? {
+    static func zoomRequest(for character: Character) -> ZoomRequest? {
         switch character {
         case "=", "+": return .zoomIn
         case "-": return .zoomOut

@@ -26,7 +26,11 @@
   (`AnnotatorToolbar.typeAfterPick`, `ToolbarPanel.caretToEnd`). It takes them a turn after the menu
   closes, after the bar starts to spring to the new target's width. The field counts as
   typed in only while the panel is key
-  (`Model.keyed`), because AppKit makes it the panel's first responder when the bar comes up. There is no
+  (`Model.keyed`), because AppKit makes it the panel's first responder when the bar comes up.
+  While the field has the keys, Cmd+W and the zoom keys do what they do on the image: the panel
+  hands them to `AnnotationController.fieldCommand` before the field sees them (`FieldCommand`),
+  which sends Cmd+W to the window's `performClose` and the zoom keys to the zoom. Every other
+  Command key stays with the field. There is no
   palette: a mark's colour says who drew it. Send starts on the kept pick when there is one: the
   session the person picked in the target's menu and then sent to (`DestinationChoice.KeptPick`,
   `AnnotationController.keptPick`). It holds for 10 minutes after the send that set it, and each
