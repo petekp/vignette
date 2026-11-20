@@ -53,6 +53,9 @@ enum SubmissionOutcome {
 
     static let internalReason = "Something went wrong in Vignette. The log has details."
 
+    /// A request Vignette could not store: nothing was sent, and the system says why.
+    static func notSaved(_ error: Error) -> String { "Vignette couldn't save the request. \(error.localizedDescription)" }
+
     /// A client's own words, cut to fit a card, for a failure Vignette has no sentence of its own for.
     static func quoted(_ client: String, _ detail: String) -> String {
         let words = detail.count > 70 ? String(detail.prefix(69)) + "…" : detail

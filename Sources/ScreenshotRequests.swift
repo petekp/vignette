@@ -251,7 +251,7 @@ final class ScreenshotRequests {
             try write(record)
         } catch {
             Log.write("[send] error \(CommandError.writeFailed.rawValue) \(directory.path): \(error.localizedDescription)")
-            throw Refusal(reason: "Vignette couldn't save the request. \(error.localizedDescription)")
+            throw Refusal(reason: SubmissionOutcome.notSaved(error))
         }
         requests[id] = record
         if open.count == Self.maxLiveRequests, let oldest = open.first {
@@ -340,14 +340,15 @@ final class ScreenshotRequests {
                                  reason: SubmissionOutcome.internalReason)
         }
         // Stored as uncertain before the line leaves: `load` clears a request still prepared as one whose
-        // line never went, and this one's client may have it, with a call that can run 25 s.
+        // line never went, and deletes its image. When that write fails, the line does not go.
         var going = record
         going.status = .uncertain
         going.detail = detail
         going.handedOver = Date()
+        do { try write(going) } catch {
+            return .notSubmitted(code: .writeFailed, detail: error.localizedDescription, reason: SubmissionOutcome.notSaved(error))
+        }
         requests[record.id] = going
-        do { try write(going) }
-        catch { Log.write("[send] error \(CommandError.writeFailed.rawValue) could not store \(record.id): \(error.localizedDescription)") }
         let destination = AgentDestination(id: record.destinationID, name: record.destinationName, address: record.address, start: record.start)
         connection.submit(line, to: destination, watchingTurn: watchingTurn, completion: completion)
         return nil

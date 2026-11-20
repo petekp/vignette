@@ -95,7 +95,8 @@
   motion: the scale and Reduce Motion never shorten it. When it ends the line goes through the
   same `submit` as before, so nothing written changes. Quitting hands every waiting line over at
   once and waits up to 2 s for the clients (`releaseHeld`). Every hand-over records its request
-  uncertain before the line leaves, so `prepared` means the line never went. And a clear of the request, by
+  uncertain before the line leaves, so `prepared` means the line never went. When that record
+  can't be written, the line does not go and the card says "Not sent". And a clear of the request, by
   `requests?clear=` or by the 50-request limit, stops its waiting send. So does a file leaving
   the watch folder, which is how deleting a card during the wait cancels its send
   (`ScreenshotRequests.fileRemoved`). A rename inside the folder carries its waiting sends to the

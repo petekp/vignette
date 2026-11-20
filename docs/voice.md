@@ -97,7 +97,7 @@ cancelled with Don't send leaves the tab as it was.
 | When | Reason |
 | --- | --- |
 | The drawing did not render | Vignette couldn't render the drawing. The log has details. |
-| The request could not be written | Vignette couldn't save the request. *the system's words* |
+| The request could not be written, when it was made or as its line was about to go (`SubmissionOutcome.notSaved`) | Vignette couldn't save the request. *the system's words* |
 | Anything else | Vignette couldn't send the drawing. The log has details. |
 | The screenshot is gone | Vignette can't read *name*. It may have been moved or deleted. |
 
