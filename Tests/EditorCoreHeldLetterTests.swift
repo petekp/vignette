@@ -24,7 +24,6 @@ final class EditorCoreHeldLetterTests: XCTestCase {
         XCTAssertEqual(core.tool, .rectangle)
         XCTAssertNotNil(textOf(core.drawing.marks.last))
 
-        // A press after the tool key keeps the tool.
         var other = self.core()
         other.drag(from: (100, 100), to: (300, 200))
         other.key(.character("a"))

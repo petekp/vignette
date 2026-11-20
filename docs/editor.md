@@ -594,7 +594,7 @@ The host sets what Return and Cmd+Return do from what its toolbar offers (`Edito
   press reached the image first. Typing goes to the agent at once, and a press on the image
   gives the tool keys back. Until something is typed in a field that took the keys this way, Return
   copies, or replies on a card that names its session, Esc closes the editor, Left and Right open
-  the screenshot beside it, and Cmd+C with no words selected copies the drawing, as on the image.
+  the screenshot beside it, and Cmd+C with no words selected copies the whole drawing.
 - A tool's letter typed first into that field picks the tool and waits, as after a box is drawn
   (section 5), except that a letter next puts both in the field rather than in a note.
 - M or P in the editor puts the keys in the message field. Return and Cmd+Return in it send, or

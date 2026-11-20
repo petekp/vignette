@@ -83,7 +83,7 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 
 ### HeldKey (implicit)
 
-Owner: `EditorCore.startsNote` (`EditorCore.swift:1372`), which asks `HeldToolLetter` about each key while a box or arrow is armed, `holdsKey` (`:438`), `EditorView.heldKeys` (`EditorView.swift:104`). Tests: `EditorCoreTests.testAToolKeyRightAfterABoxPicksItsToolUnlessACharacterFollows`, `testACharacterTypedRightAfterABoxStartsANoteBesideIt`.
+Owner: `EditorCore.startsNote` (`EditorCore.swift:1371`), which asks `HeldToolLetter` about each key while a box or arrow is armed, `holdsKey` (`:437`), `EditorView.heldKeys` (`EditorView.swift:104`). Tests: `EditorCoreHeldLetterTests.testAToolKeyRightAfterABoxPicksItsToolUnlessACharacterFollows`, `EditorCoreTests.testACharacterTypedRightAfterABoxStartsANoteBesideIt`.
 
 A tool key pressed right after a box or arrow is drawn may be the first letter of a note. The core switches the tool at once, and the view holds the key event until the next key shows whether the person is typing.
 
@@ -111,7 +111,7 @@ A tool key pressed right after a box or arrow is drawn may be the first letter o
 **Invariants**
 
 - `holdsKey` implies the view holds at least one event. Only `keyDown(with:)` passes an event (`.holdKey` ignores nil, `EditorView.swift:275`), and a key with Option, Command or Control has no character for `HeldToolLetter`, so it never holds. Checked by: nothing.
-- A key held for good, with no further key or press, leaves the tool switched. That is the design (comment at `:1384`).
+- A key held for good, with no further key or press, leaves the tool switched. That is the design (`HeldToolLetter.swift:3-6`).
 
 **Late and concurrent answers**
 

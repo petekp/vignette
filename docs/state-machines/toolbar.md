@@ -21,7 +21,7 @@ A `decided` answer is one `DestinationChoice` marks as settled: complete, or any
 
 **Transitions**
 
-Events: `begin(replyTo:carryingTarget:)` (`:148`, sent by `beginDestinations` with `carryingTarget: toolbar.model.shown`, right after `annotator.prepare`, `AppDelegate.swift:116-118`); `answered(_:)` (`:167`, once per `SessionListing.deliver`); `pick(_:)` (`:186`, from the target menu a turn later, `AnnotatorToolbar.swift:260-266`).
+Events: `begin(replyTo:carryingTarget:)` (`:152`, sent by `beginDestinations` with `carryingTarget: toolbar.model.shown`, right after `annotator.prepare`, `AppDelegate.swift:116-118`); `answered(_:)` (`:172`, once per `SessionListing.deliver`); `pick(_:)` (`:186`, from the target menu a turn later, `AnnotatorToolbar.swift:260-266`).
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
@@ -176,7 +176,7 @@ Events: `place(below:gap:)` (`:436`), `show()` (`:521`), `hideSoon()` (`:532`), 
 
 ### Keyboard focus: focus, keyed, tookKeysOnOpen, toolLetter, heldLetter (implicit)
 
-Owner: `Model.focus` (`AnnotatorToolbar.swift:102`), `keyed` (`:73`), `tookKeysOnOpen` (`:75`), `toolLetter` (`:77`), `messageAsks` (`:104`); `AnnotatorToolbar.heldLetter` (`:221`); `ToolbarPanel.pressOnField` (`AnnotatorToolbar+Panel.swift:10`), `wantsKeys` (`:11`), `caretToEnd` (`:46`). Tests: none for the panel; `HeldToolLetter` below has one.
+Owner: `Model.focus` (`AnnotatorToolbar.swift:104`), `keyed` (`:75`), `tookKeysOnOpen` (`:77`), `toolLetter` (`:79`), `messageAsks` (`:106`); `AnnotatorToolbar.heldLetter` (`:226`); `ToolbarPanel.pressOnField` (`AnnotatorToolbar+Panel.swift:10`), `wantsKeys` (`:11`), `caretToEnd` (`:46`). Tests: none for the panel; `HeldToolLetter` below has one.
 
 Decides whether the bar's panel or the editor has the keys. Only a press on the message field or an explicit ask lets the panel take them.
 
@@ -190,8 +190,8 @@ Decides whether the bar's panel or the editor has the keys. Only a press on the 
 | any | `didResignKey` | `keyed = false`, `tookKeysOnOpen = false`, `caretToEnd = false`; `focus = nil` if it was `.message` | `makeFirstResponder(nil)` |
 | any | `begin` | `imageNumber += 1`, `focus = nil`, `tookKeysOnOpen = false`, `toolLetter` reset | `keyed` and `panel.isKeyWindow` untouched |
 | bar shown, a field on it | a pick in the target's menu (`typeAfterPick`, `AnnotatorToolbar+Focus.swift:45`) | `tookKeysOnOpen = false` (`Model.pick`); `focus = .message` | the controller's `editorUntouched = false` first; the panel takes the keys |
-| panel not key | `typeOnOpen` (`AnnotatorToolbar+Focus.swift:57`, from `offerTyping`) | `focus = .message`, `tookKeysOnOpen = true` if the panel became key, else `focus = nil` | false when it did not: logs, and `editorUntouched` stays, so a later offer tries again |
-| panel already key | `typeOnOpen` | — | refused (`:58`) |
+| panel not key | `typeOnOpen` (`AnnotatorToolbar+Focus.swift:59`, from `offerTyping`) | `focus = .message`, `tookKeysOnOpen = true` if the panel became key, else `focus = nil` | false when it did not: logs, and `editorUntouched` stays, so a later offer tries again |
+| panel already key | `typeOnOpen` | — | refused (`:60`) |
 | panel key | Cmd+W, Cmd+Plus, Cmd+Minus, Cmd+0; Cmd+C in an untouched field with no words selected | — | `FieldCommand`: the window's close, the zoom, or the drawing copied; other Command keys go to the field |
 | any | Tab, Shift+Tab (`move`); Space (`activate`); M or P (`focusMessage`); press (`onPress`); `keyDown` | `focus` moves | — |
 
@@ -231,7 +231,7 @@ Holds a tool letter typed first on an untouched field, until the next key shows 
 
 ### Target menu pick (implicit)
 
-Owner: `AnnotatorToolbar.swift:260-266` (`onPick`), `:269-274` (`onMenuKey`), `AnnotatorToolbar+Focus.swift:29` (Space), `AnnotatorToolbar.swift:329` (`showTargetMenu`). Tests: none.
+Owner: `AnnotatorToolbar.swift:274-287` (`onPick`), `:290-295` (`onMenuKey`), `AnnotatorToolbar+Focus.swift:29` (Space), `AnnotatorToolbar.swift:332` (`showTargetMenu`). Tests: none.
 
 Opens the target menu and applies a pick one turn later.
 
@@ -242,7 +242,7 @@ Opens the target menu and applies a pick one turn later.
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | closed | Space, Up or Down in the field, or a click | closed, one turn later | `showTargetMenu` builds an `NSMenu` from `model.destinations + model.startable` and calls `popUp` |
-| closed | `showTargetMenu` with no target offer or `targetFrame == nil` | closed | refused (`AnnotatorToolbar.swift:330`) |
+| closed | `showTargetMenu` with no target offer or `targetFrame == nil` | closed | refused (`AnnotatorToolbar.swift:333`) |
 | open | item chosen | pick queued | `TargetMenuActions.pick` (`SessionMenuPicks.swift:10`) calls `DispatchQueue.main.async` |
 | pick queued | the block runs | closed | `model.pick(destination)` under `withAnimation`, if `shown` and `imageNumber` is the menu's; else `[send] pick dropped` |
 

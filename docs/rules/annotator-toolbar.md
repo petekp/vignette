@@ -137,8 +137,8 @@
   picked. In the message field Return sends, as in a chat app, with the target beside it. A field
   that took the keys on its own and is still empty has nothing that asks to send, so Return and Esc
   there do what they do on the image (`Model.fieldUntouched`, `fieldReturn`, `fieldEscCloses`), and
-  Cmd+C with no words selected copies the drawing (`FieldCommand.copyDrawing`), whatever marks
-  the image has selected. A pick ends that
+  Cmd+C with no words selected and no word being composed copies the drawing
+  (`FieldCommand.copyDrawing`), whatever marks the image has selected. A pick ends that
   (`Model.pick`): choosing a session is asking to write to it, so the field then acts as pressed. A
   letter types, Return sends, and Esc hands the keys to the image, from which a second Esc closes.
   `docs/send-and-reply-2026-09-24.md` has the rules. While one image follows another with no gap (a click on
