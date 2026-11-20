@@ -47,7 +47,7 @@ can raise a prompt asking whether the terminal may "bypass the system private wi
 picker". While that prompt is up, the test copy cannot become active (observed 2026-10-01 in a
 clean VM), so every scenario that needs the keys stops at its gate.
 Allow it and run again.
-`docs/e2e-suite-plan-2026-09-29.md` has the design and what is still to come.
+`docs/e2e-suite-plan-2026-09-29.md` has the design of the suite, which is built.
 
 Testing Send without a real session: a Claude Code session is an inbox folder under the copy's
 Application Support (`Identity.applicationSupportURL`, which for a copy on your own home is

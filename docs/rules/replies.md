@@ -37,8 +37,8 @@
   the main thread, so `ClearedRequestFolders` remembers each one's cleared date and its folder's
   stamp from the last pass that found its sent image and submissions gone. A remembered fact
   only skips a check: pruning reads the date from disk again before it removes a folder, and a
-  folder whose stamp changed is looked at again. `docs/request-safety-plan-2026-10-02.md` records the
-  contracts and verification.
+  folder whose stamp changed is looked at again. `docs/request-safety-plan-2026-10-02.md` is the plan
+  these rules came from, with how it was verified.
 - A `vignette://` URL has no authenticated sender, so a reply is authorized by a per-request bearer
   secret in the request's own directory. The request line names only the image
   (`ScreenshotRequests.requestLine`, "From Vignette: …", then `sendInstructions` from settings.json),
