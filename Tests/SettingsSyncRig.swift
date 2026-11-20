@@ -67,6 +67,7 @@ struct SyncRig {
     var writeTimer = false
     var reloadTimer = false
     var writesFail = 0
+    var file: URL?
     /// An app edit made inside the next `.apply`, as an `onChange` handler that calls `update` makes it.
     var onApply: ((inout SettingsData) -> Void)?
 
@@ -105,6 +106,10 @@ struct SyncRig {
             if writesFail > 0 {
                 writesFail -= 1
                 send(.wrote(raw, failure: "settings.json: the disk is full"))
+                return
+            }
+            if let file, let failure = Settings.failure(writing: raw, to: file) {
+                send(.wrote(raw, failure: failure))
                 return
             }
             disk = raw

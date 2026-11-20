@@ -210,6 +210,18 @@ moves the script on only while its line shows on the shortcut page.
 | 34 | I'm out. ✌️ |
 | 35 and after | *The setup assistant has peaced out.* In muted italics, and it stays. |
 
+### Warnings at the top of the Settings window's General tab
+
+| When | Title | Line under it |
+| --- | --- | --- |
+| The last settings write failed and no later one has succeeded (`Settings.notSavedNotice`) | Settings not saved | Vignette couldn't write to *file*. It tries again with your next change. |
+| The file could not be created at launch | Settings can't be saved | Vignette can't write to *folder*. Changes last until it quits. |
+| The file did not parse at launch and was set aside | settings.json could not be read | Vignette is using the default settings. Your file was kept as settings.json.invalid. |
+| The file did not parse and could not be set aside | settings.json could not be read | Vignette is using the default settings and will not save changes until the file is fixed. |
+
+*file* and *folder* are the settings file and its folder, written with `~`. A failed write can follow
+a launch that set a bad file aside, and then both warnings show, Settings not saved first.
+
 ### The menu bar menu's shortcuts (`HotKeySpec.glyphs`, `HotKeySpec.holdLabel`)
 
 | Item | With a double tap | With a key combination |

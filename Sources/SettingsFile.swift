@@ -191,12 +191,12 @@ extension Settings {
     }
 
     /// Why writing `raw` failed, or nil when it was written.
-    static func failure(writing raw: Data, to url: URL) -> String? {
+    nonisolated static func failure(writing raw: Data, to url: URL) -> String? {
         do { try writeOrThrow(raw, to: url) } catch { return "\(url.lastPathComponent): \(error.localizedDescription)" }
         return nil
     }
 
-    private static func writeOrThrow(_ raw: Data, to url: URL) throws {
+    private nonisolated static func writeOrThrow(_ raw: Data, to url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try raw.write(to: url, options: .atomic)
     }

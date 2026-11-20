@@ -29,6 +29,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDeleg
     private var hosting: NSHostingView<SettingsView>?
     private var tab: SettingsTab = .general
     private var watch: AnyCancellable?
+    private var notSavedWatch: AnyCancellable?
 
     /// `tab` is the tab to open on, for a window opened to ask something; nil keeps the last one.
     /// `activating` is false for a window the user did not ask for: it comes up where they can see
@@ -66,6 +67,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate, NSToolbarDeleg
             self.debugChanged(data.debug)
             // The form is laid out after this notification, so the window follows a turn later.
             DispatchQueue.main.async { self.fit(animated: true) }
+        }
+        // A failed write comes after the change that `data` published, so its warning refits too.
+        notSavedWatch = settings.$lastWriteFailed.removeDuplicates().dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.fit(animated: true) }
         }
         return win
     }
@@ -212,6 +217,7 @@ struct SettingsView: View {
         // A grouped form's scroll view bounces even when everything fits. This keeps it still
         // unless the form is taller than the window, which happens only under fit's screen cap.
         .scrollBounceBehavior(.basedOnSize)
+        .animation(SettingsView.noticeMotion, value: settings.lastWriteFailed)
         .frame(width: SettingsView.width)
         .onAppear(perform: look)
         .onReceive(poll) { _ in look() }
@@ -228,21 +234,7 @@ struct SettingsView: View {
     // MARK: General
 
     @ViewBuilder private var general: some View {
-        // A settings.json this launch could not parse or create. Only a person who edits the file
-        // by hand, or whose `~/.config` another tool owns, meets this, and this window is where they look.
-        if let notice = settings.startupNotice {
-            Section {
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(notice.title)
-                        Text(notice.detail).font(.subheadline).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill").symbolRenderingMode(.multicolor)
-                }
-            }
-        }
+        SettingsWarnings()
         Section {
             ShortcutSetting()
             // Here the shortcut is not working yet, so it reads as a warning, where setup's lock
