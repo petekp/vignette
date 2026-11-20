@@ -76,16 +76,16 @@ final class AnnotatorToolbar {
         /// A tool letter typed first into that field, waiting to learn whether it began a word.
         var toolLetter = HeldToolLetter()
 
-        /// What Return in the message field does. A field that took the keys on its own and is still
-        /// empty has nothing that asks to send, so Return there does what it does on the image, which
-        /// never sends to a session Vignette picked.
-        var fieldReturn: EditorCore.Finish {
-            tookKeysOnOpen && sentMessage == nil ? offer.finishes.returnKey : .send
-        }
+        /// The message field took the keys on its own and is still empty, so nothing in it asks to
+        /// send: Return, Esc and Cmd+C do what they do on the image.
+        var fieldUntouched: Bool { tookKeysOnOpen && sentMessage == nil }
 
-        /// Esc in the message field closes the editor, as on the image, when the field took the keys on
-        /// its own and is still empty. Otherwise it hands the keys back to the image.
-        var fieldEscCloses: Bool { tookKeysOnOpen && sentMessage == nil }
+        /// What Return in the message field does. In an untouched field, what it does on the image,
+        /// which never sends to a session Vignette picked.
+        var fieldReturn: EditorCore.Finish { fieldUntouched ? offer.finishes.returnKey : .send }
+
+        /// Esc in an untouched field closes the editor, as on the image. Otherwise it hands the keys back.
+        var fieldEscCloses: Bool { fieldUntouched }
 
         /// A control Tab reaches, in the bar's order.
         enum Control: Hashable {

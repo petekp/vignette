@@ -92,13 +92,20 @@ enum FieldCommand: Equatable {
     case close
     /// Cmd+Plus, Cmd+Minus and Cmd+0, by the editor's own rule.
     case zoom(EditorCore.ZoomRequest)
+    /// Cmd+C in an untouched field with none of its words selected: the drawing, as Cmd+C copies it
+    /// on the image with nothing selected.
+    case copyDrawing
 
-    init?(_ key: EditorCore.Key?, _ modifiers: EditorCore.Modifiers) {
+    /// `fieldUntouched`: `AnnotatorToolbar.Model.fieldUntouched`. `wordsSelected`: the field's
+    /// selection is not empty.
+    init?(_ key: EditorCore.Key?, _ modifiers: EditorCore.Modifiers, fieldUntouched: Bool, wordsSelected: Bool) {
         guard modifiers.contains(.command), case .character(let character)? = key else { return nil }
         if let zoom = EditorCore.zoomRequest(for: character) {
             self = .zoom(zoom)
         } else if character == "w", modifiers == .command {
             self = .close
+        } else if character == "c", modifiers == .command, fieldUntouched, !wordsSelected {
+            self = .copyDrawing
         } else {
             return nil
         }

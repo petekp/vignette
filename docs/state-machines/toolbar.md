@@ -191,7 +191,7 @@ Decides whether the bar's panel or the editor has the keys. Only a press on the 
 | any | `begin` | `focus = nil`, `tookKeysOnOpen = false`, `toolLetter` reset | `keyed` and `panel.isKeyWindow` untouched |
 | bar shown, a field on it | a pick in the target's menu (`typeAfterPick`, `:363`) | `tookKeysOnOpen = false` (`Model.pick`); `focus = .message` | the controller's `editorUntouched = false` first; the panel takes the keys |
 | panel already key | `typeOnOpen` (`:375`, from `offerTyping`, `AnnotationController+ShowingAndHiding.swift:34`) | — | refused (`:376`) |
-| panel key | Cmd+W, Cmd+Plus, Cmd+Minus, Cmd+0 | — | `FieldCommand`: the window's close, or the zoom; other Command keys go to the field |
+| panel key | Cmd+W, Cmd+Plus, Cmd+Minus, Cmd+0; Cmd+C in an untouched field with no words selected | — | `FieldCommand`: the window's close, the zoom, or the drawing copied; other Command keys go to the field |
 | any | Tab, Shift+Tab (`move`, `:330`); Space (`activate`, `:340`); M or P (`focusMessage`, `:356`); press (`onPress`, `:288`); `keyDown` (`:391`) | `focus` moves | — |
 
 **Invariants**

@@ -191,10 +191,14 @@ final class AnnotationController {
     /// image. Cmd+W goes through the window's close, as the main menu's Close sends it from the image.
     private func fieldCommand(_ event: NSEvent) -> Bool {
         let key = EditorCore.Key(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers)
-        guard current != nil, let command = FieldCommand(key, EditorCore.Modifiers(eventFlags: event.modifierFlags.rawValue)) else { return false }
+        let wordsSelected = ((toolbar.panel.firstResponder as? NSTextView)?.selectedRange().length ?? 0) > 0
+        guard let shot = current,
+              let command = FieldCommand(key, EditorCore.Modifiers(eventFlags: event.modifierFlags.rawValue),
+                                         fieldUntouched: toolbar.model.fieldUntouched, wordsSelected: wordsSelected) else { return false }
         switch command {
         case .close: window?.performClose(nil)
         case .zoom(let request): zoomRequested(request)
+        case .copyDrawing: onCopyDrawing?(shot, editor.core.drawingForHost)
         }
         return true
     }
