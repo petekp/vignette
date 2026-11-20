@@ -207,9 +207,11 @@ struct HerdrLauncher: Sendable {
     static let renameStep: TimeInterval = 0.5
     static let renameWait: TimeInterval = 5
 
-    /// What a start did: the tab and terminal it made, or why it made none.
+    /// What a start did: the tab and terminal it made, the tab it asked for when `hc run` did not
+    /// answer in time and the terminal may have started, or why it made none.
     enum Started: Equatable {
         case started(tab: String, terminal: String)
+        case timedOut(tab: String, detail: String)
         case failed(detail: String)
     }
 
@@ -232,7 +234,11 @@ struct HerdrLauncher: Sendable {
                          "--label", "herdr.space=\(space)", "--label", "herdr.tab=\(tab)", "--"]
             + Self.wrapped(["claude"] + start.arguments(session: id), loginShell: loginShell())
         guard let ran = run(core, arguments, Self.timeout) else { return .failed(detail: "hc run did not run") }
-        guard ran.status == 0, !ran.timedOut, let terminal = Self.object(in: ran.output)?["address"] as? String else {
+        if ran.timedOut {
+            if !start.label.isEmpty { name(tab, start.label, app: app, since: now()) }
+            return .timedOut(tab: tab, detail: "hc run: no answer in \(Int(Self.timeout)) s")
+        }
+        guard ran.status == 0, let terminal = Self.object(in: ran.output)?["address"] as? String else {
             return .failed(detail: "hc run: \(Subprocess.detail(ran.output) ?? "exit \(ran.status)")")
         }
         if !start.label.isEmpty { name(tab, start.label, app: app, since: now()) }

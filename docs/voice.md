@@ -87,7 +87,7 @@ cancelled with Don't send leaves the tab as it was.
 | Codex's engine can't be reached | Codex isn't running. You can send again once it's open. |
 | No Codex on this Mac | Sending to Codex needs the Codex app or its CLI. |
 | Herdr did not open a tab for a session that was not running | Vignette couldn't open a Herdr tab for Claude Code. The log has details. |
-| The started session had no inbox 45 s later | Claude Code didn't open in time. You can send again once it's running. |
+| The started session, or one whose `hc run` gave no answer, had no inbox 45 s later | Claude Code didn't open in time. You can send again once it's running. |
 | Codex did not start | Codex couldn't start. The log has details. |
 | Codex refused it for a reason Vignette has no words for | Codex: *its own words* |
 | Anything else | Something went wrong in Vignette. The log has details. |

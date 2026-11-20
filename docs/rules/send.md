@@ -61,7 +61,8 @@
   running sessions; the top rows, the project submenus and their counts hold running sessions only,
   unless none is running, when these rows fill the top rows (`SessionMenu.menu`). Sending to one opens a tab in
   the space the Herdr window shows (`HerdrLauncher`, through `hc run`), starts `claude --resume <id>` or `claude --session-id <id>` there, waits up to
-  45 s for its inbox, then writes the line as any send does. Only a person's pick starts a process:
+  45 s for its inbox, then writes the line as any send does. An `hc run` that gives no answer in
+  time may still have opened the tab, so its inbox is waited for the same way. Only a person's pick starts a process:
   the rows travel apart from the running sessions (`Candidates.startable`), so `DestinationChoice`
   never sees them, and only the menus join the two. Without the Herdr app and `hc` no row is offered.
   `docs/session-starts-2026-10-25.md` has the design.

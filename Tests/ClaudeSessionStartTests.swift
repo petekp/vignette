@@ -188,4 +188,20 @@ final class ClaudeSessionStartTests: XCTestCase {
         XCTAssertEqual(unnamed.all.filter { $0[1] == "do" }.count, Int(HerdrLauncher.renameWait / HerdrLauncher.renameStep),
                        "the rename gives up after renameWait")
     }
+
+    func testAStartWhoseHcRunTimedOutIsLookedForAsOneThatMayHaveStarted() async throws {
+        let slow = launcher(Calls()) { call in call[1] == "status" ? Self.status : call[1] == "run" ? (15, "", true) : (0, "", false) }
+        XCTAssertEqual(slow.start(.resume(folder: "/site"), session: past),
+                       .timedOut(tab: "tb00112233445566778899aabbccddeeff", detail: "hc run: no answer in 10 s"))
+
+        let root = temporaryFolder()
+        let cameUp = connection(root, clock: Clock()) { _, session in
+            try? Self.inbox(root, pid: 301, session: session)
+            return .timedOut(tab: "tb", detail: "hc run: no answer in 10 s")
+        }
+        let destination = AgentDestination(id: past, name: "x", address: .claudeSession(past), start: .resume(folder: "/site"))
+        let sent = await submit("x", to: destination, through: cameUp)
+        XCTAssertTrue(sent.isAccepted, "\(sent)")
+        XCTAssertEqual(lines(in: root.appendingPathComponent("301")).count, 1)
+    }
 }

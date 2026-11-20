@@ -78,12 +78,13 @@ Takes a line for a Claude Code session. A running session is listed, checked by 
 | listed | `submit` to a destination with `start != nil` | refused (`:410`) | — |
 | listed | `submit`, inbox holds exactly this session now (`listedInbox(of:) ?? liveInbox(holding:)`, `:416`) | written | aside file, then rename (`write`) |
 | listed | `submit`, inbox does not hold it | `.destinationChanged` | "cleared" if another running inbox lists it in `past`, else "closed" |
-| requested | `startSession` (`:270`), id not a UUID | failed | nothing reaches the shell (`new:<folder>` rows) |
+| requested | `startSession` (`ClaudeSessionStart.swift:42`), id not a UUID | failed | nothing reaches the shell (`new:<folder>` rows) |
 | requested | `startSession`, a start of this session under way | joined | no launch; waits for that start's answer (**fixed**, [toolbar-3](findings.md#toolbar-3)) |
 | requested | `startSession`, none under way, `liveInbox(holding:)` already live | up | no launch |
 | requested | `startSession` otherwise | launched | `before` = inbox folder names now; `launch` (`herdr-app status`, `hc run`) |
 | launched | launch returns `.failed` | `.notStarted` | — |
-| launched | launch started | polling | `look` (`:288`) every 0.25 s via `later` |
+| launched | launch returns `.timedOut` (`hc run` gave no answer in 10 s) | polling | logged; the terminal may have started |
+| launched | launch started | polling | `look` (`:65`) every 0.25 s via `later` |
 | polling | `look` finds the first folder not in `before` whose `session` equals the id and which `isLive` | up, then written | every joined send gets the same inbox and writes its own line |
 | polling | `now - began >= 45` | timed out | nothing sent, by this send or any joined one |
 | any read | `liveInboxes()` (`:329`) | — | deletes an inbox folder whose pid is not running |
@@ -98,17 +99,17 @@ Takes a line for a Claude Code session. A running session is listed, checked by 
 
 - `/clear` before the write: caught by the preflight.
 - A session resumed by hand after it was listed: caught at `:274`.
-- Only folders created since the launch are polled (`:293`).
+- Only folders created since the launch are polled (`:67`).
 - Open windows by design (comment on `AddressGuard.preflight`, `:26`): `/clear` between the preflight and `write`, and between `look` success and `write`.
 - Left behind: a started `claude` after the 45 s timeout, in its tab.
 
 ### HerdrLauncher.start (implicit)
 
-Owner: `SessionStarts.swift:191-271` (`start` at `:220`, the rename at `:251`). Tests: the `HerdrLauncher` tests in `ClaudeSessionStartTests`.
+Owner: `HerdrLauncher` in `SessionStarts.swift` (`start`, and the rename in `name`). Tests: the `HerdrLauncher` tests in `ClaudeSessionStartTests`.
 
 Runs `claude` in a new terminal in the project's folder, in a new tab of the space the Herdr window shows, and names the tab. It runs on a pool thread only; the rename runs later, on its own.
 
-**States**: not started; space read; running; failed. Apart from these, the tab: unnamed, then named or given up.
+**States**: not started; space read; running; timed out; failed. Apart from these, the tab: unnamed, then named or given up.
 
 **Transitions**
 
@@ -119,6 +120,7 @@ Runs `claude` in a new terminal in the project's folder, in a new tab of the spa
 | not started | `status` names a space | space read | a new `tb<32 hex>` tab id |
 | space read | `hc run --bg` fails or answers no `address` | failed | — |
 | space read | `hc run` answers a terminal | running | the rename is scheduled |
+| space read | `hc run` gives no answer in 10 s | timed out | the rename is scheduled; the terminal may have started |
 | unnamed | `herdr-app do tab.rename` succeeds | named | — |
 | unnamed | it fails, under 5 s since the start | unnamed | tried again in 0.5 s |
 | unnamed | it fails at 5 s | given up | `[send] tab <id> not named`; the start still counts |
