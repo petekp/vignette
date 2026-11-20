@@ -35,8 +35,8 @@ A child process read and written as lines. Lines hop to the main thread with `Di
 
 **Late and concurrent answers**
 
-- A write to a dead process: SIGPIPE is disabled, the error is logged and `onEnd` reports, `JSONLinesProcess.swift:44, 82`.
-- A line in flight when `stop()` runs: dropped because `relay.onLine` is nil (75-80).
+- A write to a dead process: SIGPIPE is disabled, the error is logged and `onEnd` reports, `JSONLinesProcess.swift:29, 71`.
+- A line in flight when `stop()` runs: dropped because `relay.onLine` is nil (77-83).
 - A line of output that is not a JSON object: logged as `[live-ink] responder output not JSON`, cut to 200 bytes, and not reported.
 
 ### CodexDriver and CodexRun (explicit phase inside an implicit machine)
