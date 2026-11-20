@@ -124,36 +124,66 @@ extension AppDelegate {
         CATransaction.commit()
     }
 
-    /// Swaps the icon, with the old picture fading out on a spring over the new one. The picture
-    /// is taken with the button's subviews (the update dot) hidden, since the dot moves on its own.
+    /// Swaps the icon with a crossfade on springs: a picture of the old icon fades out while a picture
+    /// of the new one fades in, and the button draws no image of its own until they finish. The
+    /// pictures are taken with the button's subviews (the update dot) hidden, since the dot moves on
+    /// its own. A swap that starts mid-fade first lands the one in flight.
     private func setIcon(_ image: NSImage, on button: NSStatusBarButton, fading duration: Double) {
         image.accessibilityDescription = Identity.name
-        var old: CALayer?
-        if duration > 0, let layer = button.layer, let rep = button.bitmapImageRepForCachingDisplay(in: button.bounds) {
-            let hidden = button.subviews.filter { !$0.isHidden }
-            hidden.forEach { $0.isHidden = true }
-            button.cacheDisplay(in: button.bounds, to: rep)
-            hidden.forEach { $0.isHidden = false }
-            let snapshot = CALayer()
-            snapshot.frame = button.bounds
-            snapshot.contents = rep.cgImage
-            snapshot.contentsScale = button.window?.backingScaleFactor ?? 2
-            layer.insertSublayer(snapshot, at: 0)
-            old = snapshot
+        let layer = button.layer
+        for fade in layer?.sublayers?.compactMap({ $0 as? IconFade }) ?? [] {
+            button.image = fade.target
+            fade.removeFromSuperlayer()
+        }
+        for stale in layer?.sublayers?.filter({ $0.name == IconFade.pictureName }) ?? [] { stale.removeFromSuperlayer() }
+        guard duration > 0, let layer, let before = Self.picture(of: button) else {
+            button.image = image
+            return
         }
         button.image = image
-        guard let old else { return }
-        let fade = CASpringAnimation(perceptualDuration: duration, bounce: 0)
-        fade.keyPath = "opacity"
-        fade.fromValue = 1
-        fade.toValue = 0
-        fade.duration = fade.settlingDuration
+        guard let after = Self.picture(of: button) else { return }
+        button.image = nil
+        let fade = IconFade(target: image)
+        fade.frame = button.bounds
+        before.name = IconFade.pictureName
+        after.name = IconFade.pictureName
+        layer.insertSublayer(fade, at: 0)
+        layer.insertSublayer(before, at: 0)
+        layer.insertSublayer(after, at: 0)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        old.opacity = 0
-        CATransaction.setCompletionBlock { old.removeFromSuperlayer() }
-        old.add(fade, forKey: "fade")
+        CATransaction.setCompletionBlock { [weak fade, weak before, weak after] in
+            guard let fade, fade.superlayer != nil else { return }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            button.image = fade.target
+            fade.removeFromSuperlayer()
+            before?.removeFromSuperlayer()
+            after?.removeFromSuperlayer()
+            CATransaction.commit()
+        }
+        for (picture, from, to) in [(before, Float(1), Float(0)), (after, Float(0), Float(1))] {
+            let spring = CASpringAnimation(perceptualDuration: duration, bounce: 0)
+            spring.keyPath = "opacity"
+            spring.fromValue = from
+            spring.toValue = to
+            spring.duration = spring.settlingDuration
+            picture.opacity = to
+            picture.add(spring, forKey: "fade")
+        }
         CATransaction.commit()
+    }
+
+    private static func picture(of button: NSStatusBarButton) -> CALayer? {
+        guard let rep = button.bitmapImageRepForCachingDisplay(in: button.bounds) else { return nil }
+        let hidden = button.subviews.filter { !$0.isHidden }
+        hidden.forEach { $0.isHidden = true }
+        button.cacheDisplay(in: button.bounds, to: rep)
+        hidden.forEach { $0.isHidden = false }
+        let picture = CALayer()
+        picture.frame = button.bounds
+        picture.contents = rep.cgImage
+        return picture
     }
 }
 
@@ -161,4 +191,14 @@ extension AppDelegate {
 final class DotExit {
     let badge: NSView
     init(_ badge: NSView) { self.badge = badge }
+}
+
+/// Marks a crossfade in flight and holds the icon the button takes when it ends.
+final class IconFade: CALayer {
+    static let pictureName = "iconFadePicture"
+    var target: NSImage?
+    convenience init(target: NSImage) {
+        self.init()
+        self.target = target
+    }
 }
