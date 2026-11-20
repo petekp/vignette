@@ -167,9 +167,12 @@ final class FolderWrites {
     }
 
     /// Writes a stitch without reserving its name, so the watcher reports it as a capture, which is
-    /// how annotateOnCapture opens it. It records no write time.
-    func writeStitch(_ png: Data, to url: URL) throws {
-        try png.write(to: url)
+    /// how annotateOnCapture opens it. It records no write time. A name already taken gets a counter,
+    /// as an `add` does, and answers the file it wrote.
+    func writeStitch(_ png: Data, in folder: URL, as name: String) throws -> ScreenshotKey {
+        let named = Commands.destination(for: URL(fileURLWithPath: name), in: folder) { FileManager.default.fileExists(atPath: $0.path) }
+        try png.write(to: named, options: .withoutOverwriting)
+        return ScreenshotKey(folder: folder, name: named.lastPathComponent)
     }
 
     /// Writes a live ink card as `<prefix> <date> at <time>.png`, its PNG made and written off the

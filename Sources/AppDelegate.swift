@@ -452,11 +452,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Commands.error("stitch", .unreadableImage, "only \(composed.pieces) of \(shots.count) images could be read"); return
         }
         let stamp = DateFormatter(); stamp.dateFormat = "yyyy-MM-dd 'at' h.mm.ss a"
-        let key = ScreenshotKey(folder: watchFolder, name: "Stitch \(stamp.string(from: Date())).png"), out = key.url
-        do { try folderWrites.writeStitch(composed.png, to: out) } catch { Commands.error("stitch", .writeFailed, "\(out.path): \(error.localizedDescription)"); return }
-        Clipboard.copyFiles([out])
+        let key: ScreenshotKey, name = "Stitch \(stamp.string(from: Date())).png"
+        do { key = try folderWrites.writeStitch(composed.png, in: watchFolder, as: name) } catch { Commands.error("stitch", .writeFailed, "\(name): \(error.localizedDescription)"); return }
+        Clipboard.copyFiles([key.url])
         // readerScale is what a vision model's resize leaves of the composition; see Stitch.swift.
-        Commands.ok("stitch", "\(out.path) from \(composed.pieces) images, \(Int(composed.size.width))x\(Int(composed.size.height)) columns=\(composed.columns) readerScale=\(String(format: "%.2f", composed.readerScale)) \(composed.png.count) bytes, copied")
+        Commands.ok("stitch", "\(key.url.path) from \(composed.pieces) images, \(Int(composed.size.width))x\(Int(composed.size.height)) columns=\(composed.columns) readerScale=\(String(format: "%.2f", composed.readerScale)) \(composed.png.count) bytes, copied")
         // The cards conjoin into the new one when the stack is showing them; otherwise the new card
         // comes up with the Copied notice.
         if !thumbnail.stitched(shots, into: key) { thumbnail.showCopied([Screenshot(key: key)]) }

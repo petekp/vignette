@@ -353,9 +353,8 @@ final class FolderWritesTests: XCTestCase {
     /// Catches a stitch registered as Vignette's own, which would stop annotateOnCapture opening it.
     /// It also pins that a stitch records no write time, so changing that is a deliberate edit here.
     func testAStitchIsNotReservedAndRecordsNoWriteTime() throws {
-        let out = folder.appendingPathComponent("Stitch x.png")
         let bytes = png()
-        try writes.writeStitch(bytes, to: out)
+        let out = try writes.writeStitch(bytes, in: folder, as: "Stitch x.png").url
         XCTAssertEqual(try Data(contentsOf: out), bytes)
         XCTAssertFalse(writes.arrived(out.screenshotKey))
         let gone = folder.appendingPathComponent("gone.png")
