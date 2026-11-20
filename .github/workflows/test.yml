@@ -10,8 +10,8 @@ concurrency:
 
 jobs:
   unit:
-    # The app builds with Xcode 26's SDK.
-    runs-on: macos-26
+    # The app needs Xcode 27's SDK. GitHub's `xcode-27` image is a preview.
+    runs-on: xcode-27
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4

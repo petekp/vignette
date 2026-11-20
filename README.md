@@ -119,7 +119,7 @@ cd vignette
 ./scripts/run.sh
 ```
 
-You need Xcode 26 or later and `xcodegen`. [docs/building.md](docs/building.md) has the details,
+You need Xcode 27 or later and `xcodegen`. [docs/building.md](docs/building.md) has the details,
 including why macOS asks you to re-trust your own build for Accessibility after each rebuild, and
 how a signing certificate avoids it.
 

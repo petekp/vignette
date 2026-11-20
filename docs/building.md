@@ -7,8 +7,8 @@
 ./scripts/build.sh --test # the same build plus the unit tests
 ```
 
-Requires Xcode 26 or later and `xcodegen` (`brew install xcodegen`). The build also needs Xcode's
-Metal toolchain, for `Sources/IntroFunnel.metal`. Xcode 26 downloads it separately:
+Requires Xcode 27 or later and `xcodegen` (`brew install xcodegen`). The build also needs Xcode's
+Metal toolchain, for `Sources/IntroFunnel.metal`. Xcode downloads it separately:
 
 ```
 xcodebuild -downloadComponent MetalToolchain
