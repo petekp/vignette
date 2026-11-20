@@ -11,3 +11,6 @@ media/trailer/out/
 media/live-ink-demo/out/
 # The end-to-end test copy and its runs (scripts/e2e).
 scripts/e2e/out/
+# A build's own derived data folder (docs/building.md), and an agent's scratch files.
+.derived-data/
+.scratch/
