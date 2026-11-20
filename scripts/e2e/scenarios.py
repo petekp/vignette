@@ -648,25 +648,6 @@ def send_codex_thread_gone(app):
 
 
 @needs_input
-def send_codex_queued(app):
-    """A send to a Codex thread no engine has loaded is stored by codex queue but read by nobody until
-    the thread is opened, so it is reported as queued rather than sent."""
-    thread, env = app.fake_codex('e2e-codex-project', loaded=False)
-    start(app, **env)
-    path = app.image('Screenshot queued.png', folder=app.watch)
-    time.sleep(1)
-    click_to_open(app, path)
-    draw_box(app, field_has_keys(app, thread), arrow=True)
-    offset = app.log_size()
-    app.keys('annotator', 'key', KEY_RETURN, 'cmd')
-    line = app.wait_log('[send] queued', offset, timeout=20)
-    if len(app.codex_calls('queue')) != 1:
-        raise Failed(f'codex queue ran {len(app.codex_calls("queue"))} times')
-    app.report.step('the send is reported as queued', detail=line.strip()[:160])
-    capture_sent_card(app, path, 'queued-card')
-
-
-@needs_input
 def send_message(app):
     """The message field beside Send takes the keys as the image opens, and Return there sends the
     image with the typed message ahead of Vignette's own line. The message starts with a tool's
@@ -1058,5 +1039,5 @@ def stack_esc_at_press(app):
 ALL = [launch, first_launch, upgrade, agent_push, annotate_open, send_target, send_target_codex,
        copy_types, stitch,
        instant_draw, relaunch, settings_repair, draw_and_done, annotate_queue, zoom_keys, send_and_reply, send_message, send_grace,
-       send_and_reply_codex, send_codex_thread_gone, send_codex_queued, agent_marks_editable, corner_select, capture_origin,
+       send_and_reply_codex, send_codex_thread_gone, agent_marks_editable, corner_select, capture_origin,
        rename_keeps_drawing, stack_esc_at_press, corner_card_keeps_slot]

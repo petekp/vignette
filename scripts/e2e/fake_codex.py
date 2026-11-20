@@ -13,7 +13,9 @@ It speaks only what Vignette asks of codex: `app-server` answers `initialize`, `
 (`QueuedLine.of`). A thread whose id is a line of `<folder>/gone` was deleted: queueing to it fails
 with the real CLI's words. Anything else succeeds and does nothing.
 
-The engine takes a queued line at once, unless `<folder>/hold` exists. Then the line waits in
+A thread whose id is a line of `<folder>/unloaded` is open in no engine: a line queued to it waits in
+`<folder>/queue/<thread>.jsonl` with no turn started, as a real queue keeps it until the thread is
+opened. Otherwise the engine takes a queued line at once, unless `<folder>/hold` exists. Then the line waits in
 `<folder>/queue/<thread>.jsonl`, the queue `thread/queue/list` answers, behind a turn that started and
 has not ended, as a real queue holds a line behind a running turn. `thread/queue/delete` takes it
 out. Once `<folder>/release` exists, the next `thread/queue/list` ends that turn and takes every
@@ -62,7 +64,9 @@ def main():
     elif args[:2] == ['queue', '--thread'] and '--message' in args:
         thread, line = args[2], args[args.index('--message') + 1]
         queued = f'queued-{time.time_ns()}'
-        if os.path.exists(os.path.join(folder, 'hold')):
+        if thread in unloaded(folder):
+            enqueue(folder, thread, queued, line)
+        elif os.path.exists(os.path.join(folder, 'hold')):
             hold(folder, thread, queued, line)
         else:
             take_turn(folder, thread, line)
@@ -105,6 +109,11 @@ def hold(folder, thread, queued, line):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'a') as f:
         f.write(json.dumps({'type': 'event_msg', 'payload': {'type': 'task_started', 'turn_id': 'holding'}}) + '\n')
+    enqueue(folder, thread, queued, line)
+
+
+def enqueue(folder, thread, queued, line):
+    """Keeps `line` in the thread's queue."""
     os.makedirs(os.path.dirname(queue_path(folder, thread)), exist_ok=True)
     with open(queue_path(folder, thread), 'a') as f:
         f.write(json.dumps({'id': queued, 'line': line}) + '\n')
@@ -124,6 +133,11 @@ def release(folder, thread):
 
 def gone(folder):
     path = os.path.join(folder, 'gone')
+    return open(path).read().split() if os.path.exists(path) else []
+
+
+def unloaded(folder):
+    path = os.path.join(folder, 'unloaded')
     return open(path).read().split() if os.path.exists(path) else []
 
 

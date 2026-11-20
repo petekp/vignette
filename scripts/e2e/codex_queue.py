@@ -1,5 +1,5 @@
 """Send's end-to-end scenarios for a send Codex holds in a thread's queue, with the fake codex's
-held queue (`fake_codex.py`: `<folder>/hold` and `<folder>/release`)."""
+held queue (`fake_codex.py`: `<folder>/hold`, `<folder>/release` and `<folder>/unloaded`)."""
 import os
 import time
 
@@ -40,4 +40,27 @@ def send_codex_held(app):
             capture_sent_card(app, path, 'taken-card')
 
 
-ALL = [send_codex_held]
+@needs_input
+def send_codex_queued(app):
+    """A send to a Codex thread no engine has loaded is stored by codex queue but read by nobody until
+    the thread is opened, so it is reported as queued rather than sent."""
+    thread, env = app.fake_codex('e2e-codex-project', loaded=False)
+    with open(os.path.join(app.folder, 'codex', 'unloaded'), 'w') as f:
+        f.write(thread + '\n')
+    start(app, **env)
+    path = app.image('Screenshot queued.png', folder=app.watch)
+    time.sleep(1)
+    click_to_open(app, path)
+    draw_box(app, field_has_keys(app, thread), arrow=True)
+    offset = app.log_size()
+    app.keys('annotator', 'key', KEY_RETURN, 'cmd')
+    line = app.wait_log('[send] queued', offset, timeout=20)
+    if 'not-open' not in line:
+        raise Failed(f'the send was not reported as waiting for the thread to be opened: {line}')
+    if len(app.codex_calls('queue')) != 1:
+        raise Failed(f'codex queue ran {len(app.codex_calls("queue"))} times')
+    app.report.step('the send is reported as queued', detail=line.strip()[:160])
+    capture_sent_card(app, path, 'queued-card')
+
+
+ALL = [send_codex_held, send_codex_queued]
