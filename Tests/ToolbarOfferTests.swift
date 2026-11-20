@@ -213,8 +213,8 @@ final class ToolbarOfferTests: XCTestCase {
         XCTAssertEqual(held.key("a", isRepeat: false, canHold: false, tool: .rectangle), .pass)
     }
 
-    private func command(_ key: EditorCore.Key, _ modifiers: EditorCore.Modifiers, untouched: Bool = false, selected: Bool = false) -> FieldCommand? {
-        FieldCommand(key, modifiers, fieldUntouched: untouched, wordsSelected: selected)
+    private func command(_ key: EditorCore.Key, _ modifiers: EditorCore.Modifiers, empty: Bool = false) -> FieldCommand? {
+        FieldCommand(key, modifiers, fieldEmpty: empty)
     }
 
     func testInTheMessageFieldCmdWAndTheZoomKeysAreTheAnnotatorsAndTheEditingKeysStayWithTheField() {
@@ -225,7 +225,7 @@ final class ToolbarOfferTests: XCTestCase {
         XCTAssertEqual(command(.character("0"), .command), .zoom(.fit))
         for editing: Character in ["v", "a", "x", "z", "c"] {
             XCTAssertNil(command(.character(editing), .command), "Cmd+\(editing) stays with the field")
-            XCTAssertEqual(command(.character(editing), .command, untouched: true) == .copyDrawing, editing == "c")
+            XCTAssertEqual(command(.character(editing), .command, empty: true) == .copyDrawing, editing == "c")
         }
         XCTAssertNil(command(.character("z"), [.command, .shift]))
         XCTAssertNil(command(.character("w"), [.command, .shift]))
@@ -233,18 +233,22 @@ final class ToolbarOfferTests: XCTestCase {
         XCTAssertNil(command(.returnKey, .command))
     }
 
-    func testCmdCInAFieldThatTookTheKeysOnItsOwnCopiesTheDrawingUntilItHoldsWordsOrASelection() {
-        XCTAssertEqual(command(.character("c"), .command, untouched: true), .copyDrawing)
-        XCTAssertNil(command(.character("c"), .command, untouched: true, selected: true), "selected words are copied as words")
-        XCTAssertNil(command(.character("c"), [.command, .shift], untouched: true))
+    func testCmdCInAnEmptyMessageFieldCopiesTheDrawingAndInAFieldWithWordsStaysWithTheField() {
+        XCTAssertEqual(command(.character("c"), .command, empty: true), .copyDrawing)
+        XCTAssertNil(command(.character("c"), .command, empty: false), "a field with words copies its words")
+        XCTAssertNil(command(.character("c"), [.command, .shift], empty: true))
 
         let model = AnnotatorToolbar.Model()
         model.begin(replyTo: nil, carryingTarget: false)
         model.answered(answer([session("mew")], complete: true, herdr: inPane("mew")))
-        model.tookKeysOnOpen = true
-        XCTAssertTrue(model.fieldUntouched)
+        XCTAssertFalse(model.tookKeysOnOpen)
+        XCTAssertTrue(model.fieldEmpty, "a field pressed into later")
+        model.pick(session("mew"))
+        XCTAssertTrue(model.fieldEmpty, "a field after a pick")
+        model.message = "  \n"
+        XCTAssertTrue(model.fieldEmpty, "spaces are no words, as for Return and Esc")
         model.message = "fix this"
-        XCTAssertFalse(model.fieldUntouched, "a field with words copies its words")
+        XCTAssertFalse(model.fieldEmpty)
     }
 
     func testAFieldWhosePanelDoesNotTakeTheKeysOnOpenLetsTheFocusGoSoALaterOfferCanTryAgain() {

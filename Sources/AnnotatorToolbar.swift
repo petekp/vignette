@@ -79,8 +79,8 @@ final class AnnotatorToolbar {
         var toolLetter = HeldToolLetter()
 
         /// The message field took the keys on its own and is still empty, so nothing in it asks to
-        /// send: Return, Esc and Cmd+C do what they do on the image.
-        var fieldUntouched: Bool { tookKeysOnOpen && sentMessage == nil }
+        /// send: Return and Esc do what they do on the image.
+        var fieldUntouched: Bool { tookKeysOnOpen && fieldEmpty }
 
         /// What Return in the message field does. In an untouched field, what it does on the image,
         /// which never sends to a session Vignette picked.

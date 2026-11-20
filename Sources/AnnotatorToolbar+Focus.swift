@@ -122,3 +122,8 @@ extension AnnotatorToolbar {
         }
     }
 }
+
+extension AnnotatorToolbar.Model {
+    /// The message field holds no words, so Cmd+C there copies the drawing (`FieldCommand`).
+    var fieldEmpty: Bool { sentMessage == nil }
+}

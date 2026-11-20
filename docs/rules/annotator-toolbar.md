@@ -34,7 +34,7 @@
   While the field has the keys, Cmd+W and the zoom keys do what they do on the image: the panel
   hands them to `AnnotationController.fieldCommand` before the field sees them (`FieldCommand`),
   which sends Cmd+W to the window's `performClose` and the zoom keys to the zoom. Other Command
-  keys stay with the field, Cmd+C too unless the field is untouched with no words selected. There is no
+  keys stay with the field, Cmd+C too unless the field is empty. There is no
   palette: a mark's colour says who drew it. Send starts on the kept pick when there is one: the
   session the person picked in the target's menu and then sent to (`DestinationChoice.KeptPick`,
   `AnnotationController.keptPick`). It holds for 10 minutes after the send that set it, and each
@@ -136,11 +136,13 @@
   sends or replies (`EditorCore.finishes`). On the image, Return never sends to a session Vignette
   picked. In the message field Return sends, as in a chat app, with the target beside it. A field
   that took the keys on its own and is still empty has nothing that asks to send, so Return and Esc
-  there do what they do on the image (`Model.fieldUntouched`, `fieldReturn`, `fieldEscCloses`), and
-  Cmd+C with no words selected and no word being composed copies the drawing
-  (`FieldCommand.copyDrawing`), whatever marks the image has selected. A pick ends that
-  (`Model.pick`): choosing a session is asking to write to it, so the field then acts as pressed. A
-  letter types, Return sends, and Esc hands the keys to the image, from which a second Esc closes.
+  there do what they do on the image (`Model.fieldUntouched`, `fieldReturn`, `fieldEscCloses`). A
+  pick ends that (`Model.pick`): choosing a session is asking to write to it, so the field then acts
+  as pressed. A letter types, Return sends, and Esc hands the keys to the image, from which a second
+  Esc closes. Cmd+C in any empty field, one with no words (`Model.fieldEmpty`, the same empty
+  as above), copies the drawing (`FieldCommand.copyDrawing`), whatever
+  marks the image has selected: one that took the keys on its own, one pressed into later, or one
+  after a pick. While a word is being composed in it, the field is not empty.
   `docs/send-and-reply-2026-09-24.md` has the rules. While one image follows another with no gap (a click on
   another card, or the queue moving on) the bar stays on screen and springs to the next image's
   place, and keeps the image before's target until the next image's settles (`Model.begin`'s
