@@ -40,6 +40,12 @@ final class JSONLinesProcessTests: XCTestCase {
         XCTAssertEqual(process.lastErrorLine, "two")
     }
 
+    func testACharacterSplitAcrossTwoWritesKeepsItsLine() throws {
+        let process = try start(#"printf 'caf\303' >&2; sleep 0.2; printf '\251 usage limit\n' >&2"#)
+        spin { status != nil && process.lastErrorLine == "café usage limit" }
+        XCTAssertEqual(process.lastErrorLine, "café usage limit")
+    }
+
     func testStopEndsTheProcessAndReportsNothingMore() throws {
         let process = try start("while :; do sleep 0.1; done")
         let pid = process.pid

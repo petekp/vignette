@@ -29,7 +29,7 @@ Speaks Claude Code's streaming JSON through a `JSONLinesProcess`.
 
 ### JSONLinesProcess (implicit)
 
-Owner: `JSONLinesProcess.swift:6`. Tests: none.
+Owner: `JSONLinesProcess.swift:6`. Tests: `JSONLinesProcessTests`.
 
 A child process read and written as lines. Lines hop to the main thread with `DispatchQueue.main.async` and check `relay.onLine` there. `stop()` nils both callbacks, terminates, and closes stdin on the writer queue.
 
