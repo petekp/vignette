@@ -92,7 +92,7 @@ Owns the list of files to annotate and how a hand ended the run. It wraps the tr
 - `loaded(o)`: `editorLoaded` `:396`. `takesPresses(o)`: `annotatorTakesEvents` `:401`.
 - `cancel(RunEnding)`: `annotationEnded` `:367` (Esc, Cmd+W, bar close, a click outside over lone thumbnails, decode failure) and `CornerPresentation` `.closeEditor` as `.shortcut` `:284`.
 - `sent`: `annotationSent` `:375`. `finish`: `annotationFinished(quick: false)` `:381`. From `slideOut` `:704`, `dismiss(reason.runEnding)`: `dismiss(.finished)` for quick Done, `dismiss(.clickedAway)` for a click outside while the stack shows, `dismiss(nil)` otherwise.
-- `remove([key])`: `:476`. `renamed`: `:493`. `selectionChanged`: `:768`. `copyFailed(o)`: `showNotCopied(in:)` `:646`. `newShot`: `show` `:230`.
+- `remove([key])`: `:476`. `renamed`: `:493`. `selectionChanged`: `:768`. `failed(o)`: `showNotCopied(in:)` `:646`. `newShot`: `show` `:230`.
 
 **Transitions** (the run's own change, then the transition's result `T`)
 
@@ -111,8 +111,8 @@ Owns the list of files to annotate and how a hand ended the run. It wraps the tr
 | active, list not ended | `selectionChanged` | removes, then appends the added keys | `queued` |
 | active, list ended (`total == 0`: Esc, a dismissal or the open file going) | `selectionChanged` | — (**fixed**, [run-1](findings.md#run-1)) | — |
 | idle | `selectionChanged` | — | — |
-| `parking(o, finish)` | `copyFailed(o)` | `uncopied = o` (`:148`) | — |
-| other | `copyFailed` | — | — |
+| `parking(o, finish)` | `failed(o)` | `uncopied = o` (`:148`) | — |
+| other | `failed` | — | — |
 
 After every `T` result:
 

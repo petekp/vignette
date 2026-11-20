@@ -10,7 +10,7 @@
 - Which image is in the annotator, where it came from, what is in flight and what opens next have
   one owner: `AnnotationRun`, a pure reducer held by `ThumbnailController`. The controller sends
   what happened (annotate a list, shown, parked, cancel, sent, finish, dismiss, remove, newShot,
-  selectionChanged, copyFailed, loaded, takesPresses, arrived) and runs the effects it returns
+  selectionChanged, failed, loaded, takesPresses, arrived) and runs the effects it returns
   (prepare, show, park, abandon, returnCard, hideAnnotator, join, next, queued, endRun, landed,
   handOverPresses, liftFlight). Each image the run sends to the annotator is an `Opening`: the
   file's path and an id the run mints and never reuses, so the same file opened again is another

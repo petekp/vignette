@@ -244,16 +244,16 @@ final class AnnotationRunTests: XCTestCase {
     func testAFailedCopyTakesTheMarkOffTheCardOnItsWayHome() {
         var r = R()
         _ = reduce(&r, .annotate(["a"])); _ = shown(&r); _ = reduce(&r, .finish)
-        XCTAssertEqual(reduce(&r, .copyFailed(o("a", 1))), [])
+        XCTAssertEqual(reduce(&r, .failed(o("a", 1))), [])
         XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .endRun(.finished)])
 
-        _ = reduce(&r, .copyFailed(o("a", 1)))
+        _ = reduce(&r, .failed(o("a", 1)))
         _ = reduce(&r, .annotate(["a"])); _ = shown(&r); _ = reduce(&r, .finish)
         XCTAssertEqual(parked(&r), [.returnCard(o("a", 2), copied: true), .endRun(.finished)],
                        "a failure reported after the card came home says nothing about its next copy")
 
         _ = reduce(&r, .annotate(["a"])); _ = shown(&r); _ = reduce(&r, .finish)
-        XCTAssertEqual(reduce(&r, .copyFailed(o("a", 2))), [])
+        XCTAssertEqual(reduce(&r, .failed(o("a", 2))), [])
         XCTAssertEqual(parked(&r), [.returnCard(o("a", 3), copied: true), .endRun(.finished)],
                        "a late failure from the same file's last Done says nothing about this one")
     }

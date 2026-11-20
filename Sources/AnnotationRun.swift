@@ -23,7 +23,7 @@ struct AnnotationRun: Equatable {
         case newShot(ScreenshotKey)         // a new file arrived
         case renamed(from: ScreenshotKey, to: ScreenshotKey)   // a file was renamed: a queued file and the open one follow it
         case selectionChanged(added: [ScreenshotKey], removed: [ScreenshotKey])   // image files only, in the order picked
-        case copyFailed(Opening)     // Done's copy failed before the card came home
+        case failed(Opening)         // Done's copy failed before the card came home
         case loaded(Opening)         // the editor has the image at the screen's size
         case takesPresses(Opening)   // the window server gives the editor's window its presses
         case arrived(Opening)        // the flight into the editor settled on the frame
@@ -146,7 +146,7 @@ struct AnnotationRun: Equatable {
             return forward(.renamed(from: old, to: new))
         case .selectionChanged(let added, let removed):
             return select(added: added, removed: removed)
-        case .copyFailed(let opening):
+        case .failed(let opening):
             if case .parking(opening, then: .finish) = transition.phase { uncopied = opening }
             return []
         case .loaded(let opening):
@@ -317,7 +317,7 @@ extension AnnotationRun.Event: CustomStringConvertible {
         case .renamed(let from, let to): return "renamed(\(short(from)) to \(short(to)))"
         case .selectionChanged(let added, let removed):
             return "selectionChanged(+\(added.map(short).joined(separator: ", ")) -\(removed.map(short).joined(separator: ", ")))"
-        case .copyFailed(let o): return "copyFailed(\(o))"
+        case .failed(let o): return "failed(\(o))"
         case .loaded(let o): return "loaded(\(o))"
         case .takesPresses(let o): return "takesPresses(\(o))"
         case .arrived(let o): return "arrived(\(o))"

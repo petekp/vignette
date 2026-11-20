@@ -32,7 +32,7 @@ extension AnnotationRunTests {
                 }
                 let wasActive = r.isActive
                 if case .dismiss = event, wasActive { dismissing = true }
-                if case .copyFailed(let k) = event, case .parking(k, then: .finish) = r.phase { uncopied = k }
+                if case .failed(let k) = event, case .parking(k, then: .finish) = r.phase { uncopied = k }
                 var answersPark = false
                 if case .parked(let o) = event, case .parking(o, _) = r.phase { answersPark = true }
                 var pageRefused = false
@@ -126,7 +126,7 @@ extension AnnotationRunTests {
                 case 8: events.append(.newShot(ScreenshotKey(asGiven: "n\(step)")))
                 case 9: events.append(.selectionChanged(added: some().filter { $0 != "x" }, removed: some()))
                 case 10:
-                    if let opening = seen.randomElement(using: &rng) { events.append(.copyFailed(opening)) }
+                    if let opening = seen.randomElement(using: &rng) { events.append(.failed(opening)) }
                 case 11:
                     if let gone = seen.filter({ $0 != r.opening }).randomElement(using: &rng) {
                         let late: [R.Event] = [.shown(gone), .parked(gone), .loaded(gone), .takesPresses(gone), .arrived(gone)]

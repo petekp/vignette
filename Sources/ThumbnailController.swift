@@ -637,7 +637,7 @@ final class ThumbnailController {
     /// annotator does not take the Copied notice when it lands. A card not on screen comes up as the
     /// lone thumbnail; one in the annotator, or on its way home, shows the notice when it lands.
     func showNotCopied(_ shot: Screenshot, reason: String, in opening: Opening? = nil) {
-        if let opening { send(.copyFailed(opening)) }
+        if let opening { send(.failed(opening)) }
         post(.notCopied(reason: reason), on: shot)
     }
 
