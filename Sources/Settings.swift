@@ -75,7 +75,9 @@ final class Settings: ObservableObject {
         startupNotice = boot.notice
         for line in boot.log { Log.write("[settings] \(line)") }
         sync = SettingsSync(bytes: boot.written ?? (try? Data(contentsOf: Settings.fileURL)), data: boot.data,
-                            readOnly: boot.readOnly, readOnlyReason: boot.readOnlyReason)
+                            readOnly: boot.readOnly, readOnlyReason: boot.readOnlyReason,
+                            lastWriteFailed: boot.writeFailed)
+        lastWriteFailed = boot.writeFailed
         updateMotion()
         watch()
         motionObserver = NSWorkspace.shared.notificationCenter.addObserver(

@@ -27,6 +27,14 @@ final class SettingsSyncTests: XCTestCase {
         XCTAssertEqual(rig.decoded(rig.disk).ui.cardMaxWidth, 300)
     }
 
+    func testAFailedWriteAtLaunchStaysUntilAWriteGoesThrough() {
+        var rig = SyncRig(startedWithFailedWrite: true)
+        XCTAssertTrue(rig.sync.lastWriteFailed)
+        rig.appEdits { $0.recentCount = 12 }
+        rig.writeFires()
+        XCTAssertFalse(rig.sync.lastWriteFailed)
+    }
+
     func testAFolderThatCannotBeWrittenKeepsTheWriteFailedUntilAWriteGoesThrough() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("vignette-sync-\(UUID().uuidString)")
         let file = folder.appendingPathComponent("settings.json")

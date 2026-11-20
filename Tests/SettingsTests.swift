@@ -117,6 +117,17 @@ final class SettingsTests: XCTestCase {
     }
 
     @MainActor
+    func testAFailedFillInWriteIsLoggedAndMarksTheWriteFailed() throws {
+        try write(#"{"recentCount": 7}"#)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path) }
+        let boot = Settings.bootstrap(at: file)
+        XCTAssertTrue(boot.writeFailed)
+        XCTAssertTrue(boot.log.contains { $0.hasPrefix("error write-failed settings.json:") })
+        XCTAssertFalse(boot.readOnly)
+    }
+
+    @MainActor
     func testNegativeCountIsClampedInMemoryAndLogged() throws {
         try write(#"{"recentCount": -1, "ui": {"backdropWidth": 0, "cardShadowOpacity": 3}}"#)
         let boot = Settings.bootstrap(at: file)
