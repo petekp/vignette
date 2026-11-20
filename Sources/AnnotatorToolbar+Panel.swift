@@ -5,6 +5,8 @@ import AppKit
 /// ask for the keys as a text field does, so `becomesKeyOnlyIfNeeded` cannot tell them apart.
 @MainActor
 final class ToolbarPanel: NSPanel {
+    /// The last left press was on the message field, until the panel resigns the keys: after that
+    /// only a new press or `takeKeys` makes it key, never AppKit choosing the next key window.
     private var pressOnField = false
     private var wantsKeys = false
     /// Cmd+Return while the message field has the keys: Send, as in the editor.
@@ -33,6 +35,11 @@ final class ToolbarPanel: NSPanel {
         wantsKeys = false
     }
     override var canBecomeMain: Bool { false }
+
+    override func resignKey() {
+        super.resignKey()
+        pressOnField = false
+    }
 
     /// The next time the message field becomes first responder, its caret goes to the end of its
     /// words. AppKit selects them all instead, and the first letter typed would replace them.

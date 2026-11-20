@@ -256,4 +256,26 @@ final class ToolbarOfferTests: XCTestCase {
         XCTAssertNil(toolbar.model.focus)
         XCTAssertFalse(toolbar.model.tookKeysOnOpen)
     }
+
+    func testAPickInTheTargetsMenuLandsOnlyOnTheImageWhoseMenuItCameFrom() {
+        let toolbar = AnnotatorToolbar()
+        let model = toolbar.model
+        let a = session("a"), b = session("b")
+        model.shown = true
+        model.begin(replyTo: nil, carryingTarget: false)
+        toolbar.targetMenuActions.onPick?(b, nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(model.target?.id, b.id)
+
+        toolbar.targetMenuActions.onPick?(a, nil)
+        model.begin(replyTo: nil, carryingTarget: true)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(model.target?.id, b.id, "the next image keeps the target it carried")
+        XCTAssertFalse(model.isHandPick(a))
+
+        toolbar.targetMenuActions.onPick?(a, nil)
+        model.shown = false
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(model.target?.id, b.id, "a closed bar takes no pick")
+    }
 }

@@ -28,7 +28,9 @@
   (`AnnotatorToolbar.typeAfterPick`, `ToolbarPanel.caretToEnd`). It takes them a turn after the menu
   closes, after the bar starts to spring to the new target's width. The field counts as
   typed in only while the panel is key
-  (`Model.keyed`), because AppKit makes it the panel's first responder when the bar comes up.
+  (`Model.keyed`), because AppKit makes it the panel's first responder when the bar comes up. The
+  panel forgets a press on the field when it resigns the keys, so only a new press or an ask makes
+  it key again (`ToolbarPanel.resignKey`).
   While the field has the keys, Cmd+W and the zoom keys do what they do on the image: the panel
   hands them to `AnnotationController.fieldCommand` before the field sees them (`FieldCommand`),
   which sends Cmd+W to the window's `performClose` and the zoom keys to the zoom. Other Command
@@ -77,7 +79,8 @@
   The target shows the agent's logo and the session's title, cut in the middle past 132 pt, with
   the title, the session's details and the repository in its tooltip (`SessionMenu.row(of:among:)`). Its width is set rather than left to the text, so it springs with the bar. A
   pick from its menu is applied a turn later, after the menu's own event loop ends, since a change
-  made inside it jumped instead of animating. Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
+  made inside it jumped instead of animating. A pick whose image closed or was replaced in that
+  turn is dropped and logs `[send] pick dropped` (`Model.imageNumber`). Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
   sessions the person sent to in the last 4 hours, newest send first, then the rest by when the agent last worked; five of them, with
   the target always among them, grouped under a header for each repository with Other folders last, then, after a separator, one submenu per project, titled as its header, with its count at its right and every
   running session of that project in it, the top rows too (live ink's Tab steps through the five only).

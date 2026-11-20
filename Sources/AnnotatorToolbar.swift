@@ -42,6 +42,8 @@ final class AnnotatorToolbar {
         /// The target is the image before's, kept while the bar stays up so Send does not leave it
         /// for the 60 to 90 ms the listing takes. The first answer that settles a target replaces it.
         private var carried = false
+        /// One more at each `begin`, so a late menu pick lands only on its own image.
+        private(set) var imageNumber = 0
         /// From Send's press until the bar leaves. The button shows the send and takes no second click.
         /// A new press puts a failure's reason away.
         @Published var sending = false { didSet { if sending { failure = nil } } }
@@ -149,6 +151,7 @@ final class AnnotatorToolbar {
         /// on screen for the image before, keeps that image's list and target until this one's settle.
         func begin(replyTo: AgentDestination?, carryingTarget: Bool) {
             self.replyTo = replyTo
+            imageNumber += 1
             message = ""
             focus = nil
             tookKeysOnOpen = false
@@ -214,7 +217,7 @@ final class AnnotatorToolbar {
     var onLeave: ((_ backward: Bool) -> Bool)?
     /// The target's frame in the hosting view, where its menu drops down from.
     private var targetFrame: CGRect?
-    private let targetMenuActions = TargetMenuActions()
+    let targetMenuActions = TargetMenuActions()
     private var hosting: NSHostingView<ToolbarView>!
     /// The panel's size for the bar as SwiftUI lays it out now, with `padding` on every side.
     var fittingSize: NSSize { hosting.fittingSize }
@@ -230,8 +233,8 @@ final class AnnotatorToolbar {
     /// Room around the bar inside its panel for the shadow and the entrance motion.
     static let padding: CGFloat = 28
     /// The room above and below the bar that the message field grows into while it is typed in. The
-    /// panel always has it, and it is clear, so it passes presses through: a panel that grew when the
-    /// field took focus drew a frame at the new height before `position` moved it, and the bar jumped.
+    /// panel always has it, and it is clear, so it passes presses through: a panel that grew with the
+    /// field would draw a frame at the new height before `position` moved it.
     static let messageRoom: CGFloat = 110
 
     /// The panel's frame without the message field's room: the bar, its padding, and its shadow.
@@ -262,19 +265,20 @@ final class AnnotatorToolbar {
                                                       onMessageEnd: { [weak self] in self?.onMessageEnd?() },
                                                       onClose: { [weak self] in self?.onClose?() }))
         // `position` alone sizes the panel, about the bar's centre (`onWidth`). As the window's
-        // content view, the hosting view resized the window to its new content from the window's
-        // left edge, and a bar that grew from Reply to Send stayed off centre.
+        // content view, the hosting view would resize the window from its left edge.
         hosting.sizingOptions = [.intrinsicContentSize]
         hosting.autoresizingMask = [.width, .height]
         let content = NSView()
         content.addSubview(hosting)
         panel.contentView = content
         targetMenuActions.onPick = { [weak self] destination, menuLine in
-            // A turn later, once the menu's own event loop has ended, and on the bar's spring.
+            let image = self?.model.imageNumber
+            // A turn later, once the menu's own event loop has ended.
             DispatchQueue.main.async {
                 guard let self else { return }
                 Log.write("[send] picked \(destination.address.description) project=\(destination.detail) role=\(destination.role ?? "none")")
                 if let menuLine { Log.write(menuLine) }
+                guard self.model.shown, self.model.imageNumber == image else { return Log.write("[send] pick dropped") }
                 // Before the pick changes the offer, which may offer the field the keys as on open.
                 self.onPick?()
                 withAnimation(Anim.spring(0.35 * Settings.shared.motionScale)) { self.model.pick(destination) }
@@ -323,9 +327,8 @@ final class AnnotatorToolbar {
         ]
     }
 
-    /// The target's menu, under it: five sessions sent to or used last, the target among
-    /// them with a check, each group under its repository (`SessionMenu`), then one submenu
-    /// per project with all of its running sessions. AppKit's own menu, so Space on the focused target opens it as a click does.
+    /// The target's menu under it, with the rows `SessionMenu` orders and the target checked.
+    /// AppKit's own menu, so Space on the focused target opens it as a click does.
     func showTargetMenu() {
         guard model.offer.offersTarget, let frame = targetFrame else { return }
         let target = model.offer.destination
@@ -366,7 +369,7 @@ final class AnnotatorToolbar {
     var sliding = false
 
     /// Orders the panel in hidden and lets the bar rise into place a turn later, so the
-    /// entrance animates from the hidden state instead of appearing already in place.
+    /// entrance animates.
     func show() {
         hideGeneration += 1
         panel.orderFront(nil)
