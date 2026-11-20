@@ -171,12 +171,13 @@ Before you drive the app:
 ## Words and motion
 
 - Vignette has no toasts. What happened is said on something already on screen. A copy or a stitch
-  marks its card (`ThumbnailController.showCopied`), a failed copy (`showNotCopied`) or send
-  (`SendNotice`) says why on the card, and a card that is not on screen comes up as the lone
+  marks its card (`ThumbnailController.showCopied`). A failed copy (`showNotCopied`), a drawing
+  that could not be written (`showNotSaved`, "Not saved") or a failed send (`SendNotice`) says why
+  on the card, and a card that is not on screen comes up as the lone
   thumbnail to say it. A card says one of these at a time, the newest winning, and a send waiting
   for its answer still gets it after a newer notice took the card, so a failure is never lost
-  (`CardNotices`, `docs/card-notices-2026-10-02.md`). A paste the editor cannot take beeps. A settings.json that did not parse is
-  a warning at the top of the Settings window's General tab. A command from a script answers in
+  (`CardNotices`, `docs/card-notices-2026-10-02.md`). A paste the editor cannot take beeps. A settings.json that did not parse, or
+  a settings write that failed, is a warning at the top of the Settings window's General tab. A command from a script answers in
   the log.
   `docs/no-toasts-2026-09-30.md` has what each toast became.
 - `docs/voice.md` is how Vignette speaks: clear, short and humble, pointing to what can happen
