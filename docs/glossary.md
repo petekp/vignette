@@ -60,8 +60,8 @@ One new screenshot made from several, laid out for a model to read, with each pi
 _Avoid_: Merge, collage, combine
 
 **Notice**:
-What a card says after something happened to it: Copied, Not copied, or where a send went and how
-it went. A card shows one notice at a time.
+What a card says after something happened to it: Copied, Not copied, Not saved, or where a send
+went and how it went. A card shows one notice at a time.
 _Avoid_: Mark, toast, badge
 
 **Tab**:

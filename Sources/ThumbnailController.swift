@@ -213,7 +213,7 @@ final class ThumbnailController {
                             "drawing": drawings?.keys.contains(card.shot.key) ?? false, "agent": card.agent as Any,
                             "kind": card.shot.kind == .recording ? "recording" : "image",
                             "copied": notice?.kind == .copied,
-                            "notCopied": notCopied as Any]
+                            "notCopied": notCopied as Any, "notSaved": notice?.kind == .notSaved]
                 },
                 "selected": model.selectedCards().map(\.shot.key.path),
                 "queue": run.queue.map(\.path),
@@ -633,13 +633,14 @@ final class ThumbnailController {
         for shot in shots where isSeen(shot) { post(.copied(label: label), on: shot) }
     }
 
-    /// A copy of `shot` that failed: the card says why, and a card still on its way back from the
-    /// annotator does not take the Copied notice when it lands. A card not on screen comes up as the
-    /// lone thumbnail; one in the annotator, or on its way home, shows the notice when it lands.
-    func showNotCopied(_ shot: Screenshot, reason: String, in opening: Opening? = nil) {
+    /// A failure on `shot`'s card, which keeps Copied off it if it is parking after Done in `opening`.
+    func showFailed(_ notice: CardNotices.Event, on shot: Screenshot, in opening: Opening?) {
         if let opening { send(.failed(opening)) }
-        post(.notCopied(reason: reason), on: shot)
+        post(notice, on: shot)
     }
+
+    /// The annotator's opening of `shot`, if it holds or is parking that one.
+    func opening(of shot: Screenshot) -> Opening? { run.key == shot.key ? run.opening : nil }
 
     /// The person sees `shot`'s card, or will when it lands: it is on screen, or in the annotator,
     /// whose card comes home wearing whatever was posted meanwhile.

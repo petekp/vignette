@@ -65,7 +65,8 @@
    `[state] {json}` line with the tag echoed, so a script waits for its own line:
    `app` (pid, build, bundle, isActive, accessibility, watch folder, settings file, debug), `screen`,
    `stack` (cards with `file`, `frame`, `out`, `forming`, `drawing`, `agent`, `kind`, `copied`,
-   `notCopied`, the reason a copy failed or null; `selected`,
+   `notCopied`, the reason a copy failed or null, `notSaved`, whether the card says its drawing was
+   not saved; `selected`,
    `focused`, `hovered`, `queue`, the files waiting for the annotator, `visible`, `key`, `isStack`,
    `scroll`, `viewport`, `safeBottom`, the room the Dock keeps under the column, panel,
    `panelOnScreen`, `widthScale`, how wide the stack is drawn, `swipe`, how far a swipe has moved the

@@ -227,3 +227,11 @@ Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
 | --- | --- |
 | The screenshot did not read | Vignette couldn't read the screenshot. |
 | The rendering could not be written | Vignette couldn't save the drawing. |
+
+### A drawing, on its card ("Not saved")
+
+| When | Reason |
+| --- | --- |
+| The editor's drawing could not be written after the editor let go of it (`Drawings.notSaved`) | Vignette couldn't save the drawing. The log has details. |
+
+After Done, "Not saved" takes the place of Copied.

@@ -27,6 +27,8 @@ final class CardNoticesTests: XCTestCase {
         post(&notices, .answered(request: "a", state: .sent, reason: nil))
         post(&notices, .notCopied(reason: "The disk is full."))
         XCTAssertEqual(notices.notice(on: file), .notCopied(reason: "The disk is full."))
+        post(&notices, .notSaved(reason: "Not written."))
+        XCTAssertEqual(notices.notice(on: file), .notSaved(reason: "Not written."))
         post(&notices, .copied(label: "Copied Path"))
         XCTAssertEqual(notices.notice(on: file), .copied(label: "Copied Path"))
     }
@@ -92,6 +94,7 @@ final class CardNoticesTests: XCTestCase {
             XCTAssertEqual(sendState(notices), state)
         }
         XCTAssertNotNil(post(&notices, .notCopied(reason: "Why."), seen: false))
+        XCTAssertNotNil(post(&notices, .notSaved(reason: "Why."), seen: false))
         XCTAssertNotNil(post(&notices, .replyFailed(request: "r", client: .claude, reason: "Why."), seen: false))
     }
 
@@ -101,6 +104,7 @@ final class CardNoticesTests: XCTestCase {
         var notices = CardNotices()
         XCTAssertEqual(post(&notices, .copied(label: "Copied"))?.hold, hold)
         XCTAssertEqual(post(&notices, .notCopied(reason: "Why."))?.hold, hold * 3)
+        XCTAssertEqual(post(&notices, .notSaved(reason: "Why."))?.hold, hold * 3)
         XCTAssertEqual(post(&notices, .replyFailed(request: "r", client: .claude, reason: "Why."))?.hold, hold * 3)
         let expected: [SendNotice.State: TimeInterval] = [.sent: hold, .queued: hold * 3, .uncertain: hold * 3, .failed: hold * 3]
         for (state, time) in expected {

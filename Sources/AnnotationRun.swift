@@ -23,7 +23,7 @@ struct AnnotationRun: Equatable {
         case newShot(ScreenshotKey)         // a new file arrived
         case renamed(from: ScreenshotKey, to: ScreenshotKey)   // a file was renamed: a queued file and the open one follow it
         case selectionChanged(added: [ScreenshotKey], removed: [ScreenshotKey])   // image files only, in the order picked
-        case failed(Opening)         // Done's copy failed before the card came home
+        case failed(Opening)         // Done's copy, or the drawing's save, failed before the card came home
         case loaded(Opening)         // the editor has the image at the screen's size
         case takesPresses(Opening)   // the window server gives the editor's window its presses
         case arrived(Opening)        // the flight into the editor settled on the frame

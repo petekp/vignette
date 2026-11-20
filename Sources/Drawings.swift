@@ -25,6 +25,11 @@ final class Drawings {
     /// A screenshot's drawing changed on disk: written, with the drawing as it is now, or removed
     /// (nil). Every write and removal calls it, whether or not the set of keys changed.
     var onChange: ((_ key: ScreenshotKey, _ drawing: Drawing?) -> Void)?
+    /// The editor's drawing could not be written, so its file still holds the drawing as last stored.
+    /// Only `handOver` calls it; the other writers answer their own callers.
+    var onWriteFailed: ((ScreenshotKey) -> Void)?
+    /// What a card says when its drawing could not be written.
+    static let notSaved = "Vignette couldn't save the drawing. The log has details."
     /// The editor's drawing, which `current` and `add` take over the stored one.
     weak var open: OpenDrawing?
     /// Counts the writes and removals of each key, so a `load` that began before one is dropped.
@@ -82,12 +87,27 @@ final class Drawings {
     /// that is gone is not written: the editor can hand one over after its file was trashed.
     @discardableResult
     func write(_ drawing: Drawing, reason: String) -> Bool {
+        (try? save(drawing, reason: reason)) ?? false
+    }
+
+    /// Writes the editor's drawing, and calls `onWriteFailed` when that fails after the editor let
+    /// go of it. While the editor holds it, the next hand-over writes it again. An empty drawing
+    /// that a newer build's file refuses is not a failure: no marks of the person's are lost.
+    func handOver(_ drawing: Drawing, reason: String) {
+        do { _ = try save(drawing, reason: reason) } catch DrawingStore.Refusal.newerVersion where drawing.marks.isEmpty {
+        } catch {
+            let key = ScreenshotKey(asGiven: drawing.key)
+            if open?.drawing(of: key) == nil { onWriteFailed?(key) }
+        }
+    }
+
+    private func save(_ drawing: Drawing, reason: String) throws -> Bool {
         let key = ScreenshotKey(asGiven: drawing.key), name = key.name
         if !drawing.marks.isEmpty, !FileManager.default.fileExists(atPath: drawing.key) {
             Log.write("[drawing] dropped \(name): its screenshot is gone")
             return false
         }
-        do { try store.write(drawing) } catch { return false }
+        try store.write(drawing)
         if drawing.marks.isEmpty {
             guard keys.remove(key) != nil else { return true }
             Log.write("[drawing] removed \(name)")

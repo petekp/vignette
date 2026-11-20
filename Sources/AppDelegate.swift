@@ -129,7 +129,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let self else { return nil }
             return drawings.read(key, pixels: pixels, style: settings.data.ui.textStyle)
         }
-        annotator.onDrawing = { [weak self] drawing, reason in self?.drawings.write(drawing, reason: reason) }
         annotator.onSend = { [weak self] shot, drawing, destination, title, message in
             self?.sendDrawing(drawing, of: shot, to: destination, titled: title, message: message)
         }

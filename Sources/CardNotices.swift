@@ -53,13 +53,15 @@ struct CardNotices {
     enum Notice: Equatable {
         case copied(label: String)
         case notCopied(reason: String)
+        case notSaved(reason: String)
         case send(SendNotice)
 
-        enum Kind: Hashable { case copied, notCopied, send }
+        enum Kind: Hashable { case copied, notCopied, notSaved, send }
         var kind: Kind {
             switch self {
             case .copied: return .copied
             case .notCopied: return .notCopied
+            case .notSaved: return .notSaved
             case .send: return .send
             }
         }
@@ -69,6 +71,8 @@ struct CardNotices {
     enum Event: Equatable {
         case copied(label: String)
         case notCopied(reason: String)
+        /// The file's drawing could not be written.
+        case notSaved(reason: String)
         /// A send is stored and its card is going home; it waits for `answered`. With a `grace` the
         /// line has not gone yet: the card counts it down until `released` or `cancelled`.
         case sending(request: String, client: AgentClient, sessionTitle: String, grace: SendNotice.Grace? = nil, starts: Bool = false)
@@ -112,6 +116,8 @@ struct CardNotices {
             notice = .copied(label: label)
         case .notCopied(let reason):
             notice = .notCopied(reason: reason)
+        case .notSaved(let reason):
+            notice = .notSaved(reason: reason)
         case .sending(let request, let client, let sessionTitle, let grace, let starts):
             let send = SendNotice(request: request, client: client, sessionTitle: sessionTitle, state: grace == nil ? .sending : .inGrace, grace: grace,
                                   starts: starts)
@@ -190,7 +196,7 @@ struct CardNotices {
     private static func explains(_ notice: Notice) -> Bool {
         switch notice {
         case .copied: return false
-        case .notCopied: return true
+        case .notCopied, .notSaved: return true
         case .send(let send): return explains(send)
         }
     }

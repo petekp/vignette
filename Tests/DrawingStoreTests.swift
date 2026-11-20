@@ -510,7 +510,7 @@ final class DrawingsTests: XCTestCase {
 
 /// The editor's open drawing, without a window: a join adds the marks and answers the drawing.
 @MainActor
-private final class FakeEditor: OpenDrawing {
+final class FakeEditor: OpenDrawing {
     var drawing: Drawing
     var isOpen = true
 
