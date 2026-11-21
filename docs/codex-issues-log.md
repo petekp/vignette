@@ -2,6 +2,11 @@
 
 The progress on the issues in `docs/codex-issues.md`, newest first.
 
+## 2026-11-21, C8: Codex pushes with no thread
+
+- Reading why Send's start was wrong when the Codex app was in front found 9 of 116 Codex pushes
+  with no `session=` (11-13 to 11-20). Added C8. C7's status now names its merge, 1d5bdef.
+
 ## 2026-11-18, X2: the browser agent's right-click menu (app 26.1111.21308)
 
 - Pete was pulled into Codex with a context menu open, several times within minutes. WindowServer's

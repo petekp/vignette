@@ -19,7 +19,8 @@ and gets an end-to-end scenario wherever the fake can show it.
 | C4 | "Sent" can mean the message is only waiting | Medium | Fixed; Sent verified live, Queued with the fake codex |
 | C5 | Opening the editor from the Codex app waits 0.3 to 0.5 s for nothing | Low | Fixed with C1: 9 to 20 ms |
 | C6 | Two spellings of one path reach two drawings | Low | Fixed |
-| C7 | "Sent" while Codex still holds the line, and a stopped turn holds it until the next message | Medium | Fixed on branch codex-queued, not merged |
+| C7 | "Sent" while Codex still holds the line, and a stopped turn holds it until the next message | Medium | Fixed, merged as 1d5bdef |
+| C8 | Some Codex pushes name no thread, so their cards offer Send, not Reply | Low | Open; cause unverified |
 | X1 | The CLI on this Mac's PATH cannot run the configured model | Not Vignette's | Noted |
 | X2 | The in-app browser agent's right-click opens a menu over the app in front and takes its keys | Not Vignette's | Proposed upstream, not reported |
 
@@ -186,6 +187,17 @@ holds the line until the person's next message: the card says so and points to C
 
 `docs/codex-queued-sends-2026-11-16.md` has the dialogs, the queue's source, five live runs, what
 Vignette can see from outside the engine, the card's wording and the options.
+
+### C8: Some Codex pushes name no thread, so their cards offer Send, not Reply
+
+**What happens.** From 2026-11-13 to 2026-11-20, 9 of 116 `vignette://add` pushes with
+`agent=codex` had no `session=`, against 0 of 306 from Claude Code. The skill tells Codex to pass
+`session=$CODEX_THREAD_ID` (`skills/vignette/SKILL.md`). A card with no session is not a Reply, so
+Send starts on the usual choice. On 2026-11-17 one such card, opened from the stack, started Send on
+the thread the Codex app showed, and Pete found the pushing thread by search.
+
+**Not yet known.** Whether `CODEX_THREAD_ID` was empty in those runs, or the agent left the
+parameter out.
 
 ### X1: The CLI on this Mac's PATH cannot run the configured model
 
