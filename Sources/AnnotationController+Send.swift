@@ -27,12 +27,23 @@ extension AnnotationController {
     func sent(to destination: AgentDestination, as record: ScreenshotRequests.Record) {
         let now = Date()
         if keptPick?.holds(at: now) == false { endKeptPick("time") }
+        logMenuRows(of: record)
         let session = destination.sent(as: record)
         let after = DestinationChoice.KeptPick.after(sendTo: session, isSend: toolbar.model.offer.isSend,
                                                      handPicked: toolbar.model.isHandPick(destination), kept: keptPick, at: now)
         guard after != keptPick else { return }
         keptPick = after
         Log.write("[send] kept \(session.address.description) project=\(session.detail)")
+    }
+
+    /// `[send] menu request=<id> top=<rows>`: the rows the target menu opens with at this send, which
+    /// the pick's line (`TargetMenuActions`) says only when the menu was used. A Reply has no menu,
+    /// so it writes none.
+    private func logMenuRows(of record: ScreenshotRequests.Record) {
+        let model = toolbar.model
+        guard model.offer.offersTarget else { return }
+        let top = SessionMenu.menu(model.destinations + model.startable, destination: model.offer.destination).topRows.map(\.destination)
+        Log.write("[send] menu request=\(record.id) top=\(top.map(TargetMenuActions.loggedName).joined(separator: ","))")
     }
 
     private func endKeptPick(_ reason: String) {

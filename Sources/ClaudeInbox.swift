@@ -50,3 +50,84 @@ extension ClaudeCodeConnection {
                      started: session?[.creationDate] as? Date, written: session?[.modificationDate] as? Date)
     }
 }
+
+// MARK: Writing a request, and watching the monitor take it
+
+extension ClaudeCodeConnection {
+    /// How long a line is watched for the monitor's taking it.
+    static let handoverLimit: TimeInterval = 3600
+
+    enum Handover: Equatable {
+        case waiting
+        /// The monitor printed the line and removed it.
+        case handed
+        /// The inbox went with the line in it: the session ended first.
+        case inboxGone
+        case limit
+
+        static func of(lineIsThere: Bool, inboxIsThere: Bool, waited: TimeInterval) -> Handover {
+            if !lineIsThere { return inboxIsThere ? .handed : .inboxGone }
+            return waited >= ClaudeCodeConnection.handoverLimit ? .limit : .waiting
+        }
+    }
+
+    /// Only the person's own inboxes are watched: a test names an inbox folder of its own.
+    private var watchesHandover: Bool { inboxes == AgentPlugin.inboxRoot }
+
+    /// Writes the request into `inbox`, aside and then renamed in, so the monitor never prints half
+    /// of one. It is accepted once it is there: a session in a turn reads it when the turn ends, as a
+    /// Codex thread does a queued message. The `ok` line names the file, which `watchHandover` logs.
+    func write(_ line: String, into inbox: Inbox, session: String) -> SubmissionOutcome {
+        let name = "\(Int64(now().timeIntervalSince1970 * 1000))-\(UUID().uuidString).line"
+        let aside = inbox.folder.appendingPathComponent(".\(name).tmp")
+        let file = inbox.folder.appendingPathComponent(name)
+        do {
+            try Data((line + "\n").utf8).write(to: aside)
+            try FileManager.default.moveItem(at: aside, to: file)
+        } catch {
+            try? FileManager.default.removeItem(at: aside)
+            return .notSubmitted(code: .sendFailed, detail: "\(inbox.folder.path): \(error.localizedDescription)",
+                                 reason: SubmissionOutcome.internalReason)
+        }
+        watchHandover(of: file, in: inbox)
+        return .accepted(detail: "inbox=\(inbox.pid) session=\(session) line=\(name)")
+    }
+
+    /// Watches `line`, a file written into `inbox`, until the plugin's monitor takes it, which it does
+    /// between turns by printing it and removing the file (inbox.sh). The inbox folder is watched
+    /// through the file system, so nothing runs until the folder changes. Logs
+    /// `[send] handed line=<file> inbox=<pid> after=<ms>` when the file is gone, or
+    /// `[send] not handed line=<file> inbox=<pid> after=<ms> reason=inbox-gone|limit` when the
+    /// session's inbox went first or `handoverLimit` passed. The monitor looks every 0.3 s, so a
+    /// hand-over is logged up to that late.
+    private func watchHandover(of line: URL, in inbox: Inbox) {
+        guard watchesHandover else { return }
+        let fd = open(inbox.folder.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        let written = now(), now = self.now
+        let queue = DispatchQueue(label: "vignette.handover")
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete, .revoke], queue: queue)
+        var finished = false
+        func look(timedOut: Bool) {
+            guard !finished else { return }
+            let waited = now().timeIntervalSince(written)
+            let fm = FileManager.default
+            let state = Handover.of(lineIsThere: fm.fileExists(atPath: line.path), inboxIsThere: fm.fileExists(atPath: inbox.folder.path),
+                                    waited: timedOut ? max(waited, Self.handoverLimit) : waited)
+            let named = "line=\(line.lastPathComponent) inbox=\(inbox.pid) after=\(Int(waited * 1000))ms"
+            switch state {
+            case .waiting: return
+            case .handed: Log.write("[send] handed \(named)")
+            case .inboxGone: Log.write("[send] not handed \(named) reason=inbox-gone")
+            case .limit: Log.write("[send] not handed \(named) reason=limit")
+            }
+            finished = true
+            source.cancel()
+        }
+        source.setEventHandler { look(timedOut: false) }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        queue.async { look(timedOut: false) }
+        queue.asyncAfter(deadline: .now() + Self.handoverLimit) { look(timedOut: true) }
+    }
+}

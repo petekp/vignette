@@ -22,7 +22,7 @@ extension AnnotationController {
         // ignored for long enough to swallow a press that answers the window: it is not on screen
         // until the flight lands on it, and a hand cannot react inside `outsideClickSettling`.
         if watchesClickOutside {
-            outsideClick.start(settling: Self.outsideClickSettling) { [weak self] in self?.cancel(.clickedAway) }
+            outsideClick.start(settling: Self.outsideClickSettling) { [weak self] in self?.cancel(.clickedAway, via: .clickOutside) }
         }
         probeEvents()
         windowUp = true
@@ -208,14 +208,14 @@ extension AnnotationController {
     @discardableResult
     func cancelForDebug() -> Bool {
         guard current != nil else { return false }
-        cancel()
+        cancel(via: .url)
         return true
     }
 
-    func cancel(_ how: RunEnding = .back) {
+    func cancel(_ how: RunEnding = .back, via: CloseVia) {
         guard current != nil else { return }
         Log.write("[annotate] cancelled")
-        onClosed?(how)
+        onClosed?(how, via)
     }
 
     /// The drawing in the editor, stored before the app quits. The editor parks for it.

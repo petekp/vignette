@@ -116,8 +116,9 @@ names the session the bar's filled button sends to whenever one of these changes
 `app`, `pane`, `tab` or `none` (the session used last).
 
 `role` is the `fleet.role` label of the herdr-core terminal that runs the session. It is the label
-when that is 1 to 24 letters, digits and hyphens, and `other` for any other text. It is `none` for a
-Codex thread, without the label or Herdr, and until Claude Code's listing answers. The target is
+when that is 1 to 24 letters, digits and hyphens, and `other` for any other text. A terminal with no
+label but a parent terminal, as the ones a coordinator starts have, is `delegate`. It is `none` for
+a Codex thread, for a terminal with neither, without Herdr, and until Claude Code's listing answers. The target is
 logged again when its role arrives, so the last `target` line before a send has it.
 
 `[send] picked <address> project=<detail> role=<role>` is a pick from the target's menu. The next
@@ -130,7 +131,26 @@ row=<n>`, says where the pick was made:
 - `list=project` is the `submenu`-th project submenu, counted from the top.
 - `list=search` is the rows a search left.
 - `rows` is that list when it is not `top`, and `row` is the picked row's place in it, from 1.
-- A row is a session id, `resume:<id>` for Continue last session, or `new` for New session. `[send] kept <address> project=<detail>` is a send that set or refreshed the kept pick
+- A row is a session id, `resume:<id>` for Continue last session, or `new` for New session.
+
+`[send] menu request=<id> top=<rows>` follows each `[send] prepared` line of a send from the editor
+that has a target menu (not a Reply). `rows` are the menu's first rows as they stood at the send,
+named as above, whether or not the menu was opened. A live ink note's send writes no such line.
+
+`[send] ok <id> <name> inbox=<pid> session=<id> line=<file>` names the file a Claude Code send wrote
+into the session's inbox. The plugin's monitor prints that file between turns and removes it, and
+Vignette looks for that: `[send] handed line=<file> inbox=<pid> after=<ms>` is the time from the
+write to the file being gone, up to 0.5 s late in the first minute and 2 s late after it.
+`[send] not handed line=<file> inbox=<pid> after=<ms> reason=inbox-gone|limit` is a file still there
+when the inbox itself was removed or after an hour.
+`[annotate] closed <file> reason=<reason>` is one line for each image the editor leaves without
+sending it, before the `[transition]` line of the event. `reason` is `esc`, `window` (Cmd+W, or an
+Esc no view took), `bar` (Esc in the message field), `click-outside`, `shortcut` (the shortcut that
+opens the stack), `url` (`vignette://cancel`), `unreadable-image`, `done`, `page` (Left or Right),
+`another-image` (a card clicked, or Draw on others), `file-removed` and `stack-closed`. Send writes
+none, and the editor closing after a send is not a close.
+
+`[send] kept <address> project=<detail>` is a send that set or refreshed the kept pick
 (`docs/glossary.md`), and `[send] kept ended <address> reason=time|gone` is its end.
 `[state] annotator.keptPick` is the kept pick's `session`, `client` and `secondsLeft`, or null.
 

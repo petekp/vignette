@@ -294,6 +294,43 @@ final class EventHold<Event> {
     }
 }
 
+extension AnnotationRun {
+    /// Why `event` closes the image open in the editor without sending it. Nil for an event that
+    /// leaves it open, and for `.cancel` and `.sent`: a cancel names its own cause
+    /// (`ThumbnailController.annotationEnded`), and a send is not a close without one.
+    static func closeReason(of event: Event, open: ScreenshotKey) -> String? {
+        switch event {
+        case .annotate(let keys): return keys.first == open ? nil : "another-image"
+        case .page: return "page"
+        case .finish: return "done"
+        case .dismiss(let ending):
+            switch ending {
+            case .finished: return "done"
+            case .clickedAway: return "click-outside"
+            default: return "stack-closed"
+            }
+        case .remove(let keys): return keys.contains(open) ? "file-removed" : nil
+        default: return nil
+        }
+    }
+
+    func logClosing(byEvent event: Event) {
+        guard let key, let reason = Self.closeReason(of: event, open: key) else { return }
+        logClosing(by: reason)
+    }
+
+    /// `[annotate] closed <file> reason=<reason>`: one line for each image the editor leaves without
+    /// sending it. The editor is still open while the run is annotating or flying the image in, so
+    /// the later events of a close already under way write nothing.
+    func logClosing(by reason: String) {
+        guard let key else { return }
+        switch phase {
+        case .annotating, .flyingOut: Log.write("[annotate] closed \(key.name) reason=\(reason)")
+        default: return
+        }
+    }
+}
+
 // Short log forms: keys print as file names, so a `[transition]` line stays readable.
 private func short(_ key: ScreenshotKey) -> String { key.name }
 
