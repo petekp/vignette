@@ -53,6 +53,8 @@ final class AnnotationController {
     let toolbar = AnnotatorToolbar()
     /// The session Send keeps after a send to a hand pick, kept in memory only.
     var keptPick: DestinationChoice.KeptPick?
+    /// The apps whose windows the open image's capture showed, when it opened from one.
+    var captured: [CaptureRect.Owner]?
     let titleView = AgentTitleView()
     var window: AnnotationWindow?
     /// The window spans the screen's visible frame and stays put, until a re-fit grows it to cover

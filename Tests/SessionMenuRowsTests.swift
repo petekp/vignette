@@ -145,4 +145,23 @@ final class SessionMenuRowsTests: XCTestCase {
         XCTAssertEqual(ids("hr vignette"), [["b"]], "a badge word combines with a header word, and the busy row's badge has no hr")
         XCTAssertEqual(ids("1 hr"), [], "a time no badge shows matches nothing")
     }
+
+    func testSendsMenuPutsTheLikeliestOtherSessionFirstAndKeepsTheTarget() {
+        let now = Date()
+        func session(_ id: String, used hours: Double, place: Place) -> AgentDestination {
+            AgentDestination(id: id, name: id, address: .claudeSession(id), lastUsed: now.addingTimeInterval(-hours * 3600), place: place)
+        }
+        let vignette = Place.repository(name: "vignette", root: "/Users/p/Code/vignette", worktree: nil, subfolder: nil)
+        let list = [session("a", used: 1, place: vignette), session("b", used: 2, place: .folder(fromHome: "~/Code")),
+                    session("c", used: 3, place: vignette)]
+        let send = SessionMenu.menu(list, destination: list[0], targetNotFirst: true, now: now)
+        XCTAssertEqual(send.topRows.map(\.id), ["b", "a", "c"], "the target gives the first row to the next session")
+        XCTAssertEqual(send.top.map(\.header), ["Other folders", "vignette"], "the first row's group leads, even Other folders")
+        XCTAssertEqual(SessionMenu.menu(list, destination: list[2], targetNotFirst: true, now: now).topRows.map(\.id), ["a", "c", "b"],
+                       "a target that is not first changes nothing")
+        XCTAssertEqual(SessionMenu.menu(Array(list.prefix(1)), destination: list[0], targetNotFirst: true, now: now).topRows.map(\.id),
+                       ["a"], "a lone session stays")
+        XCTAssertEqual(SessionMenu.menu(list, destination: list[0], now: now).topRows.map(\.id), ["a", "c", "b"],
+                       "other menus keep the target first")
+    }
 }

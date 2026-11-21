@@ -104,4 +104,30 @@ final class CaptureRectTests: XCTestCase {
         let found = locate(CGSize(width: 301, height: 201), drag: drag(press, release), cursor: release)
         XCTAssertEqual(found?.rect, CGRect(x: 1600, y: 699, width: 301, height: 201))
     }
+
+    private let herdr = CaptureRect.Window(app: "dev.herdr.app", frame: CGRect(x: 0, y: 0, width: 400, height: 400))
+    private let codex = CaptureRect.Window(app: "com.openai.codex", frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
+
+    func testEachPointOfACaptureIsTheFrontmostWindowsThere() {
+        let owners = CaptureRect.owners(of: CGRect(x: 100, y: 0, width: 400, height: 400), kind: .selection, windows: [herdr, codex])
+        XCTAssertEqual(owners, [CaptureRect.Owner(app: "dev.herdr.app", share: 0.75), CaptureRect.Owner(app: "com.openai.codex", share: 0.25)])
+        XCTAssertEqual(CaptureRect.owners(of: CGRect(x: 100, y: 0, width: 400, height: 400), kind: .selection, windows: [codex, herdr]),
+                       [CaptureRect.Owner(app: "com.openai.codex", share: 1)], "a window behind shows nowhere")
+    }
+
+    func testTheDesktopCountsForNobody() {
+        XCTAssertEqual(CaptureRect.owners(of: CGRect(x: 800, y: 0, width: 400, height: 400), kind: .display, windows: [codex]),
+                       [CaptureRect.Owner(app: "com.openai.codex", share: 1)])
+        XCTAssertEqual(CaptureRect.owners(of: CGRect(x: 2000, y: 0, width: 400, height: 400), kind: .selection, windows: [codex]), [])
+    }
+
+    func testAWindowCaptureIsItsOneWindowEvenUnderAnother() {
+        XCTAssertEqual(CaptureRect.owners(of: herdr.frame, kind: .window, windows: [codex, herdr]),
+                       [CaptureRect.Owner(app: "dev.herdr.app", share: 1)])
+        let shadow = CaptureRect.shadows[0]
+        let shadowed = CGRect(x: -shadow.left, y: -shadow.bottom, width: 400 + shadow.left + shadow.right,
+                              height: 400 + shadow.top + shadow.bottom)
+        XCTAssertEqual(CaptureRect.owners(of: shadowed, kind: .window, windows: [codex, herdr]),
+                       [CaptureRect.Owner(app: "dev.herdr.app", share: 1)], "with Apple's shadow")
+    }
 }

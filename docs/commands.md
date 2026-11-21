@@ -111,9 +111,14 @@ menu bar opens it. The codes are fixed:
 `no-agent`, `send-failed`, `reply-refused`, `live-ink-off`, `invalid-points`, `live-ink-not-asked`, `unknown-section`, `nothing-to-unsend`. The log has one event per line,
 `HH:mm:ss.SSS [tag] key=value …`, and rotates to `Vignette.log.1` at 5 MB.
 
-Where Send starts is logged too. `[send] target <address> project=<detail> focus=<why> role=<role>`
+Where Send starts is logged too. `[send] target <address> project=<detail> focus=<why> role=<role> [reply] [capture=<app>:<percent>,…]`
 names the session the bar's filled button sends to whenever one of these changes. `focus` is `kept`,
-`app`, `pane`, `tab` or `none` (the session used last).
+`app`, `pane`, `tab` or `none` (the session used last). `capture` is there when the image opened
+from a capture whose rect Vignette saw: the apps whose windows it showed, by bundle id (or process
+name), with each one's share of the points some window covered, the largest first, three at most.
+When the app before Vignette was the Codex app and the capture showed another app more, the log
+has `[send] came from the Codex app, capture shows <app>: thread not read`, and the Codex app's
+thread is not where Send starts.
 
 `role` is the `fleet.role` label of the herdr-core terminal that runs the session. It is the label
 when that is 1 to 24 letters, digits and hyphens, and `other` for any other text. A terminal with no

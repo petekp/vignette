@@ -39,9 +39,10 @@
   session the person picked in the target's menu and then sent to (`DestinationChoice.KeptPick`,
   `AnnotationController.keptPick`). It holds for 10 minutes after the send that set it, and each
   Send to it starts the 10 minutes again. Pete's runs of sends to one session had gaps under 6
-  minutes, and a short window drops a pick once he moves to other work. It comes before every rule
-  below, the Codex app's thread included, so one rule says where Send starts. It ends when the 10
-  minutes pass, when a Send goes to another hand pick, which is kept instead, or when every client
+  minutes, and a short window drops a pick once he moves to other work. An image that opened on it
+  renews it when sent there, however long the editor stayed open (`KeptPick.after`). It comes before every rule
+  below, the Codex app's thread included, so one rule says where Send starts. It ends at the next
+  opening, send elsewhere or Reply after its 10 minutes, when a Send goes to another hand pick, which is kept instead, or when every client
   has answered afresh without it, its agent's list holding other sessions: an agent that listed
   none may have failed to answer, so the image starts on the usual choice and the pick stays. A session that `/clear` gave a new id is gone: no guess at the
   same one replaces it, since no send in two weeks of Pete's log was refused as cleared. A pick that
@@ -53,7 +54,9 @@
   the session you came from (`DestinationChoice`). When the app before Vignette
   (`FocusReturn.previousApp`) was the Codex app, that is the thread it shows, or else the Codex
   thread used last; herdr's focus is ignored then, because herdr keeps a focused pane while its
-  terminal is behind. The thread it shows comes from the app's own log (`AgentApp.shownThread`):
+  terminal is behind. A capture that shows another app's windows more than the Codex app's, such
+  as Herdr's inbox panel taken while the Codex app stayed in front, sets that rule aside
+  (`DestinationChoice.appRuleApplies`, `CaptureRect.owners`; `docs/send-start-2026-11-21.md`). The thread it shows comes from the app's own log (`AgentApp.shownThread`):
   each time its window moves to another page, the app logs the page's route, and `/local/<id>` is a
   thread. That is a log line, not an interface, so a build that drops it gives the thread used last.
   Accessibility cannot say: the app's window has had no page in its accessibility tree since the
@@ -82,7 +85,8 @@
   made inside it jumped instead of animating. A pick whose image closed or was replaced in that
   turn is dropped and logs `[send] pick dropped` (`Model.imageNumber`). Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
   sessions the person sent to in the last 4 hours, newest send first, then the rest by when the agent last worked; five of them, with
-  the target always among them, grouped under a header for each repository with Other folders last, then, after a separator, one submenu per project, titled as its header, with its count at its right and every
+  the target always among them but not first when another session can be: it trades places with the second row, whose group
+  then leads (`targetNotFirst`), so Return in the empty search picks the likeliest other session. They are grouped under a header for each repository with Other folders last, then, after a separator, one submenu per project, titled as its header, with its count at its right and every
   running session of that project in it, the top rows too (live ink's Tab steps through the five only).
   The rows that start a session are in neither part unless no session is running (`docs/rules/send.md`). The menu's first row is a search field that has the keyboard: typing lists the matching sessions from every project (a query also matches a row's details and the words at its right, as shown: working, 5 min ago), the rows that start one after the running ones, Return picks the first, and Esc closes the menu (`SessionMenuSearch`). A row starts with its agent's logo, which macOS 27 shows only when the item asks for it (`SessionMenu.item`, `preferredImageVisibility`). A row's title is the name of the Herdr tab its terminal is in, unless Herdr numbered it, else
   the session's name. A session's row is one line: its details, the worktree, the branch and the
@@ -184,4 +188,7 @@
   never sees the press, so the target does not shrink as a pressed button does: the menu answers it.
   Space opens it a turn later: opened inside the editor's keyDown it took no keys, and a press on its item closed the editor as a press outside. In the message field,
   Up on the first line or Down on the last opens it the same way, as on a pop-up button, and the
-  arrows then move through it (`ToolbarPanel.onMenuKey`). `docs/annotator-toolbar-2026-09-19.md` has the numbers.
+  arrows then move through it (`ToolbarPanel.onMenuKey`). Opened from the keyboard, it opens with
+  its first row highlighted, the row Return picks: once the search field has the keys, one Down key
+  goes to the menu's own window (`SessionMenuSearch.install(highlightingFirstRow:)`). A press
+  highlights nothing, as on a pop-up button. `docs/annotator-toolbar-2026-09-19.md` has the numbers.

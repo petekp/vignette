@@ -34,12 +34,16 @@ enum DestinationChoice {
 
         func holds(at now: Date) -> Bool { now.timeIntervalSince(sentAt) < Self.lasts }
 
-        /// The kept pick after a send from the editor stored its request, given `kept` while it
-        /// still holds. A Send to the session picked by hand keeps it, and a Send to the kept pick
-        /// keeps it for longer. A Reply, or a Send elsewhere, leaves `kept` as it was.
+        /// The kept pick after a send from the editor stored its request, given `kept` as the image
+        /// opened on it, even when its 10 minutes have passed since. A Send to the session picked by
+        /// hand keeps it, and a Send to the kept pick keeps it for longer: the image started on it,
+        /// so the time the editor stayed open does not end it. A Reply, or a Send elsewhere, leaves
+        /// `kept` while it holds, and nil after.
         static func after(sendTo destination: AgentDestination, isSend: Bool, handPicked: Bool,
                           kept: KeptPick?, at now: Date) -> KeptPick? {
-            guard isSend, handPicked || kept?.session.id == destination.id else { return kept }
+            guard isSend, handPicked || kept?.session.id == destination.id else {
+                return kept?.holds(at: now) == true ? kept : nil
+            }
             return KeptPick(session: destination, sentAt: now)
         }
     }
@@ -91,6 +95,15 @@ enum DestinationChoice {
     /// that client's job, so the focus comes with the answer that can settle the pick.
     static func readsHerdr(beside client: AgentClient, listed: [AgentDestination]) -> Bool {
         client == markedByHerdr && !listed.isEmpty
+    }
+
+    /// Whether the agent's app that was in front, `app` by bundle id, is what the capture shows,
+    /// so its thread can be where you came from. A capture that shows another app's windows more
+    /// than the app's, such as Herdr's inbox panel taken while the Codex app stayed in front, sets
+    /// the app aside. `capture` is nil when the image did not open from a capture Vignette saw.
+    static func appRuleApplies(app: String, capture: [CaptureRect.Owner]?) -> Bool {
+        guard let capture, let largest = capture.map(\.share).max() else { return true }
+        return capture.contains { $0.app == app && $0.share >= largest }
     }
 
     /// The pick `asker` starts on from the candidates found so far.
@@ -233,8 +246,8 @@ enum DestinationChoice {
 
 extension AgentDestination {
     enum Focus: String, Equatable {
-        /// The person picked it by hand in Send's menu and sent to it in the last 10 minutes
-        /// (`DestinationChoice.KeptPick`).
+        /// The person picked it by hand in Send's menu and sent to it in the last 10 minutes, or the
+        /// image Send sent from opened on it before they passed (`DestinationChoice.KeptPick`).
         case kept
         /// Its agent's own app was the app in front, showing this session (`DestinationChoice`).
         case app

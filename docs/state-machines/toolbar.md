@@ -60,9 +60,9 @@ The session Send starts on after the person picked it in the target's menu and s
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| kept | `sent(to:as:)` from `AppDelegate.submit` once the request is stored, 10 minutes since `sentAt` | none, then as below | `[send] kept ended <address> reason=time` |
-| any | `sent(to:as:)`, a Send to the hand pick (`model.isHandPick`) or to the kept session (`KeptPick.after`) | kept (`sentAt` now); for a Continue last session or New session row, the session the send started (`AgentDestination.sent(as:)`), never the row | `[send] kept <address> project=<detail>` |
-| any | `sent(to:as:)`, a Reply, or a Send to a start Vignette chose | unchanged | — |
+| any | `sent(to:as:)` from `AppDelegate.submit` once the request is stored, a Send to the hand pick (`model.isHandPick`) or to the kept session (`KeptPick.after`), even 10 minutes since `sentAt` | kept (`sentAt` now); for a Continue last session or New session row, the session the send started (`AgentDestination.sent(as:)`), never the row | `[send] kept <address> project=<detail>` |
+| kept | `sent(to:as:)`, a Reply, or a Send to a start Vignette chose, within 10 minutes | unchanged | — |
+| kept | `sent(to:as:)`, a Reply, or a Send to a start Vignette chose, 10 minutes since `sentAt` | none | `[send] kept ended <address> reason=time` |
 | kept | `beginDestinations`, 10 minutes since `sentAt` | none | `[send] kept ended <address> reason=time` |
 | kept | `beginDestinations`, within 10 minutes | kept | answers `session`, passed to `Asker.send(kept:)` for this opening |
 | kept | `destinationsAnswered`, `answer.keptIsGone` | none | `[send] kept ended <address> reason=gone` |
@@ -76,7 +76,7 @@ The session Send starts on after the person picked it in the target's menu and s
 
 **Late and concurrent answers**
 
-- An opening reads the window once, at `beginDestinations`, so a pick that expires while the image is open still starts that image. The send checks the window again, so a send after it ends does not start it again.
+- An opening reads the window once, at `beginDestinations`, so a pick that expires while the image is open still starts that image, and a Send of that image to it renews it. A Reply or a send elsewhere after the window ends it. Checked by: `testOnlyASendToAHandPickOrToTheKeptPickKeepsIt`.
 - A send closes its opening, so no answer of the opening that set the kept pick reaches `destinationsAnswered` after it.
 - A kept session that is still starting (a Continue last session or New session row) is not listed until its inbox is up, up to 45 s; an opening in that time finds it gone.
 

@@ -57,37 +57,6 @@ enum SessionMenu {
         var topRows: [Row] { top.flatMap(\.rows) }
     }
 
-    /// The groups of `groups` whose rows match `query`, in the same order, except that a group with a
-    /// running session comes before one of rows that start a session, so Return never starts one
-    /// while a running session matches. A row matches when every word of the query is found,
-    /// ignoring case and accents, in its title, its details, the words at its right or its group's
-    /// header. A query with no words matches every row.
-    static func matching(_ query: String, in groups: [Group]) -> [Group] {
-        let words = fold(query).split(whereSeparator: \.isWhitespace).map(String.init)
-        let found = words.isEmpty ? groups : groups.compactMap { group in
-            let rows = group.rows.filter { row in
-                let text = fold([row.title, row.details, badge(of: row), group.header].compactMap { $0 }.joined(separator: " "))
-                return words.allSatisfy { text.contains($0) }
-            }
-            return rows.isEmpty ? nil : Group(header: group.header, key: group.key, rows: rows)
-        }
-        let startsOnly = { (group: Group) in group.rows.allSatisfy(\.destination.startsProcess) }
-        return found.filter { !startsOnly($0) } + found.filter(startsOnly)
-    }
-
-    /// The words a row shows at its right edge, or nil when it shows none.
-    private static func badge(of row: Row) -> String? {
-        switch row.activity {
-        case .working: working
-        case .lastActive(let ago): ago
-        case nil: nil
-        }
-    }
-
-    private static func fold(_ text: String) -> String {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-    }
-
     // MARK: Order
 
     /// A project's Continue before its New.
@@ -127,20 +96,26 @@ enum SessionMenu {
     /// responder, and then nothing is forced in). With none running, the rows that start a session
     /// are ranked in their place, since starting one is all the menu can do then. `projects` files
     /// every running session by project once any is left out of the top rows. A session's row does
-    /// not depend on which part it is in.
-    static func menu(_ listed: [AgentDestination], destination: AgentDestination?, count: Int = 5, now: Date = Date()) -> Menu {
+    /// not depend on which part it is in. `targetNotFirst` is Send's: `destination` is where the
+    /// bar already sends, so the first row, which Return picks, is the likeliest other session. When
+    /// `destination` would be first it trades places with the second, and the first row's group
+    /// leads even when it is Other folders.
+    static func menu(_ listed: [AgentDestination], destination: AgentDestination?, count: Int = 5,
+                     targetNotFirst: Bool = false, now: Date = Date()) -> Menu {
         let active = ranked(listed, now: now)
         let running = active.filter { !$0.startsProcess }
         var top = Array((running.isEmpty ? active : running).prefix(count))
         if let destination, !top.contains(where: { $0.id == destination.id }) {
             top = Array(top.prefix(count - 1)) + [active.first { $0.id == destination.id } ?? destination]
         }
+        let targetIsFirst = targetNotFirst && top.count > 1 && top[0].id == destination?.id
+        if targetIsFirst { top.swapAt(0, 1) }
         let shown = Set(top.map(\.id))
         let everyone = including(destination, in: active)
         let receiving = everyone.filter { !$0.startsProcess }
         let filer = Filer(everyone)
         let rows = filer.rows(now: now)
-        let topGroups = groups(top, filer, rows)
+        let topGroups = groups(top, filer, rows, leadFirst: targetNotFirst)
         let first = topGroups.map(\.key)
         let projects = receiving.contains { !shown.contains($0.id) } ? groups(receiving, filer, rows, headersFirst: first) : []
         return Menu(top: topGroups, projects: projects, everyone: groups(everyone, filer, rows, headersFirst: first))
@@ -176,7 +151,7 @@ enum SessionMenu {
     // MARK: Groups
 
     private static func groups(_ sessions: [AgentDestination], _ filer: Filer, _ rows: [String: Row],
-                               headersFirst: [String] = []) -> [Group] {
+                               headersFirst: [String] = [], leadFirst: Bool = false) -> [Group] {
         var order: [String] = headersFirst
         var headers: [String: String] = [:]
         var members: [String: [Row]] = [:]
@@ -190,7 +165,9 @@ enum SessionMenu {
             members[filing.key, default: []].append(row)
         }
         let filled = order.filter { members[$0] != nil }
-        let keys = filled.filter { $0 != otherFolders } + filled.filter { $0 == otherFolders }
+        let lead = leadFirst ? Array(filled.prefix(1)) : []
+        let rest = filled.dropFirst(lead.count)
+        let keys = lead + rest.filter { $0 != otherFolders } + rest.filter { $0 == otherFolders }
         return keys.map { Group(header: headers[$0] ?? $0, key: $0, rows: members[$0] ?? []) }
     }
 

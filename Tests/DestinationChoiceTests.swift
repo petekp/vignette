@@ -127,6 +127,24 @@ final class DestinationChoiceTests: XCTestCase {
                        "a send to a start Vignette chose leaves it")
         XCTAssertNil(Kept.after(sendTo: b, isSend: true, handPicked: false, kept: nil, at: now),
                      "a start Vignette chose is never kept")
+        let late = Date(timeIntervalSince1970: 900)
+        XCTAssertEqual(Kept.after(sendTo: a, isSend: true, handPicked: false, kept: kept, at: late),
+                       Kept(session: a, sentAt: late), "the image opened on it, so a send to it renews it after its 10 minutes")
+        XCTAssertNil(Kept.after(sendTo: b, isSend: true, handPicked: false, kept: kept, at: late),
+                     "a send elsewhere after its 10 minutes ends it")
+        XCTAssertNil(Kept.after(sendTo: a, isSend: false, handPicked: false, kept: kept, at: late), "so does a Reply")
+    }
+
+    func testTheCodexAppRuleYieldsToACaptureThatShowsAnotherApp() {
+        typealias Owner = CaptureRect.Owner
+        let app = AgentApp.codexBundleID, herdr = "dev.herdr.app"
+        XCTAssertTrue(DestinationChoice.appRuleApplies(app: app, capture: nil), "no capture")
+        XCTAssertTrue(DestinationChoice.appRuleApplies(app: app, capture: []), "a capture no window holds")
+        XCTAssertTrue(DestinationChoice.appRuleApplies(app: app, capture: [Owner(app: app, share: 0.7), Owner(app: herdr, share: 0.3)]))
+        XCTAssertTrue(DestinationChoice.appRuleApplies(app: app, capture: [Owner(app: herdr, share: 0.5), Owner(app: app, share: 0.5)]),
+                      "a tie keeps the app")
+        XCTAssertFalse(DestinationChoice.appRuleApplies(app: app, capture: [Owner(app: herdr, share: 1)]))
+        XCTAssertFalse(DestinationChoice.appRuleApplies(app: app, capture: [Owner(app: herdr, share: 0.6), Owner(app: app, share: 0.4)]))
     }
 
     func testAKeptPickClearedToANewIdIsNotFoundAgainByItsProject() {

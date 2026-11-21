@@ -88,10 +88,15 @@ extension AppDelegate {
     /// subprocesses, so it answers later; the bar offers Send once it has a session to send to.
     func refreshDestinations(for shot: Screenshot) {
         guard let opening = annotator.opening else { return }
-        let kept = annotator.beginDestinations(replyTo: requests.origin(of: shot.url))
+        let capture = captureOrigin?.windows(of: shot.url)
+        let kept = annotator.beginDestinations(replyTo: requests.origin(of: shot.url), capture: capture)
         let asked = CACurrentMediaTime()
         let app = FocusReturn.shared.previousApp
         guard let client = AgentApp.client(of: app), let pid = app?.processIdentifier else {
+            return listDestinations(for: shot, opening: opening, asked: asked, cameFrom: nil, kept: kept)
+        }
+        if let bundleID = app?.bundleIdentifier, !DestinationChoice.appRuleApplies(app: bundleID, capture: capture) {
+            Log.write("[send] came from the \(client.label) app, capture shows \(capture?.first?.app ?? "another app"): thread not read")
             return listDestinations(for: shot, opening: opening, asked: asked, cameFrom: nil, kept: kept)
         }
         // The thread the agent's app shows is read before anything is listed: Claude Code's list
