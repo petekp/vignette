@@ -30,7 +30,8 @@ extension AnnotatorToolbar {
     /// The target's menu under it, with the rows `SessionMenu` orders and the target checked, and
     /// the likeliest other session first. AppKit's own menu, so Space on the focused target opens it
     /// as a press does. Opened from the keyboard (`fromKeys`), it opens with the first row
-    /// highlighted, the row Return picks.
+    /// highlighted, the row Return picks. The target looks pressed until the menu closes, however
+    /// it closes, since `popUp` returns only then.
     func showTargetMenu(fromKeys: Bool = false) {
         guard model.offer.offersTarget, let frame = targetFrame else { return }
         let target = model.offer.destination
@@ -46,6 +47,8 @@ extension AnnotatorToolbar {
         }
         targetMenuActions.open = (menu, sessions, search)
         let below = barView.isFlipped ? frame.maxY + 4 : barView.bounds.height - frame.maxY - 4
+        targetShade?.show(open: true)
         _ = menu.popUp(positioning: nil, at: NSPoint(x: frame.minX, y: below), in: barView)
+        targetShade?.show(open: false)
     }
 }
