@@ -789,7 +789,7 @@ private struct ToolbarView: View {
             .padding(.leading, 8)
             .padding(.trailing, 9)
             .frame(height: 30)
-            .background(Color.primary.opacity(0.09), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background { TargetFill() }
             .padding(Self.slop)
             .contentShape(Rectangle())
         }
