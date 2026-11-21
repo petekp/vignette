@@ -4,7 +4,7 @@
 # scripts/check-display-links.py, scripts/check-screen-stores.py, scripts/check-app-activation.py,
 # scripts/check-animations.py, scripts/check-agents-map.py,
 # then the VignetteTests unit tests
-# after the build, and names any that fail.
+# after the build, and names any that fail or were skipped.
 set -e
 cd "$(dirname "$0")/.."
 run_tests=false
@@ -48,4 +48,29 @@ PY
     exit 1
   fi
   echo "tests: passed"
+  # A skipped test leaves the run passed, so each one is named with its reason.
+  result=$(ls -td build/Logs/Test/*.xcresult 2>/dev/null | head -1)
+  if [[ -n "$result" ]]; then
+    python3 - "$result" <<'PY'
+import json, subprocess, sys
+out = subprocess.run(["xcrun", "xcresulttool", "get", "test-results", "tests", "--path", sys.argv[1]],
+                     capture_output=True, text=True).stdout
+try:
+    nodes = json.loads(out).get("testNodes", [])
+except ValueError:
+    sys.exit()
+skipped = []
+def walk(node):
+    if node.get("nodeType") == "Test Case" and node.get("result") == "Skipped":
+        why = "; ".join(c.get("name", "") for c in node.get("children", []) if c.get("nodeType") == "Skip Message")
+        skipped.append(f"  {node.get('nodeIdentifier', node.get('name', '?'))}: {why}")
+    for child in node.get("children", []):
+        walk(child)
+for node in nodes:
+    walk(node)
+if skipped:
+    print(f"tests: {len(skipped)} skipped")
+    print("\n".join(skipped))
+PY
+  fi
 fi

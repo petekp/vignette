@@ -65,3 +65,8 @@ test copy's preferences are kept apart from the person's by its bundle id, in `<
 as a test launch, `<bundle id>.screencapture`. So its screenshot location is
 `defaults write <bundle id>.screencapture location <watch folder>`. Those two domains outlive a
 scratch home, so the end-to-end runner clears both before each scenario (`App.reset_defaults`).
+
+The unit tests' pixel checks read their window back through the window server
+(`Tests/WindowCapture.swift`), which draws nothing new while every display sleeps. They then skip
+instead of failing, and `scripts/build.sh --test` names each skipped test and its reason after
+"tests: passed". Run them with a display awake.
