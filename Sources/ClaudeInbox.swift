@@ -54,11 +54,7 @@ extension ClaudeCodeConnection {
 // MARK: Writing a request, and watching the monitor take it
 
 extension ClaudeCodeConnection {
-    /// How soon after the line is written, and how long, the inbox is looked at for the monitor's
-    /// taking it: every `handoverPoll` for the first minute, then every `slowHandoverPoll`, until
-    /// `handoverLimit`. The monitor looks every 0.3 s, so a hand-over is seen up to the poll late.
-    static let handoverPoll: TimeInterval = 0.5
-    static let slowHandoverPoll: TimeInterval = 2
+    /// How long a line is watched for the monitor's taking it.
     static let handoverLimit: TimeInterval = 3600
 
     enum Handover: Equatable {
@@ -98,24 +94,40 @@ extension ClaudeCodeConnection {
     }
 
     /// Watches `line`, a file written into `inbox`, until the plugin's monitor takes it, which it does
-    /// between turns by printing it and removing the file (inbox.sh). Logs
+    /// between turns by printing it and removing the file (inbox.sh). The inbox folder is watched
+    /// through the file system, so nothing runs until the folder changes. Logs
     /// `[send] handed line=<file> inbox=<pid> after=<ms>` when the file is gone, or
     /// `[send] not handed line=<file> inbox=<pid> after=<ms> reason=inbox-gone|limit` when the
-    /// session's inbox went first or the limit passed.
+    /// session's inbox went first or `handoverLimit` passed. The monitor looks every 0.3 s, so a
+    /// hand-over is logged up to that late.
     private func watchHandover(of line: URL, in inbox: Inbox) {
         guard watchesHandover else { return }
-        let written = now()
-        func look() {
+        let fd = open(inbox.folder.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        let written = now(), now = self.now
+        let queue = DispatchQueue(label: "vignette.handover")
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete, .revoke], queue: queue)
+        var finished = false
+        func look(timedOut: Bool) {
+            guard !finished else { return }
             let waited = now().timeIntervalSince(written)
             let fm = FileManager.default
+            let state = Handover.of(lineIsThere: fm.fileExists(atPath: line.path), inboxIsThere: fm.fileExists(atPath: inbox.folder.path),
+                                    waited: timedOut ? max(waited, Self.handoverLimit) : waited)
             let named = "line=\(line.lastPathComponent) inbox=\(inbox.pid) after=\(Int(waited * 1000))ms"
-            switch Handover.of(lineIsThere: fm.fileExists(atPath: line.path), inboxIsThere: fm.fileExists(atPath: inbox.folder.path), waited: waited) {
-            case .waiting: later(waited < 60 ? Self.handoverPoll : Self.slowHandoverPoll, look)
+            switch state {
+            case .waiting: return
             case .handed: Log.write("[send] handed \(named)")
             case .inboxGone: Log.write("[send] not handed \(named) reason=inbox-gone")
             case .limit: Log.write("[send] not handed \(named) reason=limit")
             }
+            finished = true
+            source.cancel()
         }
-        later(Self.handoverPoll, look)
+        source.setEventHandler { look(timedOut: false) }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        queue.async { look(timedOut: false) }
+        queue.asyncAfter(deadline: .now() + Self.handoverLimit) { look(timedOut: true) }
     }
 }
