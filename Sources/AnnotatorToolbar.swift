@@ -216,9 +216,13 @@ final class AnnotatorToolbar {
     /// when it has no marks to take it, and the bar goes round its own controls.
     var onLeave: ((_ backward: Bool) -> Bool)?
     /// The target's frame in the hosting view, where its menu drops down from.
-    private var targetFrame: CGRect?
+    private(set) var targetFrame: CGRect?
     let targetMenuActions = TargetMenuActions()
     private var hosting: NSHostingView<ToolbarView>!
+    /// The view the bar is drawn in, where the target's frame is measured and its menu drops from.
+    var barView: NSView { hosting }
+    /// How far past the target its presses reach, as for every control on the bar.
+    static var targetSlop: EdgeInsets { ToolbarView.slop }
     /// The panel's size for the bar as SwiftUI lays it out now, with `padding` on every side.
     var fittingSize: NSSize { hosting.fittingSize }
     private var keyObservers: [NSObjectProtocol] = []
@@ -287,6 +291,7 @@ final class AnnotatorToolbar {
         }
         panel.onTab = { [weak self] backward in self?.move(backward: backward) }
         panel.onKey = { [weak self] event in self?.keyDown(event) ?? false }
+        panel.onPressMenu = { [weak self] event in self?.pressTarget(event) ?? false }
         panel.onMenuKey = { [weak self] in
             guard let self, model.offer.offersTarget, targetFrame != nil else { return false }
             // A turn later, as Space on the target opens it, once the key's event is done.
@@ -325,26 +330,6 @@ final class AnnotatorToolbar {
                 }
             },
         ]
-    }
-
-    /// The target's menu under it, with the rows `SessionMenu` orders and the target checked.
-    /// AppKit's own menu, so Space on the focused target opens it as a click does.
-    func showTargetMenu() {
-        guard model.offer.offersTarget, let frame = targetFrame else { return }
-        let target = model.offer.destination
-        let menu = NSMenu()
-        menu.autoenablesItems = false
-        let sessions = SessionMenu.menu(model.destinations + model.startable, destination: target)
-        let search = SessionMenu.add(sessions, to: menu) { row in
-            let item = SessionMenu.item(for: row, selected: row.id == target?.id)
-            item.target = self.targetMenuActions
-            item.action = #selector(TargetMenuActions.pick(_:))
-            item.representedObject = row.destination
-            return item
-        }
-        targetMenuActions.open = (menu, sessions, search)
-        let below = hosting.isFlipped ? frame.maxY + 4 : hosting.bounds.height - frame.maxY - 4
-        _ = menu.popUp(positioning: nil, at: NSPoint(x: frame.minX, y: below), in: hosting)
     }
 
     /// Makes room for the bar, about its centre, when its width changed: Send and the target arrive
@@ -454,7 +439,7 @@ private struct ToolbarView: View {
     /// How far past a control its presses reach: to the bar's top and bottom edges, which are 7 pt
     /// from a 30 pt control, and into the gaps beside it. Not past the bar: the panel is clear there,
     /// and the window server passes a press on a clear pixel to the window behind.
-    private static let slop = EdgeInsets(top: 7, leading: 2, bottom: 7, trailing: 2)
+    fileprivate static let slop = EdgeInsets(top: 7, leading: 2, bottom: 7, trailing: 2)
     /// The tools sit 2 pt apart, so each takes half the gap.
     private static let toolSlop = EdgeInsets(top: 7, leading: 1, bottom: 7, trailing: 1)
 
@@ -773,8 +758,9 @@ private struct ToolbarView: View {
             .foregroundStyle(filled ? AnyShapeStyle(.white.opacity(0.75)) : AnyShapeStyle(.secondary))
     }
 
-    /// Where Send goes: the agent's logo and the session's title, apart from Send itself. It opens
-    /// the menu for changing it (`AnnotatorToolbar.showTargetMenu`).
+    /// Where Send goes: the agent's logo and the session's title, apart from Send itself. A press
+    /// opens the menu for changing it before the button sees the press (`AnnotatorToolbar.pressTarget`),
+    /// so the button's own action is the accessibility press.
     /// With no target, the box asks for one, and its menu lists the sessions Vignette can start.
     private func targetMenu(_ target: AgentDestination?) -> some View {
         // The name's width is set rather than left to the text, so it springs with the bar when the

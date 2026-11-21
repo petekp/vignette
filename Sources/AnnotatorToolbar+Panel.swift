@@ -20,6 +20,9 @@ final class ToolbarPanel: NSPanel {
     var onPress: ((_ onField: Bool) -> Void)?
     /// A key down, before the field sees it. True when it was taken.
     var onKey: ((NSEvent) -> Bool)?
+    /// A left press that is not on the message field, before the bar sees it. True when it opened the
+    /// target's menu, which then tracks the press to its release.
+    var onPressMenu: ((NSEvent) -> Bool)?
     /// Up on the message field's first line or Down on its last. True when it opened the target's menu.
     var onMenuKey: (() -> Bool)?
     override var canBecomeKey: Bool { pressOnField || wantsKeys || isKeyWindow }
@@ -71,6 +74,7 @@ final class ToolbarPanel: NSPanel {
             while let current = view, !(current is NSTextField || current is NSText) { view = current.superview }
             pressOnField = view != nil
             onPress?(pressOnField)
+            if !pressOnField, onPressMenu?(event) == true { return }
         }
         if event.type == .keyDown, onKey?(event) == true { return }
         let composing = (firstResponder as? NSTextView)?.hasMarkedText() == true

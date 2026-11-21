@@ -174,7 +174,14 @@
   it is key or was the last one clicked, so `.help` on the bar showed nothing until the bar was
   clicked, and `allowsToolTipsWhenApplicationIsInactive` did not change
   that. The target's menu is an `NSMenu` (`showTargetMenu`), since SwiftUI's `Menu`
-  cannot be opened from a key. Space opens it a turn later: opened inside the editor's keyDown it
-  took no keys, and a press on its item closed the editor as a press outside. In the message field,
+  cannot be opened from a key. A press on the target opens it at once, as on a macOS pop-up button:
+  the bar's panel opens it before SwiftUI's button sees the press (`ToolbarPanel.onPressMenu`,
+  `AnnotatorToolbar.pressTarget`), and AppKit's menu tracking then has the press. Dragging onto a
+  row and releasing picks it, and a release with no drag leaves the menu open for a second click.
+  A SwiftUI button acts on the release, which made a pick by pointer two clicks. The press reaches
+  the target where its button would take it, the box and its slop, and not while a send is under
+  way or the bar is leaving (`Model.shown`). The button's own action is left to VoiceOver. SwiftUI
+  never sees the press, so the target does not shrink as a pressed button does: the menu answers it.
+  Space opens it a turn later: opened inside the editor's keyDown it took no keys, and a press on its item closed the editor as a press outside. In the message field,
   Up on the first line or Down on the last opens it the same way, as on a pop-up button, and the
   arrows then move through it (`ToolbarPanel.onMenuKey`). `docs/annotator-toolbar-2026-09-19.md` has the numbers.
