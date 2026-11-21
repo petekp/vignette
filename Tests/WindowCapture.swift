@@ -27,10 +27,26 @@ extension NSWindow {
             let options = CGWindowImageOption.boundsIgnoreFraming.rawValue | (nominal ? CGWindowImageOption.nominalResolution.rawValue : 0)
             if let image = createImage(.null, CGWindowListOption.optionIncludingWindow.rawValue, CGWindowID(windowNumber), options)?.takeRetainedValue() {
                 let rep = NSBitmapImageRep(cgImage: image)
-                if ready(rep) || Date() > deadline { return rep }
+                if ready(rep) { return rep }
+                if Date() > deadline {
+                    try Self.skipIfEveryDisplayIsAsleep()
+                    return rep
+                }
             } else if Date() > deadline {
+                try Self.skipIfEveryDisplayIsAsleep()
                 return try XCTUnwrap(nil, "the window server gave no picture of the window")
             }
+        }
+    }
+
+    private static func skipIfEveryDisplayIsAsleep() throws {
+        var count: UInt32 = 0
+        guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else { return }
+        var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetOnlineDisplayList(count, &displays, &count) == .success else { return }
+        let everyDisplayIsAsleep = displays.prefix(Int(count)).allSatisfy { CGDisplayIsAsleep($0) != 0 }
+        if everyDisplayIsAsleep {
+            throw XCTSkip("Every display is asleep, so the window server drew no new picture of the test window. Wake a display and run again.")
         }
     }
 }
