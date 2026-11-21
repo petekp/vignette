@@ -29,8 +29,8 @@ struct HerdrFocus: Equatable, Sendable {
         var tab: String = ""
         /// The terminal's foreground process, which is Claude Code itself when the terminal runs it.
         var pid: Int32? = nil
-        /// The terminal's `fleet.role` label as `loggedRole` writes it, such as `coordinator`. Nil
-        /// without the label. Only the log reads it.
+        /// What the log says of the terminal's place in the fleet (`role(labels:parent:)`), such as
+        /// `coordinator` or `delegate`. Nil for a terminal with neither. Only the log reads it.
         var role: String? = nil
     }
 
@@ -41,6 +41,16 @@ struct HerdrFocus: Equatable, Sendable {
             $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "-")
         }
         return isName ? label : "other"
+    }
+
+    static let delegateRole = "delegate"
+
+    /// A terminal's role in the log: its `fleet.role` label when it has one, else `delegate` when
+    /// herdr-core gives it a parent terminal, which the terminals a coordinator starts have.
+    static func role(labels: [String: String], parent: String?) -> String? {
+        if let label = labels["fleet.role"] { return loggedRole(label) }
+        guard let parent, !parent.isEmpty else { return nil }
+        return delegateRole
     }
 
     /// How long each read may take. Each answered in 5 to 20 ms (measured 2026-11-12). The focus is
@@ -133,22 +143,22 @@ struct HerdrFocus: Equatable, Sendable {
         func pane(_ terminal: (terminal: String, pane: String, tab: String, isAgent: Bool)) -> AgentPane {
             AgentPane(pane: terminal.pane, session: terminal.isAgent ? core[terminal.terminal]?.labels["inbox.session"] : nil,
                       tab: terminal.tab, pid: core[terminal.terminal]?.pid,
-                      role: core[terminal.terminal]?.labels["fleet.role"].map(loggedRole))
+                      role: core[terminal.terminal].flatMap { role(labels: $0.labels, parent: $0.parent) })
         }
         return .success(HerdrFocus(pane: focusedTerminal?.pane ?? focused, tab: tab, agents: placed.filter(\.isAgent).map(pane),
                                    tabLabels: labels, unreported: placed.filter { !$0.isAgent }.map(pane)))
     }
 
     /// Each live terminal in `hc`'s answer to `terminalListRequest`, by address: its foreground
-    /// process and its labels. Nil when there is no such answer.
-    static func terminalRecords(in lines: [String]) -> [String: (pid: Int32?, labels: [String: String])]? {
+    /// process, its labels and the terminal that started it. Nil when there is no such answer.
+    static func terminalRecords(in lines: [String]) -> [String: (pid: Int32?, labels: [String: String], parent: String?)]? {
         guard let answer = lines.lazy.compactMap({ object($0) }).first(where: { $0["id"] as? Int == 1 }),
               let terminals = (answer["result"] as? [String: Any])?["terminals"] as? [[String: Any]] else { return nil }
-        var records: [String: (pid: Int32?, labels: [String: String])] = [:]
+        var records: [String: (pid: Int32?, labels: [String: String], parent: String?)] = [:]
         for terminal in terminals {
             guard let address = terminal["address"] as? String else { continue }
             let pid = ((terminal["foreground"] as? [String: Any])?["pid"] as? NSNumber)?.int32Value
-            records[address] = (pid, terminal["labels"] as? [String: String] ?? [:])
+            records[address] = (pid, terminal["labels"] as? [String: String] ?? [:], terminal["parent"] as? String)
         }
         return records
     }

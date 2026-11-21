@@ -253,23 +253,6 @@ struct ClaudeCodeConnection: AgentConnection {
         }
     }
 
-    /// Writes the request into `inbox`, aside and then renamed in, so the monitor never prints half
-    /// of one. It is accepted once it is there: a session in a turn reads it when the turn ends, as a
-    /// Codex thread does a queued message.
-    private func write(_ line: String, into inbox: Inbox, session: String) -> SubmissionOutcome {
-        let name = "\(Int64(now().timeIntervalSince1970 * 1000))-\(UUID().uuidString).line"
-        let aside = inbox.folder.appendingPathComponent(".\(name).tmp")
-        do {
-            try Data((line + "\n").utf8).write(to: aside)
-            try FileManager.default.moveItem(at: aside, to: inbox.folder.appendingPathComponent(name))
-        } catch {
-            try? FileManager.default.removeItem(at: aside)
-            return .notSubmitted(code: .sendFailed, detail: "\(inbox.folder.path): \(error.localizedDescription)",
-                                 reason: SubmissionOutcome.internalReason)
-        }
-        return .accepted(detail: "inbox=\(inbox.pid) session=\(session)")
-    }
-
     // MARK: Transcripts
 
     /// What a session's transcript says about it.

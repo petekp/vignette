@@ -68,7 +68,7 @@ extension AnnotationController {
         let key = shot.key.path, name = shot.url.lastPathComponent
         guard let pixels = PixelSize(imageAt: shot.url) else {
             Log.write("[annotate] error \(CommandError.unreadableImage.rawValue) \(name)")
-            cancel()
+            cancel(via: .unreadableImage)
             return
         }
         let screen = zoomScreen ?? NSScreen.main ?? NSScreen.screens[0]
@@ -89,7 +89,7 @@ extension AnnotationController {
                 guard let self, self.opening == opening else { return }
                 guard let cg = image.flatMap(Self.cgImage) else {
                     Log.write("[annotate] error \(CommandError.unreadableImage.rawValue) \(name)")
-                    cancel()
+                    cancel(via: .unreadableImage)
                     return
                 }
                 editor.setImage(cg)

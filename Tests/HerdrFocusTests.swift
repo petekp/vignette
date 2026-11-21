@@ -28,7 +28,7 @@ final class HerdrFocusTests: XCTestCase {
            "labels":{"inbox.session":"\#(session)","inbox.panel":"pPanel1","herdr.tab":"tbA","fleet.role":"coordinator"}},
           {"address":"t2","pid":600,"foreground":{"pid":600,"name":"zsh","argv":["zsh"],"cwd":"/x"},"labels":{}},
           {"address":"t3","pid":700,"foreground":{"pid":700,"name":"2.1.322","argv":["claude"],"cwd":"/x"},
-           "labels":{"inbox.session":"\#(other)"}},
+           "labels":{"inbox.session":"\#(other)"},"parent":"t1"},
           {"address":"t4","pid":800,"foreground":{"pid":800,"name":"codex","argv":["codex"],"cwd":"/x"},"labels":{}},
           {"address":"t5","pid":900,"foreground":{"pid":900,"name":"2.1.322","argv":["claude"],"cwd":"/x"},
            "labels":{"fleet.role":"fix the ink, then ship"}}]}}
@@ -55,7 +55,7 @@ final class HerdrFocusTests: XCTestCase {
         XCTAssertEqual(read.pane, "pA1")
         XCTAssertEqual(read.tab, "tbA")
         XCTAssertEqual(read.agents, [.init(pane: "pA1", session: session, tab: "tbA", pid: 501, role: "coordinator"),
-                                     .init(pane: "pB1", session: other, tab: "tbB", pid: 700),
+                                     .init(pane: "pB1", session: other, tab: "tbB", pid: 700, role: "delegate"),
                                      .init(pane: "pC1", tab: "tbC", pid: 800),
                                      .init(pane: "pC2", tab: "tbC", pid: 900, role: "other")],
                        "a shell is no agent, and the foreground process is Claude Code's, not the shell it was started from")
@@ -96,7 +96,9 @@ final class HerdrFocusTests: XCTestCase {
         let read = focus("pA2")?.sessions(from: [claude("cleared", pid: 501), claude("c5", pid: 900)])
         XCTAssertEqual(read?.role(ofSession: "cleared"), "coordinator", "after /clear the role stays with the terminal")
         XCTAssertEqual(read?.role(ofSession: "c5"), "other", "a sentence in the label never reaches the log")
-        XCTAssertNil(read?.role(ofSession: other), "no fleet.role label")
+        XCTAssertEqual(read?.role(ofSession: other), "delegate", "no fleet.role label, but a parent terminal")
+        XCTAssertEqual(HerdrFocus.role(labels: ["fleet.role": "coordinator"], parent: "t1"), "coordinator", "a label wins over a parent")
+        XCTAssertNil(HerdrFocus.role(labels: [:], parent: ""))
         XCTAssertEqual(HerdrFocus.loggedRole("delegate-2"), "delegate-2")
         XCTAssertEqual(HerdrFocus.loggedRole(String(repeating: "a", count: 25)), "other")
         XCTAssertEqual(HerdrFocus.loggedRole("délégué"), "other")

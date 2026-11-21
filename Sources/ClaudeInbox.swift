@@ -50,3 +50,72 @@ extension ClaudeCodeConnection {
                      started: session?[.creationDate] as? Date, written: session?[.modificationDate] as? Date)
     }
 }
+
+// MARK: Writing a request, and watching the monitor take it
+
+extension ClaudeCodeConnection {
+    /// How soon after the line is written, and how long, the inbox is looked at for the monitor's
+    /// taking it: every `handoverPoll` for the first minute, then every `slowHandoverPoll`, until
+    /// `handoverLimit`. The monitor looks every 0.3 s, so a hand-over is seen up to the poll late.
+    static let handoverPoll: TimeInterval = 0.5
+    static let slowHandoverPoll: TimeInterval = 2
+    static let handoverLimit: TimeInterval = 3600
+
+    enum Handover: Equatable {
+        case waiting
+        /// The monitor printed the line and removed it.
+        case handed
+        /// The inbox went with the line in it: the session ended first.
+        case inboxGone
+        case limit
+
+        static func of(lineIsThere: Bool, inboxIsThere: Bool, waited: TimeInterval) -> Handover {
+            if !lineIsThere { return inboxIsThere ? .handed : .inboxGone }
+            return waited >= ClaudeCodeConnection.handoverLimit ? .limit : .waiting
+        }
+    }
+
+    /// Only the person's own inboxes are watched: a test names an inbox folder of its own.
+    private var watchesHandover: Bool { inboxes == AgentPlugin.inboxRoot }
+
+    /// Writes the request into `inbox`, aside and then renamed in, so the monitor never prints half
+    /// of one. It is accepted once it is there: a session in a turn reads it when the turn ends, as a
+    /// Codex thread does a queued message. The `ok` line names the file, which `watchHandover` logs.
+    func write(_ line: String, into inbox: Inbox, session: String) -> SubmissionOutcome {
+        let name = "\(Int64(now().timeIntervalSince1970 * 1000))-\(UUID().uuidString).line"
+        let aside = inbox.folder.appendingPathComponent(".\(name).tmp")
+        let file = inbox.folder.appendingPathComponent(name)
+        do {
+            try Data((line + "\n").utf8).write(to: aside)
+            try FileManager.default.moveItem(at: aside, to: file)
+        } catch {
+            try? FileManager.default.removeItem(at: aside)
+            return .notSubmitted(code: .sendFailed, detail: "\(inbox.folder.path): \(error.localizedDescription)",
+                                 reason: SubmissionOutcome.internalReason)
+        }
+        watchHandover(of: file, in: inbox)
+        return .accepted(detail: "inbox=\(inbox.pid) session=\(session) line=\(name)")
+    }
+
+    /// Watches `line`, a file written into `inbox`, until the plugin's monitor takes it, which it does
+    /// between turns by printing it and removing the file (inbox.sh). Logs
+    /// `[send] handed line=<file> inbox=<pid> after=<ms>` when the file is gone, or
+    /// `[send] not handed line=<file> inbox=<pid> after=<ms> reason=inbox-gone|limit` when the
+    /// session's inbox went first or the limit passed.
+    private func watchHandover(of line: URL, in inbox: Inbox) {
+        guard watchesHandover else { return }
+        let written = now()
+        func look() {
+            let waited = now().timeIntervalSince(written)
+            let fm = FileManager.default
+            let named = "line=\(line.lastPathComponent) inbox=\(inbox.pid) after=\(Int(waited * 1000))ms"
+            switch Handover.of(lineIsThere: fm.fileExists(atPath: line.path), inboxIsThere: fm.fileExists(atPath: inbox.folder.path), waited: waited) {
+            case .waiting: later(waited < 60 ? Self.handoverPoll : Self.slowHandoverPoll, look)
+            case .handed: Log.write("[send] handed \(named)")
+            case .inboxGone: Log.write("[send] not handed \(named) reason=inbox-gone")
+            case .limit: Log.write("[send] not handed \(named) reason=limit")
+            }
+        }
+        later(Self.handoverPoll, look)
+    }
+}

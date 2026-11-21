@@ -35,7 +35,7 @@ extension AnnotationController {
         win.isMovableByWindowBackground = false
         win.isReleasedWhenClosed = false
         win.animationBehavior = .none
-        win.onCloseRequest = { [weak self] in self?.cancel() }
+        win.onCloseRequest = { [weak self] in self?.cancel(via: .window) }
         let root = NSView()
         root.wantsLayer = true
         let frameView = NSView()

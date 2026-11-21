@@ -301,6 +301,7 @@ final class ThumbnailController {
         case .releaseKeys:
             model.focused = nil
         case .closeEditor:
+            run.logClosing(by: "shortcut")
             send(.cancel(.shortcut))
         case .listRecent:
             openRecent()
@@ -384,7 +385,8 @@ final class ThumbnailController {
 
     /// The editor asked to close (Esc, click outside, Cmd+W). The run decides what returns, and
     /// drops the rest of its list.
-    func annotationEnded(_ how: RunEnding) {
+    func annotationEnded(_ how: RunEnding, _ via: CloseVia) {
+        run.logClosing(by: via.rawValue)
         send(.cancel(how))
     }
 
@@ -734,6 +736,7 @@ final class ThumbnailController {
     }
 
     private func handle(_ event: AnnotationRun.Event) {
+        run.logClosing(byEvent: event)
         // Asked before anything moves: a file the queue opens gets its card made here, and one
         // that has none is passed over.
         let effects = run.reduce(event) { key in openableCard(for: Screenshot(key: key)) != nil }

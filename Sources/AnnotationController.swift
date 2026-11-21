@@ -1,5 +1,19 @@
 import AppKit
 
+/// What asked the editor to close, as `[annotate] closed` names it.
+enum CloseVia: String {
+    /// Esc, pressed with nothing under way in the editor.
+    case esc
+    /// Cmd+W, or an Esc that reached the window because no view took it.
+    case window
+    /// The bar's close: Esc typed in its message field.
+    case bar
+    case clickOutside = "click-outside"
+    /// `vignette://cancel`.
+    case url
+    case unreadableImage = "unreadable-image"
+}
+
 /// Hosts the drawing editor in a borderless window. Lifecycle: `prepare` opens the image in the
 /// window, ordered in invisible, and gives it the keys; `show` reveals it once the card's flight
 /// covers its frame; `hide` parks the drawing at once and removes the window. The editor never
@@ -9,9 +23,9 @@ import AppKit
 final class AnnotationController {
     /// Done: the drawing to render, copy and finish with.
     var onFinished: ((Screenshot, Drawing) -> Void)?
-    /// Esc, a click outside, or Cmd+W. The owner decides what happens next and calls `hide` when
-    /// it is time; nothing here hides on its own.
-    var onClosed: ((RunEnding) -> Void)?
+    /// Esc, a click outside, or Cmd+W, and what asked (`CloseVia`). The owner decides what happens
+    /// next and calls `hide` when it is time; nothing here hides on its own.
+    var onClosed: ((RunEnding, CloseVia) -> Void)?
     /// The editor has this opening's screenshot, decoded at the screen's size.
     var onLoaded: ((Opening) -> Void)?
     /// The window server gives this window the presses on its frame now. Once per `show`.
@@ -110,7 +124,7 @@ final class AnnotationController {
         editor.onTool = { [weak self] tool in self?.toolbar.model.tool = tool }
         editor.onChange = { [weak self] drawing in self?.drawingChanged(drawing) }
         editor.onHandOver = { [weak self] drawing in self?.onDrawing?(drawing, "saved") }
-        editor.onClose = { [weak self] in self?.cancel() }
+        editor.onClose = { [weak self] in self?.cancel(via: .esc) }
         // One Tab order: the marks, then the toolbar's controls, then the marks again.
         editor.onLeaveCanvas = { [weak self] backward in self?.toolbar.enter(backward: backward) }
         toolbar.onLeave = { [weak self] backward in self?.editor.enterCanvas(backward: backward) ?? false }
@@ -130,7 +144,7 @@ final class AnnotationController {
         }
         editor.onKey = { [weak self] in self?.editorUntouched = false }
         toolbar.onPick = { [weak self] in self?.editorUntouched = false }
-        toolbar.onClose = { [weak self] in self?.cancel() }
+        toolbar.onClose = { [weak self] in self?.cancel(via: .bar) }
         toolbar.panel.onCommandKey = { [weak self] event in self?.fieldCommand(event) ?? false }
         editor.takesKey = { [weak self] key, modifiers in
             guard let toolbar = self?.toolbar, toolbar.model.focus != nil, modifiers.isSubset(of: .shift) else { return false }
