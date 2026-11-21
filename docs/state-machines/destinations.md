@@ -37,7 +37,7 @@ Asks each agent connection for its sessions and delivers lists to the toolbar. `
 
 Owner: `AppDelegate+Send.swift`. Tests: none.
 
-Starts one listing for the open image, gated by the opening. It reads the `annotator.opening`, calls `beginDestinations`, which answers the kept pick's session while it holds, and, if `FocusReturn.shared.previousApp` is the Codex app, reads the shown thread off the main thread (`AgentApp.shownThread`). It then calls `sessions.list`, asking Codex for the kept Codex thread and the shown thread by id, both in one listing. Both now live in `AppDelegate+Send.swift`.
+Starts one listing for the open image, gated by the opening. It reads the `annotator.opening`, takes the capture's window owners once (`CaptureOrigin.windows(of:)`), calls `beginDestinations`, which answers the kept pick's session while it holds, and, if `FocusReturn.shared.previousApp` is the Codex app and the capture does not show another app more (`DestinationChoice.appRuleApplies`), reads the shown thread off the main thread (`AgentApp.shownThread`). When the capture sets the app aside, it lists with no `cameFrom`. It then calls `sessions.list`, asking Codex for the kept Codex thread and the shown thread by id, both in one listing. Both now live in `AppDelegate+Send.swift`.
 
 **States**: the captured `opening`.
 

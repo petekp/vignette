@@ -23,10 +23,7 @@ extension AnnotatorToolbar {
         switch model.focus {
         case .tool(let tool)?: onTool?(tool)
         case .copy?: onDone?()
-        case .target?:
-            // Opened from inside the editor's keyDown, the menu took no keys and read a press on its
-            // items as one outside the editor. A turn later it is opened as a click opens it.
-            DispatchQueue.main.async { [weak self] in self?.showTargetMenu() }
+        case .target?: openTargetMenuFromKeys()
         case .action?:
             guard !model.sending, !model.nothingToReply, let destination = model.offer.destination else { return }
             onSend?(destination)

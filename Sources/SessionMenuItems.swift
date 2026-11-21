@@ -96,9 +96,10 @@ extension SessionMenu {
     /// the field replaces everything the menu holds from here on with the sessions that match, the
     /// rows that start a session included. The returned search must stay alive while the menu is open.
     @MainActor
-    static func add(_ sessions: Menu, to menu: NSMenu, make: @escaping (Row) -> NSMenuItem) -> SessionMenuSearch {
+    static func add(_ sessions: Menu, to menu: NSMenu, highlightingFirstRow: Bool = false,
+                    make: @escaping (Row) -> NSMenuItem) -> SessionMenuSearch {
         let search = SessionMenuSearch(sessions: sessions, menu: menu, make: make)
-        search.install()
+        search.install(highlightingFirstRow: highlightingFirstRow)
         return search
     }
 
@@ -143,7 +144,9 @@ final class SessionMenuSearch: NSObject, NSSearchFieldDelegate {
         indicators = SessionMenuIndicators(menu: menu)
     }
 
-    func install() {
+    /// `highlightingFirstRow` highlights the first row once the field has the keys, the row
+    /// Return in the empty field picks.
+    func install(highlightingFirstRow: Bool = false) {
         let holder = FieldHolder(frame: NSRect(x: 0, y: 0, width: 260, height: 34))
         holder.autoresizingMask = [.width]
         field.frame = NSRect(x: 10, y: 5, width: holder.frame.width - 20, height: 24)
@@ -159,6 +162,19 @@ final class SessionMenuSearch: NSObject, NSSearchFieldDelegate {
         SessionMenu.addAll(sessions, to: menu, make: make)
         indicators.refresh()
         holder.field = field
+        if highlightingFirstRow { holder.hasKeys = Self.pressDown(in:) }
+    }
+
+    /// One Down key to the menu's own window, which its tracking takes as a person's Down from the
+    /// field: it highlights the row below. AppKit has no call that highlights a menu item.
+    private static func pressDown(in window: NSWindow) {
+        guard window.isVisible else { return }
+        let down = "\u{F701}"   // NSDownArrowFunctionKey
+        guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.numericPad, .function],
+                                           timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                           context: nil, characters: down, charactersIgnoringModifiers: down,
+                                           isARepeat: false, keyCode: 125) else { return }
+        NSApp.postEvent(event, atStart: false)
     }
 
     private func pickFirstMatch() {
@@ -199,13 +215,17 @@ final class SessionMenuSearch: NSObject, NSSearchFieldDelegate {
 /// The view of the search row. It gives its field the keyboard once the menu's window exists.
 private final class FieldHolder: NSView {
     weak var field: NSControl?
+    /// Runs once, when the field has first taken the keyboard, with the menu's window.
+    var hasKeys: ((NSWindow) -> Void)?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil else { return }
         DispatchQueue.main.async { [weak self] in
-            guard let field = self?.field else { return }
-            field.window?.makeFirstResponder(field)
+            guard let self, let field, let window = field.window, window.makeFirstResponder(field) else { return }
+            let hasKeys = self.hasKeys
+            self.hasKeys = nil
+            hasKeys?(window)
         }
     }
 }

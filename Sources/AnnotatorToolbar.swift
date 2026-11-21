@@ -294,8 +294,7 @@ final class AnnotatorToolbar {
         panel.onPressMenu = { [weak self] event in self?.pressTarget(event) ?? false }
         panel.onMenuKey = { [weak self] in
             guard let self, model.offer.offersTarget, targetFrame != nil else { return false }
-            // A turn later, as Space on the target opens it, once the key's event is done.
-            DispatchQueue.main.async { [weak self] in self?.showTargetMenu() }
+            openTargetMenuFromKeys()
             return true
         }
         panel.onPress = { [weak self] onField in

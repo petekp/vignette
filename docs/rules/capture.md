@@ -34,7 +34,9 @@
   starts: a new capture has no picture cached, and a flight with none is invisible in that look, so
   it travelled unseen and appeared part way along. `[origin]` lines say what was found, and `[annotate] from capture` says the flight used
   it. `docs/capture-origin-spike-2026-10-03.md` has the measurements, and the `capture_origin`
-  scenario drives it with `screencapture -i`.
+  scenario drives it with `screencapture -i`. Once the rect is found, `CaptureOrigin` also reads
+  which apps' windows the capture showed (`CaptureRect.owners`) and keeps them for Send, which
+  takes them once for that file within 30 s (`windows(of:)`, `docs/rules/annotator-toolbar.md`).
 - The status item has an autosave name and a seeded preferred position. AppKit keeps the position
   in the app's standard defaults under that name, so a test launch whose data moved uses
   `<bundle id>.test-launch` (`Identity.statusItemAutosaveName`) and never moves the person's own icon. Without it, a crowded

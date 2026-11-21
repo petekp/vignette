@@ -6,8 +6,10 @@ extension AnnotationController {
     /// A new image opened: `replyTo` is the session it came from, when it names one, and the list
     /// of sessions is on its way. Read once per image: the list comes from subprocesses, and a menu
     /// that re-read it on every click would stall the bar. Answers the kept pick's session, which
-    /// this image's listing starts on while it holds.
-    func beginDestinations(replyTo: AgentDestination?) -> AgentDestination? {
+    /// this image's listing starts on while it holds. `capture` is the apps whose windows the
+    /// capture showed, when the image opened from one, which every target line logs.
+    func beginDestinations(replyTo: AgentDestination?, capture: [CaptureRect.Owner]?) -> AgentDestination? {
+        captured = capture
         toolbar.model.begin(replyTo: replyTo, carryingTarget: toolbar.model.shown)
         logOffer(was: nil)
         if keptPick?.holds(at: Date()) == false { endKeptPick("time") }
@@ -26,11 +28,11 @@ extension AnnotationController {
     /// (`DestinationChoice.KeptPick.after`). A row Vignette starts is kept as the session the send started.
     func sent(to destination: AgentDestination, as record: ScreenshotRequests.Record) {
         let now = Date()
-        if keptPick?.holds(at: now) == false { endKeptPick("time") }
         logMenuRows(of: record)
         let session = destination.sent(as: record)
         let after = DestinationChoice.KeptPick.after(sendTo: session, isSend: toolbar.model.offer.isSend,
                                                      handPicked: toolbar.model.isHandPick(destination), kept: keptPick, at: now)
+        if after == nil { return endKeptPick("time") }
         guard after != keptPick else { return }
         keptPick = after
         Log.write("[send] kept \(session.address.description) project=\(session.detail)")
@@ -42,7 +44,8 @@ extension AnnotationController {
     private func logMenuRows(of record: ScreenshotRequests.Record) {
         let model = toolbar.model
         guard model.offer.offersTarget else { return }
-        let top = SessionMenu.menu(model.destinations + model.startable, destination: model.offer.destination).topRows.map(\.destination)
+        let top = SessionMenu.menu(model.destinations + model.startable, destination: model.offer.destination,
+                                   targetNotFirst: true).topRows.map(\.destination)
         Log.write("[send] menu request=\(record.id) top=\(top.map(TargetMenuActions.loggedName).joined(separator: ","))")
     }
 
@@ -55,11 +58,13 @@ extension AnnotationController {
     /// Logs where the bar's filled button sends, why, and its terminal's role, whenever one changes:
     /// the card's own session for a Reply, else the target. `reply` marks the first, since the target
     /// is then not on the bar. A carried target that this image's answer settles on again, now as the
-    /// kept pick, is a change of why. The role comes with Claude Code's listing.
+    /// kept pick, is a change of why. The role comes with Claude Code's listing. `capture=` names
+    /// the apps whose windows the capture showed, with their shares, the largest first.
     private func logOffer(was before: AgentDestination?) {
         let offer = toolbar.model.offer
         guard let to = offer.destination, to.id != before?.id || to.focus != before?.focus || to.role != before?.role else { return }
-        Log.write("[send] target \(to.address.description) project=\(to.detail) focus=\(to.focus?.rawValue ?? "none") role=\(to.role ?? "none")\(offer.isSend ? "" : " reply")")
+        let capture = captured.flatMap { $0.isEmpty ? nil : " capture=" + $0.prefix(3).map { "\($0.app):\(Int(($0.share * 100).rounded()))%" }.joined(separator: ",") } ?? ""
+        Log.write("[send] target \(to.address.description) project=\(to.detail) focus=\(to.focus?.rawValue ?? "none") role=\(to.role ?? "none")\(offer.isSend ? "" : " reply")\(capture)")
     }
 
     /// Whether the open image's drawing is still exactly what its agent sent, which Reply reads

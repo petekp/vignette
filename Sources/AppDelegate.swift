@@ -22,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private let menuBarIntro = MenuBarIntro()
     var updater: Updater?
     var watcher: ScreenshotWatcher?
-    private var captureOrigin: CaptureOrigin?
+    var captureOrigin: CaptureOrigin?
     /// True on a first launch whose folder macOS protects, until setup asks for it.
     private var watcherWaitsForSetup = false
     /// Why the last plugin install failed, by agent directory, for the Agents tab.

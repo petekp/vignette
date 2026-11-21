@@ -20,15 +20,24 @@ extension AnnotatorToolbar {
         return true
     }
 
-    /// The target's menu under it, with the rows `SessionMenu` orders and the target checked.
-    /// AppKit's own menu, so Space on the focused target opens it as a press does.
-    func showTargetMenu() {
+    /// Space on the target, or an arrow off the message field, opens the menu a turn later. Opened
+    /// from inside the editor's keyDown, the menu took no keys and read a press on its items as one
+    /// outside the editor.
+    func openTargetMenuFromKeys() {
+        DispatchQueue.main.async { [weak self] in self?.showTargetMenu(fromKeys: true) }
+    }
+
+    /// The target's menu under it, with the rows `SessionMenu` orders and the target checked, and
+    /// the likeliest other session first. AppKit's own menu, so Space on the focused target opens it
+    /// as a press does. Opened from the keyboard (`fromKeys`), it opens with the first row
+    /// highlighted, the row Return picks.
+    func showTargetMenu(fromKeys: Bool = false) {
         guard model.offer.offersTarget, let frame = targetFrame else { return }
         let target = model.offer.destination
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let sessions = SessionMenu.menu(model.destinations + model.startable, destination: target)
-        let search = SessionMenu.add(sessions, to: menu) { row in
+        let sessions = SessionMenu.menu(model.destinations + model.startable, destination: target, targetNotFirst: true)
+        let search = SessionMenu.add(sessions, to: menu, highlightingFirstRow: fromKeys) { row in
             let item = SessionMenu.item(for: row, selected: row.id == target?.id)
             item.target = self.targetMenuActions
             item.action = #selector(TargetMenuActions.pick(_:))
