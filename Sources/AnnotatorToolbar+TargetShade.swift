@@ -6,11 +6,18 @@ import SwiftUI
 /// inside that loop jumped instead of animating. So the shade is a layer whose spring is committed
 /// before the menu opens, and the window server runs it.
 /// Inside the message field's box, the target is parted from the words by a hairline at its
-/// trailing edge, which gives way to the shade on the same spring.
+/// trailing edge, which gives way to the shade on the same spring. There the shade is a rounded
+/// rectangle inset in the box and short of the hairline, its corners concentric with the box's, so
+/// it stays clear of the box's edges and its focus ring.
 final class TargetShade: NSView {
     /// How dark the shade is over the target's own fill, by appearance.
     private static let openOpacity: (dark: Float, light: Float) = (0.5, 0.14)
     private static let hairlineHeight: CGFloat = 16
+    private static let hairlineWidth: CGFloat = 1
+    /// The corner radius of the target's own fill and of the message field's box.
+    private static let radius: CGFloat = 7
+    /// 5 pixels at 2x. The box's focus ring reaches 0.5 pt inside its edge.
+    private static let insetInBox: CGFloat = 2.5
     private let shade = CALayer()
     private let hairline = CALayer()
     private var open = false
@@ -21,7 +28,6 @@ final class TargetShade: NSView {
         super.init(frame: frame)
         wantsLayer = true
         shade.backgroundColor = NSColor.black.cgColor
-        shade.cornerRadius = 7
         shade.cornerCurve = .continuous
         shade.opacity = 0
         hairline.opacity = 0
@@ -38,9 +44,23 @@ final class TargetShade: NSView {
         super.layout()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        shade.frame = bounds
-        hairline.frame = CGRect(x: bounds.maxX - 1, y: (bounds.height - Self.hairlineHeight) / 2, width: 1, height: Self.hairlineHeight)
+        placeShade()
+        hairline.frame = CGRect(x: bounds.maxX - Self.hairlineWidth, y: (bounds.height - Self.hairlineHeight) / 2,
+                                width: Self.hairlineWidth, height: Self.hairlineHeight)
         CATransaction.commit()
+    }
+
+    private func placeShade() {
+        guard joined == true else {
+            shade.frame = bounds
+            shade.cornerRadius = Self.radius
+            return
+        }
+        let inset = Self.insetInBox
+        shade.frame = CGRect(x: inset, y: inset,
+                             width: max(0, bounds.width - Self.hairlineWidth - 2 * inset),
+                             height: max(0, bounds.height - 2 * inset))
+        shade.cornerRadius = Self.radius - inset
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -66,8 +86,7 @@ final class TargetShade: NSView {
         self.joined = joined
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        shade.maskedCorners = joined ? [.layerMinXMinYCorner, .layerMinXMaxYCorner]
-            : [.layerMinXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMinYCorner, .layerMaxXMaxYCorner]
+        placeShade()
         if first { hairline.opacity = hairlineOpacity } else { spring(hairline, to: hairlineOpacity) }
         CATransaction.commit()
     }
