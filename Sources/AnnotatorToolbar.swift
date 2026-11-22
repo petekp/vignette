@@ -480,15 +480,19 @@ private struct ToolbarView: View {
                     .padding(.trailing, offer.offersTarget ? 6 : 0)
                     .transition(Self.slot)
             }
+            // With a message field beside it, the target sits inside the field's box, so the two
+            // read as one control. It draws above the field, whose box reaches under it.
+            let joined = offer.offersTarget && offer.destination != nil
             if offer.offersTarget {
-                targetMenu(offer.destination)
-                    .modifier(FocusRing(on: model.focus == .target))
+                targetMenu(offer.destination, joined: joined)
+                    .modifier(FocusRing(on: model.focus == .target, trailingRadius: joined ? 3 : FocusRing.radius))
                     .modifier(Resting(while: model.sending))
-                    .padding(.trailing, 4)
+                    .padding(.trailing, joined ? 0 : 4)
+                    .zIndex(1)
                     .transition(Self.slot)
             }
             if let destination = offer.destination {
-                messageField { onSend(destination) }
+                messageField(sessionRoom: joined ? Self.targetWidth(nameWidth: targetNameWidth(offer.destination)) : 0) { onSend(destination) }
                     .modifier(Resting(while: model.sending))
                     .padding(.trailing, 4)
                 actionButton(offer.isSend ? "Send" : "Reply", key: offer.isSend ? "⌘↩" : "↩",
@@ -630,7 +634,8 @@ private struct ToolbarView: View {
     /// Return and Cmd+Return send (`ToolbarPanel`), since typing a message is the intent to send it.
     /// Esc hands the keys back to the editor. In a field that took the keys on its own and is still
     /// empty, Return and Esc do what they do on the image (`Model.fieldReturn`).
-    private func messageField(send: @escaping () -> Void) -> some View {
+    /// `sessionRoom` is how far the box reaches left past the field, under the target.
+    private func messageField(sessionRoom: CGFloat, send: @escaping () -> Void) -> some View {
         let grown = typing && !model.message.isEmpty
         // The bar's middle is 7 pt above its bottom edge; a margin keeps the field off the Dock.
         let below = model.roomBelow + (AnnotatorToolbar.height - 30) / 2 - 8
@@ -668,8 +673,20 @@ private struct ToolbarView: View {
                     }
             }
             .clipShape(box)
-            .background { box.fill(Color.primary.opacity(0.09)).shadow(color: .black.opacity(grown ? 0.3 : 0), radius: 10, y: 4) }
-            .overlay(box.stroke(Color.accentColor.opacity(typing ? 0.8 : 0), lineWidth: 1))
+            // The part under the target takes no presses or hover, which are the target's.
+            .background(alignment: .trailing) {
+                ZStack {
+                    box.fill(Color.primary.opacity(0.09)).shadow(color: .black.opacity(grown ? 0.3 : 0), radius: 10, y: 4)
+                    BehindWindowBlur(cornerRadius: 7).opacity(grown ? 1 : 0)
+                }
+                .frame(width: Self.messageWidth + sessionRoom)
+                .allowsHitTesting(false)
+            }
+            .overlay(alignment: .trailing) {
+                box.stroke(Color.accentColor.opacity(typing ? 0.8 : 0), lineWidth: 1)
+                    .frame(width: Self.messageWidth + sessionRoom)
+                    .allowsHitTesting(false)
+            }
             // The text field takes presses only on its text. Its padding and the room around it in
             // the bar start typing too, on the press, through the gesture behind the box. A gesture
             // on the text as well took the release of a quick click, and the text field then waited
@@ -761,14 +778,15 @@ private struct ToolbarView: View {
     /// opens the menu for changing it before the button sees the press (`AnnotatorToolbar.pressTarget`),
     /// so the button's own action is the accessibility press.
     /// With no target, the box asks for one, and its menu lists the sessions Vignette can start.
-    private func targetMenu(_ target: AgentDestination?) -> some View {
+    /// `joined`: it sits inside the message field's box, which is its fill.
+    private func targetMenu(_ target: AgentDestination?, joined: Bool) -> some View {
         // The name's width is set rather than left to the text, so it springs with the bar when the
         // target changes and the controls beside it move with it. The old name leaves and the new
         // one comes in the place between, as a control does (`slot`). A long name is cut in the
         // middle, where a worktree's suffix survives; the tooltip has it whole.
         let row = target.map { model.targetRow(for: $0) }
         let title = row?.title ?? Self.chooseSession
-        let nameWidth = min(ButtonLabel.width(title, size: 13), Self.targetNameMax)
+        let nameWidth = targetNameWidth(target)
         return Button(action: onTargetMenu) {
             HStack(spacing: 6) {
                 ZStack(alignment: .leading) {
@@ -784,12 +802,13 @@ private struct ToolbarView: View {
                 .frame(width: 14 + 6 + nameWidth, alignment: .leading)
                 .clipped()
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
+                    .frame(width: Self.chevronWidth)
             }
             .foregroundStyle(.primary)
             .padding(.leading, 8)
             .padding(.trailing, 9)
-            .frame(height: 30)
-            .background { TargetFill() }
+            .frame(width: Self.targetWidth(nameWidth: nameWidth), height: 30)
+            .background { TargetFill(joined: joined) }
             .padding(Self.slop)
             .contentShape(Rectangle())
         }
@@ -799,6 +818,16 @@ private struct ToolbarView: View {
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onTargetFrame($0) }
         .modifier(TipSpot(control: .target, text: row?.tooltip ?? Self.chooseSessionTip, hover: tip))
     }
+
+    private func targetNameWidth(_ target: AgentDestination?) -> CGFloat {
+        min(ButtonLabel.width(target.map { model.targetRow(for: $0).title } ?? Self.chooseSession, size: 13), Self.targetNameMax)
+    }
+
+    private static let chevronWidth: CGFloat = 10
+
+    /// The target's width for a name that wide: the message field's box reaches under it by exactly
+    /// this, on the same spring.
+    static func targetWidth(nameWidth: CGFloat) -> CGFloat { 8 + 14 + 6 + nameWidth + 6 + chevronWidth + 9 }
 
     static let chooseSession = "Choose a session"
     static let chooseSessionTip = "No session is running. You can continue a past one or start a new one."
@@ -823,20 +852,6 @@ private struct FailureReason: View {
         }
         .frame(width: 260, alignment: .leading)
         .padding(12)
-    }
-}
-
-/// A control that cannot be used now, beside a send in progress or a Reply with nothing new: it fades
-/// back, on a spring rather than in one frame, and takes no clicks. Not `.disabled`, whose look
-/// AppKit's controls switch in one frame.
-private struct Resting: ViewModifier {
-    let resting: Bool
-    init(while resting: Bool) { self.resting = resting }
-    func body(content: Content) -> some View {
-        content
-            .opacity(resting ? 0.4 : 1)
-            .allowsHitTesting(!resting)
-            .animation(Anim.spring(0.3 * Settings.shared.motionScale), value: resting)
     }
 }
 
@@ -897,56 +912,6 @@ private struct TipPlacement: Layout {
             let y = below ? target.maxY + Self.gap : target.minY - Self.gap - size.height
             subview.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY + y), proposal: ProposedViewSize(size))
         }
-    }
-}
-
-/// The ring around the control the keyboard's focus is on, in the system's focus colour. It comes in
-/// from a little larger, as AppKit's does.
-/// A control drawn at `fraction` of its own width and cut at its trailing edge, so one the offer adds
-/// or takes away opens or closes in the bar's row (`ToolbarView.slot`).
-private struct Reveal: ViewModifier, Animatable {
-    var fraction: CGFloat
-    var animatableData: CGFloat {
-        get { fraction }
-        set { fraction = newValue }
-    }
-
-    func body(content: Content) -> some View {
-        PartWidth(fraction: fraction) { content }
-            // Cut only while it opens or closes: the focus ring is drawn outside the control.
-            .clipShape(Rectangle().inset(by: fraction < 1 ? 0 : -20))
-    }
-}
-
-/// Its one subview at its own size, laid out as `fraction` of its width.
-private struct PartWidth: Layout {
-    var fraction: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        guard let view = subviews.first else { return .zero }
-        let size = view.sizeThatFits(.unspecified)
-        return CGSize(width: size.width * max(fraction, 0), height: size.height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        subviews.first?.place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: .unspecified)
-    }
-}
-
-private struct FocusRing: ViewModifier {
-    let on: Bool
-    func body(content: Content) -> some View {
-        content
-            .overlay {
-                if on {
-                    RoundedRectangle(cornerRadius: 9.5, style: .continuous)
-                        .strokeBorder(Color(nsColor: .keyboardFocusIndicatorColor), lineWidth: 3)
-                        .padding(-3)
-                        .allowsHitTesting(false)
-                        .transition(.scale(scale: 1.25).combined(with: .opacity))
-                }
-            }
-            .animation(Anim.spring(0.2 * Settings.shared.motionScale), value: on)
     }
 }
 
