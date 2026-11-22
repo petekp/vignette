@@ -431,6 +431,7 @@ private struct ToolbarView: View {
     @State private var tipLeft = Date.distantPast
     /// The message field's height as its text needs it. The box springs to it (`GrowingField`).
     @State private var fieldHeight: CGFloat = 30
+    @State private var targetHovered = false
     /// The message field is being typed in.
     private var typing: Bool { focused && model.keyed }
     @Environment(\.colorScheme) private var colorScheme
@@ -439,6 +440,7 @@ private struct ToolbarView: View {
     /// from a 30 pt control, and into the gaps beside it. Not past the bar: the panel is clear there,
     /// and the window server passes a press on a clear pixel to the window behind.
     fileprivate static let slop = EdgeInsets(top: 7, leading: 2, bottom: 7, trailing: 2)
+    private static let spacing: CGFloat = 2
     /// The tools sit 2 pt apart, so each takes half the gap.
     private static let toolSlop = EdgeInsets(top: 7, leading: 1, bottom: 7, trailing: 1)
 
@@ -451,7 +453,7 @@ private struct ToolbarView: View {
     private static let messageLines = 6
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Self.spacing) {
             ForEach(EditorCore.Tool.allCases, id: \.self) { tool in
                 Button { onTool(tool) } label: {
                     Image(systemName: tool.symbol)
@@ -485,14 +487,14 @@ private struct ToolbarView: View {
             let joined = offer.offersTarget && offer.destination != nil
             if offer.offersTarget {
                 targetMenu(offer.destination, joined: joined)
-                    .modifier(FocusRing(on: model.focus == .target, trailingRadius: joined ? 3 : FocusRing.radius))
+                    .modifier(FocusRing(on: model.focus == .target && !joined))
                     .modifier(Resting(while: model.sending))
                     .padding(.trailing, joined ? 0 : 4)
                     .zIndex(1)
                     .transition(Self.slot)
             }
             if let destination = offer.destination {
-                messageField(sessionRoom: joined ? Self.targetWidth(nameWidth: targetNameWidth(offer.destination)) : 0) { onSend(destination) }
+                messageField(sessionRoom: joined ? Self.targetWidth(nameWidth: targetNameWidth(offer.destination)) + Self.spacing : 0) { onSend(destination) }
                     .modifier(Resting(while: model.sending))
                     .padding(.trailing, 4)
                 actionButton(offer.isSend ? "Send" : "Reply", key: offer.isSend ? "⌘↩" : "↩",
@@ -808,11 +810,12 @@ private struct ToolbarView: View {
             .padding(.leading, 8)
             .padding(.trailing, 9)
             .frame(width: Self.targetWidth(nameWidth: nameWidth), height: 30)
-            .background { TargetFill(joined: joined) }
+            .background { TargetFill(joined: joined, hovered: targetHovered, focused: model.focus == .target) }
             .padding(Self.slop)
             .contentShape(Rectangle())
+            .onHover { targetHovered = $0 }
         }
-        .buttonStyle(TactileButtonStyle(shape: .rounded, hoverScale: 1, hitSlop: Self.slop))
+        .buttonStyle(TargetButtonStyle(joined: joined))
         .padding(Self.slop.negated)
         .fixedSize()
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onTargetFrame($0) }
@@ -825,8 +828,8 @@ private struct ToolbarView: View {
 
     private static let chevronWidth: CGFloat = 10
 
-    /// The target's width for a name that wide: the message field's box reaches under it by exactly
-    /// this, on the same spring.
+    /// The target's width for a name that wide. The message field's box reaches under it and the
+    /// space after it, on the same spring, so the box's leading edge is the target's.
     static func targetWidth(nameWidth: CGFloat) -> CGFloat { 8 + 14 + 6 + nameWidth + 6 + chevronWidth + 9 }
 
     static let chooseSession = "Choose a session"
@@ -950,22 +953,6 @@ private struct GrowingField: Layout {
         for subview in subviews {
             subview.place(at: CGPoint(x: bounds.minX, y: bounds.minY - up), anchor: .topLeading,
                           proposal: ProposedViewSize(width: bounds.width, height: height))
-        }
-    }
-}
-
-/// An agent's logo from the bundle, or the fallback symbol for a vendor without one. `template`
-/// draws it in the foreground colour, for the white of a filled button. A one-colour logo is always
-/// drawn in the foreground colour.
-private struct AgentLogo: View {
-    let client: AgentClient
-    let template: Bool
-
-    var body: some View {
-        if let logo = Agent.logo(for: client.rawValue) {
-            Image(nsImage: logo).renderingMode(template || logo.isTemplate ? .template : .original).resizable().aspectRatio(contentMode: .fit)
-        } else {
-            Image(systemName: Agent.fallbackSymbol).resizable().aspectRatio(contentMode: .fit)
         }
     }
 }

@@ -80,7 +80,7 @@
   answer that does not parse, or a status whose tab is not the focused terminal's marks nothing,
   and logs `[herdr] no focus: <reason>` when the reason changes, then `[herdr] focus read again`.
   The target shows the agent's logo and the session's title, cut in the middle past 132 pt, with
-  the title, the session's details and the repository in its tooltip (`SessionMenu.row(of:among:)`). Its width is set rather than left to the text, so it springs with the bar. Beside a message field it sits in the field's box, parted from the words by a hairline (`targetWidth`). A
+  the title, the session's details and the repository in its tooltip (`SessionMenu.row(of:among:)`). Its width is set rather than left to the text, so it springs with the bar. Beside a message field it sits in the field's box, from the box's leading edge, parted from the words by a hairline (`targetWidth`). There its hover shade, its darker shade while the menu is open and its focus ring are one rounded rectangle inset 2.5 pt in the box and short of the hairline, concentric with the box, one line high (`TargetShade`). A
   pick from its menu is applied a turn later, after the menu's own event loop ends, since a change
   made inside it jumped instead of animating. A pick whose image closed or was replaced in that
   turn is dropped and logs `[send] pick dropped` (`Model.imageNumber`). Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
