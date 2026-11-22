@@ -80,7 +80,7 @@
   answer that does not parse, or a status whose tab is not the focused terminal's marks nothing,
   and logs `[herdr] no focus: <reason>` when the reason changes, then `[herdr] focus read again`.
   The target shows the agent's logo and the session's title, cut in the middle past 132 pt, with
-  the title, the session's details and the repository in its tooltip (`SessionMenu.row(of:among:)`). Its width is set rather than left to the text, so it springs with the bar. A
+  the title, the session's details and the repository in its tooltip (`SessionMenu.row(of:among:)`). Its width is set rather than left to the text, so it springs with the bar. Beside a message field it sits in the field's box, parted from the words by a hairline (`targetWidth`). A
   pick from its menu is applied a turn later, after the menu's own event loop ends, since a change
   made inside it jumped instead of animating. A pick whose image closed or was replaced in that
   turn is dropped and logs `[send] pick dropped` (`Model.imageNumber`). Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
@@ -175,17 +175,15 @@
   has them and takes Tab first (`ToolbarPanel.sendEvent`). `[state] annotator.toolbarFocus` names
   the focused control, and `annotator.toolbarKey` says whether the bar's panel has the keys. The
   bar draws its own tooltips (`TipSpot`, `TipLabel`): AppKit shows a window's tooltips only while
-  it is key or was the last one clicked, so `.help` on the bar showed nothing until the bar was
-  clicked, and `allowsToolTipsWhenApplicationIsInactive` did not change
-  that. The target's menu is an `NSMenu` (`showTargetMenu`), since SwiftUI's `Menu`
+  it is key or was the last one clicked; `allowsToolTipsWhenApplicationIsInactive` did not help. The target's menu is an `NSMenu` (`showTargetMenu`), since SwiftUI's `Menu`
   cannot be opened from a key. A press on the target opens it at once, as on a macOS pop-up button:
-  the bar's panel opens it before SwiftUI's button sees the press (`ToolbarPanel.onPressMenu`,
+  the bar's panel opens it before SwiftUI's button, which acts on the release, sees the press (`ToolbarPanel.onPressMenu`,
   `AnnotatorToolbar.pressTarget`), and AppKit's menu tracking then has the press. Dragging onto a
   row and releasing picks it, and a release with no drag leaves the menu open for a second click.
-  A SwiftUI button acts on the release, which made a pick by pointer two clicks. The press reaches
+  The press reaches
   the target where its button would take it, the box and its slop, and not while a send is under
   way or the bar is leaving (`Model.shown`). The button's own action is left to VoiceOver. While the
-  menu is open, however it opened, the target darkens as a pop-up button does (`TargetShade`).
+  menu is open, however it opened, the target darkens as a pop-up button does and hides its hairline (`TargetShade`).
   Space opens it a turn later: opened inside the editor's keyDown it took no keys, and a press on its item closed the editor as a press outside. In the message field,
   Up on the first line or Down on the last opens it the same way, as on a pop-up button, and the
   arrows then move through it (`ToolbarPanel.onMenuKey`). Opened from the keyboard, it opens with
