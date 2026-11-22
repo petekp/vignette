@@ -52,14 +52,11 @@ struct PartWidth: Layout {
 struct FocusRing: ViewModifier {
     static let radius: CGFloat = 9.5
     let on: Bool
-    /// Smaller for the target inside the message field's box, whose trailing edge is a hairline.
-    var trailingRadius = FocusRing.radius
     func body(content: Content) -> some View {
         content
             .overlay {
                 if on {
-                    UnevenRoundedRectangle(topLeadingRadius: Self.radius, bottomLeadingRadius: Self.radius,
-                                           bottomTrailingRadius: trailingRadius, topTrailingRadius: trailingRadius, style: .continuous)
+                    RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
                         .strokeBorder(Color(nsColor: .keyboardFocusIndicatorColor), lineWidth: 3)
                         .padding(-3)
                         .allowsHitTesting(false)
