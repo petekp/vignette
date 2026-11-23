@@ -130,7 +130,7 @@ final class SessionMenuSearch: NSObject, NSSearchFieldDelegate {
     private let sessions: SessionMenu.Menu
     private let menu: NSMenu
     private let make: (SessionMenu.Row) -> NSMenuItem
-    private let field = NSSearchField()
+    private let field = QuietSearchField()
     private let indicators: SessionMenuIndicators
     /// Where the rows start: after the search row and whatever the menu held before it.
     private var start = 0
@@ -154,6 +154,10 @@ final class SessionMenuSearch: NSObject, NSSearchFieldDelegate {
         field.placeholderString = "Search sessions"
         field.delegate = self
         field.focusRingType = .none
+        // In a menu, a search field's bezel draws an opaque text box, darker than the glass around
+        // it. The holder draws the field's fill instead.
+        field.isBezeled = false
+        field.drawsBackground = false
         holder.addSubview(field)
         let item = NSMenuItem()
         item.view = holder
@@ -212,15 +216,52 @@ final class SessionMenuSearch: NSObject, NSSearchFieldDelegate {
     }
 }
 
-/// The view of the search row. It gives its field the keyboard once the menu's window exists.
+/// A search field without a bezel. NSSearchFieldCell draws and edits a borderless field's text from
+/// the field's left edge, under the magnifier, so this cell puts it between the magnifier and the
+/// clear button, centred on the field's height.
+private final class QuietSearchField: NSSearchField {
+    override class var cellClass: AnyClass? {
+        get { QuietSearchFieldCell.self }
+        set {}
+    }
+}
+
+private final class QuietSearchFieldCell: NSSearchFieldCell {
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        let font = font ?? .systemFont(ofSize: NSFont.systemFontSize)
+        let lineHeight = ceil(NSLayoutManager().defaultLineHeight(for: font))
+        let left = searchButtonRect(forBounds: rect).maxX
+        let right = cancelButtonRect(forBounds: rect).minX
+        return NSRect(x: left, y: rect.midY - lineHeight / 2, width: max(right - left, 0), height: lineHeight)
+    }
+
+    override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, start selStart: Int, length selLength: Int) {
+        super.select(withFrame: drawingRect(forBounds: rect), in: controlView, editor: textObj, delegate: delegate, start: selStart, length: selLength)
+    }
+
+    override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, event: NSEvent?) {
+        super.edit(withFrame: drawingRect(forBounds: rect), in: controlView, editor: textObj, delegate: delegate, event: event)
+    }
+}
+
+/// The view of the search row. It draws the field's fill, puts the backing in the menu's glass and
+/// gives its field the keyboard once the menu's window exists.
 private final class FieldHolder: NSView {
     weak var field: NSControl?
     /// Runs once, when the field has first taken the keyboard, with the menu's window.
     var hasKeys: ((NSWindow) -> Void)?
 
+    override func draw(_ dirtyRect: NSRect) {
+        guard let field else { return }
+        let fill = field.frame
+        NSColor.tertiarySystemFill.setFill()
+        NSBezierPath(roundedRect: fill, xRadius: fill.height / 2, yRadius: fill.height / 2).fill()
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard window != nil else { return }
+        guard let window else { return }
+        SessionMenuBacking.install(in: window)
         DispatchQueue.main.async { [weak self] in
             guard let self, let field, let window = field.window, window.makeFirstResponder(field) else { return }
             let hasKeys = self.hasKeys
@@ -228,4 +269,67 @@ private final class FieldHolder: NSView {
             hasKeys?(window)
         }
     }
+}
+
+/// A fill of the window colour behind the session menu's rows, inside the menu's own glass, so the
+/// windows behind the menu show only as a faint hue. NSMenu has no API for its background, so this
+/// finds the glass in AppKit's menu window, whose views are not public. When a macOS draws the menu
+/// some other way, nothing is added and the menu keeps the system's look.
+@MainActor
+final class SessionMenuBacking: NSView {
+    /// How much of the glass the window colour covers.
+    static let opacity: CGFloat = 0.78
+
+    /// Adds a backing to `window`, a menu's window, unless Reduce Transparency already makes menus
+    /// opaque or the window has one. Logs what it found.
+    static func install(in window: NSWindow) {
+        let outcome = place(in: window)
+        Log.write("[send] session menu backing \(outcome) window=\(type(of: window))")
+    }
+
+    private static func place(in window: NSWindow) -> String {
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency { return "skipped: reduce transparency" }
+        guard #available(macOS 26.0, *) else { return "skipped: no glass before macOS 26" }
+        guard let root = window.contentView?.superview ?? window.contentView else { return "skipped: no views" }
+        guard let glass = firstGlass(in: root) else { return "skipped: no glass" }
+        guard let content = glass.contentView else { return "skipped: glass holds no view" }
+        if content.subviews.contains(where: { $0 is SessionMenuBacking }) { return "kept" }
+        let backing = SessionMenuBacking(frame: content.bounds)
+        backing.autoresizingMask = [.width, .height]
+        backing.layer?.cornerRadius = glass.cornerRadius
+        backing.layer?.cornerCurve = .continuous
+        content.addSubview(backing, positioned: .below, relativeTo: nil)
+        return "added"
+    }
+
+    @available(macOS 26.0, *)
+    private static func firstGlass(in view: NSView) -> NSGlassEffectView? {
+        if let glass = view as? NSGlassEffectView { return glass }
+        for subview in view.subviews {
+            if let glass = firstGlass(in: subview) { return glass }
+        }
+        return nil
+    }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(Self.opacity).cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

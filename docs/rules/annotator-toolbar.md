@@ -120,7 +120,7 @@
   tooltip keeps it whole. Live ink's row for an agent on the screen that cannot answer says why on
   a second line, its subtitle. AppKit measures a subtitle as two lines once it is wider than both
   its title and about 282 pt, yet draws it on one, which left a blank line under it and the logo
-  below the text, so `SessionMenu.setSubtitle` cuts it to fit and the tooltip keeps it whole. A Claude Code session is active while the plugin's monitor runs in it,
+  below the text, so `SessionMenu.setSubtitle` cuts it to fit and the tooltip keeps it whole. `SessionMenuBacking` puts the window colour behind the rows; `QuietSearchField` has no bezel. A Claude Code session is active while the plugin's monitor runs in it,
   and a Codex thread when it was used in the last day, since nothing says which threads the Codex
   app has open. The target settles once, from the first answer that names a focus (herdr's comes in
   about 60 ms, before the bar is up), or else from the whole list (`Model.answered`). With a kept
