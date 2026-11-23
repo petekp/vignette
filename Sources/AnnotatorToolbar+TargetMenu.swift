@@ -46,6 +46,7 @@ extension AnnotatorToolbar {
             return item
         }
         targetMenuActions.open = (menu, sessions, search)
+        model.targetMenuOpened()
         let below = barView.isFlipped ? frame.maxY + 4 : barView.bounds.height - frame.maxY - 4
         targetShade?.show(open: true)
         _ = menu.popUp(positioning: nil, at: NSPoint(x: frame.minX, y: below), in: barView)

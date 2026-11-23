@@ -145,9 +145,10 @@ named as above, whether or not the menu was opened. A live ink note's send write
 `[send] ok <id> <name> inbox=<pid> session=<id> line=<file>` names the file a Claude Code send wrote
 into the session's inbox. The plugin's monitor prints that file between turns and removes it, and
 Vignette looks for that: `[send] handed line=<file> inbox=<pid> after=<ms>` is the time from the
-write to the file being gone, up to 0.5 s late in the first minute and 2 s late after it.
-`[send] not handed line=<file> inbox=<pid> after=<ms> reason=inbox-gone|limit` is a file still there
-when the inbox itself was removed or after an hour.
+write to the file being gone while the session's Claude Code process still runs. The monitor looks
+every 0.3 s, so `after` can be up to 0.3 s past the moment the session could first take the line.
+`[send] not handed line=<file> inbox=<pid> after=<ms> reason=inbox-gone|limit` is a file that went
+after that process exited, as its inbox was removed, or one still there after an hour.
 `[annotate] closed <file> reason=<reason>` is one line for each image the editor leaves without
 sending it, before the `[transition]` line of the event. `reason` is `esc`, `window` (Cmd+W, or an
 Esc no view took), `bar` (Esc in the message field), `click-outside`, `shortcut` (the shortcut that

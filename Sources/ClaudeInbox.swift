@@ -59,14 +59,17 @@ extension ClaudeCodeConnection {
 
     enum Handover: Equatable {
         case waiting
-        /// The monitor printed the line and removed it.
+        /// The monitor printed the line and removed it while the session's Claude Code process ran.
         case handed
-        /// The inbox went with the line in it: the session ended first.
+        /// The line went after the process exited, with the inbox or before it: the session ended first.
         case inboxGone
         case limit
 
-        static func of(lineIsThere: Bool, inboxIsThere: Bool, waited: TimeInterval) -> Handover {
-            if !lineIsThere { return inboxIsThere ? .handed : .inboxGone }
+        /// Both ways an inbox is removed, the monitor's as it stops and `liveInboxes`'s, start only once
+        /// the process has exited, and delete the line before the folder. So a line gone while the
+        /// folder is still there was handed only if the process still runs.
+        static func of(lineIsThere: Bool, inboxIsThere: Bool, processIsRunning: Bool, waited: TimeInterval) -> Handover {
+            if !lineIsThere { return inboxIsThere && processIsRunning ? .handed : .inboxGone }
             return waited >= ClaudeCodeConnection.handoverLimit ? .limit : .waiting
         }
     }
@@ -96,15 +99,15 @@ extension ClaudeCodeConnection {
     /// Watches `line`, a file written into `inbox`, until the plugin's monitor takes it, which it does
     /// between turns by printing it and removing the file (inbox.sh). The inbox folder is watched
     /// through the file system, so nothing runs until the folder changes. Logs
-    /// `[send] handed line=<file> inbox=<pid> after=<ms>` when the file is gone, or
-    /// `[send] not handed line=<file> inbox=<pid> after=<ms> reason=inbox-gone|limit` when the
-    /// session's inbox went first or `handoverLimit` passed. The monitor looks every 0.3 s, so a
+    /// `[send] handed line=<file> inbox=<pid> after=<ms>` when the file is gone while the inbox's
+    /// process runs, or `[send] not handed line=<file> inbox=<pid> after=<ms> reason=inbox-gone|limit`
+    /// when the process exited first or `handoverLimit` passed. The monitor looks every 0.3 s, so a
     /// hand-over is logged up to that late.
     private func watchHandover(of line: URL, in inbox: Inbox) {
         guard watchesHandover else { return }
         let fd = open(inbox.folder.path, O_EVTONLY)
         guard fd >= 0 else { return }
-        let written = now(), now = self.now
+        let written = now(), now = self.now, isRunning = self.isRunning
         let queue = DispatchQueue(label: "vignette.handover")
         let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete, .revoke], queue: queue)
         var finished = false
@@ -112,8 +115,9 @@ extension ClaudeCodeConnection {
             guard !finished else { return }
             let waited = now().timeIntervalSince(written)
             let fm = FileManager.default
-            let state = Handover.of(lineIsThere: fm.fileExists(atPath: line.path), inboxIsThere: fm.fileExists(atPath: inbox.folder.path),
-                                    waited: timedOut ? max(waited, Self.handoverLimit) : waited)
+            let lineIsThere = fm.fileExists(atPath: line.path)
+            let state = Handover.of(lineIsThere: lineIsThere, inboxIsThere: fm.fileExists(atPath: inbox.folder.path),
+                                    processIsRunning: isRunning(inbox.pid), waited: timedOut ? max(waited, Self.handoverLimit) : waited)
             let named = "line=\(line.lastPathComponent) inbox=\(inbox.pid) after=\(Int(waited * 1000))ms"
             switch state {
             case .waiting: return

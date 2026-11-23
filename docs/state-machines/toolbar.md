@@ -21,7 +21,7 @@ A `decided` answer is one `DestinationChoice` marks as settled: complete, or any
 
 **Transitions**
 
-Events: `begin(replyTo:carryingTarget:)` (`:152`, sent by `beginDestinations` with `carryingTarget: toolbar.model.shown`, right after `annotator.prepare`, `AppDelegate.swift:116-118`); `answered(_:)` (`:172`, once per `SessionListing.deliver`); `pick(_:)` (`:186`, from the target menu a turn later, `AnnotatorToolbar.swift:260-266`).
+Events: `begin(replyTo:carryingTarget:)` (`:155`, sent by `beginDestinations` with `carryingTarget: toolbar.model.shown`, right after `annotator.prepare`, `AppDelegate.swift:116-118`); `answered(_:)` (`:175`, once per `SessionListing.deliver`); `pick(_:)` (`:195`, from the target menu a turn later, `AnnotatorToolbar+TargetPick.swift:9-22`).
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
@@ -46,7 +46,7 @@ Events: `begin(replyTo:carryingTarget:)` (`:152`, sent by `beginDestinations` wi
 
 - A list answer for an ended opening: dropped, guard at `AppDelegate+Send.swift:113` (`annotator.opening == opening`), and again after the off-main read at `:96`. `Opening` ids are never reused, so closing and reopening the same file is another opening. `annotator.opening` is nil when `current == nil` (`AnnotationController.swift:594`).
 - A carried target whose session is gone: Send still shows. A send to it fails at the preflight (`AgentConnection.swift:416-420`, "closed" or "cleared") and never lands on another session.
-- A menu pick applied after a newer `begin` or a hide: dropped (target menu below).
+- A menu pick whose image is no longer open, because a `begin` ran while the menu was open or after the pick, or the bar hid: dropped ([target menu pick](target-menu.md)).
 
 ### Kept pick: AnnotationController.keptPick (implicit)
 
@@ -228,29 +228,3 @@ Holds a tool letter typed first on an untouched field, until the next key shows 
 **Late and concurrent answers**
 
 - None.
-
-### Target menu pick (implicit)
-
-Owner: `AnnotatorToolbar.swift:274-287` (`onPick`), `:290-295` (`onMenuKey`), `AnnotatorToolbar+Focus.swift:29` (Space), `AnnotatorToolbar.swift:332` (`showTargetMenu`). Tests: none.
-
-Opens the target menu and applies a pick one turn later.
-
-**States**: closed; open (modal `NSMenu`); pick queued.
-
-**Transitions**
-
-| State | Event | Next state | Effects |
-|---|---|---|---|
-| closed | Space, Up or Down in the field, or a click | closed, one turn later | `showTargetMenu` builds an `NSMenu` from `model.destinations + model.startable` and calls `popUp` |
-| closed | `showTargetMenu` with no target offer or `targetFrame == nil` | closed | refused (`AnnotatorToolbar.swift:333`) |
-| open | item chosen | pick queued | `TargetMenuActions.pick` (`SessionMenuPicks.swift:10`) calls `DispatchQueue.main.async` |
-| pick queued | the block runs | closed | `model.pick(destination)` under `withAnimation`, if `shown` and `imageNumber` is the menu's; else `[send] pick dropped` |
-
-**Invariants**
-
-- Space opens the menu a turn later so the menu takes keys (comment `AnnotatorToolbar+Focus.swift:26-28`). Checked by: nothing.
-- A pick belongs to the image that showed the menu. Checked by: `ToolbarOfferTests.testAPickInTheTargetsMenuLandsOnlyOnTheImageWhoseMenuItCameFrom`. `targetFrame` comes from SwiftUI geometry and is never cleared (`:248`).
-
-**Late and concurrent answers**
-
-- A `begin` or a hide between the menu action and the queued pick: the pick is dropped.

@@ -47,13 +47,11 @@ UNIT_CURVE = re.compile(r"\bUnitCurve\s*\.\s*" + CURVE_NAMES)
 CA_CONSTANT = re.compile(r"\bkCAMediaTimingFunction\w+")
 AT_ONCE = re.compile(r"\s*\(\s*duration\s*:\s*0(?:\.0*)?\s*\)")
 
-NOT_IN_RULE = "found 11-20, not in the rule"
-
 ALLOWED = {
     "Anim.swift": (5,
-        f"{NOT_IN_RULE}: `swiftUI` gives the card slide-in the curve `ui.slideInCurve` names, and "
-        "the setting offers easeOut, easeInOut and linear beside its default, spring; `reaches` "
-        "finds when the eased ones arrive"),
+        "`swiftUI` gives the card slide-in the curve `ui.slideInCurve` names, and the setting "
+        "offers easeOut, easeInOut and linear beside its default, spring, for a person who wants "
+        "one; `reaches` finds when the eased ones arrive"),
     "AnnotatorToolbar.swift": (4,
         "`words` and `nameSwap`: words giving way to others in one place fade out quickly and in a "
         "moment later"),
@@ -64,14 +62,14 @@ ALLOWED = {
     "LiveInkLight.swift": (3, "live ink's Core Animation layers: the light's draw-on"),
     "LiveFocus.swift": (1, "live ink's Core Animation layers: the focus lens fading in"),
     "LiveAnswerActions.swift": (2,
-        f"live ink's Core Animation layers: the buttons dropping into place on their layer; "
-        f"{NOT_IN_RULE}: the buttons' panel fading in, which is not a popover"),
+        "live ink's Core Animation layers: the buttons dropping into place on their layer; and the "
+        "panel that holds an answer's buttons fading in with that drop"),
     "HangingPopover.swift": (2, "live ink's popovers' fades: a popover fading with its mark, and back in"),
     "LiveNotePopover.swift": (1, "live ink's popovers' fades: `fadeAway`, a closing popover (ADR 0027)"),
     "LiveReplyPopover.swift": (1, "live ink's popovers' fades: `close`, a closing popover (ADR 0027)"),
     "LiveNoteContent.swift": (1,
-        f"{NOT_IN_RULE}: the note's target and its return key move to their row on an ease-out, "
-        "inside the note's popover, while `fit` springs the popover's height"),
+        "`layOut`: the note's target and its return key move to their row on an ease-out, inside "
+        "the note's popover, while `fit` springs the popover's height"),
 }
 
 
