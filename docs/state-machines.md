@@ -95,7 +95,7 @@ This file is the index. Each file below is under `docs/state-machines/`; the tab
 | Bar presence: shown, hideGeneration, sliding | `AnnotatorToolbar.Model` | [toolbar](state-machines/toolbar.md) |
 | Keyboard focus: focus, keyed, tookKeysOnOpen, toolLetter, heldLetter | `AnnotatorToolbar.Model` | [toolbar](state-machines/toolbar.md) |
 | HeldToolLetter | `HeldToolLetter` | [toolbar](state-machines/toolbar.md) |
-| Target menu pick | `AnnotatorToolbar.Model` | [toolbar](state-machines/toolbar.md) |
+| Target menu pick | `AnnotatorToolbar.Model` | [target-menu](state-machines/target-menu.md) |
 | SessionListing | `SessionListing` | [destinations](state-machines/destinations.md) |
 | AppDelegate.refreshDestinations and listDestinations | `AppDelegate` | [destinations](state-machines/destinations.md) |
 | DestinationChoice | `DestinationChoice` | [destinations](state-machines/destinations.md) |

@@ -267,6 +267,7 @@ final class ToolbarOfferTests: XCTestCase {
         let a = session("a"), b = session("b")
         model.shown = true
         model.begin(replyTo: nil, carryingTarget: false)
+        model.targetMenuOpened()
         toolbar.targetMenuActions.onPick?(b, nil)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         XCTAssertEqual(model.target?.id, b.id)
@@ -277,6 +278,13 @@ final class ToolbarOfferTests: XCTestCase {
         XCTAssertEqual(model.target?.id, b.id, "the next image keeps the target it carried")
         XCTAssertFalse(model.isHandPick(a))
 
+        model.targetMenuOpened()
+        model.begin(replyTo: nil, carryingTarget: true)
+        toolbar.targetMenuActions.onPick?(a, nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(model.target?.id, b.id, "an image that opened while the menu was open takes no pick made in it")
+
+        model.targetMenuOpened()
         toolbar.targetMenuActions.onPick?(a, nil)
         model.shown = false
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))

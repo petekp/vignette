@@ -42,8 +42,11 @@ final class AnnotatorToolbar {
         /// The target is the image before's, kept while the bar stays up so Send does not leave it
         /// for the 60 to 90 ms the listing takes. The first answer that settles a target replaces it.
         private var carried = false
-        /// One more at each `begin`, so a late menu pick lands only on its own image.
+        /// One more at each `begin`, so a menu pick lands only on the image whose menu it came from.
         private(set) var imageNumber = 0
+        /// The `imageNumber` the target menu last opened on, the image its picks belong to.
+        private(set) var targetMenuImage: Int?
+        func targetMenuOpened() { targetMenuImage = imageNumber }
         /// From Send's press until the bar leaves. The button shows the send and takes no second click.
         /// A new press puts a failure's reason away.
         @Published var sending = false { didSet { if sending { failure = nil } } }
@@ -275,20 +278,7 @@ final class AnnotatorToolbar {
         let content = NSView()
         content.addSubview(hosting)
         panel.contentView = content
-        targetMenuActions.onPick = { [weak self] destination, menuLine in
-            let image = self?.model.imageNumber
-            // A turn later, once the menu's own event loop has ended.
-            DispatchQueue.main.async {
-                guard let self else { return }
-                Log.write("[send] picked \(destination.address.description) project=\(destination.detail) role=\(destination.role ?? "none")")
-                if let menuLine { Log.write(menuLine) }
-                guard self.model.shown, self.model.imageNumber == image else { return Log.write("[send] pick dropped") }
-                // Before the pick changes the offer, which may offer the field the keys as on open.
-                self.onPick?()
-                withAnimation(Anim.spring(0.35 * Settings.shared.motionScale)) { self.model.pick(destination) }
-                self.typeAfterPick()
-            }
-        }
+        takeTargetMenuPicks()
         panel.onTab = { [weak self] backward in self?.move(backward: backward) }
         panel.onKey = { [weak self] event in self?.keyDown(event) ?? false }
         panel.onPressMenu = { [weak self] event in self?.pressTarget(event) ?? false }
