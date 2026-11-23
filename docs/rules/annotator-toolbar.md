@@ -82,8 +82,8 @@
   The target shows the agent's logo and the session's title, cut in the middle past 132 pt, with
   the title, the session's details and the repository in its tooltip (`SessionMenu.row(of:among:)`). Its width is set rather than left to the text, so it springs with the bar. Beside a message field it sits in the field's box, from the box's leading edge, parted from the words by a hairline (`targetWidth`). There its hover shade, its darker shade while the menu is open and its focus ring are one rounded rectangle inset 2.5 pt in the box and short of the hairline, concentric with the box, one line high (`TargetShade`). A
   pick from its menu is applied a turn later, after the menu's own event loop ends, since a change
-  made inside it jumped instead of animating. A pick whose image closed or was replaced in that
-  turn is dropped and logs `[send] pick dropped` (`Model.imageNumber`). Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
+  made inside it jumped instead of animating. A pick whose image closed or was replaced while
+  the menu was open, or in that turn, is dropped and logs `[send] pick dropped` (`Model.targetMenuImage`). Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
   sessions the person sent to in the last 4 hours, newest send first, then the rest by when the agent last worked; five of them, with
   the target always among them but not first when another session can be: it trades places with the second row, whose group
   then leads (`targetNotFirst`), so Return in the empty search picks the likeliest other session. They are grouped under a header for each repository with Other folders last, then, after a separator, one submenu per project, titled as its header, with its count at its right and every
