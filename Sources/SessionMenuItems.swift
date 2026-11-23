@@ -218,7 +218,10 @@ final class SessionMenuSearch: NSObject, NSSearchFieldDelegate {
 
 /// A search field without a bezel. NSSearchFieldCell draws and edits a borderless field's text from
 /// the field's left edge, under the magnifier, so this cell puts it between the magnifier and the
-/// clear button, centred on the field's height.
+/// clear button, centred on the field's height. In the menu's window, the field editor and its clip
+/// view drew `textBackgroundColor` over that space while editing, an opaque box inside the
+/// holder's fill, though the field draws no background. So their background is clear, which
+/// draws nothing even when AppKit turns their background on.
 private final class QuietSearchField: NSSearchField {
     override class var cellClass: AnyClass? {
         get { QuietSearchFieldCell.self }
@@ -235,12 +238,29 @@ private final class QuietSearchFieldCell: NSSearchFieldCell {
         return NSRect(x: left, y: rect.midY - lineHeight / 2, width: max(right - left, 0), height: lineHeight)
     }
 
+    override func setUpFieldEditorAttributes(_ textObj: NSText) -> NSText {
+        let editor = super.setUpFieldEditorAttributes(textObj)
+        Self.clearBackground(of: editor)
+        return editor
+    }
+
     override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, start selStart: Int, length selLength: Int) {
         super.select(withFrame: drawingRect(forBounds: rect), in: controlView, editor: textObj, delegate: delegate, start: selStart, length: selLength)
+        Self.clearBackground(of: textObj)
     }
 
     override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, event: NSEvent?) {
         super.edit(withFrame: drawingRect(forBounds: rect), in: controlView, editor: textObj, delegate: delegate, event: event)
+        Self.clearBackground(of: textObj)
+    }
+
+    /// The clip view exists only once AppKit has put the editor in the field, after the setup.
+    private static func clearBackground(of editor: NSText) {
+        editor.drawsBackground = false
+        editor.backgroundColor = .clear
+        guard let clip = editor.superview as? NSClipView else { return }
+        clip.drawsBackground = false
+        clip.backgroundColor = .clear
     }
 }
 
