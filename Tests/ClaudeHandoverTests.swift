@@ -13,12 +13,14 @@ extension AgentConnectionTests {
         XCTAssertTrue(detail.hasSuffix("line=\(lines[0])"))
     }
 
-    func testTheMonitorsTakingOfALineIsSeenWhileItsInboxIsStillThere() {
+    func testTheMonitorsTakingOfALineIsSeenOnlyWhileItsSessionStillRuns() {
         typealias Handover = ClaudeCodeConnection.Handover
-        XCTAssertEqual(Handover.of(lineIsThere: true, inboxIsThere: true, waited: 5), .waiting)
-        XCTAssertEqual(Handover.of(lineIsThere: false, inboxIsThere: true, waited: 5), .handed)
-        XCTAssertEqual(Handover.of(lineIsThere: false, inboxIsThere: false, waited: 5), .inboxGone,
+        XCTAssertEqual(Handover.of(lineIsThere: true, inboxIsThere: true, processIsRunning: true, waited: 5), .waiting)
+        XCTAssertEqual(Handover.of(lineIsThere: false, inboxIsThere: true, processIsRunning: true, waited: 5), .handed)
+        XCTAssertEqual(Handover.of(lineIsThere: false, inboxIsThere: false, processIsRunning: false, waited: 5), .inboxGone,
                        "the monitor removes the whole inbox as it stops, which is no hand-over")
-        XCTAssertEqual(Handover.of(lineIsThere: true, inboxIsThere: true, waited: ClaudeCodeConnection.handoverLimit), .limit)
+        XCTAssertEqual(Handover.of(lineIsThere: false, inboxIsThere: true, processIsRunning: false, waited: 5), .inboxGone,
+                       "an inbox being removed loses its line before its folder")
+        XCTAssertEqual(Handover.of(lineIsThere: true, inboxIsThere: true, processIsRunning: true, waited: ClaudeCodeConnection.handoverLimit), .limit)
     }
 }
