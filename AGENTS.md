@@ -198,9 +198,12 @@ Before you drive the app:
   script wants. Every SwiftUI animation is a spring made by `Anim.spring` (`slideInCurve` "spring"
   included), and the AppKit tweens use `Tween`'s spring curve: an interrupted motion keeps its
   velocity and blends into the new target instead of jumping. These ease instead: live ink's Core
-  Animation layers and its popovers' fades (ADR 0027 says why for a closing popover), the toolbar's
-  words giving way (`AnnotatorToolbar.words`, `nameSwap`), a mark's draw-on (`MarkLayers.drawOn`),
-  the menu bar intro and the menu bar icon's crossfade (`setIcon`). `scripts/check-animations.py`,
+  Animation layers and its popovers' fades (ADR 0027 says why for a closing popover), the fade-in of
+  the panel that holds an answer's buttons (`LiveAnswerActions`), the note's target and return key
+  moving to their row (`LiveNoteContent.layOut`), the toolbar's words giving way
+  (`AnnotatorToolbar.words`, `nameSwap`), a mark's draw-on (`MarkLayers.drawOn`), the menu bar
+  intro, the menu bar icon's crossfade (`setIcon`), and the card slide-in's eased choices for
+  `ui.slideInCurve` (`Anim.swiftUI`). `scripts/check-animations.py`,
   run by `build.sh --test`, fails any other eased curve (`docs/rules/flights-and-presses.md`). `Tween.spring` is the closed form of
   a critically damped spring, so a late tick lands where the spring really is by then. Do not step
   it forward by hand: integrating it overshoots by hundreds of points after one late tick.
