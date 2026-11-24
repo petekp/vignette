@@ -70,8 +70,8 @@
    `focused`, `hovered`, `queue`, the files waiting for the annotator, `visible`, `key`, `isStack`,
    `scroll`, `viewport`, `safeBottom`, the room the Dock keeps under the column, panel,
    `panelOnScreen`, `widthScale`, how wide the stack is drawn, `swipe`, how far a swipe has moved the
-   column toward the edge, `older`, the chunks of older cards (`loading`, `reachedOldest`, `added`), and `strip`, the selection strip's
-   frame or null),
+   column toward the edge, `older`, the chunks of older cards (`loading`, `reachedOldest`, `added`), `strip`, the selection strip's
+   frame or null, and `undoTitle` and `redoTitle`, the stack's Edit menu words, "Undo Move to Trash"),
    `transition` (phase), `annotator` (`current`, `frame`, `toolbar`, `windowVisible`, `key`, `tool`,
    and the zoom's own keys, which `docs/rules/zoom.md` names), `editor` (`open`, `tool`, `marks`
    with each mark's `type`, `frame` and `agent`, `selection` as indexes into `marks`, `typing`,
@@ -92,6 +92,9 @@
    the apps its windows showed and Herdr's focused pane at that moment (`docs/rules/capture.md`).
    `[stack] shown cards=… files=… listed=…ms shown=…ms decoding=…` counts the watch folder from
    the watcher's index, and times the listing and then the cards' presentation.
+   `[undo] undid|redid <step>: …` follows each Cmd+Z and Shift+Cmd+Z in the stack, and
+   `[undo] can't undo|redo <step>: <why>` one whose file has moved since; `[stack] put back cards=<n>`
+   follows the cards coming back (`docs/rules/stack-undo.md`).
 
 A fake screenshot for testing: `screencapture -x -R 200,200,900,560 "<watch folder>/Screenshot test.png"`.
 Delete it afterwards. Never retype a

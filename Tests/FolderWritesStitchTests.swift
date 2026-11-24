@@ -14,7 +14,7 @@ final class FolderWritesStitchTests: XCTestCase {
     }
 
     func testAStitchWhoseNameIsTakenGetsACounterAndLeavesTheFirstAlone() throws {
-        let writes = FolderWrites(trash: { try FileManager.default.removeItem(at: $0) }, now: { 0 })
+        let writes = FolderWrites(trash: { try FileManager.default.removeItem(at: $0); return $0 }, now: { 0 })
         let first = try writes.writeStitch(Data("first".utf8), in: folder, as: "Stitch x.png")
         let second = try writes.writeStitch(Data("second".utf8), in: folder, as: "Stitch x.png")
         XCTAssertEqual(first.name, "Stitch x.png")

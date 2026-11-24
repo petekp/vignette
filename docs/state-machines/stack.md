@@ -87,6 +87,33 @@ Inserts a card into the open stack without animating the layout change; the new 
 
 - The `entering` clear compares ids (`:1451`). A second insert adds to the first's remaining lift through `liftLeft` (`:1457`). `present` recomputes lifts for kept cards.
 
+### StackUndo (explicit)
+
+Owner: `StackUndo.swift`, its `UndoManager`; `ThumbnailController.putBack` places the cards. Tests: `StackUndoTests`, `FolderWritesTests.testAFilePutBackFromTheTrashIsNoCaptureAndHoldsBackOlderRemovals`.
+
+Cmd+Z and Shift+Cmd+Z while the stack has the keys (`docs/rules/stack-undo.md`). **States**: the manager's undo and redo lists, each entry one step object (`PutBack`, `TrashAgain`, `Unstitch`, `Restitch`), and `renamed`, each recorded file's name now.
+
+| State | Event | Next state | Effects |
+|---|---|---|---|
+| any | `trash` (Delete) with a file trashed | `PutBack` on the undo list, redo list cleared | files to the Trash, cards leave |
+| any | `stitched` | `Unstitch` on the undo list, redo list cleared | — |
+| `PutBack` on top | Cmd+Z, a file came back | `TrashAgain` on the redo list | files back, `putBack` cards, VoiceOver hears "Undo Move to Trash" |
+| `Unstitch` on top | Cmd+Z, the stitch trashed | `Restitch` on the redo list | pieces' cards back first, then the stitch to the Trash |
+| `TrashAgain`, `Restitch` on top | Shift+Cmd+Z | `PutBack`, `Unstitch` on the undo list | the step again |
+| any step on top | its files moved since | step gone, nothing on the other list | beep, `[undo] can't …` |
+| either list empty | its key | — | beep |
+| any | a rename in the folder, while a list holds a step | `renamed` follows it | — |
+
+**Invariants**
+
+- A step that runs leaves its opposite on the other list, and one that cannot leaves nothing. Checked by: `StackUndoTests`.
+- A card comes back before the older card still in the column that followed it. Checked by: `StackUndoTests.testACardGoesBackBeforeTheOlderCardThatIsStillThereElseAfterTheNewerOne`.
+
+**Late and concurrent answers**
+
+- A put-back file's watcher report comes later; `FolderWrites.pendingPutBacks` makes `arrived` swallow it, and `writtenAt` holds back a removal from an older listing.
+- `putBack` does nothing while the stack is closed: the next stack lists the file.
+
 ### StackSweep (implicit)
 
 Owner: `StackSweep.swift:7`. Tests: none.

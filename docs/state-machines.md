@@ -68,6 +68,7 @@ This file is the index. Each file below is under `docs/state-machines/`; the tab
 | CardNotices and its posting timers | `CardNotices`, `StackModel`, `ThumbnailController` | [corner](state-machines/corner.md) |
 | Stack selection, focus and hover | `StackModel` | [stack](state-machines/stack.md) |
 | Stitch converge | `ThumbnailController` | [stack](state-machines/stack.md) |
+| StackUndo | `StackUndo`, `ThumbnailController`, `FolderWrites` | [stack](state-machines/stack.md) |
 | shiftUp and card entrance | `ThumbnailController` | [stack](state-machines/stack.md) |
 | StackSweep | `StackSweep` | [stack](state-machines/stack.md) |
 | HotKey | `HotKey` | [stack](state-machines/stack.md) |

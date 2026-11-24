@@ -107,6 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         // window of ours can take the focus.
         _ = FocusReturn.shared
         thumbnail.actions = self
+        connectStackUndo()
         thumbnail.recentListing = { [unowned self] in
             let index = recentShots(limit: settings.data.recentCount)
             watcher?.rescan(reason: "recent")   // keeps the index honest for the next open; nothing waits for it
@@ -459,7 +460,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         Commands.ok("stitch", "\(key.url.path) from \(composed.pieces) images, \(Int(composed.size.width))x\(Int(composed.size.height)) columns=\(composed.columns) readerScale=\(String(format: "%.2f", composed.readerScale)) \(composed.png.count) bytes, copied")
         // The cards conjoin into the new one when the stack is showing them; otherwise the new card
         // comes up with the Copied notice.
-        if !thumbnail.stitched(shots, into: key) { thumbnail.showCopied([Screenshot(key: key)]) }
+        if !conjoin(shots, into: key) { thumbnail.showCopied([Screenshot(key: key)]) }
     }
 
     // MARK: Drawings
@@ -467,7 +468,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     lazy var drawings = Drawings(store: DrawingStore(directory: Identity.applicationSupportURL.appendingPathComponent("drawings")))
 
     /// What Vignette puts into the screenshots folder and takes out of it. See FolderWrites.
-    private lazy var folderWrites: FolderWrites = {
+    lazy var folderWrites: FolderWrites = {
         let writes = FolderWrites()
         writes.callbacks = FolderWrites.Callbacks(
             folder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
@@ -528,10 +529,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         guard !shots.isEmpty else { Commands.error("open", .missingFile, "nothing selected"); return }
         for shot in shots { NSWorkspace.shared.open(shot.url) }
         Commands.ok("open", shots.map(\.url.lastPathComponent).joined(separator: ", "))
-    }
-
-    func moveToTrash(_ shots: [Screenshot]) {
-        folderWrites.trash(shots)
     }
 
     /// Copy Drawing: each card's drawing as it is now, rendered and written beside its screenshot,

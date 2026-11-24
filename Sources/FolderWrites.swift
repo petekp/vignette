@@ -8,37 +8,6 @@ import Foundation
 final class FolderWrites {
     typealias Rename = (from: ScreenshotKey, to: ScreenshotKey)
 
-    struct Callbacks {
-        /// The watch folder, as AppDelegate reads it from the settings.
-        var folder: () -> URL = { FileManager.default.temporaryDirectory }
-        /// Shows an added file's card, or opens it in the editor when `annotate` (AppDelegate.present).
-        var present: (Screenshot, _ annotate: Bool) -> Void = { _, _ in }
-        /// Shows a published reply's card. A reply never goes through `present`, which treats a file as a capture.
-        var showCard: (Screenshot) -> Void = { _ in }
-        /// Agents' marks joining the screenshot's drawing; answers with how many joined.
-        var joinMarks: ([AgentMark], _ agent: String?, ScreenshotKey, @escaping (Result<Int, Drawings.Failure>) -> Void) -> Void = { _, _, _, done in
-            done(.failure(Drawings.Failure(code: .writeFailed, description: "nothing stores drawings")))
-        }
-        /// A screenshot's drawing as the editor would open it.
-        var storedDrawing: (ScreenshotKey) -> Drawing? = { _ in nil }
-        var removeCards: ([Screenshot]) -> Void = { _ in }
-        var removeDrawings: ([ScreenshotKey], _ observedAt: TimeInterval) -> Void = { _, _ in }
-        var fileRemoved: (Screenshot) -> Void = { _ in }
-        /// Files renamed inside the folder: their cards keep their place and selection and take the new file.
-        var renameCards: ([Rename]) -> Void = { _ in }
-        /// Files renamed inside the folder: their stored drawings, and the one open in the editor, follow.
-        var renameDrawings: ([Rename]) -> Void = { _ in }
-        /// Files renamed inside the folder: the request and reply records that name them follow.
-        var renameRequests: ([Rename]) -> Void = { _ in }
-        /// ScreenshotRequests.isVisible: whether every listing shows a file by that name.
-        var isVisible: (URL) -> Bool = { _ in true }
-        /// Drawings.sweep: removes the drawings of files a listing confirms absent.
-        var sweepDrawings: (ScreenshotWatcher.Inventory) -> Void = { _ in }
-        /// ScreenshotRequests.reconcile: marks published replies a listing confirms absent as removed.
-        var reconcileRequests: (ScreenshotWatcher.Inventory) -> Void = { _ in }
-        var rescan: (_ reason: String) -> Void = { _ in }
-    }
-
     /// What `add` still owes a file it put in the watch folder, by its key. The watcher reports
     /// the file like a capture; this is what makes that report skip the capture toggles.
     private struct PendingAdd {
@@ -51,18 +20,28 @@ final class FolderWrites {
         var waiting: Screenshot?
     }
 
+    /// A file `trash` moved to the Trash: where it was, and where the Trash put it.
+    struct Trashed {
+        let shot: Screenshot
+        let inTrash: URL
+    }
+
     var callbacks = Callbacks()
     private var pendingAdds: [ScreenshotKey: PendingAdd] = [:]
+    /// Files `putBack` returned to the folder whose watcher report is still to come. Their cards are
+    /// already back in place, so the report is neither a capture nor a new card.
+    private var pendingPutBacks: Set<ScreenshotKey> = []
     /// When the app last put a file in the folder. A listing observed before it may not hold that
     /// file yet, so the removals it reports wait for a newer one.
     private var writtenAt: TimeInterval = 0
     private var deferredRemovals: Set<ScreenshotKey> = []
     private var deferredRenames: [Rename] = []
-    /// Moves a file to the Trash; a test passes its own, so it never reaches the person's Trash.
-    private let trashItem: (URL) throws -> Void
+    /// Moves a file to the Trash and answers where it went; a test passes its own, so it never
+    /// reaches the person's Trash.
+    private let trashItem: (URL) throws -> URL
     private let now: () -> TimeInterval
 
-    init(trash: @escaping (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) },
+    init(trash: @escaping (URL) throws -> URL = FolderWrites.moveToTrash,
          now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.trashItem = trash
         self.now = now
@@ -158,8 +137,10 @@ final class FolderWrites {
         if agentsDrawing { Agent.record(sentDrawing: callbacks.storedDrawing(key), on: url) } else { Agent.forgetSentDrawing(on: url) }
     }
 
-    /// The watcher reported `key`. True when it is a file `add` is waiting for, so it is not a capture.
+    /// The watcher reported `key`. True when it is a file `add` is waiting for or one `putBack`
+    /// returned, so it is not a capture.
     func arrived(_ key: ScreenshotKey) -> Bool {
+        if pendingPutBacks.remove(key) != nil { return true }
         guard pendingAdds[key] != nil else { return false }
         pendingAdds[key]?.waiting = Screenshot(key: key)
         presentAdd(key)   // waits when the push's marks are still joining its drawing
@@ -256,20 +237,52 @@ final class FolderWrites {
 
     // MARK: Removals
 
-    func trash(_ shots: [Screenshot]) {
-        var trashed: [Screenshot] = []
+    nonisolated static func moveToTrash(_ url: URL) throws -> URL {
+        var inTrash: NSURL?
+        try FileManager.default.trashItem(at: url, resultingItemURL: &inTrash)
+        guard let inTrash else { throw CocoaError(.fileNoSuchFile) }
+        return inTrash as URL
+    }
+
+    /// Moves the files to the Trash, and answers the ones that went with where each went.
+    @discardableResult
+    func trash(_ shots: [Screenshot]) -> [Trashed] {
+        var trashed: [Trashed] = []
         var failed: [String] = []
         for shot in shots {
             do {
-                try trashItem(shot.url)
-                trashed.append(shot)
+                trashed.append(Trashed(shot: shot, inTrash: try trashItem(shot.url)))
             } catch {
                 failed.append("\(shot.url.lastPathComponent): \(error.localizedDescription)")
             }
         }
-        if !trashed.isEmpty { left(trashed, observedAt: .infinity) }
-        if failed.isEmpty { Commands.ok("trash", trashed.map(\.url.lastPathComponent).joined(separator: ", ")) }
+        if !trashed.isEmpty { left(trashed.map(\.shot), observedAt: .infinity) }
+        if failed.isEmpty { Commands.ok("trash", trashed.map(\.shot.url.lastPathComponent).joined(separator: ", ")) }
         else { Commands.error("trash", .writeFailed, "\(failed.joined(separator: "; ")); trashed \(trashed.count) of \(shots.count)") }
+        return trashed
+    }
+
+    /// Moves files `trash` moved to the Trash back to where they were. A file
+    /// no longer in the Trash, or whose name in the folder is taken, stays where it is. Answers the
+    /// files that came back, and why each other one did not.
+    func putBack(_ trashed: [Trashed]) -> (back: [Screenshot], failed: [String]) {
+        var back: [Screenshot] = []
+        var failed: [String] = []
+        for item in trashed {
+            let name = item.shot.url.lastPathComponent
+            guard !FileManager.default.fileExists(atPath: item.shot.url.path) else {
+                failed.append("\(name): a file by that name is in the folder"); continue
+            }
+            do {
+                try FileManager.default.moveItem(at: item.inTrash, to: item.shot.url)
+            } catch {
+                failed.append("\(name): \(error.localizedDescription)"); continue
+            }
+            pendingPutBacks.insert(item.shot.key)
+            writtenAt = now()
+            back.append(item.shot)
+        }
+        return (back, failed)
     }
 
     /// The watcher's report that `keys` left the folder, from `inventory`.
@@ -338,6 +351,7 @@ final class FolderWrites {
 
     /// Files gone from the folder: their cards, their drawings and any reply records go with them.
     private func left(_ shots: [Screenshot], observedAt: TimeInterval) {
+        for shot in shots { pendingPutBacks.remove(shot.key) }
         callbacks.removeCards(shots)
         callbacks.removeDrawings(shots.map(\.key), observedAt)
         for shot in shots { callbacks.fileRemoved(shot) }
