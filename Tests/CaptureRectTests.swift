@@ -115,6 +115,13 @@ final class CaptureRectTests: XCTestCase {
                        [CaptureRect.Owner(app: "com.openai.codex", share: 1)], "a window behind shows nowhere")
     }
 
+    func testTheLogNamesAtMostThreeAppsByShareOrSaysWhyThereAreNone() {
+        let owners = [("a", 0.5), ("b", 0.25), ("c", 0.125), ("d", 0.125)].map { CaptureRect.Owner(app: $0.0, share: $0.1) }
+        XCTAssertEqual(CaptureRect.logged(owners), "a:50%,b:25%,c:13%")
+        XCTAssertEqual(CaptureRect.logged([]), "none")
+        XCTAssertEqual(CaptureRect.logged(nil), "unlocated")
+    }
+
     func testTheDesktopCountsForNobody() {
         XCTAssertEqual(CaptureRect.owners(of: CGRect(x: 800, y: 0, width: 400, height: 400), kind: .display, windows: [codex]),
                        [CaptureRect.Owner(app: "com.openai.codex", share: 1)])

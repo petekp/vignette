@@ -63,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     let settings = Settings.shared
     private var watchFolder: URL { settings.data.folderURL }
     /// One map, so Send submits through the same connections it lists.
-    private static let connections: [AgentClient: any AgentConnection] = [.claude: ClaudeCodeConnection(), .codex: CodexConnection()]
+    static let connections: [AgentClient: any AgentConnection] = [.claude: ClaudeCodeConnection(), .codex: CodexConnection()]
     /// Sending drawings to agent sessions and taking their drawings back. See ScreenshotRequests.
     let requests = ScreenshotRequests(root: ScreenshotRequests.defaultRoot, connections: AppDelegate.connections)
     /// The agent sessions Send can go to. See SessionListing.
@@ -452,7 +452,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Commands.error("stitch", .unreadableImage, "only \(composed.pieces) of \(shots.count) images could be read"); return
         }
         let stamp = DateFormatter(); stamp.dateFormat = "yyyy-MM-dd 'at' h.mm.ss a"
-        let key: ScreenshotKey, name = "Stitch \(stamp.string(from: Date())).png"
+        let key: ScreenshotKey, name = "\(Self.stitchNamePrefix)\(stamp.string(from: Date())).png"
         do { key = try folderWrites.writeStitch(composed.png, in: watchFolder, as: name) } catch { Commands.error("stitch", .writeFailed, "\(name): \(error.localizedDescription)"); return }
         Clipboard.copyFiles([key.url])
         // readerScale is what a vision model's resize leaves of the composition; see Stitch.swift.
@@ -471,7 +471,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         let writes = FolderWrites()
         writes.callbacks = FolderWrites.Callbacks(
             folder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
-            present: { [weak self] shot, annotate in self?.present(shot, annotate: annotate) },
+            present: { [weak self] shot, annotate in self?.present(shot, annotate: annotate, from: annotate ? self?.capturedRect(of: shot) : nil) },
             showCard: { [weak self] in self?.thumbnail.show($0) },
             joinMarks: { [weak self] marks, agent, key, done in
                 guard let self else { return }
@@ -1167,13 +1167,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         requests.load(clearingUnsent: clearingUnsent)
     }
 
-    private func present(_ shot: Screenshot, annotate: Bool) {
+    private func present(_ shot: Screenshot, annotate: Bool, from origin: NSRect?) {
         guard annotate, shot.kind == .image else { return thumbnail.show(shot) }
-        // A capture flies into the editor from where it was taken, when Vignette saw where.
-        var origin: NSRect?
-        if case .read(let header) = Thumbnailer.lookUp(shot.url), let pixels = header.pixels {
-            origin = captureOrigin?.rect(of: shot.url, pixels: pixels)
-        }
         self.annotate([shot], from: origin)
     }
 
@@ -1226,7 +1221,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 Clipboard.copyFiles([url])
                 Log.write("[watcher] copied \(url.lastPathComponent)")
             }
-            self.present(shot, annotate: self.settings.data.annotateOnCapture)
+            let origin = self.capturedRect(of: shot), annotate = self.settings.data.annotateOnCapture
+            self.logClues(of: shot)
+            self.present(shot, annotate: annotate, from: annotate ? origin : nil)
         }, onRemoved: { [weak self] keys, inventory in
             guard let self, self.watcherGeneration == generation else { return }
             self.folderWrites.removed(keys, in: inventory)

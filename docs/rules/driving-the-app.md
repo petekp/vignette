@@ -87,6 +87,8 @@
    with `date=YYYY-MM-DD`; at 5 MB the file rotates to `Vignette.log.1`, replacing the previous
    one. Drawing events: `[drawing] saved|parked|built|removed|swept|dropped <file>`, and
    `[drawings] <n>` after every change to the set.
+   `[capture] clues <file> apps=… herdr=… focus=… project=…` follows each new screenshot the person took:
+   the apps its windows showed and Herdr's focused pane at that moment (`docs/rules/capture.md`).
    `[stack] shown cards=… files=… listed=…ms shown=…ms decoding=…` counts the watch folder from
    the watcher's index, and times the listing and then the cards' presentation.
 
