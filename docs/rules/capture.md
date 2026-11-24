@@ -37,6 +37,17 @@
   scenario drives it with `screencapture -i`. Once the rect is found, `CaptureOrigin` also reads
   which apps' windows the capture showed (`CaptureRect.owners`) and keeps them for Send, which
   takes them once for that file within 30 s (`windows(of:)`, `docs/rules/annotator-toolbar.md`).
+  Every new image the person took, whether or not `annotateOnCapture` is on, asks `CaptureOrigin`
+  once where it was taken, and logs the two clues a project label could be read from:
+  `[capture] clues <file> apps=<app>:<share>%,… herdr=<pane>/<session or none> focus=<pane|tab|none> project=<repository or folder, or none>`.
+  `apps` is the three largest by share (`none` when no window was under the capture, `unlocated`
+  when Vignette did not see where it was taken), as bundle ids with no window title. The Herdr part is read off the main thread
+  with the same focus and pick as Send's target (`HerdrFocus.clue`, `DestinationChoice`): the focused pane,
+  the Claude Code session in it or, for a pane that runs none, the one in its tab, and that session's repository, or its folder
+  when it has none. A Codex pane, a tab with two agents or no Herdr logs `none`. A focus that cannot be read logs
+  `herdr=unread:<reason with its spaces as hyphens>`, with no session listing. A test launch reads no Herdr unless
+  `VIGNETTE_HERDR_APP` and `VIGNETTE_HC` name one, so it logs `herdr=unread:no-herdr-app-or-hc`. The line comes after
+  the `[origin]` line, once Herdr answers. An agent's file, a Stitch, a drawing's output and a recording log none.
 - The status item has an autosave name and a seeded preferred position. AppKit keeps the position
   in the app's standard defaults under that name, so a test launch whose data moved uses
   `<bundle id>.test-launch` (`Identity.statusItemAutosaveName`) and never moves the person's own icon. Without it, a crowded

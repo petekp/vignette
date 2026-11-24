@@ -140,6 +140,15 @@ enum CaptureRect {
         }.map(\.element)
     }
 
+    /// How the log names the apps a capture showed: the three largest as `app:share%`, the largest
+    /// first, `none` when no window was under it, and `unlocated` when Vignette did not see where it
+    /// was taken (nil). Only bundle ids and shares, never a window's title.
+    static func logged(_ owners: [Owner]?) -> String {
+        guard let owners else { return "unlocated" }
+        guard !owners.isEmpty else { return "none" }
+        return owners.prefix(3).map { "\($0.app):\(Int(($0.share * 100).rounded()))%" }.joined(separator: ",")
+    }
+
     private static func near(_ a: CGRect, _ b: CGRect) -> Bool {
         abs(a.minX - b.minX) <= 1 && abs(a.minY - b.minY) <= 1 && abs(a.width - b.width) <= 1 && abs(a.height - b.height) <= 1
     }
@@ -237,6 +246,12 @@ final class CaptureOrigin {
         shown = (url, CaptureRect.owners(of: found.rect, kind: found.kind, windows: Self.windowsOnScreen()), Date())
         Log.write("[origin] \(found.kind.rawValue) \(name) \(StateReport.topLeft(found.rect, primaryHeight: StateReport.primaryHeight)) from=\(source)")
         return found.rect
+    }
+
+    /// The apps whose windows the capture of `url` showed, without taking them, for the log.
+    func owners(of url: URL) -> [CaptureRect.Owner]? {
+        guard let shown, shown.file.path == url.path else { return nil }
+        return shown.owners
     }
 
     /// The apps whose windows the capture of `url` showed, once: a later opening of the same file,

@@ -88,7 +88,19 @@ struct HerdrFocus: Equatable, Sendable {
                      converse: @escaping @Sendable (String, [String], [String], TimeInterval) -> [String] = {
                          AppServer.converse($0, $1, $2, timeout: $3)
                      }) -> HerdrFocus? {
-        guard let app = app(), let core = core() else { return nil }
+        try? readReporting(app: app, core: core, run: run, converse: converse).get()
+    }
+
+    /// `read`, with the reason when there is no focus. Without the Herdr app or `hc` the reason is
+    /// `noHerdr`, which is not logged as `[herdr] no focus`.
+    static func readReporting(app: () -> String? = { appToRun() }, core: () -> String? = { coreToRun() },
+                              run: @escaping @Sendable (String, [String], TimeInterval) -> Answer? = {
+                                  Subprocess.run($0, $1, timeout: $2, includingErrors: false)
+                              },
+                              converse: @escaping @Sendable (String, [String], [String], TimeInterval) -> [String] = {
+                                  AppServer.converse($0, $1, $2, timeout: $3)
+                              }) -> Result<HerdrFocus, Unread> {
+        guard let app = app(), let core = core() else { return .failure(noHerdr) }
         let answers = OSAllocatedUnfairLock(initialState: (status: Answer?.none, ls: Answer?.none, terminals: [String]()))
         DispatchQueue.concurrentPerform(iterations: 3) { index in
             switch index {
@@ -98,17 +110,17 @@ struct HerdrFocus: Equatable, Sendable {
             }
         }
         let (status, ls, terminals) = answers.withLock { ($0.status, $0.ls, $0.terminals) }
-        switch reading(status: status, ls: ls, terminals: terminals) {
-        case .success(let focus):
-            note(nil)
-            return focus
-        case .failure(let unread):
-            note(unread.reason)
-            return nil
+        let result = reading(status: status, ls: ls, terminals: terminals)
+        switch result {
+        case .success: note(nil)
+        case .failure(let unread): note(unread.reason)
         }
+        return result
     }
 
     struct Unread: Error, Equatable { let reason: String }
+
+    static let noHerdr = Unread(reason: "no herdr-app or hc")
 
     /// The focus from the three answers, or why there is none. The focused terminal is the one in
     /// the focused pane, or else the one whose inbox mod panel has the focus. A pane that is neither,
@@ -218,5 +230,60 @@ struct HerdrFocus: Equatable, Sendable {
         }
         guard changed else { return }
         Log.write(reason.map { "[herdr] no focus: \($0)" } ?? "[herdr] focus read again")
+    }
+}
+
+/// What Herdr's focus says when a screenshot is taken, for the `[capture] clues` log line. The session
+/// is the one Send would start on for this focus (`DestinationChoice`), so it is never guessed from
+/// the screen: nothing read from the picture or from a window title is part of it.
+extension HerdrFocus {
+    struct CaptureClue: Equatable {
+        let pane: String
+        /// The Claude Code session in the focused pane, or the one in its tab when the pane runs none.
+        let session: String?
+        /// `pane` or `tab` when there is a session, else nil.
+        let focus: AgentDestination.Focus?
+        /// The session's repository, or its folder when it has none.
+        let project: String?
+    }
+
+    /// The clue from `read`'s focus and `listing`'s Claude Code sessions, or why there is none. It
+    /// lists the sessions only once the focus is read, so a launch that runs no Herdr runs no listing.
+    /// It blocks on subprocesses, so it never runs on the main thread.
+    static func clue(read: () -> Result<HerdrFocus, Unread> = { readReporting() },
+                     listing: () -> [AgentDestination]) -> Result<CaptureClue, Unread> {
+        switch read() {
+        case .failure(let unread):
+            return .failure(unread)
+        case .success(let focus):
+            let listed = listing()
+            let candidates = DestinationChoice.Candidates(destinations: listed, complete: true, fresh: true,
+                                                          herdr: focus.sessions(from: listed))
+            let answer = DestinationChoice.choose(candidates, for: .send(cameFrom: nil))
+            let focused = answer.list.first { $0.focus == .pane || $0.focus == .tab }
+            return .success(CaptureClue(pane: focus.pane, session: focused?.id, focus: focused?.focus,
+                                        project: focused.flatMap { projectName($0.place) }))
+        }
+    }
+
+    private static func projectName(_ place: Place) -> String? {
+        switch place {
+        case .repository(let name, _, _, _): return name
+        case .folder(let path): return path
+        case .none: return nil
+        }
+    }
+
+    /// The line's Herdr part: `herdr=<pane>/<session or none> focus=<pane|tab|none> project=<name or none>`,
+    /// or `herdr=unread:<reason> focus=none project=none`. The reason is one word, so the line stays
+    /// `key=value` pairs.
+    static func logged(_ clue: Result<CaptureClue, Unread>) -> String {
+        switch clue {
+        case .success(let clue):
+            return "herdr=\(clue.pane)/\(clue.session ?? "none") focus=\(clue.focus?.rawValue ?? "none") project=\(clue.project ?? "none")"
+        case .failure(let unread):
+            let word = unread.reason.split(whereSeparator: \.isWhitespace).joined(separator: "-").prefix(60)
+            return "herdr=unread:\(word) focus=none project=none"
+        }
     }
 }
