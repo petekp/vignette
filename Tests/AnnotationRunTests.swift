@@ -72,6 +72,15 @@ final class AnnotationRunTests: XCTestCase {
         XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .endRun(.back)])
     }
 
+    func testUndoingTheOpeningEndsTheRunWithNoHandSoTheKeysStayWithTheStack() {
+        var r = R()
+        _ = reduce(&r, .annotate(["a", "b"])); _ = shown(&r)
+        XCTAssertEqual(reduce(&r, .undo), [.park(o("a", 1))])
+        XCTAssertEqual(r.queue, [])
+        XCTAssertEqual(parked(&r), [.returnCard(o("a", 1), copied: false), .endRun(nil)])
+        XCTAssertEqual(R.closeReason(of: .undo, open: "a"), "undo")
+    }
+
     func testACancelDuringASwapsParkClosesInsteadOfOpeningTheNextImage() {
         var r = R()
         _ = reduce(&r, .annotate(["a"])); _ = shown(&r)

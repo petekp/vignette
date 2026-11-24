@@ -1,59 +1,56 @@
 import AppKit
 
-/// Cmd+Z in the stack: undoes what Vignette last did to a screenshot, and Shift+Cmd+Z redoes it, as
-/// Finder's Undo does. Two actions make a step. Delete's files come back from the Trash with their
-/// drawings, and their cards come back where they were. Stitch's file goes to the Trash, and the
-/// cards it took out of the column come back. The steps last while the app runs, through the stack
-/// closing and opening again. A step whose file has moved since is used up with a beep and a log
-/// line, as Finder uses one up with an alert.
-///
-/// The steps are an `UndoManager`'s, the stack panel's own (`ThumbnailPanel.undoManager`), so the
-/// Edit menu's items name the step while the stack has the keys.
+/// The undo timeline: Cmd+Z undoes the last thing Vignette did to a screenshot, in the stack or in
+/// the annotator, and Shift+Cmd+Z redoes it, as Finder's Undo does. Delete's files come back from
+/// the Trash with their drawings, and their cards come back where they were. Stitch's file goes to
+/// the Trash, and the cards it took out of the column come back. Opening a screenshot in the
+/// annotator and closing it are steps too: undoing a close opens it again, with its history, and
+/// undoing an opening closes it. While a screenshot is in the editor, Cmd+Z undoes the editor's own
+/// steps back to where this opening began (`EditorHistory`), and the next one goes on through the
+/// timeline. The steps last while the app runs, through the stack closing and opening again. A step
+/// whose file has moved since is used up with a beep and a log line, as Finder uses one up with an
+/// alert.
 @MainActor
-final class StackUndo: NSObject {
-    /// What a step does to the watch folder: `FolderWrites` in the app.
-    struct Files {
-        var trash: ([Screenshot]) -> [FolderWrites.Trashed] = { _ in [] }
-        var putBack: ([FolderWrites.Trashed]) -> (back: [Screenshot], failed: [String]) = { _ in ([], []) }
-        var exists: (Screenshot) -> Bool = { FileManager.default.fileExists(atPath: $0.url.path) }
-        /// A screenshot's drawing as it is now, which the Trash does not keep.
-        var drawing: (Screenshot) -> Drawing? = { _ in nil }
-        /// Writes a drawing back for a screenshot put back in the folder.
-        var restore: (Drawing) -> Void = { _ in }
-    }
-
-    /// What a step does to the open stack: `ThumbnailController` in the app.
-    struct Cards {
-        /// The files the open stack shows, newest first, or none when it is closed.
-        var column: () -> [ScreenshotKey] = { [] }
-        /// Puts the cards of files back in the open stack, each where it was in `column`.
-        var putBack: ([Screenshot], _ column: [ScreenshotKey]) -> Void = { _, _ in }
-        /// Takes the cards of files out of the open stack, leaving the files where they are.
-        var takeOut: ([Screenshot]) -> Void = { _ in }
-    }
-
-    /// A step's name in the Edit menu, in Finder's words where Finder has the action.
-    enum Name: String {
-        case moveToTrash = "Move to Trash"
-        case stitch = "Stitch"
-    }
-
-    let manager = UndoManager()
+final class StackUndo {
     var files = Files()
     var cards = Cards()
+    var editor = Editor()
     private let beep: () -> Void
     /// Tells VoiceOver what an Undo or a Redo just did, in the Edit menu's words.
     var announce: (String) -> Void = { _ in }
+    /// Oldest first: Cmd+Z runs the last.
+    private var undoSteps: [Step] = []
+    /// Oldest first: Shift+Cmd+Z runs the last.
+    private var redoSteps: [Step] = []
+    /// The step an Undo or a Redo is running.
+    private var running: (step: Step, redoing: Bool)?
+    /// How many steps each screenshot's history held to undo when it last left the editor. A file
+    /// keeps at most `EditorHistory.maxSteps`, dropping the oldest, so one that opens with fewer
+    /// moves every depth recorded for it down by as many.
+    private var leftAt: [ScreenshotKey: Int] = [:]
     /// The step that just ran could not, so there is nothing to announce.
     private var refused = false
     /// The name each file had when a step recorded it, to its name now, for the files Finder or
     /// another app renamed in the folder since.
     private var renamed: [ScreenshotKey: ScreenshotKey] = [:]
+    /// The screenshot the run took out of the editor, until it opens the next one, which makes the
+    /// two one step, or ends, which makes it a close.
+    private var leaving: Shown?
+    /// The editor's steps when the timeline last looked. A change since is a new step of the
+    /// editor's, which ends what the timeline could redo.
+    private var seen: EditorPlace?
+    /// What an Undo or a Redo asked the annotator for, until the run has done it: that is the step
+    /// running, not a new one.
+    private var asked: Asked?
+    private enum Asked: Equatable { case open(ScreenshotKey), close }
+    /// The screenshot the timeline saw open in the editor, until the run takes it out.
+    private var inEditor: ScreenshotKey?
+    /// The annotator is still carrying out an opening or a close, as behind a zoom springing back to
+    /// the fit, and the timeline's next step is not known yet.
+    private var busy: Bool { asked != nil || leaving != nil }
 
     init(beep: @escaping () -> Void = { NSSound.beep() }) {
         self.beep = beep
-        super.init()
-        manager.groupsByEvent = false
     }
 
     // MARK: Steps
@@ -63,22 +60,22 @@ final class StackUndo: NSObject {
         let column = cards.column()
         let trashed = moveToTrash(shots)
         guard !trashed.isEmpty else {
-            if manager.isRedoing { refuse(.moveToTrash, "none of \(names(shots)) is in the folder") }
+            if redoing { refuse(.moveToTrash, "none of \(names(shots)) is in the folder") }
             return
         }
-        if manager.isRedoing { Log.write("[undo] redid \(Name.moveToTrash.rawValue): \(names(trashed.map(\.file.shot)))") }
-        record(.moveToTrash, PutBack(trashed: trashed, column: column))
+        if redoing { Log.write("[undo] redid \(Name.moveToTrash.rawValue): \(names(trashed.map(\.file.shot)))") }
+        record(.moveToTrash, .putBack(trashed: trashed, column: column))
     }
 
     /// A stitch was written. `takenOut` are the pieces whose cards it took out of the column, and
     /// `column` the stack as it was before.
     func stitched(_ stitch: Screenshot, takenOut: [Screenshot], column: [ScreenshotKey]) {
-        record(.stitch, Unstitch(stitch: stitch, pieces: takenOut, column: column))
+        record(.stitch, .unstitch(stitch: stitch, pieces: takenOut, column: column))
     }
 
     /// Files renamed in the folder: the steps that name them follow.
     func rename(_ pairs: [(from: ScreenshotKey, to: ScreenshotKey)]) {
-        guard manager.canUndo || manager.canRedo else {
+        guard !undoSteps.isEmpty || !redoSteps.isEmpty else {
             renamed = [:]
             return
         }
@@ -88,119 +85,265 @@ final class StackUndo: NSObject {
         }
     }
 
+    // MARK: The annotator
+
+    /// The run took `key` out of the editor, by a park or an abandon. The editor keeps the history
+    /// it parked, with a text being typed ended, until it opens the next screenshot.
+    func editorLeft(_ key: ScreenshotKey) {
+        guard let inEditor, current(inEditor) == key else { return }
+        self.inEditor = nil
+        let depth = editor.depth()
+        leftAt[key] = depth
+        guard asked == nil else { return }
+        leaving = Shown(key: key, depth: depth, file: files.identity(Screenshot(key: key)))
+    }
+
+    /// The run opened `key` in the editor. After another screenshot left it, the two are one step.
+    func editorOpened(_ key: ScreenshotKey) {
+        guard let open = editor.open(), open.key == key else { return }
+        inEditor = key
+        // Agents' marks join a closed screenshot's history on top, which leaves the depths below.
+        if let (recorded, depth) = leftAt.first(where: { current($0.key) == key }) {
+            leftAt[recorded] = nil
+            if open.undo < depth { rebase(key, by: open.undo - depth) }
+        }
+        // An image whose file left the folder as it closed went with the step that took the file.
+        let before = leaving.flatMap { files.exists(Screenshot(key: current($0.key))) ? $0 : nil }
+        leaving = nil
+        seen = open
+        if let asked {
+            self.asked = nil
+            if asked == .open(key) { return }
+        }
+        push(Step(name: .openDrawing, action: .draw, editor: shown(open), then: before))
+    }
+
+    /// The annotation run is over. A screenshot it took out of the editor was closed, unless its file
+    /// has left the folder, since the step that took the file away closed it.
+    func editorEnded() {
+        defer {
+            leaving = nil
+            seen = nil
+            asked = nil
+            inEditor = nil
+        }
+        guard asked == nil, let left = leaving, files.exists(Screenshot(key: current(left.key))) else { return }
+        push(Step(name: .closeDrawing, action: .draw, editor: nil, then: left))
+    }
+
     // MARK: Keys and menu
 
     /// Cmd+Z. With nothing to undo, it beeps, as a disabled menu item's shortcut does.
-    func undo() {
-        guard manager.canUndo else { return beep() }
-        let words = manager.undoMenuItemTitle
-        refused = false
-        manager.undo()
-        if !refused { announce(words) }
-    }
+    func undo() { walk(redo: false) }
 
     /// Shift+Cmd+Z.
-    func redo() {
-        guard manager.canRedo else { return beep() }
-        let words = manager.redoMenuItemTitle
-        refused = false
-        manager.redo()
-        if !refused { announce(words) }
-    }
+    func redo() { walk(redo: true) }
 
-    /// The Edit menu's title for `undo:` or `redo:`, naming the step that would run.
-    func menuTitle(for action: Selector?) -> String? {
-        switch action {
-        case Self.undoAction: return manager.canUndo ? manager.undoMenuItemTitle : "Undo"
-        case Self.redoAction: return manager.canRedo ? manager.redoMenuItemTitle : "Redo"
-        default: return nil
+    /// Cmd+Z, or with `redo` Shift+Cmd+Z. A key held down repeats only the editor's own steps, so
+    /// one press never runs past an opening, a close or a step of the stack's.
+    func walk(redo: Bool, repeated: Bool = false) {
+        guard !busy else { return repeated ? () : beep() }
+        look()
+        switch next(redo: redo) {
+        case .editor:
+            editor.step(redo)
+            seen = editor.open()
+        case .step(let step):
+            guard !repeated else { return }
+            let open = editor.open()
+            if redo { take(&redoSteps, open) } else { take(&undoSteps, open) }
+            refused = false
+            running = (step, redo)
+            run(step)
+            running = nil
+            if !refused { announce(Self.title(step.name, redo: redo)) }
+        case .nothing:
+            if !repeated { beep() }
         }
     }
 
-    func canRun(_ action: Selector?) -> Bool {
-        action == Self.undoAction ? manager.canUndo : action == Self.redoAction ? manager.canRedo : false
+    /// What Undo, or with `redo` Redo, would do now, in the Edit menu's words, and whether it can.
+    func title(redo: Bool) -> (title: String, enabled: Bool) {
+        guard !busy else { return (redo ? "Redo" : "Undo", false) }
+        switch next(redo: redo) {
+        case .editor: return (editor.title(redo), true)
+        case .step(let step): return (Self.title(step.name, redo: redo), true)
+        case .nothing: return (redo ? "Redo" : "Undo", false)
+        }
     }
 
-    static let undoAction = #selector(ThumbnailPanel.undo(_:))
-    static let redoAction = #selector(ThumbnailPanel.redo(_:))
+    private static func title(_ name: Name, redo: Bool) -> String { "\(redo ? "Redo" : "Undo") \(name.rawValue)" }
 
-    /// Where a card for `key` goes among the cards `now`, newest first, given the column it was in:
-    /// before the first older card still there, else after the first newer one.
-    static func place(of key: ScreenshotKey, in column: [ScreenshotKey], among now: [ScreenshotKey]) -> Int {
-        guard let was = column.firstIndex(of: key) else { return 0 }
-        if let older = column[(was + 1)...].first(where: now.contains), let index = now.firstIndex(of: older) { return index }
-        if let newer = column[..<was].reversed().first(where: now.contains), let index = now.firstIndex(of: newer) { return index + 1 }
-        return min(was, now.count)
+    // MARK: Walking the timeline
+
+    /// One step, as it waits to be undone or redone. `editor` is what the editor shows while this
+    /// is the next step, and `then` what it shows once the step has run. A step of the stack's
+    /// leaves the editor as it was, so the two are the same.
+    private struct Step {
+        let name: Name
+        let action: Action
+        let editor: Shown?
+        let then: Shown?
     }
 
-    // MARK: Running a step
+    /// What a step does when it runs.
+    private enum Action {
+        case putBack(trashed: [Gone], column: [ScreenshotKey])
+        case trashAgain([Screenshot])
+        case unstitch(stitch: Screenshot, pieces: [Screenshot], column: [ScreenshotKey])
+        case restitch(trashed: Gone, pieces: [Screenshot], column: [ScreenshotKey])
+        /// Opens, closes or swaps the screenshot in the annotator, to what `then` says.
+        case draw
+    }
 
-    /// What a step will do when it runs. Its values are a class so the undo manager can hold one
-    /// without a closure.
-    private class Step: NSObject {}
-
-    /// A file a step moved to the Trash, with its drawing as it was then.
+    /// A file a step moved to the Trash, with its drawing, message and history as they were then.
     private struct Gone {
         let file: FolderWrites.Trashed
-        let drawing: Drawing?
+        let saved: Drawings.Saved?
     }
 
-    private final class PutBack: Step {
-        let trashed: [Gone], column: [ScreenshotKey]
-        init(trashed: [Gone], column: [ScreenshotKey]) { (self.trashed, self.column) = (trashed, column) }
+    private enum Next {
+        case editor
+        case step(Step)
+        case nothing
     }
 
-    private final class TrashAgain: Step {
-        let shots: [Screenshot]
-        init(shots: [Screenshot]) { self.shots = shots }
-    }
-
-    private final class Unstitch: Step {
-        let stitch: Screenshot, pieces: [Screenshot], column: [ScreenshotKey]
-        init(stitch: Screenshot, pieces: [Screenshot], column: [ScreenshotKey]) { (self.stitch, self.pieces, self.column) = (stitch, pieces, column) }
-    }
-
-    private final class Restitch: Step {
-        let trashed: Gone, pieces: [Screenshot], column: [ScreenshotKey]
-        init(trashed: Gone, pieces: [Screenshot], column: [ScreenshotKey]) {
-            (self.trashed, self.pieces, self.column) = (trashed, pieces, column)
+    /// What Cmd+Z, or with `redo` Shift+Cmd+Z, runs now. With a screenshot in the editor, its own
+    /// steps come first, as far as the timeline's next step left its history. Over lone thumbnails a
+    /// step that closes the annotator is out of reach, since nothing would have the keys after it.
+    private func next(redo: Bool) -> Next {
+        let open = editor.open()
+        let steps = redo ? (editorStepped ? [] : redoSteps) : undoSteps
+        let index = steps.lastIndex { !shows($0, open) }
+        let step = index.map { steps[$0] }
+        if let open {
+            var mark = step?.editor.flatMap { current($0.key) == open.key ? $0.depth : nil }
+            // With nothing older left in the timeline, as after a relaunch, the screenshot's stored
+            // steps are the oldest, so they come before its opening.
+            if !redo, let index, case .draw = steps[index].action, !steps[..<index].contains(where: { !shows($0, open) }) { mark = 0 }
+            if redo, open.redo > 0, open.undo < mark ?? .max { return .editor }
+            if !redo, open.undo > mark ?? 0 { return .editor }
+            if let step, case .draw = step.action, step.then == nil, !cards.isStack() { return .nothing }
         }
+        return step.map(Next.step) ?? .nothing
     }
 
-    /// One step, named. Outside an undo or a redo it is a new step of its own; inside one it is what
-    /// undoes that, which the manager files as the redo, or as the undo after a redo.
-    private func record(_ name: Name, _ step: Step) {
-        let opens = !manager.isUndoing && !manager.isRedoing
-        if opens { manager.beginUndoGrouping() }
-        manager.registerUndo(withTarget: self, selector: #selector(run(_:)), object: step)
-        manager.setActionName(name.rawValue)
-        if opens { manager.endUndoGrouping() }
+    /// An opening or a close whose result the editor already shows, as after the step above it was
+    /// used up, has nothing left to do: Cmd+Z passes over it.
+    private func shows(_ step: Step, _ open: EditorPlace?) -> Bool {
+        guard case .draw = step.action else { return false }
+        return open?.key == step.then.map { current($0.key) }
     }
 
-    @objc private func run(_ step: Step) {
-        switch step {
-        case let step as PutBack: putBack(step)
-        case let step as TrashAgain: trash(step.shots.map(current))
-        case let step as Unstitch: unstitch(step)
-        case let step as Restitch: restitch(step)
-        default: break
+    /// Takes off the step `next` chose, with the steps above it it passed over.
+    private func take(_ steps: inout [Step], _ open: EditorPlace?) {
+        while let last = steps.last, shows(last, open) { steps.removeLast() }
+        steps.removeLast()
+    }
+
+    /// The editor made a step since the timeline last looked, which ends what the timeline could redo.
+    private var editorStepped: Bool {
+        guard let open = editor.open(), let seen, current(seen.key) == open.key else { return false }
+        return (seen.undo, seen.redo) != (open.undo, open.redo)
+    }
+
+    private func look() {
+        if editorStepped { redoSteps = [] }
+        seen = editor.open()
+    }
+
+    /// Inside an Undo or a Redo, files the step that takes it back, on the other side. Outside one,
+    /// a new step, which ends what could be redone and leaves the editor as it is.
+    private func record(_ name: Name, _ action: Action) {
+        guard let running else {
+            let shown = editor.open().map(shown)
+            return push(Step(name: name, action: action, editor: shown, then: shown))
         }
+        let back = Step(name: name, action: action, editor: running.step.then, then: running.step.editor)
+        if running.redoing { undoSteps.append(back) } else { redoSteps.append(back) }
     }
 
-    private func putBack(_ step: PutBack) {
-        let (back, failed) = moveBack(step.trashed)
+    private func push(_ step: Step) {
+        undoSteps.append(step)
+        redoSteps = []
+    }
+
+    private func run(_ step: Step) {
+        switch step.action {
+        case .putBack(let trashed, let column): putBack(trashed, column: column)
+        case .trashAgain(let shots): trash(shots.map(current))
+        case .unstitch(let stitch, let pieces, let column): unstitch(stitch, pieces: pieces, column: column)
+        case .restitch(let trashed, let pieces, let column): restitch(trashed, pieces: pieces, column: column)
+        case .draw: return draw(step)
+        }
+        // A Delete that took the screenshot in the editor away brings it back there when undone.
+        guard !refused, let then = step.then, editor.open()?.key != current(then.key) else { return }
+        if let why = reopen(then) { log(step.name, "the editor", ["open \(current(then.key).name): \(why)"]) }
+    }
+
+    /// Opens the screenshot `step` leaves in the editor, or closes the one there.
+    private func draw(_ step: Step) {
+        let open = editor.open()
+        if let then = step.then {
+            let key = current(then.key)
+            if let why = reopen(then) { return refuse(step.name, why) }
+            log(step.name, "opened \(key.name)", [])
+        } else {
+            guard let open else { return refuse(step.name, "no screenshot is in the editor") }
+            asked = .close
+            guard cards.draw(nil) else {
+                asked = nil
+                return refuse(step.name, "\(open.key.name) can't close")
+            }
+            log(step.name, "closed \(open.key.name)", [])
+        }
+        record(step.name, .draw)
+    }
+
+    /// Asks the annotator to open `shown`'s screenshot. Answers why not when its file has moved or
+    /// changed since, or it can't open.
+    private func reopen(_ shown: Shown) -> String? {
+        let shot = Screenshot(key: current(shown.key))
+        guard files.exists(shot) else { return "\(shot.key.name) is not in the folder" }
+        guard shown.file == nil || files.identity(shot) == shown.file else { return "\(shot.key.name) has changed since" }
+        asked = .open(shot.key)
+        guard cards.draw(shot.key) else {
+            asked = nil
+            return "\(shot.key.name) can't open"
+        }
+        return nil
+    }
+
+    private func rebase(_ key: ScreenshotKey, by offset: Int) {
+        func moved(_ shown: Shown?) -> Shown? {
+            guard var shown, current(shown.key) == key else { return shown }
+            shown.depth = max(0, shown.depth + offset)
+            return shown
+        }
+        func moved(_ step: Step) -> Step { Step(name: step.name, action: step.action, editor: moved(step.editor), then: moved(step.then)) }
+        undoSteps = undoSteps.map(moved)
+        redoSteps = redoSteps.map(moved)
+        if let running { self.running = (moved(running.step), running.redoing) }
+    }
+
+    private func shown(_ place: EditorPlace) -> Shown {
+        Shown(key: place.key, depth: place.undo, file: files.identity(Screenshot(key: place.key)))
+    }
+
+    private func putBack(_ trashed: [Gone], column: [ScreenshotKey]) {
+        let (back, failed) = moveBack(trashed)
         guard !back.isEmpty else { return refuse(.moveToTrash, failed.joined(separator: "; ")) }
         log(.moveToTrash, "put back \(names(back))", failed)
-        cards.putBack(back, step.column.map(current))
-        record(.moveToTrash, TrashAgain(shots: back))
+        cards.putBack(back, column.map(current))
+        record(.moveToTrash, .trashAgain(back))
     }
 
     /// The pieces' cards come back first, so the column never empties and closes between the two.
-    private func unstitch(_ step: Unstitch) {
+    private func unstitch(_ recorded: Screenshot, pieces recordedPieces: [Screenshot], column recordedColumn: [ScreenshotKey]) {
         let column = cards.column()
-        let stitch = current(step.stitch)
-        let pieces = step.pieces.map(current).filter(files.exists)
-        if !pieces.isEmpty { cards.putBack(pieces, step.column.map(current)) }
+        let stitch = current(recorded)
+        let pieces = recordedPieces.map(current).filter(files.exists)
+        if !pieces.isEmpty { cards.putBack(pieces, recordedColumn.map(current)) }
         let trashed = files.exists(stitch) ? moveToTrash([stitch]) : []
         guard let inTrash = trashed.first else {
             guard !pieces.isEmpty else { return refuse(.stitch, "\(stitch.url.lastPathComponent) is not in the folder") }
@@ -208,33 +351,33 @@ final class StackUndo: NSObject {
             return
         }
         log(.stitch, "moved \(stitch.url.lastPathComponent) to the Trash" + (pieces.isEmpty ? "" : ", put back the cards of \(names(pieces))"), [])
-        record(.stitch, Restitch(trashed: inTrash, pieces: pieces, column: column))
+        record(.stitch, .restitch(trashed: inTrash, pieces: pieces, column: column))
     }
 
-    private func restitch(_ step: Restitch) {
+    private func restitch(_ trashed: Gone, pieces recordedPieces: [Screenshot], column recordedColumn: [ScreenshotKey]) {
         let column = cards.column()
-        let (back, failed) = moveBack([step.trashed])
+        let (back, failed) = moveBack([trashed])
         guard let stitch = back.first else { return refuse(.stitch, failed.joined(separator: "; ")) }
-        cards.putBack(back, step.column.map(current))
+        cards.putBack(back, recordedColumn.map(current))
         let shown = Set(cards.column())
-        let pieces = step.pieces.map(current).filter { shown.contains($0.key) }
+        let pieces = recordedPieces.map(current).filter { shown.contains($0.key) }
         if !pieces.isEmpty { cards.takeOut(pieces) }
         log(.stitch, "put back \(stitch.url.lastPathComponent)", [])
-        record(.stitch, Unstitch(stitch: stitch, pieces: pieces, column: column))
+        record(.stitch, .unstitch(stitch: stitch, pieces: pieces, column: column))
     }
 
     /// Each drawing is read before its file goes, since the drawing is forgotten once the file has left.
     private func moveToTrash(_ shots: [Screenshot]) -> [Gone] {
-        var drawings: [ScreenshotKey: Drawing] = [:]
-        for shot in shots { drawings[shot.key] = files.drawing(shot) }
-        return files.trash(shots).map { Gone(file: $0, drawing: drawings[$0.shot.key]) }
+        var saved: [ScreenshotKey: Drawings.Saved] = [:]
+        for shot in shots { saved[shot.key] = files.saved(shot) }
+        return files.trash(shots).map { Gone(file: $0, saved: saved[$0.shot.key]) }
     }
 
     private func moveBack(_ gone: [Gone]) -> (back: [Screenshot], failed: [String]) {
         let result = files.putBack(gone.map(\.file))
         let back = Set(result.back.map(\.key))
         for item in gone where back.contains(item.file.shot.key) {
-            if let drawing = item.drawing { files.restore(drawing) }
+            if let saved = item.saved { files.restore(saved) }
         }
         return result
     }
@@ -242,15 +385,15 @@ final class StackUndo: NSObject {
     private func current(_ shot: Screenshot) -> Screenshot { renamed[shot.key].map(Screenshot.init(key:)) ?? shot }
     private func current(_ key: ScreenshotKey) -> ScreenshotKey { renamed[key] ?? key }
 
-    private var verb: String { manager.isRedoing ? "redid" : "undid" }
+    private var redoing: Bool { running?.redoing == true }
 
     private func log(_ name: Name, _ what: String, _ failed: [String]) {
-        Log.write("[undo] \(verb) \(name.rawValue): \(what)" + (failed.isEmpty ? "" : "; can't \(failed.joined(separator: "; "))"))
+        Log.write("[undo] \(redoing ? "redid" : "undid") \(name.rawValue): \(what)" + (failed.isEmpty ? "" : "; can't \(failed.joined(separator: "; "))"))
     }
 
     /// A step that can no longer run is used up: the next Cmd+Z goes to the one before it.
     private func refuse(_ name: Name, _ why: String) {
-        Log.write("[undo] can't \(manager.isRedoing ? "redo" : "undo") \(name.rawValue): \(why)")
+        Log.write("[undo] can't \(redoing ? "redo" : "undo") \(name.rawValue): \(why)")
         refused = true
         beep()
     }

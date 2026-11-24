@@ -16,6 +16,7 @@ struct AnnotationRun: Equatable {
         case shown(Opening)          // the flight landed and the annotator became visible
         case parked(Opening)         // the editor finished parking
         case cancel(RunEnding)       // Esc, a click outside, Cmd+W, the shortcut: the run ends
+        case undo                    // Cmd+Z undid the opening: the run ends, and the keys stay with the stack
         case sent                    // Send: this image closes without a Copied notice, and the run goes on
         case finish                  // Done or Return: the result is on the clipboard, and the run goes on
         case dismiss(RunEnding?)     // the panel is going away, and the run with it; quick Done is `.finished`, a click outside `.clickedAway`
@@ -120,6 +121,9 @@ struct AnnotationRun: Equatable {
             return forward(.parked(opening))
         case .cancel(let how):
             endsByHand(how)
+            endQueue()
+            return forward(.close)
+        case .undo:
             endQueue()
             return forward(.close)
         case .sent:
@@ -302,6 +306,7 @@ extension AnnotationRun {
         switch event {
         case .annotate(let keys): return keys.first == open ? nil : "another-image"
         case .page: return "page"
+        case .undo: return "undo"
         case .finish: return "done"
         case .dismiss(let ending):
             switch ending {
@@ -346,6 +351,7 @@ extension AnnotationRun.Event: CustomStringConvertible {
         case .shown(let o): return "shown(\(o))"
         case .parked(let o): return "parked(\(o))"
         case .cancel(let how): return how == .back ? "cancel" : "cancel(\(how))"
+        case .undo: return "undo"
         case .sent: return "sent"
         case .finish: return "finish"
         case .dismiss(let ending): return ending.map { "dismiss(\($0))" } ?? "dismiss"

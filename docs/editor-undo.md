@@ -35,6 +35,11 @@ How the drawing editor's undo and redo behave. It is section 7 of [the drawing e
 - The history is kept with the screenshot's drawing ([the drawing file](drawing-file.md)), so
   reopening the screenshot, or relaunching the app, keeps its undo and its redo steps. Redo lasts
   until the next change, as in Apple's editors.
+- Opening and closing a screenshot are steps of the app's undo timeline
+  ([Undo and Redo in the stack and the annotator](rules/stack-undo.md)). Cmd+Z undoes the editor's
+  steps back to where this opening began, then closes the screenshot. The stored steps from before
+  come first when nothing older is left in the timeline, as after a relaunch. Otherwise they come
+  back once the timeline reopens the screenshot where an earlier opening closed it.
 - Agents' marks added while the screenshot is closed join its history as one step, as they do while
   it is open. A drawing changed any other way outside the editor, such as by a reply's drawing
   installed, opens with no history. An image replaced by one of another size

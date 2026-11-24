@@ -1,14 +1,24 @@
 import AppKit
 
 extension AppDelegate {
-    /// The stack's Undo and Redo move files through `folderWrites`, and keep each file's drawing
-    /// while it is in the Trash.
+    /// The undo timeline moves files through `folderWrites`, keeps each file's drawing while it is in
+    /// the Trash, and walks the editor's own steps in the annotator.
     func connectStackUndo() {
         thumbnail.history.files = StackUndo.Files(
             trash: { [unowned self] in folderWrites.trash($0) },
             putBack: { [unowned self] in folderWrites.putBack($0) },
-            drawing: { [unowned self] in drawings.current(of: $0.key, style: settings.data.ui.textStyle) },
-            restore: { [unowned self] in drawings.write($0, reason: "put back") })
+            saved: { [unowned self] in drawings.saved(of: $0.key, style: settings.data.ui.textStyle) },
+            restore: { [unowned self] in drawings.write($0.drawing, message: $0.message, history: $0.history, reason: "put back") })
+        thumbnail.history.editor = StackUndo.Editor(
+            open: { [unowned self] in
+                guard let key = annotator.opening?.key, annotator.editor.isOpen else { return nil }
+                let steps = annotator.editor.steps
+                return StackUndo.EditorPlace(key: key, undo: steps.undo, redo: steps.redo)
+            },
+            depth: { [unowned self] in annotator.editor.steps.undo },
+            step: { [unowned self] in annotator.editor.step(redo: $0) },
+            title: { [unowned self] in annotator.editor.stepTitle(redo: $0).title })
+        annotator.editor.timeline = thumbnail.history
     }
 
     func moveToTrash(_ shots: [Screenshot]) {
