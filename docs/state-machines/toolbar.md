@@ -193,7 +193,7 @@ Decides whether the bar's panel or the editor has the keys. Only a press on the 
 | bar shown, a field on it | a pick in the target's menu (`typeAfterPick`, `AnnotatorToolbar+Focus.swift:45`) | `tookKeysOnOpen = false` (`Model.pick`); `focus = .message` | the controller's `editorUntouched = false` first; the panel takes the keys |
 | panel not key | `typeOnOpen` (`AnnotatorToolbar+Focus.swift:59`, from `offerTyping`) | `focus = .message`, `tookKeysOnOpen = true` if the panel became key, else `focus = nil` | false when it did not: logs, and `editorUntouched` stays, so a later offer tries again |
 | panel already key | `typeOnOpen` | — | refused (`:60`) |
-| panel key | Cmd+W, Cmd+Plus, Cmd+Minus, Cmd+0; Cmd+C in an empty field, nothing being composed | — | `FieldCommand`: the window's close, the zoom, or the drawing copied; other Command keys go to the field |
+| panel key | Cmd+W, Cmd+Plus, Cmd+Minus, Cmd+0; Cmd+C in an empty field, nothing being composed; Cmd+Z and Shift+Cmd+Z, nothing being composed | — | `FieldCommand`: the window's close, the zoom, the drawing copied, or the editor's undo and redo; other Command keys go to the field |
 | any | Tab, Shift+Tab (`move`); Space (`activate`); M or P (`focusMessage`); press (`onPress`); `keyDown` | `focus` moves | — |
 
 **Invariants**

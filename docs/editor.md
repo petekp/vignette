@@ -497,20 +497,8 @@ Keys that act on a selection are in section 4. The rest:
 
 ## 7. Undo and redo
 
-- One owner handles Cmd+Z, Shift+Cmd+Z and any Undo or Redo menu item.
-- Each step is one thing the person did:
-  - creating a mark;
-  - moving, resizing, bending, or dragging an arrow's end;
-  - one nudge press, including its repeats;
-  - duplicating;
-  - deleting;
-  - pasting;
-  - cutting;
-  - one typing session;
-  - agents' marks added to the open drawing.
-- Selecting is never a step. Undo and redo put back the selection that belonged to the step.
-- Cmd+Z during a drag cancels the drag and undoes nothing more.
-- History starts empty each time a screenshot opens.
+[Undo and redo](editor-undo.md) has the steps, their names, the message field's steps, and the
+history kept with each screenshot.
 
 ## 8. Clipboard, paste and drop
 

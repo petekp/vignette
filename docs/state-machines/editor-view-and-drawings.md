@@ -99,13 +99,13 @@ Owner: `Drawings.swift:21`; files in `DrawingStore.swift:8`. Tests: `DrawingStor
 |---|---|---|---|
 | any | `write(d with marks)` | stored | Refused when the screenshot file is gone (`:86`). Else the file is written atomically, `keys.insert`, `revisions += 1`, `onChange(key, d)`. |
 | any | `write(d with no marks)` | no file, or a file with only a message | File removed when it holds no message, else written with no marks. If the key was known: `keys.remove`, `revisions += 1`, `onChange(key, nil)`. |
-| any | `handOver(d, message:)` | stored with `message` | As `write`; a message keeps the file when `d` has no marks, and `messages` follows it. Refused when the screenshot file is gone and there is a mark or a message. |
-| any | `keepMessage(words, for: d)` | the file's marks as stored, its message `words` | `DrawingStore.writeMessage`: a file with no marks holds the words when there is none; no marks and no words remove it. `messages` follows, `changedAt` set; no `revisions` change and no `onChange`. Refused when the screenshot file is gone and `words` is not empty. |
+| any | `handOver(d, message:, history:)` | stored with `message` and the editor's `history` | As `write`, which leaves the history out; a message keeps the file when `d` has no marks, and `messages` follows it. Refused when the screenshot file is gone and there is a mark or a message. |
+| any | `keepMessage(words, for: d, history:)` | the file's marks as stored, its message `words`, the editor's `history` | `DrawingStore.writeMessage`, which numbers the history by `d`'s marks; until the next hand-over writes them, a read drops the history: a file with no marks holds the words when there is none; no marks and no words remove it. `messages` follows, `changedAt` set; no `revisions` change and no `onChange`. Refused when the screenshot file is gone and `words` is not empty. |
 | key in `keys` or `messages` | `remove` | no file | Only if `changedAt <= observedAt` (`:106`). Removes the file, `changed(key, nil)`. |
 | key in `keys` or `messages` | `sweep` | no file | Only with an inventory that confirms absence and `changedAt <= observedAt` (`:144`). |
 | key in `keys` or `messages`, or editor open | `rename(old, new)` (`:119`) | stored under `new` | Store rewrites under `new`, message included; then `open?.rekey`; `onChange(old, nil)`, `onChange(new, d)`. If the store throws, returns before `rekey` (`:123`), and the open editor keeps the old key, so its later writes are refused. ([editor-2](plausible-findings-run-to-toolbar.md#editor-2)) Then `revisions[old] = nil` (`:137`), which reads as 0 again. ([editor-9](plausible-findings-run-to-toolbar.md#editor-9)) |
-| editor open for key | `add` | stored, open drawing joined | `open.join(made)` returns the joined drawing; `write(joined, "saved")`. Throws `writeFailed` if the write is refused. |
-| no editor | `add` | stored | Read the stored drawing (or a new one), append, `write(.., "built")`. |
+| editor open for key | `add` | stored, open drawing joined | `open.join(made)` returns the joined drawing; `write(joined, history: open.history(of:), "saved")`. Throws `writeFailed` if the write is refused. |
+| no editor | `add` | stored, its history one step longer | Read the stored drawing (or a new one) and its history, append, record one `agentMarks` step, `write(.., history:, "built")`. Checked by: `testAgentsMarksJoinTheStoredDrawing`. |
 | any | `load(keys)` | — | Records `revisions` now; reads on `loads`; on the main thread, drops each key whose revision changed (`:73`). |
 
 **Invariants**

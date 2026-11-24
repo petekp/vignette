@@ -31,9 +31,9 @@
   (`Model.keyed`), because AppKit makes it the panel's first responder when the bar comes up. The
   panel forgets a press on the field when it resigns the keys, so only a new press or an ask makes
   it key again (`ToolbarPanel.resignKey`).
-  While the field has the keys, Cmd+W and the zoom keys do what they do on the image: the panel
-  hands them to `AnnotationController.fieldCommand` before the field sees them (`FieldCommand`),
-  which sends Cmd+W to the window's `performClose` and the zoom keys to the zoom. Other Command
+  While the field has the keys, Cmd+W, the zoom keys, and Cmd+Z and Shift+Cmd+Z unless a word is
+  being composed, do what they do on the image: the panel hands them to
+  `AnnotationController.fieldCommand` before the field sees them (`FieldCommand`). Other Command
   keys stay with the field, Cmd+C too unless the field is empty. There is no
   palette: a mark's colour says who drew it. Send starts on the kept pick when there is one: the
   session the person picked in the target's menu and then sent to (`DestinationChoice.KeptPick`,

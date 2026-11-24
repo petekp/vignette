@@ -10,39 +10,16 @@ import Foundation
 /// through `zoom`, so it keeps its size on screen; one in pt becomes px through the drawing's point
 /// scale.
 struct EditorCore {
-    // MARK: Sizes
-
-    /// A nudge and a Shift nudge, in pt.
-    static let nudge: CGFloat = 1
-    static let longNudge: CGFloat = 10
-    /// How far right and down a duplicate or a paste lands from its original, in pt.
-    static let copyOffset: CGFloat = 10
-    /// Marks whose tops are this close, in pt, are one row in Tab's reading order.
-    static let rowTolerance: CGFloat = 16
-    /// The smallest a text can be scaled to, in pt.
-    static let smallestTextSize: CGFloat = 6
-    /// Shift snaps an arrow's angle to steps of this many radians: 15°.
-    static let snapAngle = CGFloat.pi / 12
-    /// The pause after the last change before the drawing goes to the host.
-    static let handOverDelay: TimeInterval = 0.3
-    /// The room between a box's stroke and the note typed for it, in pt.
-    static let noteGap: CGFloat = 8
-    /// A freehand stroke keeps a point this many screen pt from the last one it kept.
-    static let strokeSpacing: CGFloat = 2
-    /// A freehand arrow's curve misses the smoothed stroke by at most this many screen pt.
-    static let strokeTolerance: CGFloat = 1.5
-    /// A stroke that strays no further than this many screen pt, or this share of the line between its
-    /// ends, whichever is more, draws a straight arrow.
-    static let straightStroke: CGFloat = 6
-    static let straightShare: CGFloat = 0.04
-
     // MARK: Inputs
 
     enum Input {
         /// A screenshot opens with its drawing, or an empty one whose point scale is the display's.
         /// `markStyle` is the renderer's, which the selection frame goes around. `selectsNewest` is
         /// false for a screenshot reached by Left or Right, which opens with nothing selected.
-        case open(Drawing, style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle, selectsNewest: Bool = true)
+        /// `message` is the message field's words, and `history` the undo and redo steps the screenshot
+        /// was left with, which end at this drawing and this message.
+        case open(Drawing, style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle, selectsNewest: Bool = true, message: String = "",
+                  history: EditorHistory = EditorHistory())
         /// The pointer moved with no button held.
         case pointerMoved(Pointer)
         /// The pointer left the canvas.
@@ -73,6 +50,11 @@ struct EditorCore {
         case typingChanged(String)
         /// The text view ended the session on its own.
         case typingEnded
+        /// The person changed the message field's words: by typing, which runs into one step until
+        /// `messageTypingEnded`, or by a paste or a cut, each a step of its own.
+        case messageChanged(String, StepName)
+        /// The message field lost the keys or its caret was moved: the next typing there is a new step.
+        case messageTypingEnded
         /// The timer `scheduleTimer` asked for has run out.
         case timerFired
         /// What the clipboard held when `readClipboard` asked, or what was dropped on the editor.
@@ -226,6 +208,8 @@ struct EditorCore {
         case zoom(ZoomRequest)
         /// For VoiceOver.
         case announce(String)
+        /// Undo or redo changed the message: the field shows these words.
+        case message(String)
         /// Tab went past the last mark, or Shift+Tab past the first: the toolbar's controls come next.
         case leaveCanvas(backward: Bool)
         /// M or P: the message that goes with Send.
@@ -272,74 +256,6 @@ struct EditorCore {
         case smart(at: CGPoint)
     }
 
-    // MARK: What the view draws
-
-    enum HandlePosition: CaseIterable {
-        case topLeft, topRight, bottomLeft, bottomRight, top, bottom, left, right
-
-        /// -1 for a handle on the left side, 1 on the right, 0 for one that moves neither.
-        var xSide: Int {
-            switch self {
-            case .topLeft, .bottomLeft, .left: return -1
-            case .topRight, .bottomRight, .right: return 1
-            case .top, .bottom: return 0
-            }
-        }
-
-        /// -1 for a handle on the top side, 1 on the bottom, 0 for one that moves neither.
-        var ySide: Int {
-            switch self {
-            case .topLeft, .topRight, .top: return -1
-            case .bottomLeft, .bottomRight, .bottom: return 1
-            case .left, .right: return 0
-            }
-        }
-
-        var isCorner: Bool { xSide != 0 && ySide != 0 }
-    }
-
-    struct Handle: Equatable {
-        let mark: Mark.ID
-        let position: HandlePosition
-        /// The square drawn at a corner; an edge handle is not drawn.
-        let square: CGRect?
-        let hitArea: CGRect
-    }
-
-    enum DotKind: Equatable { case start, end, middle }
-
-    struct Dot: Equatable {
-        let mark: Mark.ID
-        let kind: DotKind
-        let center: CGPoint
-        let radius: CGFloat
-        let hitRadius: CGFloat
-        /// Drawn with its halo.
-        let hovered: Bool
-    }
-
-    /// The selection and hover as the view draws them, in px at the current zoom.
-    struct Overlay: Equatable {
-        /// The marks with the selection outline, in drawing order.
-        var selected: [Mark.ID] = []
-        /// The mark with the hover outline.
-        var hovered: Mark.ID?
-        /// The frame around several selected marks, or around one selected rectangle, ellipse or text.
-        var frame: CGRect?
-        var handles: [Handle] = []
-        var dots: [Dot] = []
-        var brush: CGRect?
-        /// The width a Text tool drag is choosing, as the new text's first line.
-        var wrap: CGRect?
-    }
-
-    /// What a press would act on.
-    enum Target: Equatable {
-        case handle(Mark.ID, HandlePosition)
-        case dot(Mark.ID, DotKind)
-        case mark(Mark.ID)
-    }
-
     private static func markID(_ target: Target) -> Mark.ID {
         switch target {
         case .handle(let id, _), .dot(let id, _), .mark(let id): return id
@@ -361,8 +277,12 @@ struct EditorCore {
     private(set) var gesture: Gesture?
     private(set) var hover: Target?
     private(set) var typing: Typing?
-    private(set) var undoSteps: [EditStep] = []
-    private(set) var redoSteps: [EditStep] = []
+    private(set) var undoSteps: [HistoryStep] = []
+    private(set) var redoSteps: [HistoryStep] = []
+    /// The message field's words, as the person and the history left them.
+    private(set) var message = ""
+    /// The top undo step is the message typing that `messageChanged` runs into.
+    private var typingMessage = false
     /// Screen pt per image px.
     private(set) var zoom: CGFloat = 1
     /// The changes an open gesture or typing session has made so far.
@@ -460,13 +380,21 @@ struct EditorCore {
 
     var canUndo: Bool { !undoSteps.isEmpty }
     var canRedo: Bool { !redoSteps.isEmpty }
+    /// What the Edit menu says for Undo: "Undo Arrow", or "Undo" with nothing to undo.
+    var undoTitle: String { HistoryStep.menuTitle(undoSteps.last, redo: false) }
+    var redoTitle: String { HistoryStep.menuTitle(redoSteps.last, redo: true) }
+    var history: EditorHistory { EditorHistory(undo: undoSteps, redo: redoSteps) }
 
     // MARK: Reducing
 
     mutating func reduce(_ input: Input) -> [Effect] {
         effects = []
-        if case .open(let drawing, let style, let metrics, let markStyle, let selectsNewest) = input {
+        if case .open(let drawing, let style, let metrics, let markStyle, let selectsNewest, let message, let history) = input {
             open(drawing, style: style, metrics: metrics, markStyle: markStyle, selectsNewest: selectsNewest)
+            if isOpen {
+                self.message = message
+                (undoSteps, redoSteps) = (history.undo, history.redo)
+            }
         } else if isOpen {
             if !input.keepsNudge { nudging = false }
             if !input.keepsNoteMark { noteMark = nil }
@@ -520,6 +448,8 @@ struct EditorCore {
             if !drawing.marks.isEmpty { changed() }
         case .typingChanged(let text): typed(text)
         case .typingEnded: endTyping()
+        case .messageChanged(let words, let name): messageChanged(words, name)
+        case .messageTypingEnded: typingMessage = false
         case .timerFired: timerFired()
         case .paste(let content): paste(content)
         case .agentMarks(let marks): join(marks)
@@ -655,21 +585,22 @@ struct EditorCore {
     }
 
     /// Runs `change` as one undo step of its own, beside any gesture or typing session under way.
-    private mutating func step(_ change: (inout EditorCore) -> Void) {
+    private mutating func step(named name: StepName, _ change: (inout EditorCore) -> Void) {
         let open = edit
         edit = MarkEdit(marks: drawing.marks, selectionBefore: selection)
         change(&self)
-        commitEdit()
+        commitEdit(named: name)
         edit = open
     }
 
-    /// Ends the open edit, turning what it changed into an undo step; returns whether it changed anything.
+    /// Ends the open edit, turning what it changed into an undo step named `name`; returns whether it
+    /// changed anything.
     @discardableResult
-    private mutating func commitEdit() -> Bool {
+    private mutating func commitEdit(named name: StepName) -> Bool {
         guard let edit else { return false }
         self.edit = nil
-        guard let step = edit.step(ending: drawing.marks, selection: selection) else { return false }
-        push(step)
+        guard let step = edit.step(named: name, ending: drawing.marks, selection: selection) else { return false }
+        push(.marks(step))
         changed()
         return true
     }
@@ -681,28 +612,60 @@ struct EditorCore {
         drawing.marks = edit.reverted(drawing.marks)
     }
 
-    private mutating func push(_ step: EditStep) {
+    private mutating func push(_ step: HistoryStep) {
         undoSteps.append(step)
         redoSteps = []
+        typingMessage = false
     }
 
+    /// Undo and redo say what they did, "Undo Arrow", in place of the selection they leave.
     private mutating func undo() {
         guard let step = undoSteps.popLast() else { return }
         restore(step, forward: false)
         redoSteps.append(step)
+        emit(.announce(HistoryStep.menuTitle(step, redo: false)))
     }
 
     private mutating func redo() {
         guard let step = redoSteps.popLast() else { return }
         restore(step, forward: true)
         undoSteps.append(step)
+        emit(.announce(HistoryStep.menuTitle(step, redo: true)))
     }
 
-    private mutating func restore(_ step: EditStep, forward: Bool) {
-        drawing.marks = step.applied(to: drawing.marks, forward: forward)
-        let ids = Set(drawing.marks.map(\.id))
-        selection = (forward ? step.selectionAfter : step.selectionBefore).intersection(ids)
-        changed()
+    private mutating func restore(_ step: HistoryStep, forward: Bool) {
+        typingMessage = false
+        switch step {
+        case .marks(let step):
+            drawing.marks = step.applied(to: drawing.marks, forward: forward)
+            let ids = Set(drawing.marks.map(\.id))
+            selection = (forward ? step.selectionAfter : step.selectionBefore).intersection(ids)
+            announcedSelection = selection
+            changed()
+        case .message(let step):
+            message = forward ? step.after : step.before
+            emit(.message(message))
+        }
+    }
+
+    /// The message field's words changed. Typing runs into the step it began until the field loses
+    /// the keys, its caret moves, or another step comes; a paste or a cut is a step of its own. The
+    /// host stores the message itself, so this hands nothing over.
+    private mutating func messageChanged(_ words: String, _ name: StepName) {
+        guard words != message else { return }
+        if typingMessage, name == .typing, case .message(var open)? = undoSteps.last {
+            open.after = words
+            if open.before == words {
+                undoSteps.removeLast()
+                typingMessage = false
+            } else {
+                undoSteps[undoSteps.count - 1] = .message(open)
+            }
+        } else {
+            push(.message(MessageStep(name: name, before: message, after: words)))
+            typingMessage = name == .typing
+        }
+        message = words
     }
 
     // MARK: Pointer
@@ -1020,7 +983,7 @@ struct EditorCore {
             }
             if big {
                 selection = [id]
-                commitEdit()
+                commitEdit(named: Self.drawingStep(mark.kind))
                 if event != nil { noteMark = NoteMark(id: id) }
             } else {
                 revertEdit()
@@ -1028,8 +991,23 @@ struct EditorCore {
             }
         case .brushing:
             break
-        case .moving, .resizing, .draggingEnd, .bending:
-            commitEdit()
+        case .moving(_, let copies):
+            commitEdit(named: copies.contains { mark($0) != nil } ? .duplicate : .move)
+        case .resizing:
+            commitEdit(named: .resize)
+        case .draggingEnd:
+            commitEdit(named: .arrowEnd)
+        case .bending:
+            commitEdit(named: .bend)
+        }
+    }
+
+    private static func drawingStep(_ kind: MarkKind) -> StepName {
+        switch kind {
+        case .rectangle: return .rectangle
+        case .ellipse: return .ellipse
+        case .arrow: return .arrow
+        case .text: return .typing
         }
     }
 
@@ -1267,7 +1245,7 @@ struct EditorCore {
             }
         }
         if let mark = mark(typing.id), Self.isBlank(mark) { remove(typing.id) }
-        commitEdit()
+        commitEdit(named: .typing)
     }
 
     static func isBlank(_ mark: Mark) -> Bool {
@@ -1354,7 +1332,7 @@ struct EditorCore {
                 // Unlike Copy, Cut never falls back to the drawing, which it could not delete.
                 guard !selection.isEmpty else { break }
                 copy()
-                deleteSelection()
+                deleteSelection(as: .cut)
             case .paste: emit(.readClipboard)
             case .duplicate: duplicate()
             case nil:
@@ -1425,22 +1403,22 @@ struct EditorCore {
         let offset = geometry.clamped(CGVector(dx: direction.dx * geometry.pt(points), dy: direction.dy * geometry.pt(points)), keeping: extent)
         let continuing = nudging
         let depth = undoSteps.count
-        step { core in
+        step(named: .move) { core in
             for mark in marks { core.replace(core.geometry.translated(mark, by: offset)) }
         }
         guard undoSteps.count > depth else { return }
         nudging = true
-        if continuing, undoSteps.count >= 2 {
-            let later = undoSteps.removeLast()
-            let earlier = undoSteps.removeLast()
-            if let merged = earlier.merged(with: later) { undoSteps.append(merged) }
+        if continuing, undoSteps.count >= 2, case .marks(let later) = undoSteps[undoSteps.count - 1],
+           case .marks(let earlier) = undoSteps[undoSteps.count - 2] {
+            undoSteps.removeLast(2)
+            if let merged = earlier.merged(with: later) { undoSteps.append(.marks(merged)) }
         }
     }
 
-    private mutating func deleteSelection() {
+    private mutating func deleteSelection(as name: StepName = .delete) {
         let ids = drawing.marks.map(\.id).filter { selection.contains($0) }
         guard !ids.isEmpty else { return }
-        step { core in
+        step(named: name) { core in
             for id in ids { core.remove(id) }
         }
     }
@@ -1450,13 +1428,13 @@ struct EditorCore {
         let marks = drawing.marks.filter { selection.contains($0.id) }
         guard !marks.isEmpty else { return }
         let offset = geometry.pt(Self.copyOffset)
-        insert(geometry.placedGroup(marks.map(Self.fresh), offset: CGVector(dx: offset, dy: offset), keepingLines: true))
+        insert(geometry.placedGroup(marks.map(Self.fresh), offset: CGVector(dx: offset, dy: offset), keepingLines: true), as: .duplicate)
     }
 
-    /// Puts `marks` on top as one step, selected.
-    private mutating func insert(_ marks: [Mark]) {
+    /// Puts `marks` on top as one step named `name`, selected.
+    private mutating func insert(_ marks: [Mark], as name: StepName = .paste) {
         guard !marks.isEmpty else { return }
-        step { core in
+        step(named: name) { core in
             for mark in marks { core.add(mark) }
             core.selection = Set(marks.map(\.id).filter { core.mark($0) != nil })
         }
@@ -1569,35 +1547,13 @@ struct EditorCore {
     private mutating func join(_ marks: [Mark]) {
         let placed = marks.compactMap { geometry.placed(Self.fresh($0)) }
         guard !placed.isEmpty else { return }
-        step { core in
+        step(named: .agentMarks) { core in
             for mark in placed { core.add(mark) }
         }
         handOver()
     }
 
     // MARK: Inspecting
-
-    /// The `editor` section of `[state]`: the tool, each mark's type, frame in px and whether an agent
-    /// drew it, the selection as indexes into the marks, whether a text is being typed, the drawing's
-    /// point and mark scales, and the undo and redo depth. Never a text's words.
-    var inspection: [String: Any] {
-        let geometry = self.geometry
-        return [
-            "open": isOpen,
-            "tool": tool.rawValue,
-            "marks": drawing.marks.map { mark -> [String: Any] in
-                let frame = geometry.extent(of: mark)
-                return ["type": mark.kind.rawValue, "frame": [frame.minX, frame.minY, frame.width, frame.height].map { Int($0.rounded()) },
-                        "agent": mark.agent]
-            },
-            "selection": drawing.marks.indices.filter { selection.contains(drawing.marks[$0].id) },
-            "typing": typing != nil,
-            "pointScale": drawing.pointScale,
-            "markScale": drawing.markScale,
-            "undo": undoSteps.count,
-            "redo": redoSteps.count,
-        ]
-    }
 
     /// What VoiceOver says for the selection: the kind of one mark, with a text's words, or how many.
     private var selectionWords: String? {

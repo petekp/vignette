@@ -22,6 +22,8 @@ enum EditorCoreTrace {
         case .rescaled(let pointScale, let markScale): return "rescaled \(pointScale) \(markScale)"
         case .typingChanged(let text): return "type \(text.count) characters"
         case .typingEnded: return "typingEnded"
+        case .messageChanged(let words, let name): return "message \(name.rawValue) \(words.count) characters"
+        case .messageTypingEnded: return "messageTypingEnded"
         case .timerFired: return "timer"
         case .paste(let content):
             switch content {

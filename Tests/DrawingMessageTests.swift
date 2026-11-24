@@ -79,6 +79,99 @@ final class DrawingFileTests: XCTestCase {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: store.url(for: key))) as? [String: Any])
         XCTAssertEqual(Set(object.keys), ["version", "key", "pixels", "pointScale", "marks"])
     }
+
+    private func open(_ drawing: Drawing, message: String = "", history: EditorHistory = EditorHistory()) -> EditorCore {
+        var core = EditorCore()
+        _ = core.reduce(.open(drawing, style: .standard, metrics: .standard, markStyle: .standard, message: message, history: history))
+        return core
+    }
+
+    private func storedHistory(_ key: String? = nil, of drawing: Drawing? = nil) -> EditorHistory {
+        let key = key ?? self.key
+        let marks = (drawing ?? store.read(key: key, pixels: pixels, style: .standard))?.marks ?? []
+        return store.readHistory(key: key, pixels: pixels, marks: marks)
+    }
+
+    func testTheHistoryIsKeptWithTheDrawingAndTheScreenshotOpensAgainWithItsUndoAndRedo() throws {
+        var core = open(Drawing(key: key, pixels: pixels, pointScale: 2, marks: []))
+        core.drag(from: (100, 100), to: (400, 300))
+        let drawn = core.drawing.marks.map(\.geometry)
+        _ = core.reduce(.setTool(.select))
+        core.drag(from: (250, 200), to: (450, 300))
+        _ = core.reduce(.setTool(.arrow))
+        core.drag(from: (1000, 500), to: (1500, 900))
+        core.key(.delete)
+        _ = core.reduce(.messageChanged("the header", .typing))
+        core.key(.character("z"), .command)
+        try store.write(core.drawingForHost, message: core.message, history: core.history)
+
+        let drawing = try XCTUnwrap(read())
+        let message = store.readMessage(key: key, pixels: pixels)
+        var reopened = open(drawing, message: message, history: storedHistory(of: drawing))
+        XCTAssertEqual(reopened.undoTitle, "Undo Delete")
+        XCTAssertEqual(reopened.redoTitle, "Redo Typing")
+        XCTAssertTrue(reopened.key(.character("z"), [.command, .shift]).contains(.message("the header")))
+        reopened.key(.character("z"), .command)
+        reopened.key(.character("z"), .command)
+        XCTAssertEqual(reopened.drawing.marks.map(\.kind), [.rectangle, .arrow])
+        reopened.key(.character("z"), .command)
+        reopened.key(.character("z"), .command)
+        XCTAssertEqual(reopened.drawing.marks.map(\.geometry), drawn)
+        reopened.key(.character("z"), .command)
+        XCTAssertTrue(reopened.drawing.marks.isEmpty)
+        XCTAssertFalse(reopened.canUndo)
+
+        let note = Mark(geometry: .text(Mark.Text(origin: CGPoint(x: CGFloat(pixels.width) - 40, y: 100), text: "Hello there", size: 24)))
+        let typed = EditorHistory(undo: [.marks(EditStep(name: .typing, changes: [EditStep.Change(id: note.id, before: nil, after: PlacedMark(mark: note, index: 0))],
+                                                          selectionBefore: [], selectionAfter: [note.id]))])
+        try store.write(Drawing(key: key, pixels: pixels, pointScale: 2, marks: [note]), message: "", history: typed)
+        let moved = try XCTUnwrap(read())
+        XCTAssertNotEqual(moved.marks.map(\.geometry), [note.geometry], "the read moves the note in from the edge")
+        XCTAssertEqual(storedHistory(of: moved).undo.count, 1)
+        XCTAssertFalse(lines.all.contains { $0.contains("history dropped") })
+    }
+
+    func testAHistoryFollowsARenameAndIsDroppedWhenTheMarksOrTheMessageChangedWithoutTheEditor() throws {
+        let box = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 50)))
+        let typed = EditorHistory(undo: [.message(MessageStep(name: .typing, before: "", after: "words"))])
+        try store.write(Drawing(key: key, pixels: pixels, pointScale: 2, marks: [box]), message: "words", history: typed)
+        XCTAssertEqual(storedHistory().undo.count, 1)
+        XCTAssertTrue(store.readHistory(key: key, pixels: PixelSize(width: 1512, height: 982), marks: [box]).isEmpty)
+
+        let renamed = "/Users/pete/Dropbox/Screenshots/Renamed.png"
+        XCTAssertEqual(try store.rename(from: key, to: renamed), pixels)
+        XCTAssertEqual(storedHistory(renamed).undo.count, 1)
+
+        var edited = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: store.url(for: renamed))) as? [String: Any])
+        edited["message"] = "other words"
+        try JSONSerialization.data(withJSONObject: edited).write(to: store.url(for: renamed))
+        XCTAssertTrue(storedHistory(renamed).isEmpty)
+
+        try store.write(Drawing(key: renamed, pixels: pixels, pointScale: 2, marks: [box]), message: "words", history: typed)
+        try store.write(Drawing(key: renamed, pixels: pixels, pointScale: 2, marks: [box, box]))
+        XCTAssertTrue(storedHistory(renamed).isEmpty, "a write without a history, as a reply's install makes")
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: store.url(for: renamed))) as? [String: Any])
+        XCTAssertNil(object["history"])
+        XCTAssertEqual(lines.all.filter { $0.contains("history dropped") }.count, 1)
+    }
+
+    func testAFileKeepsTheNewestStepsWithinItsCapDroppingTheOldestUndoFirst() throws {
+        let steps = (0..<150).map { HistoryStep.message(MessageStep(name: .typing, before: "\($0)", after: "\($0 + 1)")) }
+        let kept = try EditorHistory(fileObject: XCTUnwrap(EditorHistory(undo: steps).fileObject(marks: [], message: "150")), marks: [],
+                                     basis: EditorHistory.basis(marks: [], message: "150"))
+        XCTAssertEqual(kept.undo.count, EditorHistory.maxSteps)
+        guard case .message(let oldest)? = kept.undo.first, case .message(let newest)? = kept.undo.last else { return XCTFail("no message steps") }
+        XCTAssertEqual(oldest.before, "50")
+        XCTAssertEqual(newest.after, "150")
+
+        let long = String(repeating: "a", count: 100_000)
+        let pasted = HistoryStep.message(MessageStep(name: .paste, before: "", after: long))
+        let big = EditorHistory(undo: Array(repeating: pasted, count: 4), redo: [pasted])
+        let fitted = try EditorHistory(fileObject: XCTUnwrap(big.fileObject(marks: [], message: "")), marks: [],
+                                       basis: EditorHistory.basis(marks: [], message: ""))
+        XCTAssertEqual(fitted.undo.count, 1)
+        XCTAssertEqual(fitted.redo.count, 1)
+    }
 }
 
 @MainActor
