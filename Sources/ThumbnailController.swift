@@ -48,7 +48,7 @@ final class ThumbnailController {
     private let dim = DimPanel()
     private let flights = TransitionLayer()
     let model = StackModel()
-    let history = StackUndo()
+    let timeline = UndoTimeline()
     let older = OlderShots()
     let pictures = CardPictures()
     private var hosting: NSHostingView<StackView>!
@@ -101,8 +101,8 @@ final class ThumbnailController {
         hosting = NSHostingView(rootView: StackView(model: model))
         panel.contentView = hosting
         panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
-        panel.history = history
-        connectHistory()
+        panel.timeline = timeline
+        connectTimeline()
         keys.perform = { [weak self] effect in self?.perform(effect) }
         keys.changed = { [weak self] old, new in self?.presentationChanged(from: old, to: new) }
         flights.onPress = { [weak self] id, event in self?.flightPressed(id, event) }
@@ -225,8 +225,8 @@ final class ThumbnailController {
                 "widthScale": model.widthScale, "swipe": Int(model.swipe), "older": older.state,
                 "panel": StateReport.topLeft(panel.frame, primaryHeight: h), "panelOnScreen": panel.isVisible,
                 "strip": stripFrame.map { StateReport.topLeft($0, primaryHeight: h) } as Any,
-                "undoTitle": history.menuTitle(for: StackUndo.undoAction) ?? "Undo",
-                "redoTitle": history.menuTitle(for: StackUndo.redoAction) ?? "Redo",
+                "undoTitle": timeline.menuTitle(for: UndoTimeline.undoAction) ?? "Undo",
+                "redoTitle": timeline.menuTitle(for: UndoTimeline.redoAction) ?? "Redo",
             ] as [String: Any],
             "transition": ["phase": "\(run.phase)", "annotating": annotating?.shot.key.path as Any, "isActive": run.isActive],
             "screen": ["name": s.localizedName, "frame": StateReport.topLeft(s.frame, primaryHeight: h),
@@ -527,7 +527,7 @@ final class ThumbnailController {
             send(.renamed(from: old, to: new))
             if let opening = run.opening, opening.key == new { onAnnotatorRenamed?(shot, opening) }
         }
-        history.rename(pairs)
+        timeline.rename(pairs)
     }
 
     /// Re-applies layout tweaks to whatever is on screen. Called when settings.ui changes.
@@ -1119,7 +1119,7 @@ final class ThumbnailController {
             return true
         }
         if chars == "z" && (mods == [.command] || mods == [.command, .shift]) {
-            history.walk(redo: mods.contains(.shift), repeated: event.isARepeat)
+            timeline.walk(redo: mods.contains(.shift), repeated: event.isARepeat)
             return true
         }
         let targets = targetCards()
@@ -1356,13 +1356,13 @@ final class ThumbnailController {
     }
 
     /// Cards of files put back in the folder come back to the open stack where they were in
-    /// `column`, on `shiftUp`'s motion (`docs/rules/stack-undo.md`).
+    /// `column`, on `shiftUp`'s motion (`docs/rules/undo-timeline.md`).
     func putBack(_ shots: [Screenshot], in column: [ScreenshotKey]) {
         guard visible, model.isStack else { return }
         let returning = shots.filter { card(for: $0) == nil }.compactMap { makeCard($0) }
         guard !returning.isEmpty else { return }
         var next = model.cards
-        for card in returning { next.insert(card, at: StackUndo.place(of: card.shot.key, in: column, among: next.map(\.shot.key))) }
+        for card in returning { next.insert(card, at: UndoTimeline.place(of: card.shot.key, in: column, among: next.map(\.shot.key))) }
         let ids = returning.map(\.id)
         dismissGeneration += 1
         sweep.end()

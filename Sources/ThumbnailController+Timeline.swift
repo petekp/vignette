@@ -1,9 +1,9 @@
 import AppKit
 
 extension ThumbnailController {
-    /// What an Undo or a Redo does to the cards and the annotator (`StackUndo.Cards`).
-    func connectHistory() {
-        history.cards = StackUndo.Cards(
+    /// What an Undo or a Redo does to the cards and the annotator (`UndoTimeline.Cards`).
+    func connectTimeline() {
+        timeline.cards = UndoTimeline.Cards(
             column: { [unowned self] in visible ? model.cards.map(\.shot.key) : [] },
             putBack: { [unowned self] shots, column in putBack(shots, in: column) },
             takeOut: { [unowned self] in remove($0) },
@@ -16,9 +16,9 @@ extension ThumbnailController {
     func follow(_ effect: AnnotationRun.Effect, _ perform: () -> Void) {
         perform()
         switch effect {
-        case .prepare(let opening): history.editorOpened(opening.key)
-        case .park(let opening), .abandon(let opening): history.editorLeft(opening.key)
-        case .endRun: history.editorEnded()
+        case .prepare(let opening): timeline.editorOpened(opening.key)
+        case .park(let opening), .abandon(let opening): timeline.editorLeft(opening.key)
+        case .endRun: timeline.editorEnded()
         default: break
         }
     }

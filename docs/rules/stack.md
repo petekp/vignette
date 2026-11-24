@@ -198,7 +198,7 @@
   stack showing gets the whole visible frame.
   `docs/stack-room-2026-09-17.md` has the numbers, and `docs/stack-narrowing-2026-09-23.md` what a
   frame of the narrowing costs and the options for making it cheaper.
-- Cmd+Z and Shift+Cmd+Z in the stack undo and redo Delete and Stitch. `docs/rules/stack-undo.md` has
+- Cmd+Z and Shift+Cmd+Z in the stack undo and redo Delete and Stitch. `docs/rules/undo-timeline.md` has
   their rules.
 - The column reaching back past its first `recentCount` to older screenshots, and building only
   the cards near the view, have their own rules in `docs/rules/stack-column.md`. Read it before

@@ -6,7 +6,7 @@ extension EditorView {
     var history: EditorHistory { core.history }
 
     /// The Edit menu's Undo and Redo say the step they take: the typing session's own while a text is
-    /// typed, the timeline's otherwise (`StackUndo`).
+    /// typed, the timeline's otherwise (`UndoTimeline`).
     func undoTitle(redo: Bool) -> (title: String, enabled: Bool) {
         if typingField == nil, let timeline { return timeline.title(redo: redo) }
         return stepTitle(redo: redo)

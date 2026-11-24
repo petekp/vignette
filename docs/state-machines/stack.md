@@ -87,11 +87,11 @@ Inserts a card into the open stack without animating the layout change; the new 
 
 - The `entering` clear compares ids (`:1451`). A second insert adds to the first's remaining lift through `liftLeft` (`:1457`). `present` recomputes lifts for kept cards.
 
-### StackUndo (explicit)
+### UndoTimeline (explicit)
 
-Owner: `StackUndo.swift`, `StackUndo+Connections.swift`; `ThumbnailController.putBack` places the cards, `ThumbnailController+History.swift` feeds it the run's effects and opens or closes the annotator for it. Tests: `StackUndoTests`, `AnnotationRunTests.testUndoingTheOpeningEndsTheRunWithNoHandSoTheKeysStayWithTheStack`, `FolderWritesTests.testAFilePutBackFromTheTrashIsNoCaptureAndHoldsBackOlderRemovals`.
+Owner: `UndoTimeline.swift`, `UndoTimeline+Connections.swift`; `ThumbnailController.putBack` places the cards, `ThumbnailController+History.swift` feeds it the run's effects and opens or closes the annotator for it. Tests: `UndoTimelineTests`, `AnnotationRunTests.testUndoingTheOpeningEndsTheRunWithNoHandSoTheKeysStayWithTheStack`, `FolderWritesTests.testAFilePutBackFromTheTrashIsNoCaptureAndHoldsBackOlderRemovals`.
 
-Cmd+Z and Shift+Cmd+Z while the stack or the editor has the keys (`docs/rules/stack-undo.md`). **States**: `undoSteps` and `redoSteps`, each step a `Name`, an `Action` (`putBack`, `trashAgain`, `unstitch`, `restitch`, `draw`), `editor` (the screenshot in the editor while the step is next, with its history's depth and its file's identity) and `then` (the same once it has run); `leaving`, the screenshot the run took out of the editor until it opens another or ends; `asked`, an opening or a close an Undo or Redo is waiting for; `seen`, the editor's step counts when last read; `inEditor`, the screenshot it saw open; `leftAt`, each screenshot's depth when it left; `renamed`.
+Cmd+Z and Shift+Cmd+Z while the stack or the editor has the keys (`docs/rules/undo-timeline.md`). **States**: `undoSteps` and `redoSteps`, each step a `Name`, an `Action` (`putBack`, `trashAgain`, `unstitch`, `restitch`, `draw`), `editor` (the screenshot in the editor while the step is next, with its history's depth and its file's identity) and `then` (the same once it has run); `leaving`, the screenshot the run took out of the editor until it opens another or ends; `asked`, an opening or a close an Undo or Redo is waiting for; `seen`, the editor's step counts when last read; `inEditor`, the screenshot it saw open; `leftAt`, each screenshot's depth when it left; `renamed`.
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
@@ -120,10 +120,10 @@ Cmd+Z and Shift+Cmd+Z while the stack or the editor has the keys (`docs/rules/st
 
 **Invariants**
 
-- A step that runs leaves its opposite on the other list, and one that cannot leaves nothing. Checked by: `StackUndoTests`.
-- Cmd+Z walks back through Delete, the opening, the editor's steps, the close and Stitch in the order they were made, and Shift+Cmd+Z forward the same way. Checked by: `StackUndoTests.testUndoWalksBackThroughDeleteOpenMarksCloseAndStitchInTheOrderTheyWereMade`.
-- An opening stops Cmd+Z at its own start. Checked by: `StackUndoTests.testASecondOpeningOfAnImageStopsAtItsOwnStartAndItsEarlierStepsWaitAtTheirPlace`.
-- A card comes back before the older card still in the column that followed it. Checked by: `StackUndoTests.testACardGoesBackBeforeTheOlderCardThatIsStillThereElseAfterTheNewerOne`.
+- A step that runs leaves its opposite on the other list, and one that cannot leaves nothing. Checked by: `UndoTimelineTests`.
+- Cmd+Z walks back through Delete, the opening, the editor's steps, the close and Stitch in the order they were made, and Shift+Cmd+Z forward the same way. Checked by: `UndoTimelineTests.testUndoWalksBackThroughDeleteOpenMarksCloseAndStitchInTheOrderTheyWereMade`.
+- An opening stops Cmd+Z at its own start. Checked by: `UndoTimelineTests.testASecondOpeningOfAnImageStopsAtItsOwnStartAndItsEarlierStepsWaitAtTheirPlace`.
+- A card comes back before the older card still in the column that followed it. Checked by: `UndoTimelineTests.testACardGoesBackBeforeTheOlderCardThatIsStillThereElseAfterTheNewerOne`.
 
 **Late and concurrent answers**
 

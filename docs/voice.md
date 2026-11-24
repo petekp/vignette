@@ -126,7 +126,7 @@ and "Redo" when there is nothing to take.
 | A cut, on the image or in the field | Cut |
 | Agents' marks joining the open drawing | *Agent*'s Marks, as in "Claude's Marks"; "Agent's Marks" without one name |
 
-### Undo and Redo in the stack and the annotator (`StackUndo.Name`)
+### Undo and Redo in the stack and the annotator (`UndoTimeline.Name`)
 
 The same form as the editor's, in Finder's words where Finder has the action. Plain "Undo"
 and "Redo" when there is nothing to take; Cmd+Z then beeps. While a screenshot is in the editor,

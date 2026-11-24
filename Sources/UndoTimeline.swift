@@ -11,7 +11,7 @@ import AppKit
 /// whose file has moved since is used up with a beep and a log line, as Finder uses one up with an
 /// alert.
 @MainActor
-final class StackUndo {
+final class UndoTimeline {
     var files = Files()
     var cards = Cards()
     var editor = Editor()

@@ -1,7 +1,7 @@
 import AppKit
 
 /// What the undo timeline acts on, which the app connects, and the words it names its steps with.
-extension StackUndo {
+extension UndoTimeline {
     /// A step's name in the Edit menu, in Finder's words where Finder has the action.
     enum Name: String {
         case moveToTrash = "Move to Trash"
@@ -76,7 +76,7 @@ extension StackUndo {
 }
 
 /// The Edit menu's items for the timeline, which `validateMenuItem` names.
-extension StackUndo {
+extension UndoTimeline {
     /// The Edit menu's title for `undo:` or `redo:`, naming the step that would run.
     func menuTitle(for action: Selector?) -> String? {
         Self.redo(action).map { title(redo: $0).title }

@@ -95,7 +95,7 @@
    `[undo] undid|redid <step>: …` follows each Cmd+Z and Shift+Cmd+Z that runs a step of the timeline
    ("undid Open Drawing: closed <file>"), and `[undo] can't undo|redo <step>: <why>` one whose file has
    moved since; `[annotate] closed <file> reason=undo` follows the annotator closing for one; `[stack] put back cards=<n>`
-   follows the cards coming back (`docs/rules/stack-undo.md`).
+   follows the cards coming back (`docs/rules/undo-timeline.md`).
 
 A fake screenshot for testing: `screencapture -x -R 200,200,900,560 "<watch folder>/Screenshot test.png"`.
 Delete it afterwards. Never retype a
