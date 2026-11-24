@@ -48,8 +48,8 @@ final class EditorView: NSView {
     var onPress: (() -> Void)?
     /// A key reached the editor.
     var onKey: (() -> Void)?
-    /// Cmd+Z's owner, which comes back to `step` for the editor's own steps.
-    weak var timeline: StackUndo?
+    /// Cmd+Z's owner, which calls `step` for the editor's own steps.
+    weak var timeline: UndoTimeline?
     /// Offered each key before the core while no text is typed: true when the host took it. While one
     /// of the toolbar's controls has the focus, the keys stay here and Tab and Space are the toolbar's.
     var takesKey: ((EditorCore.Key, EditorCore.Modifiers) -> Bool)?

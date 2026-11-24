@@ -1,7 +1,7 @@
 # Undo and Redo in the stack and the annotator
 
 - Cmd+Z undoes what Vignette last did to a screenshot, and Shift+Cmd+Z redoes it, as Finder's Undo
-  does. One timeline holds every step in the order it was made (`StackUndo`): Delete, Stitch,
+  does. One timeline holds every step in the order it was made (`UndoTimeline`): Delete, Stitch,
   opening a screenshot in the annotator and closing it, and between those the editor's own steps
   on the screenshot open then. Delete and Stitch make a step whatever asked for them: the stack's
   hand, or a `vignette://trash` or `vignette://stitch` from a script. Undoing Delete puts each file
@@ -74,7 +74,7 @@
   `shiftUp`). The layout changes at once, the cards that were there are lifted back to where they
   were drawn and spring to their slots on `ui.shiftUpDuration`, and the returning card slides in
   from the edge on the card slide-in. It goes before the first older card still in the column, else
-  after the first newer one (`StackUndo.place`). One card that comes back takes the focus. Several,
+  after the first newer one (`UndoTimeline.place`). One card that comes back takes the focus. Several,
   or one while cards are selected, become the selection, as Finder selects what its Undo put back.
 - A file put back is not a capture. `FolderWrites.putBack` reserves its name, so the watcher's
   report neither copies it nor opens the editor. It also records the write time, so a removal from

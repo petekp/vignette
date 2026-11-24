@@ -4,7 +4,7 @@ Supersedes in part ADR 0028: reopening a screenshot in the same run of the app n
 Cmd+Z step straight back through the steps of its earlier openings. The history is still kept in
 the drawing file, and after a relaunch a screenshot reopened still undoes its stored steps.
 
-Cmd+Z and Shift+Cmd+Z have one owner, `StackUndo`, wherever Vignette has the keys: the stack or
+Cmd+Z and Shift+Cmd+Z have one owner, `UndoTimeline`, wherever Vignette has the keys: the stack or
 the editor. It keeps Delete, Stitch, opening a screenshot in the annotator and closing it, in the
 order they were made. The editor's steps are not copied into it. Each step of the timeline records
 how many steps the screenshot in the editor had to undo when it became the next step. While a

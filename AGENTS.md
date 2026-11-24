@@ -35,11 +35,11 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   `AppLocation.swift`, `LoginItem.swift`, `Updater.swift`, `BuildInfo.swift`,
   `ProblemReport.swift`, `PickerQuestion.swift`, `SystemPrompts.swift`), read `docs/rules/setup-and-updates.md`. The status item's place is in
   `docs/rules/capture.md`.
-- Before changing the stack or the corner (`Stack*.swift`, `OlderShots.swift`, `CardPictures.swift`,
+- Before changing the stack or the corner (`Stack*.swift`, `UndoTimeline*.swift`, `OlderShots.swift`, `CardPictures.swift`,
   `CornerPresentation.swift`, `CornerKeys.swift`, `CardView.swift`, `CardState.swift`,
   `SelectionStrip.swift`, `Stitch.swift`, `Dock.swift`, `BackdropPanel.swift`, `FocusReturn.swift`,
   `DragSourceView.swift`, `CheckCoin.*`, `CheckLab.swift`), read `docs/rules/stack.md`,
-  `docs/rules/stack-column.md` for the long column, `docs/rules/stack-undo.md` for Undo, and `docs/rules/flights-and-presses.md` for the
+  `docs/rules/stack-column.md` for the long column, `docs/rules/undo-timeline.md` for Undo, and `docs/rules/flights-and-presses.md` for the
   matte and the flights in and out of the column.
 - Before changing a flight, a press or an animation (`TransitionLayer*.swift`, `Flight*.swift`,
   `OutsideClick.swift`, `Anim.swift`, `Tween.swift`, `Motion.swift`, `WindowRemoval.swift`,

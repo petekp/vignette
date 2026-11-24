@@ -107,7 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         // window of ours can take the focus.
         _ = FocusReturn.shared
         thumbnail.actions = self
-        connectStackUndo()
+        connectUndo()
         thumbnail.recentListing = { [unowned self] in
             let index = recentShots(limit: settings.data.recentCount)
             watcher?.rescan(reason: "recent")   // keeps the index honest for the next open; nothing waits for it

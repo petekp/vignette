@@ -10,9 +10,9 @@ final class ThumbnailPanel: NSPanel {
     var onScroll: ((NSEvent) -> Void)?
     /// The stack's Undo and Redo, which the Edit menu names while the panel has the keys, and
     /// VoiceOver hears after each.
-    weak var history: StackUndo? {
+    weak var timeline: UndoTimeline? {
         didSet {
-            history?.announce = { [weak self] words in
+            timeline?.announce = { [weak self] words in
                 guard let self else { return }
                 NSAccessibility.post(element: self, notification: .announcementRequested,
                                      userInfo: [.announcement: words, .priority: NSAccessibilityPriorityLevel.high.rawValue])
@@ -45,13 +45,13 @@ final class ThumbnailPanel: NSPanel {
         return super.performKeyEquivalent(with: event)
     }
 
-    @objc func undo(_ sender: Any?) { history?.undo() }
-    @objc func redo(_ sender: Any?) { history?.redo() }
+    @objc func undo(_ sender: Any?) { timeline?.undo() }
+    @objc func redo(_ sender: Any?) { timeline?.redo() }
 
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        guard let history, let title = history.menuTitle(for: item.action) else { return super.validateMenuItem(item) }
+        guard let timeline, let title = timeline.menuTitle(for: item.action) else { return super.validateMenuItem(item) }
         item.title = title
-        return history.canRun(item.action)
+        return timeline.canRun(item.action)
     }
 
     /// Scroll events reach the window under the cursor whether or not it is key.
