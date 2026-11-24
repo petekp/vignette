@@ -83,6 +83,7 @@ Holds a card Vignette just wrote into the watch folder until both the watcher ha
 **Late and concurrent answers**
 
 - The report before the marks, or the marks before the report: both orders present once (tests above).
+- A file `putBack` returned from the Trash (`StackUndo`) is held in `pendingPutBacks` beside these: `arrived` swallows its report, since its card is already back, and the file leaving again (`left`) drops it. A put-back the watcher never saw leave and come back has no report, so its entry stays until the file leaves. Checked by: `FolderWritesTests.testAFilePutBackFromTheTrashIsNoCaptureAndHoldsBackOlderRemovals`.
 
 ### FolderWrites held-back reports (implicit)
 

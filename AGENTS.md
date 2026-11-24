@@ -27,7 +27,7 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   might tune, read `docs/rules/settings.md`.
 - Before changing the shortcut, the watcher or a screenshot's file (`HotKey*.swift`,
   `ModifierTap.swift`, `KeyMonitors.swift`, `CaptureOrigin.swift`, `ScreenshotWatcher*.swift`,
-  `ScreenshotKey.swift`, `Screenshot.swift`, `FolderWrites.swift`), or how a recording or an
+  `ScreenshotKey.swift`, `Screenshot.swift`, `FolderWrites*.swift`), or how a recording or an
   iCloud file is read, read `docs/rules/capture.md`.
 - Before changing setup, the Settings window or the menu bar icon (`Setup*.swift`,
   `SettingsWindow.swift`, `MainMenu.swift`, `MenuBarIntro.swift`, `IntroFunnel.metal`,
@@ -39,7 +39,7 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   `CornerPresentation.swift`, `CornerKeys.swift`, `CardView.swift`, `CardState.swift`,
   `SelectionStrip.swift`, `Stitch.swift`, `Dock.swift`, `BackdropPanel.swift`, `FocusReturn.swift`,
   `DragSourceView.swift`, `CheckCoin.*`, `CheckLab.swift`), read `docs/rules/stack.md`,
-  `docs/rules/stack-column.md` for the long column, and `docs/rules/flights-and-presses.md` for the
+  `docs/rules/stack-column.md` for the long column, `docs/rules/stack-undo.md` for Undo, and `docs/rules/flights-and-presses.md` for the
   matte and the flights in and out of the column.
 - Before changing a flight, a press or an animation (`TransitionLayer*.swift`, `Flight*.swift`,
   `OutsideClick.swift`, `Anim.swift`, `Tween.swift`, `Motion.swift`, `WindowRemoval.swift`,

@@ -111,7 +111,7 @@ final class SentDrawingTests: XCTestCase {
         let sources = base.appendingPathComponent("sources")
         try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
         var stored: [ScreenshotKey: Drawing] = [:]
-        let writes = FolderWrites(trash: { _ in }, now: { 10 })
+        let writes = FolderWrites(trash: { $0 }, now: { 10 })
         writes.callbacks = FolderWrites.Callbacks(
             folder: { [unowned self] in self.folder },
             joinMarks: { [unowned self] _, _, key, done in

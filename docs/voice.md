@@ -107,6 +107,16 @@ cancelled with Don't send leaves the tab as it was.
 | --- | --- |
 | Reply is unavailable: no message, and the agent's drawing as it sent it (`AnnotatorToolbar.Model.nothingToReplyTip`) | Add a message or draw to reply |
 
+### Undo and Redo in the stack (`StackUndo.Name`)
+
+The same form as the editor's above, in Finder's words where Finder has the action. Plain "Undo"
+and "Redo" when there is nothing to take; Cmd+Z then beeps.
+
+| Step | Name |
+| --- | --- |
+| Delete, which moves the files to the Trash | Move to Trash |
+| Stitch | Stitch |
+
 ### The line an agent receives (`ScreenshotRequests.requestLine`)
 
 The person's message leads, and the Vignette part follows in brackets. "From Vignette:" is fixed,

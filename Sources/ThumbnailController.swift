@@ -48,6 +48,7 @@ final class ThumbnailController {
     private let dim = DimPanel()
     private let flights = TransitionLayer()
     let model = StackModel()
+    let history = StackUndo()
     let older = OlderShots()
     let pictures = CardPictures()
     private var hosting: NSHostingView<StackView>!
@@ -100,6 +101,8 @@ final class ThumbnailController {
         hosting = NSHostingView(rootView: StackView(model: model))
         panel.contentView = hosting
         panel.onKey = { [weak self] event in self?.handleKey(event) ?? false }
+        panel.history = history
+        connectHistory()
         keys.perform = { [weak self] effect in self?.perform(effect) }
         keys.changed = { [weak self] old, new in self?.presentationChanged(from: old, to: new) }
         flights.onPress = { [weak self] id, event in self?.flightPressed(id, event) }
@@ -158,8 +161,6 @@ final class ThumbnailController {
         if let pinnedDisplay, let pinned = NSScreen.screens.first(where: { $0.displayNumber == pinnedDisplay }) { return pinned }
         return NSScreen.main ?? NSScreen.screens[0]
     }
-    /// What every card and flight image is decoded in, so no first commit has a colour conversion to do.
-    var screenSpace: CGColorSpace? { screen.colorSpace?.cgColorSpace }
     /// A display was added, removed, or rearranged. Whatever is showing moves to a screen that exists.
     func screensChanged() {
         defer {
@@ -224,6 +225,8 @@ final class ThumbnailController {
                 "widthScale": model.widthScale, "swipe": Int(model.swipe), "older": older.state,
                 "panel": StateReport.topLeft(panel.frame, primaryHeight: h), "panelOnScreen": panel.isVisible,
                 "strip": stripFrame.map { StateReport.topLeft($0, primaryHeight: h) } as Any,
+                "undoTitle": history.menuTitle(for: StackUndo.undoAction) ?? "Undo",
+                "redoTitle": history.menuTitle(for: StackUndo.redoAction) ?? "Redo",
             ] as [String: Any],
             "transition": ["phase": "\(run.phase)", "annotating": annotating?.shot.key.path as Any, "isActive": run.isActive],
             "screen": ["name": s.localizedName, "frame": StateReport.topLeft(s.frame, primaryHeight: h),
@@ -320,22 +323,6 @@ final class ThumbnailController {
         guard new.isStack, !old.isStack else { return }
         onTakesScreen?()
         if new.mode == .stack(recent: false) { Log.write("[stack] corner became the stack cards=\(model.cards.count)") }
-    }
-
-    /// Decodes thumbnails for `shots` in the background so the stack opens without waiting. A
-    /// screenshot that is not downloaded is downloaded here too, for the editor.
-    func warm(_ shots: [Screenshot]) {
-        let items = shots.compactMap { shot -> (url: URL, maxPixel: Int)? in
-            switch Thumbnailer.lookUp(shot.url) {
-            case .read(let header):
-                return (shot.url, thumbnailPixels(size: layout.cardSize(for: header.size), pointSize: header.size))
-            case .notDownloaded:
-                if shot.kind == .image { Thumbnailer.download(shot.url) }
-                return (shot.url, cloudThumbnailPixels)
-            case .unreadable: return nil
-            }
-        }
-        Thumbnailer.warm(items, space: screenSpace)
     }
 
     /// Opens the annotator on the first of `shots` and queues the rest: finishing one opens the
@@ -540,6 +527,7 @@ final class ThumbnailController {
             send(.renamed(from: old, to: new))
             if let opening = run.opening, opening.key == new { onAnnotatorRenamed?(shot, opening) }
         }
+        history.rename(pairs)
     }
 
     /// Re-applies layout tweaks to whatever is on screen. Called when settings.ui changes.
@@ -1130,6 +1118,10 @@ final class ThumbnailController {
             relayout()
             return true
         }
+        if chars == "z" && (mods == [.command] || mods == [.command, .shift]) {
+            if mods.contains(.shift) { history.redo() } else { history.undo() }
+            return true
+        }
         let targets = targetCards()
         let match = Config.action(for: { key in
             let pressed = (key.character == "\u{7f}" && isDelete) || (key.character == "\r" && isReturn)
@@ -1290,18 +1282,6 @@ final class ThumbnailController {
         if size != card.size { relayout() }
     }
 
-    /// Pixels on the longest side for iCloud's thumbnail of a file that is not downloaded: enough for a
-    /// card of any shape, since the shape is not known until the thumbnail arrives.
-    var cloudThumbnailPixels: Int {
-        Int(ceil(max(layout.maxCardWidth, layout.maxCardHeight) * screen.backingScaleFactor * 1.5))
-    }
-
-    /// Pixels on the longest side for a decode that covers the card at this screen's scale, with margin.
-    func thumbnailPixels(size: NSSize, pointSize: NSSize) -> Int {
-        let cover = max(size.width / max(pointSize.width, 1), size.height / max(pointSize.height, 1))
-        return Int(ceil(max(pointSize.width, pointSize.height) * cover * screen.backingScaleFactor * 1.5))
-    }
-
     /// Shows a new column. Cards start past the screen edge and arrive staggered, newest first.
     /// `keepOffscreen` leaves the cards parked past the edge, for a card that is about to fly out from there.
     /// Without `ordersPanel`, the panel is laid out but left for `orderPanelIn` to put on screen.
@@ -1375,6 +1355,26 @@ final class ThumbnailController {
         }
     }
 
+    /// Cards of files put back in the folder come back to the open stack where they were in
+    /// `column`, on `shiftUp`'s motion (`docs/rules/stack-undo.md`).
+    func putBack(_ shots: [Screenshot], in column: [ScreenshotKey]) {
+        guard visible, model.isStack else { return }
+        let returning = shots.filter { card(for: $0) == nil }.compactMap { makeCard($0) }
+        guard !returning.isEmpty else { return }
+        var next = model.cards
+        for card in returning { next.insert(card, at: StackUndo.place(of: card.shot.key, in: column, among: next.map(\.shot.key))) }
+        let ids = returning.map(\.id)
+        dismissGeneration += 1
+        sweep.end()
+        shiftUp(to: next, entering: ids, scrollsHome: false)
+        keepPictures()
+        if ids.count > 1 || model.inSelectionMode { model.setSelection(next.reversed().map(\.id).filter(ids.contains)) }
+        model.focused = next.first { ids.contains($0.id) }?.id
+        relayout()
+        revealFocused()
+        Log.write("[stack] put back cards=\(ids.count)")
+    }
+
     /// A card joins the bottom of the visible column and slides in.
     private func insert(_ card: Card, entrance: Entrance = .slide) {
         guard !model.cards.contains(where: { $0.shot.url == card.shot.url }) else { return }
@@ -1440,27 +1440,30 @@ final class ThumbnailController {
     /// turn. Animated as a layout change instead, the panel's top edge moved at once while the
     /// column's height sprang, so the cards jumped half a slot in one frame and the new card rode
     /// the column's motion (`docs/stack-insert-2026-09-26.md`).
-    private func shiftUp(for card: Card) {
+    private func shiftUp(for card: Card) { shiftUp(to: [card] + model.cards, entering: [card.id], scrollsHome: true) }
+
+    /// `entering` join the column as `next`; with `scrollsHome` the column drops back from its scroll too.
+    private func shiftUp(to next: [Card], entering ids: [UUID], scrollsHome: Bool) {
         let now = CACurrentMediaTime()
-        // The new card's slot, and the scroll the column drops back from.
-        let rise = layout.drawn(card.size).height + layout.spacing + model.scroll
-        var lift: [UUID: CGFloat] = [:]
-        for old in model.cards { lift[old.id] = liftLeft(old.id, at: now) + rise }
+        var lift = keptLift(to: next, kept: Set(model.cards.map(\.id)), at: now)
+        if scrollsHome { for old in model.cards { lift[old.id, default: 0] += model.scroll } }
         layoutPanel(shrinkLater: false, animated: false) {
-            model.entering = card.id
-            model.cards.insert(card, at: 0)
+            model.slidingOut = false
+            model.offscreen.formUnion(ids)
+            model.entering = ids.count == 1 ? ids[0] : nil
+            model.cards = next
             model.setLifts(lift)
-            model.scroll = 0
+            if scrollsHome { model.scroll = 0 }
         }
         orderPanelIn()
-        springLifts(lift, from: now, first: { [weak self] in self?.model.offscreen.remove(card.id) }) { [weak self] in
+        springLifts(lift, from: now, first: { [weak self] in self?.model.offscreen.subtract(ids) }) { [weak self] in
             // The oldest card leaves the top with its transition, once the column is moving.
             guard let self else { return }
             if self.removeOverflow() { self.relayout() }
         }
         // The card's slide reads `entering` when it starts, on the next turn.
         DispatchQueue.main.asyncAfter(deadline: .now() + ui.shiftUpDuration) { [weak self] in
-            guard let self, self.model.entering == card.id else { return }
+            guard let self, let entering = self.model.entering, ids.contains(entering) else { return }
             self.model.entering = nil
         }
     }

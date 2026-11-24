@@ -30,7 +30,6 @@ final class FolderWritesTests: XCTestCase {
     private var heldJoin: ((Result<Int, Drawings.Failure>) -> Void)?
     private var joinResult: Result<Int, Drawings.Failure> = .success(1)
     private var joinedKeys: [ScreenshotKey] = []
-    /// The one file name whose trash fails.
     private var trashFailsFor: String?
 
     private let marks = #"[{"type":"ellipse","x":0.1,"y":0.1,"w":0.2,"h":0.2}]"#
@@ -43,10 +42,11 @@ final class FolderWritesTests: XCTestCase {
         try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
         writes = FolderWrites(
             trash: { [unowned self] url in
-                if url.lastPathComponent == self.trashFailsFor { throw CocoaError(.fileWriteNoPermission) }
+                if url.lastPathComponent == trashFailsFor { throw CocoaError(.fileWriteNoPermission) }
                 try FileManager.default.removeItem(at: url)
+                return url
             },
-            now: { [unowned self] in self.clock })
+            now: { [unowned self] in clock })
         writes.callbacks = FolderWrites.Callbacks(
             folder: { [unowned self] in self.folder },
             present: { [unowned self] shot, annotate in
