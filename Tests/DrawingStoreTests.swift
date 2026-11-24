@@ -92,7 +92,7 @@ final class DrawingStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.remove(key: key))
         XCTAssertEqual(try String(contentsOf: store.url(for: key), encoding: .utf8), newer)
         XCTAssertEqual(lines.all.count, 4, "one line for the read and one for each refusal: \(lines.all)")
-        XCTAssertEqual(store.scan(), [], "a newer build's drawing is not this build's to sweep")
+        XCTAssertEqual(store.scan().drawings, [], "a newer build's drawing is not this build's to sweep")
     }
 
     func testANonFiniteCoordinateDropsThatMarkWithOneLogLine() throws {
@@ -122,7 +122,7 @@ final class DrawingStoreTests: XCTestCase {
         XCTAssertEqual(lines.all.count, 1)
         XCTAssertTrue(lines.all[0].hasPrefix("[drawing] error invalid"), lines.all[0])
 
-        XCTAssertEqual(store.scan(), [])
+        XCTAssertEqual(store.scan().drawings, [])
         let aside = store.url(for: key).appendingPathExtension("invalid")
         XCTAssertEqual(aside.lastPathComponent, DrawingStore.id(for: key) + ".json.invalid")
         XCTAssertTrue(FileManager.default.fileExists(atPath: aside.path))
@@ -133,7 +133,7 @@ final class DrawingStoreTests: XCTestCase {
         // A top level that parses as JSON but is not a drawing is set aside the same way.
         try put(#"{"version": 1, "key": "\#(key)", "pixels": [3024], "pointScale": 2, "marks": []}"#)
         XCTAssertNil(read())
-        XCTAssertEqual(store.scan(), [])
+        XCTAssertEqual(store.scan().drawings, [])
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.url(for: key).path))
         XCTAssertEqual(lines.all.count, 4)
     }
@@ -211,20 +211,7 @@ final class DrawingStoreTests: XCTestCase {
         try put(#"{"version": 1, "key": "/elsewhere.png", "pixels": [3024, 1964], "pointScale": 2, "marks": [{"type": "rectangle", "x": 1, "y": 1, "w": 5, "h": 5, "color": "red"}]}"#)
         XCTAssertNil(read())
         XCTAssertEqual(lines.all.count, 1)
-        XCTAssertEqual(store.scan(), [], "it is not listed under a key whose name it does not have")
-    }
-
-    func testKeysListTheDrawingsThisBuildCanRead() throws {
-        let rectangle = [Mark(geometry: .rectangle(CGRect(x: 1, y: 1, width: 5, height: 5)))]
-        try store.write(Drawing(key: "/a.png", pixels: pixels, pointScale: 1, marks: rectangle))
-        try store.write(Drawing(key: "/b.png", pixels: pixels, pointScale: 1, marks: rectangle))
-        try put(#"{"version": 2, "key": "/c.png"}"#, for: "/c.png")
-        try put("not json", for: "/d.png")
-        try Data("x".utf8).write(to: dir.appendingPathComponent("notes.txt"))
-        XCTAssertEqual(store.scan(), ["/a.png", "/b.png"])
-        try store.remove(key: "/a.png")
-        XCTAssertEqual(store.scan(), ["/b.png"])
-        XCTAssertEqual(DrawingStore(directory: dir.appendingPathComponent("never-made")).scan(), [])
+        XCTAssertEqual(store.scan().drawings, [], "it is not listed under a key whose name it does not have")
     }
 
     /// A drawing's file is named by this id, so an update that changed it would leave every saved

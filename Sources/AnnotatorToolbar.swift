@@ -71,26 +71,24 @@ final class AnnotatorToolbar {
             sending = false
             failure = nil
         }
-        /// What the person typed to go with Send or Reply, as typed. Kept until the next image opens,
-        /// so a send that fails keeps it for the next try.
-        @Published var message = ""
+        /// What the person typed to go with Send or Reply, as typed. It is stored with the image's
+        /// drawing, and the image opens with the words it was last left with (`restore`), after a
+        /// send, a failed send, Copy or a close alike.
+        @Published var message = "" { didSet { if message != oldValue { onMessageChanged?() } } }
+        var onMessageChanged: (() -> Void)?
+        /// The words the image opened with.
+        private(set) var messageOnOpen = ""
+        /// The image opened with `message`, the words it was last left with, or "".
+        func restore(message: String) {
+            messageOnOpen = message
+            self.message = message
+        }
         /// The bar's panel holds the keys, which it does only while the message field is typed in.
         @Published var keyed = false
         /// The message field took the keys on its own as the image opened, and has kept them since.
         var tookKeysOnOpen = false
         /// A tool letter typed first into that field, waiting to learn whether it began a word.
         var toolLetter = HeldToolLetter()
-
-        /// The message field took the keys on its own and is still empty, so nothing in it asks to
-        /// send: Return and Esc do what they do on the image.
-        var fieldUntouched: Bool { tookKeysOnOpen && fieldEmpty }
-
-        /// What Return in the message field does. In an untouched field, what it does on the image,
-        /// which never sends to a session Vignette picked.
-        var fieldReturn: EditorCore.Finish { fieldUntouched ? offer.finishes.returnKey : .send }
-
-        /// Esc in an untouched field closes the editor, as on the image. Otherwise it hands the keys back.
-        var fieldEscCloses: Bool { fieldUntouched }
 
         /// A control Tab reaches, in the bar's order.
         enum Control: Hashable {
@@ -125,15 +123,6 @@ final class AnnotatorToolbar {
             return controls
         }
 
-        /// The most characters the message holds, as for a text mark.
-        static let messageLimit = MarkFields.maxTextLength
-
-        /// The message as it joins the line Send puts in the session, which is one line: its words with
-        /// one space between each, whatever line breaks, tabs or spaces were there. Nil when there are none.
-        var sentMessage: String? {
-            let line = message.asOneLine
-            return line.isEmpty ? nil : line
-        }
 
         var offer: ToolbarOffer {
             ToolbarOffer(replyTo: replyTo, destinations: whole ?? destinations, listed: whole != nil, target: target, startable: startable)
@@ -155,7 +144,6 @@ final class AnnotatorToolbar {
         func begin(replyTo: AgentDestination?, carryingTarget: Bool) {
             self.replyTo = replyTo
             imageNumber += 1
-            message = ""
             focus = nil
             tookKeysOnOpen = false
             toolLetter = HeldToolLetter()

@@ -63,7 +63,17 @@
   (Copy Drawing, Stitch, a drag) asks `Drawings.current(of:)`, which answers the open drawing over
   the stored one. `Drawings` reaches the editor only through `OpenDrawing`, which `EditorView` is.
   Agents' marks arrive through `Drawings.add` (`built`, or `saved` when they join the open drawing:
-  the editor's `join` answers the joined drawing and `add` writes it). A drawing with no marks removes its file. A drawing with marks whose screenshot is gone is not
+  the editor's `join` answers the joined drawing and `add` writes it). A drawing with no marks removes its file, unless the file holds a message. The file also keeps
+  what was last typed in the message field for the screenshot (`message`, `docs/drawing-file.md`),
+  so the screenshot opens in the editor with it again: after Send, Reply, Copy, Esc, a failed send
+  or a relaunch alike. The editor's hand-overs carry the field's words, and the field's own changes
+  are written 0.3 s after the last one (`Drawings.keepMessage`, `[drawing] message saved` or
+  `message removed`), beside the marks the file holds. `Drawings.keys` names the screenshots with
+  marks and `Drawings.messages` those with a message; a rename, a removal and the sweep move or
+  remove both. The field holding only those words counts as untouched until something is typed
+  (`Model.messageAsOpened`, `docs/rules/annotator-toolbar.md`), since the session Vignette picked
+  may not be the one they were typed for. When the field takes the keys on its own or for M or P,
+  its caret goes after the words, where AppKit would select them all. A drawing with marks whose screenshot is gone is not
   written (`[drawing] dropped <name>: its screenshot is gone`). The editor hands its drawing over
   through `Drawings.handOver`. When that write fails after the editor let go of the drawing, the
   card says "Not saved" (`Drawings.onWriteFailed`, `ThumbnailController.showNotSaved`), and after

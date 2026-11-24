@@ -188,7 +188,8 @@ Decides whether the bar's panel or the editor has the keys. Only a press on the 
 |---|---|---|---|
 | any | `didBecomeKey` | `keyed = true`, `focus = .message` | whatever made the panel key |
 | any | `didResignKey` | `keyed = false`, `tookKeysOnOpen = false`, `caretToEnd = false`; `focus = nil` if it was `.message` | `makeFirstResponder(nil)` |
-| any | `begin` | `imageNumber += 1`, `focus = nil`, `tookKeysOnOpen = false`, `toolLetter` reset | `keyed` and `panel.isKeyWindow` untouched |
+| any | `begin` | `imageNumber += 1`, `focus = nil`, `tookKeysOnOpen = false`, `toolLetter` reset | `keyed` and `panel.isKeyWindow` untouched; `message` stays as `restore` set it when the image opened |
+| any | `restore(message:)` (`AnnotationController.open`) | `message` and `messageOnOpen` set to the words stored for the image, or "" | the controller's `storedWords` set, so they are not written back |
 | bar shown, a field on it | a pick in the target's menu (`typeAfterPick`, `AnnotatorToolbar+Focus.swift:45`) | `tookKeysOnOpen = false` (`Model.pick`); `focus = .message` | the controller's `editorUntouched = false` first; the panel takes the keys |
 | panel not key | `typeOnOpen` (`AnnotatorToolbar+Focus.swift:59`, from `offerTyping`) | `focus = .message`, `tookKeysOnOpen = true` if the panel became key, else `focus = nil` | false when it did not: logs, and `editorUntouched` stays, so a later offer tries again |
 | panel already key | `typeOnOpen` | — | refused (`:60`) |

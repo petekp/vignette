@@ -34,19 +34,27 @@ extension AnnotatorToolbar {
     /// M or P in the editor: the keys go to the message field, when the bar has one.
     func focusMessage() {
         guard model.controls.contains(.message) else { return }
+        if !model.message.isEmpty { caretToEnd() }
         focus(on: .message)
+        if !panel.isKeyWindow { panel.caretToEnd = false }
     }
 
     /// A pick in the target's menu chooses whom to write to, so the message field takes the keys as a
     /// press on it gives them: a letter types, Return sends, and Esc hands the keys to the image.
     func typeAfterPick() {
         guard model.shown, model.controls.contains(.message) else { return }
+        caretToEnd()
+        focus(on: .message)
+    }
+
+    /// The caret goes after the field's words, where typing goes on from them. AppKit selects them all
+    /// when the field takes the keys, and the first letter typed would replace them.
+    private func caretToEnd() {
         if panel.isKeyWindow, let text = panel.firstResponder as? NSTextView {
             text.setSelectedRange(NSRange(location: (text.string as NSString).length, length: 0))
         } else {
             panel.caretToEnd = true
         }
-        focus(on: .message)
     }
 
     /// The image opened and the hand has not reached it: the message field, when the bar has one,
@@ -55,10 +63,12 @@ extension AnnotatorToolbar {
     /// the image's, and a later offer tries again.
     func typeOnOpen() -> Bool {
         guard model.controls.contains(.message), model.focus == nil, !panel.isKeyWindow else { return false }
+        if !model.message.isEmpty { caretToEnd() }
         focus(on: .message)
         guard panel.isKeyWindow else {
             Log.write("[annotate] message field did not get the keys")
             model.focus = nil
+            panel.caretToEnd = false
             return false
         }
         model.tookKeysOnOpen = true
@@ -79,7 +89,7 @@ extension AnnotatorToolbar {
         let character = HeldToolLetter.character(EditorCore.Key(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers),
                                                  EditorCore.Modifiers(eventFlags: event.modifierFlags.rawValue))
         let composing = (panel.firstResponder as? NSTextView)?.hasMarkedText() == true
-        let untouched = model.tookKeysOnOpen && model.message.isEmpty && !composing
+        let untouched = model.tookKeysOnOpen && model.messageAsOpened && !composing
         if untouched, modifiers.isDisjoint(with: [.shift, .control, .option, .command]),
            let key = EditorCore.Key(keyCode: event.keyCode, characters: nil), let page = EditorCore.Page(key) {
             onPage?(page, event.isARepeat)

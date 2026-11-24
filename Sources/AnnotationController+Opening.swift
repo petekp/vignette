@@ -68,6 +68,7 @@ extension AnnotationController {
         let key = shot.key.path, name = shot.url.lastPathComponent
         guard let pixels = PixelSize(imageAt: shot.url) else {
             Log.write("[annotate] error \(CommandError.unreadableImage.rawValue) \(name)")
+            restoreMessage("")
             cancel(via: .unreadableImage)
             return
         }
@@ -76,6 +77,7 @@ extension AnnotationController {
         // A new drawing is sized for the screen the annotator opens on: Decision 8 in docs/editor.md.
         markScaleRule = ui.markScaleRule
         let drawing = storedDrawing?(shot.key, pixels) ?? Drawing(key: key, pixels: pixels, sizedFor: DrawingScreen(screen), rule: markScaleRule)
+        restoreMessage(storedMessage?(shot.key, pixels) ?? "")
         let maxPixel = Thumbnailer.screenPixels(on: screen), space = screen.colorSpace?.cgColorSpace
         let decoded = Thumbnailer.cached(at: shot.url, maxPixel: maxPixel, space: space).flatMap(Self.cgImage)
         textStyle = ui.textStyle
