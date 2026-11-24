@@ -139,8 +139,8 @@
   for the fresh list, since the thread may be newer. Return copies and replies only on a card that names its session; Cmd+Return
   sends or replies (`EditorCore.finishes`). On the image, Return never sends to a session Vignette
   picked. In the message field Return sends, as in a chat app, with the target beside it. A field
-  that took the keys on its own and is still empty has nothing that asks to send, so Return and Esc
-  there do what they do on the image (`Model.fieldUntouched`, `fieldReturn`, `fieldEscCloses`). A
+  that took the keys on its own, empty or as it opened, asks nothing to send, so
+  Return and Esc do what they do on the image (`Model.fieldUntouched`, `fieldReturn`, `fieldEscCloses`). A
   pick ends that (`Model.pick`): choosing a session is asking to write to it, so the field then acts
   as pressed. A letter types, Return sends, and Esc hands the keys to the image, from which a second
   Esc closes. Cmd+C in any empty field, one with no words (`Model.fieldEmpty`, the same empty

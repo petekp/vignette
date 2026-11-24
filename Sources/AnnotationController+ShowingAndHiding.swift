@@ -153,7 +153,8 @@ extension AnnotationController {
     }
 
     private func park() {
-        if let drawing = editor.park() { onDrawing?(drawing, "parked") }
+        stopMessageTimer()
+        if let drawing = editor.park() { handOver(drawing, reason: "parked") }
     }
 
     /// Springs the level back to the fitted size, and lets a re-fit on its way land, and answers

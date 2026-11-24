@@ -22,6 +22,9 @@ final class Drawings {
     let store: DrawingStore
     /// The screenshots with a drawing on disk.
     private(set) var keys: Set<ScreenshotKey>
+    /// The screenshots whose file holds a message: what was last typed in the editor's message field
+    /// for them. A file can hold a message and no marks.
+    private(set) var messages: Set<ScreenshotKey>
     /// A screenshot's drawing changed on disk: written, with the drawing as it is now, or removed
     /// (nil). Every write and removal calls it, whether or not the set of keys changed.
     var onChange: ((_ key: ScreenshotKey, _ drawing: Drawing?) -> Void)?
@@ -40,7 +43,15 @@ final class Drawings {
 
     init(store: DrawingStore) {
         self.store = store
-        keys = Set(store.scan().map { ScreenshotKey(asGiven: $0) })
+        let scan = store.scan()
+        keys = Set(scan.drawings.map { ScreenshotKey(asGiven: $0) })
+        messages = Set(scan.messages.map { ScreenshotKey(asGiven: $0) })
+    }
+
+    /// The message stored for the screenshot `key`, whose size as displayed is `pixels`, or "".
+    /// Only a screenshot with a stored message has its file read.
+    func message(of key: ScreenshotKey, pixels: PixelSize) -> String {
+        messages.contains(key) ? store.readMessage(key: key.path, pixels: pixels) : ""
     }
 
     /// The stored drawing for the screenshot `key`, whose size as displayed is `pixels`.
@@ -90,24 +101,44 @@ final class Drawings {
         (try? save(drawing, reason: reason)) ?? false
     }
 
-    /// Writes the editor's drawing, and calls `onWriteFailed` when that fails after the editor let
-    /// go of it. While the editor holds it, the next hand-over writes it again. An empty drawing
-    /// that a newer build's file refuses is not a failure: no marks of the person's are lost.
-    func handOver(_ drawing: Drawing, reason: String) {
-        do { _ = try save(drawing, reason: reason) } catch DrawingStore.Refusal.newerVersion where drawing.marks.isEmpty {
+    /// Writes the editor's drawing with `message`, the words in its message field, and calls
+    /// `onWriteFailed` when that fails after the editor let go of it. While the editor holds it, the
+    /// next hand-over writes it again. An empty drawing with no message that a newer build's file
+    /// refuses is not a failure: nothing of the person's is lost.
+    func handOver(_ drawing: Drawing, message: String? = nil, reason: String) {
+        do { _ = try save(drawing, message: message, reason: reason) }
+        catch DrawingStore.Refusal.newerVersion where drawing.marks.isEmpty && (message ?? "").isEmpty {
         } catch {
             let key = ScreenshotKey(asGiven: drawing.key)
             if open?.drawing(of: key) == nil { onWriteFailed?(key) }
         }
     }
 
-    private func save(_ drawing: Drawing, reason: String) throws -> Bool {
+    /// Writes what was typed in the message field for the screenshot of `drawing`, the editor's open
+    /// drawing, into its file. The stored marks stay as they are: the editor's next hand-over writes
+    /// its own. Logs `[drawing] message saved`, or `message removed` when the field was emptied.
+    func keepMessage(_ message: String, for drawing: Drawing) {
         let key = ScreenshotKey(asGiven: drawing.key), name = key.name
-        if !drawing.marks.isEmpty, !FileManager.default.fileExists(atPath: drawing.key) {
+        if !message.isEmpty, !FileManager.default.fileExists(atPath: drawing.key) {
+            Log.write("[drawing] dropped \(name): its screenshot is gone")
+            return
+        }
+        guard let keeps = try? store.writeMessage(message, for: drawing) else { return }
+        changedAt[key] = ProcessInfo.processInfo.systemUptime
+        let had = keeps ? !messages.insert(key).inserted : messages.remove(key) != nil
+        if keeps { Log.write("[drawing] message saved \(name)") } else if had { Log.write("[drawing] message removed \(name)") }
+    }
+
+    private func save(_ drawing: Drawing, message: String? = nil, reason: String) throws -> Bool {
+        let key = ScreenshotKey(asGiven: drawing.key), name = key.name
+        if !drawing.marks.isEmpty || message?.isEmpty == false, !FileManager.default.fileExists(atPath: drawing.key) {
             Log.write("[drawing] dropped \(name): its screenshot is gone")
             return false
         }
-        try store.write(drawing)
+        let keepsMessage = try store.write(drawing, message: message)
+        if keepsMessage, messages.insert(key).inserted { Log.write("[drawing] message saved \(name)") }
+        if !keepsMessage, messages.remove(key) != nil { Log.write("[drawing] message removed \(name)") }
+        changedAt[key] = ProcessInfo.processInfo.systemUptime
         if drawing.marks.isEmpty {
             guard keys.remove(key) != nil else { return true }
             Log.write("[drawing] removed \(name)")
@@ -123,10 +154,13 @@ final class Drawings {
 
     /// The screenshots went: moved to the Trash by the app, or removed from the folder.
     func remove(_ removing: [ScreenshotKey], observedAt: TimeInterval = .infinity) {
-        let had = removing.filter { keys.contains($0) && changedAt[$0, default: 0] <= observedAt }
+        let had = removing.filter { (keys.contains($0) || messages.contains($0)) && changedAt[$0, default: 0] <= observedAt }
         guard !had.isEmpty else { return }
         let removed = had.filter { (try? store.remove(key: $0.path)) != nil }
-        for key in removed { keys.remove(key) }
+        for key in removed {
+            keys.remove(key)
+            messages.remove(key)
+        }
         Log.write("[drawing] removed \(had.map(\.name).joined(separator: ", "))")
         Log.write("[drawings] \(keys.count)")
         for key in removed { changed(key, nil) }
@@ -139,13 +173,21 @@ final class Drawings {
     func rename(from old: ScreenshotKey, to new: ScreenshotKey, style: TextStyle) {
         guard old != new else { return }
         var pixels: PixelSize?
-        if keys.contains(old) {
+        let hadDrawing = keys.contains(old), hadMessage = messages.contains(old)
+        if hadDrawing || hadMessage {
             do { pixels = try store.rename(from: old.path, to: new.path) } catch { return }
         }
         let editing = open?.drawing(of: old)
         open?.rekey(old, to: new)
-        guard pixels != nil || editing?.marks.isEmpty == false else { return }
-        if pixels != nil {
+        if pixels != nil, hadMessage {
+            messages.remove(old)
+            messages.insert(new)
+            changedAt[new] = ProcessInfo.processInfo.systemUptime
+            if !hadDrawing { Log.write("[drawing] renamed \(old.name) to \(new.name)") }
+        }
+        let moved = pixels != nil && hadDrawing
+        guard moved || editing?.marks.isEmpty == false else { return }
+        if moved {
             keys.remove(old)
             keys.insert(new)
             Log.write("[drawing] renamed \(old.name) to \(new.name)")
@@ -161,10 +203,11 @@ final class Drawings {
 
     /// Only a successful listing of the screenshot's own folder can authorize deletion.
     func sweep(_ inventory: ScreenshotWatcher.Inventory) {
-        let gone = keys.filter { changedAt[$0, default: 0] <= inventory.observedAt && inventory.confirmsAbsence(of: $0.url) }
+        let gone = keys.union(messages).filter { changedAt[$0, default: 0] <= inventory.observedAt && inventory.confirmsAbsence(of: $0.url) }
         for key in gone.sorted() {
             guard (try? store.remove(key: key.path)) != nil else { continue }
             keys.remove(key)
+            messages.remove(key)
             Log.write("[drawing] swept \(key.name)")
             changed(key, nil)
         }

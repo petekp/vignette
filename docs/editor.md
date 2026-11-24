@@ -601,7 +601,7 @@ The host sets what Return and Cmd+Return do from what its toolbar offers (`Edito
   reply on a card that names its session, since typing a message is the intent to send it. Esc, or a
   click on the image, hands the keys back to the editor, and the field shrinks back to one line.
 - The message leads the line Send puts in the session (`docs/request-line-2026-09-25.md`). It is
-  kept until the next image opens, so a send that fails keeps it.
+  stored with the drawing, so the image reopens with it.
 - Tab goes through the marks in reading order, then the bar's controls in order (the tools, Copy,
   the target, the message field, the filled button), then back to the first mark. Shift+Tab goes
   the other way. With no marks, it goes round the controls. While a control has the focus, the

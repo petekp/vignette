@@ -27,9 +27,14 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
 - A mark's fields are the ones its type uses. `bend`, `via`, `wrap`, `agent` and `agentName` are
   left out at their defaults. A text's `size` is always written. A mark has no id and no colour in
   the file.
+- `message` is what was last typed in the editor's message field for the screenshot, as typed,
+  and is left out when the field is empty. The screenshot opens in the editor with it. A file can
+  hold a message and no marks, and then has no drawing. A file without `message`, as every file
+  written before it was kept, opens with an empty field.
 - The host writes the file atomically whenever it receives the drawing: after the 300 ms pause, at
-  park, and when the app quits.
-- A drawing with no marks has no file.
+  park, and when the app quits. The message is written 300 ms after it last changed, beside the
+  marks the file holds, and with the drawing at each of those writes.
+- A file with no marks and no message is removed.
 - Builds from different worktrees share this folder. A file whose `version` is newer than the build
   knows is left alone: the image opens without it, and the build never writes over it.
 - Everything read from a file is checked with the same validator as agents' marks. Numbers must be
