@@ -9,6 +9,11 @@ final class StackUndoTests: XCTestCase {
     private var beeps = 0
     private var announced: [String] = []
     private var history: StackUndo!
+    private var editorOpen: String?
+    private var parked: String?
+    private var corner = true
+    private var steps: [String: (undo: Int, redo: Int)] = [:]
+    private var changed: Set<String> = []
 
     private func shot(_ name: String) -> Screenshot { Screenshot(key: key(name)) }
     private func key(_ name: String) -> ScreenshotKey { ScreenshotKey(folder: URL(fileURLWithPath: "/shots"), name: name) }
@@ -30,7 +35,8 @@ final class StackUndoTests: XCTestCase {
                 let back = trashed.filter { trash.removeValue(forKey: $0.shot.key.name) != nil && folder.insert($0.shot.key.name).inserted }
                 return (back.map(\.shot), [])
             },
-            exists: { [unowned self] in folder.contains($0.key.name) })
+            exists: { [unowned self] in folder.contains($0.key.name) },
+            identity: { [unowned self] in FileIdentity(size: changed.contains($0.key.name) ? 2 : 1, modified: .distantPast) })
         history.cards = StackUndo.Cards(
             column: { [unowned self] in column.map(key) },
             putBack: { [unowned self] shots, was in
@@ -38,8 +44,49 @@ final class StackUndoTests: XCTestCase {
                     column.insert(shot.key.name, at: StackUndo.place(of: shot.key, in: was, among: column.map(key)))
                 }
             },
-            takeOut: { [unowned self] shots in column.removeAll { names(shots).contains($0) } })
+            takeOut: { [unowned self] shots in column.removeAll { names(shots).contains($0) } },
+            draw: { [unowned self] key in
+                if let key { open(key.name) } else { close() }
+                return true
+            },
+            isStack: { [unowned self] in corner })
+        history.editor = StackUndo.Editor(
+            open: { [unowned self] in
+                editorOpen.map { StackUndo.EditorPlace(key: key($0), undo: steps[$0]?.undo ?? 0, redo: steps[$0]?.redo ?? 0) }
+            },
+            depth: { [unowned self] in (editorOpen ?? parked).flatMap { steps[$0]?.undo } ?? 0 },
+            step: { [unowned self] redo in
+                guard let name = editorOpen, var counts = steps[name] else { return }
+                if redo { counts.undo += 1; counts.redo -= 1 } else { counts.undo -= 1; counts.redo += 1 }
+                steps[name] = counts
+            },
+            title: { $0 ? "Redo Arrow" : "Undo Arrow" })
     }
+
+    private func open(_ name: String) {
+        park()
+        editorOpen = name
+        history.editorOpened(key(name))
+    }
+
+    private func close() {
+        park()
+        history.editorEnded()
+    }
+
+    private func park() {
+        guard let was = editorOpen else { return }
+        editorOpen = nil
+        parked = was
+        history.editorLeft(key(was))
+    }
+
+    private func mark() {
+        guard let name = editorOpen else { return }
+        steps[name] = ((steps[name]?.undo ?? 0) + 1, 0)
+    }
+
+    private var depth: Int? { editorOpen.flatMap { steps[$0]?.undo } }
 
     func testUndoingADeletePutsTheFilesAndTheirCardsBackWhereTheyWere() {
         folder = ["a.png", "b.png", "c.png", "d.png"]
@@ -124,5 +171,300 @@ final class StackUndoTests: XCTestCase {
         XCTAssertEqual(StackUndo.place(of: key("d"), in: was, among: ["x", "a", "b"].map(key)), 3)
         XCTAssertEqual(StackUndo.place(of: key("b"), in: was, among: ["x"].map(key)), 1)
         XCTAssertEqual(StackUndo.place(of: key("z"), in: was, among: ["a"].map(key)), 0)
+    }
+
+    func testUndoWalksBackThroughDeleteOpenMarksCloseAndStitchInTheOrderTheyWereMade() {
+        folder = ["a.png", "b.png", "c.png", "d.png"]
+        column = ["a.png", "b.png", "c.png", "d.png"]
+        history.trash([shot("a.png")])
+        open("b.png")
+        mark(); mark()
+        close()
+        folder.insert("cd.png"); column.insert("cd.png", at: 0)
+        history.stitched(shot("cd.png"), takenOut: [], column: ["b.png", "c.png", "d.png"])
+
+        var seen: [String] = []
+        while history.canRun(StackUndo.undoAction) {
+            seen.append(history.menuTitle(for: StackUndo.undoAction) ?? "")
+            history.undo()
+        }
+        XCTAssertEqual(seen, ["Undo Stitch", "Undo Close Drawing", "Undo Arrow", "Undo Arrow", "Undo Open Drawing", "Undo Move to Trash"])
+        XCTAssertNil(editorOpen)
+        XCTAssertEqual(steps["b.png"]?.undo, 0)
+        XCTAssertEqual(folder, ["a.png", "b.png", "c.png", "d.png"])
+
+        seen = []
+        while history.canRun(StackUndo.redoAction) {
+            seen.append(history.menuTitle(for: StackUndo.redoAction) ?? "")
+            history.redo()
+        }
+        XCTAssertEqual(seen, ["Redo Move to Trash", "Redo Open Drawing", "Redo Arrow", "Redo Arrow", "Redo Close Drawing", "Redo Stitch"])
+        XCTAssertNil(editorOpen)
+        XCTAssertEqual(steps["b.png"]?.undo, 2)
+        XCTAssertEqual(beeps, 0)
+    }
+
+    func testUndoingACloseOpensTheImageAgainWithItsHistory() {
+        folder = ["b.png"]
+        open("b.png")
+        mark(); mark(); mark()
+        history.undo()
+        close()
+
+        history.undo()
+        XCTAssertEqual(editorOpen, "b.png")
+        XCTAssertEqual(depth, 2)
+        XCTAssertEqual(steps["b.png"]?.redo, 1)
+        XCTAssertEqual(announced, ["Undo Close Drawing"])
+        XCTAssertEqual(history.menuTitle(for: StackUndo.redoAction), "Redo Close Drawing")
+    }
+
+    func testUndoingAnOpeningClosesItAndItsUndoneStepsWaitForRedoAfterItOpensAgain() {
+        folder = ["b.png"]
+        open("b.png")
+        mark(); mark()
+        history.undo(); history.undo()
+        XCTAssertEqual(history.menuTitle(for: StackUndo.undoAction), "Undo Open Drawing")
+
+        history.undo()
+        XCTAssertNil(editorOpen)
+        history.redo()
+        XCTAssertEqual(editorOpen, "b.png")
+        XCTAssertEqual(depth, 0)
+        history.redo(); history.redo()
+        XCTAssertEqual(depth, 2)
+        history.redo()
+        XCTAssertEqual(beeps, 1)
+    }
+
+    func testASecondOpeningOfAnImageStopsAtItsOwnStartAndItsEarlierStepsWaitAtTheirPlace() {
+        folder = ["b.png", "c.png"]
+        open("b.png")
+        mark()
+        close()
+        open("c.png")
+        close()
+        open("b.png")
+        mark()
+
+        var seen: [String] = []
+        while history.canRun(StackUndo.undoAction) {
+            seen.append("\(history.menuTitle(for: StackUndo.undoAction) ?? "") \(editorOpen ?? "-")")
+            history.undo()
+        }
+        XCTAssertEqual(seen, ["Undo Arrow b.png", "Undo Open Drawing b.png", "Undo Close Drawing -", "Undo Open Drawing c.png",
+                              "Undo Close Drawing -", "Undo Arrow b.png", "Undo Open Drawing b.png"])
+        XCTAssertEqual(steps["b.png"]?.undo, 0)
+        XCTAssertNil(editorOpen)
+    }
+
+    func testAnImageTheTimelineHoldsNoStepOfWalksBackThroughItsStoredHistoryBeforeItsOpeningIsUndone() {
+        folder = ["b.png"]
+        steps["b.png"] = (3, 0)
+        open("b.png")
+        history.undo(); history.undo(); history.undo()
+        XCTAssertEqual(depth, 0)
+        XCTAssertEqual(editorOpen, "b.png")
+        history.undo()
+        XCTAssertNil(editorOpen)
+    }
+
+    func testSwitchingImagesIsOneStepThatGoesBackToTheImageBefore() {
+        folder = ["a.png", "b.png"]
+        open("a.png")
+        mark()
+        open("b.png")
+        XCTAssertEqual(history.menuTitle(for: StackUndo.undoAction), "Undo Open Drawing")
+        history.undo()
+        XCTAssertEqual(editorOpen, "a.png")
+        XCTAssertEqual(history.menuTitle(for: StackUndo.undoAction), "Undo Arrow")
+        history.redo()
+        XCTAssertEqual(editorOpen, "b.png")
+    }
+
+    func testAFileReplacedSinceItClosedUsesUpTheStepWithABeepAndTheNextUndoGoesOn() {
+        folder = ["a.png", "b.png"]
+        column = ["a.png", "b.png"]
+        history.trash([shot("a.png")])
+        open("b.png")
+        close()
+        changed = ["b.png"]
+
+        history.undo()
+        XCTAssertNil(editorOpen)
+        XCTAssertEqual(beeps, 1)
+        XCTAssertEqual(announced, [])
+        history.undo()
+        XCTAssertEqual(folder, ["a.png", "b.png"])
+        XCTAssertEqual(announced, ["Undo Move to Trash"])
+        XCTAssertEqual(beeps, 1)
+    }
+
+    func testAFileDeletedByAnotherAppSinceItClosedUsesUpTheStep() {
+        folder = ["b.png"]
+        open("b.png")
+        close()
+        folder = []
+        history.undo()
+        XCTAssertNil(editorOpen)
+        XCTAssertEqual(beeps, 1)
+        XCTAssertFalse(history.canRun(StackUndo.undoAction))
+    }
+
+    func testUndoingTheDeleteOfTheImageInTheEditorBringsItBackThere() {
+        folder = ["b.png"]
+        column = ["b.png"]
+        open("b.png")
+        mark()
+        history.trash([shot("b.png")])
+        close()
+        XCTAssertEqual(history.menuTitle(for: StackUndo.undoAction), "Undo Move to Trash")
+
+        history.undo()
+        XCTAssertEqual(column, ["b.png"])
+        XCTAssertEqual(editorOpen, "b.png")
+        XCTAssertEqual(depth, 1)
+    }
+
+    func testANewStepInTheEditorEndsWhatCouldBeRedone() {
+        folder = ["b.png"]
+        open("b.png")
+        mark()
+        close()
+        history.undo()
+        history.undo()
+        XCTAssertTrue(history.canRun(StackUndo.redoAction))
+        mark()
+        XCTAssertFalse(history.canRun(StackUndo.redoAction))
+        history.redo()
+        XCTAssertEqual(beeps, 1)
+    }
+
+    func testAFileThatKeptFewerStepsThanTheEditorHadMovesItsOpeningsDownByAsMany() {
+        folder = ["b.png"]
+        open("b.png")
+        mark(); mark(); mark()
+        close()
+        open("b.png")
+        mark()
+        close()
+        steps["b.png"] = (2, 0)
+
+        history.undo()
+        XCTAssertEqual(depth, 2)
+        history.undo()
+        XCTAssertEqual(depth, 1)
+        XCTAssertEqual(editorOpen, "b.png")
+        history.undo()
+        XCTAssertNil(editorOpen)
+    }
+
+    func testAnImageWhoseFileLeftAsTheQueueMovedOnIsNotWhatUndoingTheNextOpeningGoesBackTo() {
+        folder = ["a.png", "b.png"]
+        column = ["a.png", "b.png"]
+        open("a.png")
+        history.trash([shot("a.png")])
+        open("b.png")
+
+        history.undo()
+        XCTAssertNil(editorOpen)
+        XCTAssertEqual(beeps, 0)
+        history.undo()
+        XCTAssertEqual(editorOpen, "a.png")
+        XCTAssertEqual(column, ["a.png", "b.png"])
+    }
+
+    func testUndoWaitsWithABeepWhileTheAnnotatorIsStillClosingTheImage() {
+        folder = ["b.png"]
+        column = ["b.png"]
+        history.trash([])
+        open("b.png")
+        mark()
+        park()
+        history.undo()
+        XCTAssertEqual(beeps, 1)
+        XCTAssertFalse(history.canRun(StackUndo.undoAction))
+
+        history.editorEnded()
+        history.undo()
+        XCTAssertEqual(editorOpen, "b.png")
+        XCTAssertEqual(depth, 1)
+    }
+
+    func testAHeldCmdZWalksOnlyTheEditorsOwnSteps() {
+        folder = ["b.png"]
+        open("b.png")
+        mark(); mark()
+        for _ in 0..<5 { history.walk(redo: false, repeated: true) }
+        XCTAssertEqual(depth, 0)
+        XCTAssertEqual(editorOpen, "b.png")
+        XCTAssertEqual(beeps, 0)
+        history.undo()
+        XCTAssertNil(editorOpen)
+    }
+
+    func testOverLoneThumbnailsUndoStopsAtTheOpeningsStart() {
+        folder = ["b.png"]
+        corner = false
+        open("b.png")
+        mark()
+        history.undo()
+        XCTAssertEqual(depth, 0)
+        history.undo()
+        XCTAssertEqual(editorOpen, "b.png")
+        XCTAssertEqual(beeps, 1)
+        XCTAssertFalse(history.canRun(StackUndo.undoAction))
+    }
+
+    func testStoredStepsAreOlderThanTheTimelineSoTheyWaitUntilNothingIsLeftBeforeTheirOpening() {
+        folder = ["a.png", "c.png"]
+        column = ["a.png", "c.png"]
+        steps["a.png"] = (5, 0)
+        history.trash([shot("c.png")])
+        open("a.png")
+        close()
+
+        history.undo()
+        XCTAssertEqual(depth, 5)
+        XCTAssertEqual(history.menuTitle(for: StackUndo.undoAction), "Undo Open Drawing")
+        history.undo()
+        XCTAssertNil(editorOpen)
+        history.undo()
+        XCTAssertEqual(folder, ["a.png", "c.png"])
+        XCTAssertFalse(history.canRun(StackUndo.undoAction))
+
+        open("a.png")
+        XCTAssertEqual(history.menuTitle(for: StackUndo.undoAction), "Undo Arrow")
+    }
+
+    func testAgentsMarksAddedWhileClosedLeaveTheOpeningsStartWhereItWas() {
+        folder = ["b.png"]
+        open("b.png")
+        mark()
+        close()
+        open("b.png")
+        mark()
+        close()
+        steps["b.png"] = (3, 0)
+
+        history.undo()
+        history.undo(); history.undo()
+        XCTAssertEqual(depth, 1)
+        XCTAssertEqual(editorOpen, "b.png")
+        history.undo()
+        XCTAssertNil(editorOpen)
+    }
+
+    func testReadingTheTitleLeavesWhatCanBeRedone() {
+        folder = ["b.png"]
+        open("b.png")
+        mark()
+        close()
+        history.undo()
+        history.undo()
+        mark()
+        XCTAssertFalse(history.canRun(StackUndo.redoAction))
+        steps["b.png"] = (0, 1)
+        XCTAssertTrue(history.canRun(StackUndo.redoAction))
     }
 }

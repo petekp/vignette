@@ -91,6 +91,7 @@ Owns the list of files to annotate and how a hand ended the run. It wraps the tr
 - `parked(o)`: `perform(.park)` `:844`.
 - `loaded(o)`: `editorLoaded` `:396`. `takesPresses(o)`: `annotatorTakesEvents` `:401`.
 - `cancel(RunEnding)`: `annotationEnded` `:367` (Esc, Cmd+W, bar close, a click outside over lone thumbnails, decode failure) and `CornerPresentation` `.closeEditor` as `.shortcut` `:284`.
+- `undo`: `ThumbnailController+History.draw(nil)`, an Undo or a Redo closing the annotator over the stack.
 - `sent`: `annotationSent` `:375`. `finish`: `annotationFinished(quick: false)` `:381`. From `slideOut` `:694`, `dismiss(reason.runEnding)`: `dismiss(.finished)` for quick Done, `dismiss(.clickedAway)` for a click outside while the stack shows, `dismiss(nil)` otherwise.
 - `remove([key])`: `:476`. `renamed`: `:493`. `selectionChanged`: `:775`. `failed(o)`: `showFailed` `:637`, from `showNotCopied(in:)` and `showNotSaved` (`ThumbnailController+Notices.swift:7, 13`). `newShot`: `show` `:230`.
 
@@ -103,6 +104,7 @@ Owns the list of files to annotate and how a hand ended the run. It wraps the tr
 | any | `loaded`, `takesPresses`, `arrived` for `o == opening` | sets that `Lift` flag | `takesPresses` adds `handOverPresses`, `arrived` adds `landed`; `liftFlight` once when all three are in (`:190`) |
 | any | `shown`, `parked` | as `T` | as `T` |
 | any | `cancel(how)` | `ending = how` if active; `queue = []` always (`:119-122`), then `T.close` ([run-1](findings.md#run-1), [run-2](findings.md#run-2)) | as `T` |
+| any | `undo` | `queue = []`, `ending` unset, then `T.close` | as `T`; `endRun(nil)`, so the corner hands no keys back |
 | any | `sent` | `ending = .sent` if active; queue kept, then `T.close` | as `T` |
 | any | `finish` | `ending = .finished` if active; queue kept, then `T.finish` ([run-4](findings.md#run-4)) | as `T` |
 | any | `dismiss(e)` | `ending = e` if `e` is set and active; `queue = []`, then `T.dismiss` | as `T` |

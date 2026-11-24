@@ -106,8 +106,24 @@ final class Drawings {
     /// log line: saved after a change, parked, or built from an agent's marks. A drawing for a file
     /// that is gone is not written: the editor can hand one over after its file was trashed.
     @discardableResult
-    func write(_ drawing: Drawing, history: EditorHistory = EditorHistory(), reason: String) -> Bool {
-        (try? save(drawing, history: history, reason: reason)) ?? false
+    func write(_ drawing: Drawing, message: String? = nil, history: EditorHistory = EditorHistory(), reason: String) -> Bool {
+        (try? save(drawing, message: message, history: history, reason: reason)) ?? false
+    }
+
+    /// What a screenshot's file holds, as it is now.
+    struct Saved {
+        let drawing: Drawing
+        let message: String
+        let history: EditorHistory
+    }
+
+    /// The drawing, the message and the history of the screenshot `key` as they are now: the
+    /// editor's drawing and history when it is open there, else the stored ones. Nil when it has none.
+    func saved(of key: ScreenshotKey, style: TextStyle) -> Saved? {
+        guard let drawing = current(of: key, style: style) else { return nil }
+        let message = message(of: key, pixels: drawing.pixels)
+        let history = open?.history(of: key) ?? history(of: key, pixels: drawing.pixels, drawing: drawing)
+        return Saved(drawing: drawing, message: message, history: history)
     }
 
     /// Writes the editor's drawing with `message`, the words in its message field, and `history`, its

@@ -1,5 +1,8 @@
 # The undo history is kept in the drawing file
 
+Superseded in part by ADR 0029: within one run of the app, Cmd+Z in a screenshot opened again stops
+at that opening's start and then closes it. Its earlier steps come back once the timeline reopens it.
+
 Each screenshot's undo and redo history is kept in its drawing file, under `history`, beside the
 marks and the message (`docs/drawing-file.md`). Reopening the screenshot, or relaunching the app,
 lets Cmd+Z step back through what was done before, and Shift+Cmd+Z redo what was undone, until the

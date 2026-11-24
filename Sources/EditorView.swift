@@ -48,6 +48,8 @@ final class EditorView: NSView {
     var onPress: (() -> Void)?
     /// A key reached the editor.
     var onKey: (() -> Void)?
+    /// Cmd+Z's owner, which comes back to `step` for the editor's own steps.
+    weak var timeline: StackUndo?
     /// Offered each key before the core while no text is typed: true when the host took it. While one
     /// of the toolbar's controls has the focus, the keys stay here and Tab and Space are the toolbar's.
     var takesKey: ((EditorCore.Key, EditorCore.Modifiers) -> Bool)?
@@ -597,7 +599,7 @@ final class EditorView: NSView {
         onKey?()
         let modifiers = Self.modifiers(event)
         if key == .character("z") {
-            if modifiers.contains(.shift) { redo(nil) } else { undo(nil) }
+            walk(redo: modifiers.contains(.shift), repeated: event.isARepeat)
             return true
         }
         if typingField != nil { return typingKey(event) || super.performKeyEquivalent(with: event) }
@@ -607,22 +609,14 @@ final class EditorView: NSView {
         return true
     }
 
-    /// Undo: the typing session's own while a text is typed, where nothing is undone past the
-    /// session's start; the core's otherwise.
-    @objc func undo(_ sender: Any?) {
+    /// The editor's own Undo, or Redo: the typing session's while a text is typed, where nothing is
+    /// undone past the session's start; the core's otherwise.
+    func step(redo: Bool) {
         if let field = typingField {
-            if field.undo.canUndo { field.undo.undo() }
+            if redo ? field.undo.canRedo : field.undo.canUndo { redo ? field.undo.redo() : field.undo.undo() }
             return
         }
-        handle(.keyDown(.character("z"), .command, isRepeat: false))
-    }
-
-    @objc func redo(_ sender: Any?) {
-        if let field = typingField {
-            if field.undo.canRedo { field.undo.redo() }
-            return
-        }
-        handle(.keyDown(.character("z"), [.command, .shift], isRepeat: false))
+        handle(.keyDown(.character("z"), redo ? [.command, .shift] : .command, isRepeat: false))
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {

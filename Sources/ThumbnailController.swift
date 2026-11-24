@@ -79,7 +79,7 @@ final class ThumbnailController {
         relayout: { [unowned self] in self.relayout() })
     private lazy var swipe = StackSwipeDriver(model: model, screen: { [unowned self] in self.screen }) { [unowned self] in self.dismiss(by: .swipe) }
     /// The one owner of the annotation run, its queue included. Only `handle` writes it; see AnnotationRun.
-    private var run = AnnotationRun()
+    private(set) var run = AnnotationRun()
     /// The card the run has open, kept here because a lone thumbnail leaves the model once the annotator shows.
     private var sessionCard: Card?
     private var annotating: Card? { run.isActive ? sessionCard : nil }
@@ -719,7 +719,7 @@ final class ThumbnailController {
 
     /// Every event reaches the run here. One that arrives while another is being handled, as a park
     /// or a flight answering inside the effects that asked for it, runs right after it.
-    private func send(_ event: AnnotationRun.Event) {
+    func send(_ event: AnnotationRun.Event) {
         hold.send(event) { handle($0) }
     }
 
@@ -738,7 +738,7 @@ final class ThumbnailController {
         if leaving != nil || releasesRoom(effects) {
             makeRoom(besides: leaving.map { targetFrame(for: $0) }, animated: true)
         }
-        for effect in effects { perform(effect, leaving: slot) }
+        for effect in effects { follow(effect) { perform(effect, leaving: slot) } }
         // A press held for, or handed to, an image that is no longer on its way in or in the editor.
         if let key = flightPress.key, key != keyInEditor {
             flightPress.ended(key)
@@ -1119,7 +1119,7 @@ final class ThumbnailController {
             return true
         }
         if chars == "z" && (mods == [.command] || mods == [.command, .shift]) {
-            if mods.contains(.shift) { history.redo() } else { history.undo() }
+            history.walk(redo: mods.contains(.shift), repeated: event.isARepeat)
             return true
         }
         let targets = targetCards()

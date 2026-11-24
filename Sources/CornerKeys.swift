@@ -45,8 +45,6 @@ final class ThumbnailPanel: NSPanel {
         return super.performKeyEquivalent(with: event)
     }
 
-    override var undoManager: UndoManager? { history?.manager }
-
     @objc func undo(_ sender: Any?) { history?.undo() }
     @objc func redo(_ sender: Any?) { history?.redo() }
 

@@ -89,24 +89,40 @@ Inserts a card into the open stack without animating the layout change; the new 
 
 ### StackUndo (explicit)
 
-Owner: `StackUndo.swift`, its `UndoManager`; `ThumbnailController.putBack` places the cards. Tests: `StackUndoTests`, `FolderWritesTests.testAFilePutBackFromTheTrashIsNoCaptureAndHoldsBackOlderRemovals`.
+Owner: `StackUndo.swift`, `StackUndo+Connections.swift`; `ThumbnailController.putBack` places the cards, `ThumbnailController+History.swift` feeds it the run's effects and opens or closes the annotator for it. Tests: `StackUndoTests`, `AnnotationRunTests.testUndoingTheOpeningEndsTheRunWithNoHandSoTheKeysStayWithTheStack`, `FolderWritesTests.testAFilePutBackFromTheTrashIsNoCaptureAndHoldsBackOlderRemovals`.
 
-Cmd+Z and Shift+Cmd+Z while the stack has the keys (`docs/rules/stack-undo.md`). **States**: the manager's undo and redo lists, each entry one step object (`PutBack`, `TrashAgain`, `Unstitch`, `Restitch`), and `renamed`, each recorded file's name now.
+Cmd+Z and Shift+Cmd+Z while the stack or the editor has the keys (`docs/rules/stack-undo.md`). **States**: `undoSteps` and `redoSteps`, each step a `Name`, an `Action` (`putBack`, `trashAgain`, `unstitch`, `restitch`, `draw`), `editor` (the screenshot in the editor while the step is next, with its history's depth and its file's identity) and `then` (the same once it has run); `leaving`, the screenshot the run took out of the editor until it opens another or ends; `asked`, an opening or a close an Undo or Redo is waiting for; `seen`, the editor's step counts when last read; `inEditor`, the screenshot it saw open; `leftAt`, each screenshot's depth when it left; `renamed`.
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| any | `trash` (Delete) with a file trashed | `PutBack` on the undo list, redo list cleared | files to the Trash, cards leave |
-| any | `stitched` | `Unstitch` on the undo list, redo list cleared | — |
-| `PutBack` on top | Cmd+Z, a file came back | `TrashAgain` on the redo list | files back, `putBack` cards, VoiceOver hears "Undo Move to Trash" |
-| `Unstitch` on top | Cmd+Z, the stitch trashed | `Restitch` on the redo list | pieces' cards back first, then the stitch to the Trash |
-| `TrashAgain`, `Restitch` on top | Shift+Cmd+Z | `PutBack`, `Unstitch` on the undo list | the step again |
+| any | `trash` (Delete) with a file trashed | `putBack` on the undo list, redo list cleared | files to the Trash, cards leave |
+| any | `stitched` | `unstitch` on the undo list, redo list cleared | — |
+| `asked` nil | `editorOpened` (`prepare`), `leaving` nil | Open Drawing on the undo list, from nothing; redo cleared | — |
+| `asked` nil | `editorLeft` (`park`, `abandon`) then `editorOpened` | Open Drawing from the screenshot that left | — |
+| `asked` nil | `editorLeft` then `editorEnded` (`endRun`), its file still there | Close Drawing on the undo list | — |
+| `asked` set | `editorOpened` of what it asked, or `editorEnded` | `asked` nil, nothing recorded | — |
+| a screenshot open, its depth above the next step's | Cmd+Z | — | the editor's own Undo |
+| a screenshot open, its depth below the next redo step's | Shift+Cmd+Z, the editor can redo | — | the editor's own Redo |
+| `putBack` on top | Cmd+Z, a file came back | `trashAgain` on the redo list | files back, `putBack` cards, the screenshot that was in the editor opens again, VoiceOver hears "Undo Move to Trash" |
+| `unstitch` on top | Cmd+Z, the stitch trashed | `restitch` on the redo list | pieces' cards back first, then the stitch to the Trash |
+| `draw` on top | Cmd+Z, `then` names a screenshot | `asked` = its opening, the opposite `draw` on the redo list | `annotate`: its flights |
+| `draw` on top | Cmd+Z, `then` nil, the corner the stack | `asked` = close | `.undo` |
+| `draw` on top, `then` nil, a screenshot open | Cmd+Z over lone thumbnails | — | beep |
+| `draw` on top whose `then` the editor shows | its key | step gone | the step below runs |
+| redo steps on top | Shift+Cmd+Z | the opposite on the undo list | the step again |
+| redo steps | the editor's step counts changed since `seen` | redo list cleared | — |
 | any step on top | its files moved since | step gone, nothing on the other list | beep, `[undo] can't …` |
+| `asked` or `leaving` set | its key | — | beep |
+| a step of the timeline next | a held key's repeat | — | nothing |
 | either list empty | its key | — | beep |
+| any | a screenshot opens with fewer steps than `leftAt` (`editorLeft`, after the park) | every depth recorded for it moves down by as many | — |
 | any | a rename in the folder, while a list holds a step | `renamed` follows it | — |
 
 **Invariants**
 
 - A step that runs leaves its opposite on the other list, and one that cannot leaves nothing. Checked by: `StackUndoTests`.
+- Cmd+Z walks back through Delete, the opening, the editor's steps, the close and Stitch in the order they were made, and Shift+Cmd+Z forward the same way. Checked by: `StackUndoTests.testUndoWalksBackThroughDeleteOpenMarksCloseAndStitchInTheOrderTheyWereMade`.
+- An opening stops Cmd+Z at its own start. Checked by: `StackUndoTests.testASecondOpeningOfAnImageStopsAtItsOwnStartAndItsEarlierStepsWaitAtTheirPlace`.
 - A card comes back before the older card still in the column that followed it. Checked by: `StackUndoTests.testACardGoesBackBeforeTheOlderCardThatIsStillThereElseAfterTheNewerOne`.
 
 **Late and concurrent answers**
