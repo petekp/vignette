@@ -633,9 +633,7 @@ private struct ToolbarView: View {
         let below = model.roomBelow + (AnnotatorToolbar.height - 30) / 2 - 8
         let box = RoundedRectangle(cornerRadius: 7, style: .continuous)
         return GrowingField(height: fieldHeight, below: below) {
-            // Grown, it hangs past the bar over whatever is behind, so it takes a blur of that, as a
-            // popover does.
-            BehindWindowBlur(cornerRadius: 7).opacity(grown ? 1 : 0)
+            Color.clear
             // The text at its own height, always. A text field shorter than its text scrolls to its
             // caret, so while the box grew around it the text jumped up a line and back. The box
             // clips it instead, and a new line comes into view as the box grows.
@@ -669,6 +667,8 @@ private struct ToolbarView: View {
             .background(alignment: .trailing) {
                 ZStack {
                     box.fill(Color.primary.opacity(0.09)).shadow(color: .black.opacity(grown ? 0.3 : 0), radius: 10, y: 4)
+                    // Grown, it hangs past the bar over whatever is behind, so it takes a blur of that, as a
+                    // popover does.
                     BehindWindowBlur(cornerRadius: 7).opacity(grown ? 1 : 0)
                 }
                 .frame(width: Self.messageWidth + sessionRoom)
