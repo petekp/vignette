@@ -132,6 +132,28 @@ final class HerdrFocusTests: XCTestCase {
         XCTAssertFalse(ran.marked)
     }
 
+    func testACaptureLogsTheFocusedPaneItsSessionAndItsRepository() {
+        var listed = claude(session, pid: 501)
+        listed.place = .repository(name: "vignette", root: "/Users/p/Code/vignette", worktree: nil, subfolder: nil)
+        func line(pane: String, tab: String = "tbA", listing: [AgentDestination]) -> String {
+            HerdrFocus.logged(HerdrFocus.clue(read: { .success(self.focus(pane, tab: tab) ?? HerdrFocus(pane: pane, tab: tab, agents: [])) },
+                                              listing: { listing }))
+        }
+        XCTAssertEqual(line(pane: "pA1", listing: [listed]), "herdr=pA1/\(session) focus=pane project=vignette")
+        XCTAssertEqual(line(pane: "pA2", listing: [listed]), "herdr=pA2/\(session) focus=tab project=vignette", "a shell beside the one agent")
+        XCTAssertEqual(line(pane: "pC1", tab: "tbC", listing: [listed]), "herdr=pC1/none focus=none project=none", "a Codex pane has no Claude Code session")
+        XCTAssertEqual(line(pane: "pA1", listing: []), "herdr=pA1/none focus=none project=none")
+    }
+
+    func testACaptureWithNoFocusLogsOneWordWhy() {
+        let listing = RunCount()
+        let unread = HerdrFocus.clue(read: { .failure(HerdrFocus.Unread(reason: "status exit 1: no window")) }, listing: { listing.mark(); return [] })
+        XCTAssertEqual(HerdrFocus.logged(unread), "herdr=unread:status-exit-1:-no-window focus=none project=none")
+        XCTAssertEqual(HerdrFocus.logged(HerdrFocus.clue(read: { HerdrFocus.readReporting(app: { nil }, core: { nil }) }, listing: { [] })),
+                       "herdr=unread:no-herdr-app-or-hc focus=none project=none")
+        XCTAssertFalse(listing.marked, "sessions are listed only after the focus is read")
+    }
+
     func testTheThreeReadsAreAskedOfTheirTools() throws {
         let status = status(pane: "pA1"), ls = ls, terminals = terminals
         let read = HerdrFocus.read(app: { "/bin/herdr-app" }, core: { "/bin/hc" }, run: { binary, arguments, _ in

@@ -134,7 +134,7 @@ targets:
     sources:
       - path: Tests
       - path: Sources
-        excludes: [AppDelegate.swift, AppDelegate+Annotator.swift, AppDelegate+Drawings.swift, AppDelegate+Listing.swift, AppDelegate+LiveInkOffer.swift, AppDelegate+Send.swift, AppDelegate+StackUndo.swift, AppDelegate+StatusIcon.swift, Updater.swift]
+        excludes: [AppDelegate.swift, AppDelegate+Annotator.swift, AppDelegate+CaptureClues.swift, AppDelegate+Drawings.swift, AppDelegate+Listing.swift, AppDelegate+LiveInkOffer.swift, AppDelegate+Send.swift, AppDelegate+StackUndo.swift, AppDelegate+StatusIcon.swift, Updater.swift]
     settings:
       base:
         SWIFT_VERSION: "5.10"

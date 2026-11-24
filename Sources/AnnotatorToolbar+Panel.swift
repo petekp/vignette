@@ -50,11 +50,32 @@ final class ToolbarPanel: NSPanel {
 
     override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
         let made = super.makeFirstResponder(responder)
+        // The editor's history holds the field's steps, so the text view keeps none of its own.
+        (firstResponder as? NSTextView)?.allowsUndo = false
         if made, caretToEnd, let text = firstResponder as? NSTextView {
             caretToEnd = false
             text.setSelectedRange(NSRange(location: (text.string as NSString).length, length: 0))
         }
         return made
+    }
+
+    /// Undo or Redo (true) from the Edit menu while the message field has the keys.
+    var onUndo: ((_ redo: Bool) -> Void)?
+    /// The Edit menu's words for Undo or Redo (true), and whether it can act.
+    var undoTitle: ((_ redo: Bool) -> (title: String, enabled: Bool))?
+
+    /// An input method is composing a word in the field: its keys are the input method's.
+    private var composing: Bool { (firstResponder as? NSTextView)?.hasMarkedText() == true }
+
+    @objc func undo(_ sender: Any?) { if !composing { onUndo?(false) } }
+    @objc func redo(_ sender: Any?) { if !composing { onUndo?(true) } }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        let undo = item.action == #selector(undo(_:)), redo = item.action == #selector(redo(_:))
+        guard undo || redo else { return super.validateUserInterfaceItem(item) }
+        guard !composing, let (title, enabled) = undoTitle?(redo) else { return false }
+        (item as? NSMenuItem)?.title = title
+        return enabled
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -97,8 +118,12 @@ final class ToolbarPanel: NSPanel {
 }
 
 /// A Command key the message field has no use for, which does what it does on the image instead.
-/// The rest, such as Cmd+V, Cmd+A, Cmd+X and Cmd+Z, stay with the field.
+/// The rest, such as Cmd+V, Cmd+A and Cmd+X, stay with the field.
 enum FieldCommand: Equatable {
+    /// Cmd+Z and Shift+Cmd+Z, unless a word is being composed: the editor's one history, which holds
+    /// the field's typing in order with the marks.
+    case undo
+    case redo
     /// Cmd+W: the annotator closes, as through the main menu's Close.
     case close
     /// Cmd+Plus, Cmd+Minus and Cmd+0, by the editor's own rule.
@@ -107,9 +132,11 @@ enum FieldCommand: Equatable {
     case copyDrawing
 
     /// `fieldEmpty`: `Model.fieldEmpty`, and no word is being composed in the field.
-    init?(_ key: EditorCore.Key?, _ modifiers: EditorCore.Modifiers, fieldEmpty: Bool) {
+    init?(_ key: EditorCore.Key?, _ modifiers: EditorCore.Modifiers, fieldEmpty: Bool, composing: Bool = false) {
         guard modifiers.contains(.command), case .character(let character)? = key else { return nil }
-        if let zoom = EditorCore.zoomRequest(for: character) {
+        if character == "z", !composing, modifiers == .command || modifiers == [.command, .shift] {
+            self = modifiers.contains(.shift) ? .redo : .undo
+        } else if let zoom = EditorCore.zoomRequest(for: character) {
             self = .zoom(zoom)
         } else if character == "w", modifiers == .command {
             self = .close

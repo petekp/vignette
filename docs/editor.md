@@ -497,20 +497,8 @@ Keys that act on a selection are in section 4. The rest:
 
 ## 7. Undo and redo
 
-- One owner handles Cmd+Z, Shift+Cmd+Z and any Undo or Redo menu item.
-- Each step is one thing the person did:
-  - creating a mark;
-  - moving, resizing, bending, or dragging an arrow's end;
-  - one nudge press, including its repeats;
-  - duplicating;
-  - deleting;
-  - pasting;
-  - cutting;
-  - one typing session;
-  - agents' marks added to the open drawing.
-- Selecting is never a step. Undo and redo put back the selection that belonged to the step.
-- Cmd+Z during a drag cancels the drag and undoes nothing more.
-- History starts empty each time a screenshot opens.
+[Undo and redo](editor-undo.md) has the steps, their names, the message field's steps, and the
+history kept with each screenshot.
 
 ## 8. Clipboard, paste and drop
 
@@ -601,7 +589,7 @@ The host sets what Return and Cmd+Return do from what its toolbar offers (`Edito
   reply on a card that names its session, since typing a message is the intent to send it. Esc, or a
   click on the image, hands the keys back to the editor, and the field shrinks back to one line.
 - The message leads the line Send puts in the session (`docs/request-line-2026-09-25.md`). It is
-  kept until the next image opens, so a send that fails keeps it.
+  stored with the drawing, so the image reopens with it.
 - Tab goes through the marks in reading order, then the bar's controls in order (the tools, Copy,
   the target, the message field, the filled button), then back to the first mark. Shift+Tab goes
   the other way. With no marks, it goes round the controls. While a control has the focus, the

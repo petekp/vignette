@@ -71,26 +71,24 @@ final class AnnotatorToolbar {
             sending = false
             failure = nil
         }
-        /// What the person typed to go with Send or Reply, as typed. Kept until the next image opens,
-        /// so a send that fails keeps it for the next try.
-        @Published var message = ""
+        /// What the person typed to go with Send or Reply, as typed. It is stored with the image's
+        /// drawing, and the image opens with the words it was last left with (`restore`), after a
+        /// send, a failed send, Copy or a close alike.
+        @Published var message = "" { didSet { if message != oldValue { onMessageChanged?() } } }
+        var onMessageChanged: (() -> Void)?
+        /// The words the image opened with.
+        private(set) var messageOnOpen = ""
+        /// The image opened with `message`, the words it was last left with, or "".
+        func restore(message: String) {
+            messageOnOpen = message
+            self.message = message
+        }
         /// The bar's panel holds the keys, which it does only while the message field is typed in.
         @Published var keyed = false
         /// The message field took the keys on its own as the image opened, and has kept them since.
         var tookKeysOnOpen = false
         /// A tool letter typed first into that field, waiting to learn whether it began a word.
         var toolLetter = HeldToolLetter()
-
-        /// The message field took the keys on its own and is still empty, so nothing in it asks to
-        /// send: Return and Esc do what they do on the image.
-        var fieldUntouched: Bool { tookKeysOnOpen && fieldEmpty }
-
-        /// What Return in the message field does. In an untouched field, what it does on the image,
-        /// which never sends to a session Vignette picked.
-        var fieldReturn: EditorCore.Finish { fieldUntouched ? offer.finishes.returnKey : .send }
-
-        /// Esc in an untouched field closes the editor, as on the image. Otherwise it hands the keys back.
-        var fieldEscCloses: Bool { fieldUntouched }
 
         /// A control Tab reaches, in the bar's order.
         enum Control: Hashable {
@@ -125,15 +123,6 @@ final class AnnotatorToolbar {
             return controls
         }
 
-        /// The most characters the message holds, as for a text mark.
-        static let messageLimit = MarkFields.maxTextLength
-
-        /// The message as it joins the line Send puts in the session, which is one line: its words with
-        /// one space between each, whatever line breaks, tabs or spaces were there. Nil when there are none.
-        var sentMessage: String? {
-            let line = message.asOneLine
-            return line.isEmpty ? nil : line
-        }
 
         var offer: ToolbarOffer {
             ToolbarOffer(replyTo: replyTo, destinations: whole ?? destinations, listed: whole != nil, target: target, startable: startable)
@@ -155,7 +144,6 @@ final class AnnotatorToolbar {
         func begin(replyTo: AgentDestination?, carryingTarget: Bool) {
             self.replyTo = replyTo
             imageNumber += 1
-            message = ""
             focus = nil
             tookKeysOnOpen = false
             toolLetter = HeldToolLetter()
@@ -211,6 +199,9 @@ final class AnnotatorToolbar {
     var onPick: (() -> Void)?
     /// Esc in the message field: the keys go back to the editor.
     var onMessageEnd: (() -> Void)?
+    /// A press on the bar, or the field losing the keys: typing in the message field next is a new
+    /// undo step.
+    var onMessageTypingEnded: (() -> Void)?
     /// Esc in a message field that took the keys on its own and is still empty: the editor closes.
     var onClose: (() -> Void)?
     /// Left or Right in that same field: the screenshot beside this one, as on the image.
@@ -289,6 +280,7 @@ final class AnnotatorToolbar {
         }
         panel.onPress = { [weak self] onField in
             guard let self else { return }
+            onMessageTypingEnded?()
             model.pressed()
             keepHeldTool()
             guard !onField, model.focus != .message else { return }
@@ -311,6 +303,7 @@ final class AnnotatorToolbar {
             NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.model.keyed = false
+                    self?.onMessageTypingEnded?()
                     self?.keepHeldTool()
                     self?.model.tookKeysOnOpen = false
                     self?.panel.caretToEnd = false
@@ -380,7 +373,7 @@ final class AnnotatorToolbar {
 
 /// A blur of what is behind the window, as a popover has. SwiftUI's materials blend only with the
 /// window's own content, so over the bar's panel they show the bar's edge through them.
-private struct BehindWindowBlur: NSViewRepresentable {
+struct BehindWindowBlur: NSViewRepresentable {
     let cornerRadius: CGFloat
     var material: NSVisualEffectView.Material = .popover
 
@@ -857,67 +850,6 @@ private struct FailureReason: View {
 }
 
 /// Where each control's tooltip goes, and what it says.
-private struct TipSpots: PreferenceKey {
-    struct Spot { let anchor: Anchor<CGRect>; let text: String? }
-    static let defaultValue: [AnnotatorToolbar.Model.Control: Spot] = [:]
-    static func reduce(value: inout [AnnotatorToolbar.Model.Control: Spot], nextValue: () -> [AnnotatorToolbar.Model.Control: Spot]) {
-        value.merge(nextValue()) { $1 }
-    }
-}
-
-/// A control with a tooltip. The bar draws its own: AppKit shows a window's tooltips only while it is
-/// key or was the last one clicked, and the editor's window holds the keys, so the bar's never came.
-private struct TipSpot: ViewModifier {
-    let control: AnnotatorToolbar.Model.Control
-    let text: String?
-    let hover: (AnnotatorToolbar.Model.Control, Bool) -> Void
-    func body(content: Content) -> some View {
-        content
-            .onHover { hover(control, $0) }
-            .anchorPreference(key: TipSpots.self, value: .bounds) { [control: TipSpots.Spot(anchor: $0, text: text)] }
-            .accessibilityHint(text ?? "")
-    }
-}
-
-/// A tooltip as macOS draws one.
-private struct TipLabel: View {
-    let text: String
-    var body: some View {
-        Text(text)
-            .font(.system(size: 11))
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(BehindWindowBlur(cornerRadius: 5, material: .toolTip))
-            .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(Color.primary.opacity(0.15), lineWidth: 0.5))
-            .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
-            .fixedSize()
-    }
-}
-
-/// Puts a tooltip centred under or over `target`, kept inside the panel: over it when `below` is
-/// false, unless the panel has no room above, as over a target risen with the message field's box.
-private struct TipPlacement: Layout {
-    let target: CGRect
-    let below: Bool
-    /// From the control's edge past the bar's, which is 7 pt further.
-    static let gap: CGFloat = 12
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        proposal.replacingUnspecifiedDimensions()
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            let x = min(max(target.midX - size.width / 2, 4), bounds.width - 4 - size.width)
-            let over = target.minY - Self.gap - size.height
-            let y = below || over < 4 ? target.maxY + Self.gap : over
-            subview.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY + y), proposal: ProposedViewSize(size))
-        }
-    }
-}
-
 /// The I-beam over the message field. A field shows it itself only in the key window, and the bar's
 /// panel is key only while the field is typed in.
 private struct IBeam: ViewModifier {

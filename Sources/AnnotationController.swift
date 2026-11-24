@@ -30,11 +30,19 @@ final class AnnotationController {
     var onLoaded: ((Opening) -> Void)?
     /// The window server gives this window the presses on its frame now. Once per `show`.
     var onTakesEvents: ((Opening) -> Void)?
-    /// A drawing to store: the editor handed it over after a change, or it was parked. `reason`
-    /// names which in the log.
-    var onDrawing: ((Drawing, _ reason: String) -> Void)?
+    /// A drawing to store with the words in the message field: the editor handed it over after a
+    /// change, or it was parked. `reason` names which in the log.
+    var onDrawing: ((Drawing, _ message: String, _ history: EditorHistory, _ reason: String) -> Void)?
+    /// The words in the message field rested after a change: they are stored in the file of the open
+    /// drawing's screenshot, beside the marks stored there, with the editor's undo and redo history.
+    var onMessage: ((String, Drawing, EditorHistory) -> Void)?
     /// The stored drawing for a screenshot whose size as displayed is the given one, if any.
     var storedDrawing: ((ScreenshotKey, PixelSize) -> Drawing?)?
+    /// The message stored for a screenshot whose size as displayed is the given one, or "".
+    var storedMessage: ((ScreenshotKey, PixelSize) -> String)?
+    /// The undo and redo history stored for a screenshot whose size as displayed is the given one, for
+    /// the drawing and the message read for it.
+    var storedHistory: ((ScreenshotKey, PixelSize, Drawing) -> EditorHistory)?
     /// The frame moved: it was placed, a zoom stepped it, or it came home on the way out. The
     /// stack follows it, so it narrows as the frame grows towards it.
     var onFrame: ((NSRect) -> Void)?
@@ -76,6 +84,14 @@ final class AnnotationController {
     var eventProbe: Timer?
     /// Takes the frame and then the window down behind the flight home (`hideWindows`).
     let removal = WindowRemoval()
+    /// Runs out `EditorCore.handOverDelay` after the message field's last change, and stores its words.
+    var messageTimer: Timer?
+    /// The message field's words as last handed to `onDrawing` or `onMessage`, or as the image opened.
+    var storedWords = ""
+    /// The message field is taking a paste or a cut: its next change is that step, not typing.
+    var messageEdit: StepName?
+    /// The words going into the field are the image's own as it opens, not the person's change.
+    var restoringMessage = false
     /// The opening `prepare` was given, so a decode or a send's rendering only lands on the open
     /// that asked for it: the same file can be closed and opened again while the first is on its way.
     var opened: Opening?
@@ -121,11 +137,16 @@ final class AnnotationController {
         toolbar.onTool = { [weak self] tool in self?.editor.setTool(tool) }
         toolbar.onDone = { [weak self] in self?.editor.done() }
         toolbar.onMessageEnd = { [weak self] in self?.window?.makeKey() }
+        toolbar.onMessageTypingEnded = { [weak self] in self?.editor.message(.messageTypingEnded) }
+        editor.onMessageRestored = { [weak self] words in self?.toolbar.model.message = words }
+        toolbar.panel.onUndo = { [weak self] redo in if redo { self?.editor.redo(nil) } else { self?.editor.undo(nil) } }
+        toolbar.panel.undoTitle = { [weak self] redo in self?.editor.undoTitle(redo: redo) ?? (redo ? "Redo" : "Undo", false) }
         toolbar.model.onOfferChanged = { [weak self] offer in self?.offerChanged(offer) }
         toolbar.onSend = { [weak self] destination in self?.editor.send(to: destination) }
         editor.onTool = { [weak self] tool in self?.toolbar.model.tool = tool }
         editor.onChange = { [weak self] drawing in self?.drawingChanged(drawing) }
-        editor.onHandOver = { [weak self] drawing in self?.onDrawing?(drawing, "saved") }
+        editor.onHandOver = { [weak self] drawing in self?.handOver(drawing, reason: "saved") }
+        toolbar.model.onMessageChanged = { [weak self] in self?.messageChanged() }
         editor.onClose = { [weak self] in self?.cancel(via: .esc) }
         // One Tab order: the marks, then the toolbar's controls, then the marks again.
         editor.onLeaveCanvas = { [weak self] backward in self?.toolbar.enter(backward: backward) }
@@ -209,10 +230,12 @@ final class AnnotationController {
         let key = EditorCore.Key(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers)
         let composing = (toolbar.panel.firstResponder as? NSTextView)?.hasMarkedText() == true
         let fieldEmpty = toolbar.model.fieldEmpty && !composing
-        guard let shot = current,
-              let command = FieldCommand(key, EditorCore.Modifiers(eventFlags: event.modifierFlags.rawValue),
-                                         fieldEmpty: fieldEmpty) else { return false }
+        let modifiers = EditorCore.Modifiers(eventFlags: event.modifierFlags.rawValue)
+        if modifiers == .command, key == .character("v") || key == .character("x") { noteMessageEdit(key == .character("v") ? .paste : .cut) }
+        guard let shot = current, let command = FieldCommand(key, modifiers, fieldEmpty: fieldEmpty, composing: composing) else { return false }
         switch command {
+        case .undo: editor.undo(nil)
+        case .redo: editor.redo(nil)
         case .close: window?.performClose(nil)
         case .zoom(let request): zoomRequested(request)
         case .copyDrawing: onCopyDrawing?(shot, editor.core.drawingForHost)

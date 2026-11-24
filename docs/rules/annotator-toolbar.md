@@ -31,9 +31,9 @@
   (`Model.keyed`), because AppKit makes it the panel's first responder when the bar comes up. The
   panel forgets a press on the field when it resigns the keys, so only a new press or an ask makes
   it key again (`ToolbarPanel.resignKey`).
-  While the field has the keys, Cmd+W and the zoom keys do what they do on the image: the panel
-  hands them to `AnnotationController.fieldCommand` before the field sees them (`FieldCommand`),
-  which sends Cmd+W to the window's `performClose` and the zoom keys to the zoom. Other Command
+  While the field has the keys, Cmd+W, the zoom keys, and Cmd+Z and Shift+Cmd+Z unless a word is
+  being composed, do what they do on the image: the panel hands them to
+  `AnnotationController.fieldCommand` before the field sees them (`FieldCommand`). Other Command
   keys stay with the field, Cmd+C too unless the field is empty. There is no
   palette: a mark's colour says who drew it. Send starts on the kept pick when there is one: the
   session the person picked in the target's menu and then sent to (`DestinationChoice.KeptPick`,
@@ -139,8 +139,8 @@
   for the fresh list, since the thread may be newer. Return copies and replies only on a card that names its session; Cmd+Return
   sends or replies (`EditorCore.finishes`). On the image, Return never sends to a session Vignette
   picked. In the message field Return sends, as in a chat app, with the target beside it. A field
-  that took the keys on its own and is still empty has nothing that asks to send, so Return and Esc
-  there do what they do on the image (`Model.fieldUntouched`, `fieldReturn`, `fieldEscCloses`). A
+  that took the keys on its own, empty or as it opened, asks nothing to send, so
+  Return and Esc do what they do on the image (`Model.fieldUntouched`, `fieldReturn`, `fieldEscCloses`). A
   pick ends that (`Model.pick`): choosing a session is asking to write to it, so the field then acts
   as pressed. A letter types, Return sends, and Esc hands the keys to the image, from which a second
   Esc closes. Cmd+C in any empty field, one with no words (`Model.fieldEmpty`, the same empty
