@@ -16,7 +16,7 @@ final class TargetShade: NSView {
     private static let openOpacity: (dark: Float, light: Float) = (0.5, 0.14)
     private static let hoverOpacity: (dark: Float, light: Float) = (0.22, 0.06)
     private static let hairlineHeight: CGFloat = 16
-    private static let hairlineWidth: CGFloat = 1
+    static let hairlineWidth: CGFloat = 1
     /// The corner radius of the target's own fill and of the message field's box.
     private static let radius: CGFloat = 7
     /// 5 pixels at 2x. The box's focus ring reaches 0.5 pt inside its edge.

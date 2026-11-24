@@ -80,8 +80,8 @@
   answer that does not parse, or a status whose tab is not the focused terminal's marks nothing,
   and logs `[herdr] no focus: <reason>` when the reason changes, then `[herdr] focus read again`.
   The target shows the agent's logo and the session's title, cut in the middle past 132 pt, with
-  the title, the session's details and repository in its tooltip (`SessionMenu.row(of:among:)`). Its width is set, so it springs with the bar. Beside a message field it sits in the box's top row from its leading edge, rising with it out of the bar, parted from the words by a hairline (`targetWidth`, `FollowsFieldTop`). There its hover shade, open-menu shade and focus ring are one rounded rectangle inset 2.5 pt in the box, short of the hairline, concentric with the box, one line high (`TargetShade`). A
-  pick from its menu is applied a turn later, after the menu's own event loop ends, since a change
+  the title, details and repository in its tooltip (`SessionMenu.row(of:among:)`). Its width is set, so it springs with the bar. Beside a message field it sits in the box's top row, rising with it out of the bar, parted from the words by a hairline where the grown box curves down, leaving a one-line tab (`targetWidth`, `FollowsFieldTop`, `FieldOutline`). There its hover shade, open-menu shade and focus ring are one rounded rectangle inset 2.5 pt, short of the hairline, concentric with the box, one line high (`TargetShade`). A
+  pick from its menu is applied a turn later, after the menu's event loop ends, since a change
   made inside it jumped instead of animating. A pick whose image closed or was replaced while
   the menu was open, or in that turn, is dropped and logs `[send] pick dropped` (`Model.targetMenuImage`). Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
   sessions the person sent to in the last 4 hours, newest send first, then the rest by when the agent last worked; five of them, with
