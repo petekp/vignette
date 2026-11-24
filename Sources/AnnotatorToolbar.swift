@@ -371,28 +371,6 @@ final class AnnotatorToolbar {
     }
 }
 
-/// A blur of what is behind the window, as a popover has. SwiftUI's materials blend only with the
-/// window's own content, so over the bar's panel they show the bar's edge through them.
-struct BehindWindowBlur: NSViewRepresentable {
-    let cornerRadius: CGFloat
-    var material: NSVisualEffectView.Material = .popover
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = material
-        view.blendingMode = .behindWindow
-        // The bar's panel is seldom key, and an inactive effect view draws flat.
-        view.state = .active
-        view.wantsLayer = true
-        view.layer?.cornerRadius = cornerRadius
-        view.layer?.cornerCurve = .continuous
-        view.layer?.masksToBounds = true
-        return view
-    }
-
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
-}
-
 private struct ToolbarView: View {
     @ObservedObject var model: AnnotatorToolbar.Model
     let onTool: (EditorCore.Tool) -> Void
@@ -626,7 +604,8 @@ private struct ToolbarView: View {
     /// `sessionRoom` is how far the box reaches left past the field, under the target.
     private func messageField(sessionRoom: CGFloat, send: @escaping () -> Void) -> some View {
         let grown = typing && !model.message.isEmpty
-        let box = RoundedRectangle(cornerRadius: 7, style: .continuous)
+        let outline = FieldOutline(tallWidth: Self.messageWidth + Self.spacing + TargetShade.hairlineWidth / 2)
+        let boxWidth = Self.messageWidth + sessionRoom
         return GrowingField(growth: fieldGrowth) {
             Color.clear
             // The text at its own height, always. A text field shorter than its text scrolls to its
@@ -657,21 +636,21 @@ private struct ToolbarView: View {
                         withAnimation(Anim.spring(0.25 * Settings.shared.motionScale)) { fieldHeight = height }
                     }
             }
-            .clipShape(box)
+            .mask(alignment: .trailing) { outline.frame(width: boxWidth) }
             // The part under the target takes no presses or hover, which are the target's.
             .background(alignment: .trailing) {
                 ZStack {
-                    box.fill(Color.primary.opacity(0.09)).shadow(color: .black.opacity(grown ? 0.3 : 0), radius: 10, y: 4)
+                    outline.fill(Color.primary.opacity(0.09)).shadow(color: .black.opacity(grown ? 0.3 : 0), radius: 10, y: 4)
                     // Grown, it hangs past the bar over whatever is behind, so it takes a blur of that, as a
                     // popover does.
-                    BehindWindowBlur(cornerRadius: 7).opacity(grown ? 1 : 0)
+                    BehindWindowBlur(cornerRadius: 7, outline: outline).opacity(grown ? 1 : 0)
                 }
-                .frame(width: Self.messageWidth + sessionRoom)
+                .frame(width: boxWidth)
                 .allowsHitTesting(false)
             }
             .overlay(alignment: .trailing) {
-                box.stroke(Color.accentColor.opacity(typing ? 0.8 : 0), lineWidth: 1)
-                    .frame(width: Self.messageWidth + sessionRoom)
+                outline.stroke(Color.accentColor.opacity(typing ? 0.8 : 0), lineWidth: 1)
+                    .frame(width: boxWidth)
                     .allowsHitTesting(false)
             }
             // The text field takes presses only on its text. Its padding and the room around it in
