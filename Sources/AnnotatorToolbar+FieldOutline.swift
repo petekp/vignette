@@ -65,6 +65,37 @@ struct FieldOutline: Shape, Equatable {
     }
 }
 
+/// Cuts the message field's words to its box, and `inset` above the box's bottom
+/// edge, so a line that comes into view as the box springs taller shows above the same padding the
+/// words have at the top. A line at rest has room for descenders under its letters, so while the box
+/// is still shorter than the words (`textHeight`) the cut also rises by the font's descent, and the
+/// letters coming in stop where a resting line's do. The cut fades over its first `fade`, so a line
+/// comes in softly rather than sliced.
+struct FieldTextMask: ViewModifier {
+    let outline: FieldOutline
+    let width: CGFloat
+    let textHeight: CGFloat
+    static let font = NSFont.systemFont(ofSize: 13)
+    /// The words' padding above and below inside the box.
+    static let inset: CGFloat = 7
+    private static let fade: CGFloat = 2
+
+    func body(content: Content) -> some View {
+        content
+            .mask(alignment: .trailing) { outline.frame(width: width) }
+            .mask {
+                GeometryReader { box in
+                    let short = min(-Self.font.descender, max(0, textHeight - box.size.height))
+                    VStack(spacing: 0) {
+                        Color.black
+                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: Self.fade)
+                        Color.clear.frame(height: Self.inset - Self.fade + short)
+                    }
+                }
+            }
+    }
+}
+
 /// A blur of what is behind the window, as a popover has. SwiftUI's materials blend only with the
 /// window's own content, so over the bar's panel they show the bar's edge through them. With an
 /// `outline`, grown past one line, it is cut to the message field's box by a mask image redrawn at
@@ -73,6 +104,16 @@ struct BehindWindowBlur: NSViewRepresentable {
     let cornerRadius: CGFloat
     var material: NSVisualEffectView.Material = .popover
     var outline: FieldOutline?
+
+    init(cornerRadius: CGFloat, material: NSVisualEffectView.Material = .popover) {
+        self.cornerRadius = cornerRadius
+        self.material = material
+    }
+
+    init(outline: FieldOutline) {
+        cornerRadius = FieldOutline.radius
+        self.outline = outline
+    }
 
     func makeNSView(context: Context) -> OutlinedEffectView {
         let view = OutlinedEffectView()

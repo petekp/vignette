@@ -610,11 +610,11 @@ private struct ToolbarView: View {
             Color.clear
             // The text at its own height, always. A text field shorter than its text scrolls to its
             // caret, so while the box grew around it the text jumped up a line and back. The box
-            // clips it instead, and a new line comes into view as the box grows.
+            // clips it instead (`FieldTextMask`).
             .overlay(alignment: .top) {
                 TextField("Add a message", text: $model.message, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(Font(FieldTextMask.font))
                     .lineLimit(typing ? 1...Self.messageLines : 1...1)
                     .focused($focused)
                     .onSubmit {
@@ -628,7 +628,7 @@ private struct ToolbarView: View {
                         if words.count > AnnotatorToolbar.Model.messageLimit { model.message = String(words.prefix(AnnotatorToolbar.Model.messageLimit)) }
                     }
                     .padding(.horizontal, 9)
-                    .padding(.vertical, 7)
+                    .padding(.vertical, FieldTextMask.inset)
                     .frame(width: Self.messageWidth, alignment: .topLeading)
                     .frame(minHeight: 30)
                     .fixedSize(horizontal: false, vertical: true)
@@ -636,14 +636,14 @@ private struct ToolbarView: View {
                         withAnimation(Anim.spring(0.25 * Settings.shared.motionScale)) { fieldHeight = height }
                     }
             }
-            .mask(alignment: .trailing) { outline.frame(width: boxWidth) }
+            .modifier(FieldTextMask(outline: outline, width: boxWidth, textHeight: fieldHeight))
             // The part under the target takes no presses or hover, which are the target's.
             .background(alignment: .trailing) {
                 ZStack {
                     outline.fill(Color.primary.opacity(0.09)).shadow(color: .black.opacity(grown ? 0.3 : 0), radius: 10, y: 4)
                     // Grown, it hangs past the bar over whatever is behind, so it takes a blur of that, as a
                     // popover does.
-                    BehindWindowBlur(cornerRadius: 7, outline: outline).opacity(grown ? 1 : 0)
+                    BehindWindowBlur(outline: outline).opacity(grown ? 1 : 0)
                 }
                 .frame(width: boxWidth)
                 .allowsHitTesting(false)
