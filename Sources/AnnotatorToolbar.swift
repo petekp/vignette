@@ -425,6 +425,7 @@ private struct ToolbarView: View {
     /// The message field is being typed in.
     private var typing: Bool { focused && model.keyed }
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.displayScale) private var displayScale
 
     /// How far past a control its presses reach: to the bar's top and bottom edges, which are 7 pt
     /// from a 30 pt control, and into the gaps beside it. Not past the bar: the panel is clear there,
@@ -476,7 +477,10 @@ private struct ToolbarView: View {
             // read as one control. It draws above the field, whose box reaches under it.
             let joined = offer.offersTarget && offer.destination != nil
             if offer.offersTarget {
-                targetMenu(offer.destination, joined: joined)
+                // In the box, it stays in the box's top row, rising out of the bar with it.
+                FollowsFieldTop(growth: fieldGrowth, following: joined) {
+                    targetMenu(offer.destination, joined: joined)
+                }
                     .modifier(FocusRing(on: model.focus == .target && !joined))
                     .modifier(Resting(while: model.sending))
                     .padding(.trailing, joined ? 0 : 4)
@@ -629,10 +633,8 @@ private struct ToolbarView: View {
     /// `sessionRoom` is how far the box reaches left past the field, under the target.
     private func messageField(sessionRoom: CGFloat, send: @escaping () -> Void) -> some View {
         let grown = typing && !model.message.isEmpty
-        // The bar's middle is 7 pt above its bottom edge; a margin keeps the field off the Dock.
-        let below = model.roomBelow + (AnnotatorToolbar.height - 30) / 2 - 8
         let box = RoundedRectangle(cornerRadius: 7, style: .continuous)
-        return GrowingField(height: fieldHeight, below: below) {
+        return GrowingField(growth: fieldGrowth) {
             Color.clear
             // The text at its own height, always. A text field shorter than its text scrolls to its
             // caret, so while the box grew around it the text jumped up a line and back. The box
@@ -696,6 +698,12 @@ private struct ToolbarView: View {
         .padding(Self.slop.negated)
         .animation(Anim.spring(0.25 * Settings.shared.motionScale), value: typing)
         .modifier(TipSpot(control: .message, text: typing ? nil : "Add a message (M)", hover: tip))
+    }
+
+    /// The message field's box as it grows. It may reach below its slot down to the bar's bottom edge,
+    /// 7 pt under the bar's middle, and the room under the bar, less a margin that keeps it off the Dock.
+    private var fieldGrowth: FieldGrowth {
+        FieldGrowth(height: fieldHeight, below: model.roomBelow + (AnnotatorToolbar.height - 30) / 2 - 8, scale: displayScale)
     }
 
     private var pressToType: some Gesture {
@@ -887,7 +895,8 @@ private struct TipLabel: View {
     }
 }
 
-/// Puts a tooltip centred under or over `target`, kept inside the panel.
+/// Puts a tooltip centred under or over `target`, kept inside the panel: over it when `below` is
+/// false, unless the panel has no room above, as over a target risen with the message field's box.
 private struct TipPlacement: Layout {
     let target: CGRect
     let below: Bool
@@ -902,7 +911,8 @@ private struct TipPlacement: Layout {
         for subview in subviews {
             let size = subview.sizeThatFits(.unspecified)
             let x = min(max(target.midX - size.width / 2, 4), bounds.width - 4 - size.width)
-            let y = below ? target.maxY + Self.gap : target.minY - Self.gap - size.height
+            let over = target.minY - Self.gap - size.height
+            let y = below || over < 4 ? target.maxY + Self.gap : over
             subview.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY + y), proposal: ProposedViewSize(size))
         }
     }
@@ -917,32 +927,6 @@ private struct IBeam: ViewModifier {
             case .active: NSCursor.iBeam.set()
             case .ended: NSCursor.arrow.set()
             }
-        }
-    }
-}
-
-/// Places the message field in its slot on the bar: from the slot's top down, and once it would
-/// reach further down than `below` allows, moved up by the rest, out of the top of the bar.
-private struct GrowingField: Layout {
-    /// The field's height, which SwiftUI animates, and the layout with it.
-    var height: CGFloat
-    let below: CGFloat
-
-    var animatableData: CGFloat {
-        get { height }
-        set { height = newValue }
-    }
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        proposal.replacingUnspecifiedDimensions()
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let height = max(height, bounds.height)
-        let up = min(max(0, height - bounds.height - max(0, below)), height - bounds.height)
-        for subview in subviews {
-            subview.place(at: CGPoint(x: bounds.minX, y: bounds.minY - up), anchor: .topLeading,
-                          proposal: ProposedViewSize(width: bounds.width, height: height))
         }
     }
 }

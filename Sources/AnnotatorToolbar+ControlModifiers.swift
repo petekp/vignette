@@ -28,7 +28,16 @@ struct Reveal: ViewModifier, Animatable {
     func body(content: Content) -> some View {
         PartWidth(fraction: fraction) { content }
             // Cut only while it opens or closes: the focus ring is drawn outside the control.
-            .clipShape(Rectangle().inset(by: fraction < 1 ? 0 : -20))
+            .clipShape(SideCut(slack: fraction < 1 ? 0 : 20))
+    }
+}
+
+/// A rectangle cut at its sides, `slack` past them. Above and below it reaches as far as the bar
+/// leaves open, so the target rising with the message field's box (`FollowsFieldTop`) is not cut.
+private struct SideCut: Shape {
+    let slack: CGFloat
+    func path(in rect: CGRect) -> Path {
+        Path(rect.insetBy(dx: -slack, dy: -(AnnotatorToolbar.messageRoom + AnnotatorToolbar.padding)))
     }
 }
 
