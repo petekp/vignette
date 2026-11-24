@@ -90,6 +90,22 @@ struct DrawingStore: Sendable {
         return stored.message
     }
 
+    /// The undo and redo history stored with the screenshot at `key`, whose size is `pixels`, for the
+    /// drawing read from its file: empty when there is none, or when the marks or the message changed
+    /// since the editor wrote it, such as by a reply's drawing installed while it was closed.
+    func readHistory(key: String, pixels: PixelSize, marks: [Mark]) -> EditorHistory {
+        guard case .stored(let stored) = contents(of: url(for: key)), stored.key == key, stored.pixels == pixels,
+              let history = stored.object["history"] else { return EditorHistory() }
+        do {
+            let written = try stored.marks.map { try Mark(validating: $0) }
+            guard written.count == marks.count else { throw MarkProblem("a mark was dropped as the file was read") }
+            return try EditorHistory(fileObject: history, marks: marks, basis: EditorHistory.basis(marks: written, message: stored.message))
+        } catch {
+            log("[drawing] history dropped \((key as NSString).lastPathComponent): \(error)")
+            return EditorHistory()
+        }
+    }
+
     /// A reply checkpoint must preserve every stored mark and its geometry. Ordinary reads may
     /// recover individual marks; using that partial result would publish an incomplete reply.
     func readComplete(key: String, pixels: PixelSize, style: TextStyle) throws -> Drawing? {
@@ -138,11 +154,12 @@ struct DrawingStore: Sendable {
     }
 
     /// Writes `drawing` atomically with `message`, or with the message the file holds when `message` is
-    /// nil, and removes the file when there is neither a mark nor a message. Answers whether the file
-    /// holds a message now. Throws, after its one log line, when the write fails or the file is from
-    /// a newer build, which is left as it is.
+    /// nil, and with `history`, the editor's, which ends at them; any history the file held goes. Removes
+    /// the file when there is neither a mark nor a message. Answers whether the file holds a message now.
+    /// Throws, after its one log line, when the write fails or the file is from a newer build, which is
+    /// left as it is.
     @discardableResult
-    func write(_ drawing: Drawing, message: String? = nil) throws -> Bool {
+    func write(_ drawing: Drawing, message: String? = nil, history: EditorHistory = EditorHistory()) throws -> Bool {
         let url = url(for: drawing.key)
         let name = (drawing.key as NSString).lastPathComponent
         let existing = contents(of: url)
@@ -152,15 +169,16 @@ struct DrawingStore: Sendable {
             try remove(key: drawing.key)
             return false
         }
-        try put(Self.encoded(drawing, message: kept), at: url, name: name)
+        try put(Self.encoded(drawing, message: kept, history: history), at: url, name: name)
         return !kept.isEmpty
     }
 
-    /// Writes `message` into the file of `drawing`'s screenshot and leaves its stored marks as they are.
-    /// With no file that fits the image, a file with no marks holds the message; with no marks and no
-    /// message the file goes. Answers whether the file holds a message now. Throws like `write`.
+    /// Writes `message` into the file of `drawing`'s screenshot, with `history`, which ends at
+    /// `drawing`'s marks and `message`, and leaves its stored marks as they are. With no file that fits
+    /// the image, a file with no marks holds the message; with no marks and no message the file goes.
+    /// Answers whether the file holds a message now. Throws like `write`.
     @discardableResult
-    func writeMessage(_ message: String, for drawing: Drawing) throws -> Bool {
+    func writeMessage(_ message: String, for drawing: Drawing, history: EditorHistory = EditorHistory()) throws -> Bool {
         let url = url(for: drawing.key)
         let name = (drawing.key as NSString).lastPathComponent
         let existing = contents(of: url)
@@ -173,7 +191,7 @@ struct DrawingStore: Sendable {
             guard !message.isEmpty else { return false }
             var empty = drawing
             empty.marks = []
-            try put(Self.encoded(empty, message: message), at: url, name: name)
+            try put(Self.encoded(empty, message: message, history: history, endingAt: drawing.marks), at: url, name: name)
             return true
         }
         guard !stored.marks.isEmpty || !message.isEmpty else {
@@ -182,6 +200,9 @@ struct DrawingStore: Sendable {
         }
         var object = stored.object
         object["message"] = message.isEmpty ? nil : message
+        // Until the next hand-over writes the marks, the file's may lag the history's; reading it then
+        // drops the history.
+        object["history"] = try history.fileObject(marks: drawing.marks, message: message)
         try put(Self.data(of: object), at: url, name: name)
         return !message.isEmpty
     }
@@ -196,11 +217,14 @@ struct DrawingStore: Sendable {
         }
     }
 
-    /// `drawing`'s file, with `message` under "message" when there is one.
-    private static func encoded(_ drawing: Drawing, message: String) throws -> Data {
+    /// `drawing`'s file, with `message` under "message" when there is one and `history` under "history"
+    /// when it has steps. The history's marks are `marks`, the drawing's own unless given.
+    private static func encoded(_ drawing: Drawing, message: String, history: EditorHistory, endingAt marks: [Mark]? = nil) throws -> Data {
         let file = try drawing.encoded()
-        guard !message.isEmpty, var object = try DrawingJSON.object(from: file) as? [String: Any] else { return file }
-        object["message"] = message
+        let historyObject = try history.fileObject(marks: marks ?? drawing.marks, message: message)
+        guard !message.isEmpty || historyObject != nil, var object = try DrawingJSON.object(from: file) as? [String: Any] else { return file }
+        object["message"] = message.isEmpty ? nil : message
+        object["history"] = historyObject
         return try data(of: object)
     }
 

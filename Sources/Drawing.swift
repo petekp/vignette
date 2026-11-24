@@ -433,7 +433,7 @@ extension Mark {
 /// A mark as a drawing file and a paste write it: flat fields, without the ones its type does not
 /// use, and without `bend`, `via`, `wrap`, `agent` and `agentName` at their defaults. A text's `size`
 /// is always written. A mark's colour is not: it follows from `agent`.
-private struct MarkRecord: Encodable {
+struct MarkRecord: Encodable {
     let type: MarkKind
     let x: CGFloat
     let y: CGFloat

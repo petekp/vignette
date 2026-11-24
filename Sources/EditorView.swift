@@ -40,6 +40,8 @@ final class EditorView: NSView {
     var onLeaveCanvas: ((_ backward: Bool) -> Void)?
     /// M or P: the host puts the keys in the message field beside Send, when there is one.
     var onFocusMessage: (() -> Void)?
+    /// Undo or redo set the message field's words.
+    var onMessageRestored: ((String) -> Void)?
     /// Left or Right with nothing selected: the host opens the screenshot beside this one.
     var onPage: ((EditorCore.Page, _ isRepeat: Bool) -> Void)?
     /// A press on the canvas, which takes the keyboard's focus back from the toolbar.
@@ -86,7 +88,7 @@ final class EditorView: NSView {
     let overlay = EditorOverlayLayers()
     private var placedPicture = CGRect.zero
     private var screenshotName = ""
-    private var typingField: TypingField?
+    private(set) var typingField: TypingField?
     private var revealPending = false
     /// The text view of a typing session that ended, kept over its text until the text's bitmap is
     /// on its layer, so the words are on screen in every frame.
@@ -135,7 +137,7 @@ final class EditorView: NSView {
     /// `pixels`, shown at `picture` in the view. The strokes are on screen when this returns; each
     /// text follows a moment later, once its bitmap is drawn off the main thread.
     func open(_ drawing: Drawing, image: CGImage?, picture: CGRect, style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle,
-              selectsNewest: Bool = true) {
+              selectsNewest: Bool = true, message: String = "", history: EditorHistory = EditorHistory()) {
         stopTimers()
         heldArrows = []
         screenshotName = URL(fileURLWithPath: drawing.key).deletingPathExtension().lastPathComponent
@@ -145,7 +147,7 @@ final class EditorView: NSView {
         self.picture.open(image, pixels: drawing.pixels)
         CATransaction.commit()
         placedPicture = picture
-        handle(.open(drawing, style: style, metrics: metrics, markStyle: markStyle, selectsNewest: selectsNewest))
+        handle(.open(drawing, style: style, metrics: metrics, markStyle: markStyle, selectsNewest: selectsNewest, message: message, history: history))
         dropLingering()
         guard core.isOpen else {
             Log.write("[editor] error open-refused \(screenshotName): pixels=\(drawing.pixels.width)x\(drawing.pixels.height) pointScale=\(drawing.pointScale)")
@@ -168,6 +170,11 @@ final class EditorView: NSView {
         refresh()
         picture.park()
         return parked
+    }
+
+    /// The message field's `messageChanged` or `messageTypingEnded`, with nothing to redraw.
+    func message(_ input: EditorCore.Input) {
+        for effect in core.reduce(input) { run(effect, event: nil) }
     }
 
     /// The screenshot's decode, when it arrives after `open`. The drawing and everything else stay.
@@ -301,6 +308,7 @@ final class EditorView: NSView {
                                  userInfo: [.announcement: words, .priority: NSAccessibilityPriorityLevel.high.rawValue])
         case .leaveCanvas(let backward): onLeaveCanvas?(backward)
         case .focusMessage: onFocusMessage?()
+        case .message(let words): onMessageRestored?(words)
         case .page(let page, let isRepeat): onPage?(page, isRepeat)
         case .close: onClose?()
         case .done(let drawing): onDone?(drawing)
@@ -617,14 +625,6 @@ final class EditorView: NSView {
         handle(.keyDown(.character("z"), [.command, .shift], isRepeat: false))
     }
 
-    private static func key(_ event: NSEvent) -> EditorCore.Key? {
-        EditorCore.Key(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers)
-    }
-
-    private static func modifiers(_ event: NSEvent) -> EditorCore.Modifiers {
-        EditorCore.Modifiers(eventFlags: event.modifierFlags.rawValue)
-    }
-
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)
         if let resignKeyObserver { NotificationCenter.default.removeObserver(resignKeyObserver) }
@@ -809,11 +809,6 @@ final class EditorView: NSView {
 }
 
 extension EditorView: OpenDrawing {
-    func drawing(of key: ScreenshotKey) -> Drawing? {
-        guard core.isOpen, core.drawing.key == key.path else { return nil }
-        return core.drawingForHost
-    }
-
     func rekey(_ old: ScreenshotKey, to new: ScreenshotKey) {
         guard core.isOpen, core.drawing.key == old.path else { return }
         screenshotName = new.url.deletingPathExtension().lastPathComponent

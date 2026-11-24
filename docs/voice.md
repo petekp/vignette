@@ -107,6 +107,25 @@ cancelled with Don't send leaves the tab as it was.
 | --- | --- |
 | Reply is unavailable: no message, and the agent's drawing as it sent it (`AnnotatorToolbar.Model.nothingToReplyTip`) | Add a message or draw to reply |
 
+### Undo and Redo in the Edit menu, and VoiceOver after each (`StepName.title`)
+
+Each follows "Undo" or "Redo", as in Apple's editors: "Undo Arrow", "Redo Typing". Plain "Undo"
+and "Redo" when there is nothing to take.
+
+| Step | Name |
+| --- | --- |
+| A rectangle, an ellipse or an arrow drawn | Rectangle, Ellipse, Arrow |
+| A typing session, on the image or in the message field | Typing |
+| A drag or a nudge | Move |
+| A resize | Resize |
+| An arrow bent | Bend Arrow |
+| An arrow's end dragged | Move Arrow End |
+| Cmd+D or an Option-drag | Duplicate |
+| Delete | Delete |
+| A paste or a drop, on the image or in the field | Paste |
+| A cut, on the image or in the field | Cut |
+| Agents' marks joining the open drawing | *Agent*'s Marks, as in "Claude's Marks"; "Agent's Marks" without one name |
+
 ### The line an agent receives (`ScreenshotRequests.requestLine`)
 
 The person's message leads, and the Vignette part follows in brackets. "From Vignette:" is fixed,

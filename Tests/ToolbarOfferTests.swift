@@ -213,21 +213,24 @@ final class ToolbarOfferTests: XCTestCase {
         XCTAssertEqual(held.key("a", isRepeat: false, canHold: false, tool: .rectangle), .pass)
     }
 
-    private func command(_ key: EditorCore.Key, _ modifiers: EditorCore.Modifiers, empty: Bool = false) -> FieldCommand? {
-        FieldCommand(key, modifiers, fieldEmpty: empty)
+    private func command(_ key: EditorCore.Key, _ modifiers: EditorCore.Modifiers, empty: Bool = false, composing: Bool = false) -> FieldCommand? {
+        FieldCommand(key, modifiers, fieldEmpty: empty, composing: composing)
     }
 
-    func testInTheMessageFieldCmdWAndTheZoomKeysAreTheAnnotatorsAndTheEditingKeysStayWithTheField() {
+    func testInTheMessageFieldCmdWTheZoomKeysAndUndoAreTheAnnotatorsAndTheEditingKeysStayWithTheField() {
         XCTAssertEqual(command(.character("w"), .command), .close)
         XCTAssertEqual(command(.character("="), .command), .zoom(.zoomIn))
         XCTAssertEqual(command(.character("+"), [.command, .shift]), .zoom(.zoomIn))
         XCTAssertEqual(command(.character("-"), .command), .zoom(.zoomOut))
         XCTAssertEqual(command(.character("0"), .command), .zoom(.fit))
-        for editing: Character in ["v", "a", "x", "z", "c"] {
+        XCTAssertEqual(command(.character("z"), .command), .undo)
+        XCTAssertEqual(command(.character("z"), [.command, .shift]), .redo)
+        XCTAssertNil(command(.character("z"), .command, composing: true), "a word being composed keeps Cmd+Z with the input method")
+        XCTAssertNil(command(.character("z"), [.command, .option]))
+        for editing: Character in ["v", "a", "x", "c"] {
             XCTAssertNil(command(.character(editing), .command), "Cmd+\(editing) stays with the field")
             XCTAssertEqual(command(.character(editing), .command, empty: true) == .copyDrawing, editing == "c")
         }
-        XCTAssertNil(command(.character("z"), [.command, .shift]))
         XCTAssertNil(command(.character("w"), [.command, .shift]))
         XCTAssertNil(command(.character("w"), []))
         XCTAssertNil(command(.returnKey, .command))

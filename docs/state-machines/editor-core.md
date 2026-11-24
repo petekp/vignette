@@ -14,7 +14,7 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 - `gesture: Gesture?` (`:370`) with `Phase` (`:425`): `pressed`, `drawing(id)`, `wrapping`, `brushing`, `moving(originals:copies:)`, `resizing(id, pos)`, `draggingEnd(id, kind)`, `bending(id)`.
 - `typing: Typing?` (`:372`, type at `:450`): the text mark being typed.
 - `edit: MarkEdit?` (`:378`): the open undo step. Set while a gesture has changed marks, or while typing.
-- `undoSteps`, `redoSteps` (`:373-374`), `nudging` (`:383`), `heldArrows` (`:381`).
+- `undoSteps`, `redoSteps` (`[HistoryStep]`, each a marks step or a message step, with a `StepName`), `message`, `typingMessage` (the top step is the message typing that runs on), `nudging`, `heldArrows`.
 - `noteMark: NoteMark?` (`:385`, type at `:440`): see HeldKey below. `holdsKey` (`:448`) is `noteMark?.toolBefore != nil`.
 - `unsaved` (`:387`): the drawing changed since the last hand-over.
 - `selection`, `hover`, `tool`, `zoom`, `style`, `metrics`, `markStyle`.
@@ -28,7 +28,7 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | not open | any but `open` | — | Ignored (`:481`). |
-| any | `open(d)` | open, idle (every other property reset, `zoom` and `finishes` kept) | If `typing != nil`: `.endTyping`. Unsaved edits, `undoSteps`, `gesture`, `noteMark`, `heldArrows` are dropped. `.cancelTimer`, `.tool`. Refused, `isOpen` stays false, when the pixels are 0 or `pointScale` is invalid (`:580`). **(fixed)** `finishes` is kept ([editor-1](findings.md#editor-1)). |
+| any | `open(d, message:, history:)` | open, idle (every other property reset, `zoom` and `finishes` kept) | If `typing != nil`: `.endTyping`. Unsaved edits, `gesture`, `noteMark`, `heldArrows` are dropped; `undoSteps`, `redoSteps` and `message` are the ones given, which the host read from the file. `.cancelTimer`, `.tool`. Refused, `isOpen` stays false, when the pixels are 0 or `pointScale` is invalid (`:580`). **(fixed)** `finishes` is kept ([editor-1](findings.md#editor-1)). |
 | open, idle | `pointerPressed` | `gesture = pressed`, or typing begins, or a zoom request | `pressed` (`:733`) ends typing first if any; the press target decides. |
 | `pressed` | drag past the drag distance | `drawing`, `moving`, `resizing`, `draggingEnd`, `bending`, `wrapping` or `brushing` | `dragPhase` (`:818`) picks the phase; `startDrag` (`:842`) opens `edit` for the phases that change marks. |
 | any gesture | `pointerDragged`, `modifiersChanged` | same gesture, redrawn | `update` (`:868`) redraws from the press to the pointer. |
@@ -50,7 +50,9 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 | open | `tweaksChanged` | open | Replaces `style`, `metrics`, `markStyle` only. |
 | open | `done`, `send` | open | `finishForHost`, then `.done(drawingForHost)` or `.send(drawingForHost)`. Does not cancel the timer, clear `unsaved`, or close: the host parks later. |
 | open | `park` | not open | `finishForHost`, `.cancelTimer`, `.handOver(drawingForHost)`, `unsaved = false`, `isOpen = false`; hover, pointer and `heldArrows` cleared (`:607-616`). `noteMark`, `undoSteps`, `selection`, `finishes` stay. |
-| open, idle | `keyDown` Cmd+Z, Shift+Cmd+Z | open | `undo` or `redo` (`:705-722`); `changed()`. |
+| open, idle | `keyDown` Cmd+Z, Shift+Cmd+Z | open | `undo` or `redo`; `.announce("Undo <name>")` in place of the selection's. A marks step calls `changed()`; a message step sets `message` and emits `.message(words)`. |
+| open | `messageChanged(words, name)` | open | Nothing when `words == message`. Typing while `typingMessage` replaces the top step's `after`; anything else pushes a message step, which clears redo. No hand-over: the host stores the message. |
+| open | `messageTypingEnded` | open | `typingMessage = false`, so the next typing in the field is a new step. |
 | open, idle | `keyDown` Esc | open | `.close`. The host decides. |
 | open, idle | `keyDown` Return | open | `finish(returnKey or commandReturn)`. |
 | open, idle | `keyDown` character right after a box or arrow | see HeldKey | `startsNote` (`:1388`). |
@@ -67,7 +69,7 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 - `unsaved` implies a `.scheduleTimer` was emitted since the last `.handOver` or `.cancelTimer`: only `changed()` sets `unsaved`, and it emits `.scheduleTimer` in the same call (`:641`). Checked by: nothing; the sequence test never compares hand-over payloads with `drawingForHost`.
 - `finishes` is the host's, and opening an image leaves it alone (comment at `:367`). `open` reset it until [issue 1](issues.md#issue-1). Checked by: `EditorCoreOpeningTests.testTheNextImageFinishesWithWhatTheBarStillOffers` ([editor-1](findings.md#editor-1))
 - A held arrow key is cleared by `park` and by the stale-key guard (`:1335`). Checked by: nothing.
-- Any new undo step clears the redo stack, an agent push included (`push` `:700`), so agent marks arriving after Cmd+Z drop the redo history. Checked by: nothing.
+- Any new undo step clears the redo stack, an agent push and a message step included (`push`), so agent marks arriving after Cmd+Z drop the redo history. Checked by: `EditorCoreTests.testTheMessageFieldsTypingIsOneStepInOrderWithTheMarksAndUndoPutsItsWordsBack` for a message step.
 
 **Late and concurrent answers**
 
@@ -79,7 +81,7 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 - A lost release: a move with no button down cancels the gesture (`:728`); `zoomCameToRest` sends a move only with no button down (`EditorView.swift:420`).
 - Agent marks arriving mid-gesture survive Esc: `reverted` re-places only the touched marks (`EditorHistory.swift:42`).
 - `step` saves and restores the open edit (`:674-680`), so a join does not end a gesture's or typing's edit.
-- `open` on a core that is still open drops its unsaved edits, undo history, gesture and typing (`:574-579`). Nothing guards it. Every `prepare` is preceded by `park()` or `abandon()` today (`AnnotationController.swift:464`, `:477`).
+- `open` on a core that is still open drops its unsaved edits, gesture and typing, and replaces its undo history with the one given (`:574-579`). Nothing guards it. Every `prepare` is preceded by `park()` or `abandon()` today (`AnnotationController.swift:464`, `:477`).
 
 ### HeldKey (implicit)
 

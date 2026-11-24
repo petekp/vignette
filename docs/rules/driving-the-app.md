@@ -75,7 +75,8 @@
    `transition` (phase), `annotator` (`current`, `frame`, `toolbar`, `windowVisible`, `key`, `tool`,
    and the zoom's own keys, which `docs/rules/zoom.md` names), `editor` (`open`, `tool`, `marks`
    with each mark's `type`, `frame` and `agent`, `selection` as indexes into `marks`, `typing`,
-   `undo`, `redo`, `pointScale`, `markScale`; never a text's words), `drawings` (keys), `requests`,
+   `undo`, `redo`, `undoTitle` and `redoTitle` (the Edit menu's words, "Undo Arrow"), `pointScale`,
+   `markScale`; never a text's words), `drawings` (keys), `requests`,
    `memory` (rss and thumbnail cache in bytes), `backdrop`, `dim`, and `liveInk` (`docs/live-ink.md`).
    Frames are `[x, y, w, h]` in global top-left points, except a drawing's mark's, which is in the
    image's pixels.
