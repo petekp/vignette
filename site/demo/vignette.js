@@ -1,8 +1,8 @@
 // The page's demos: Vignette's stack, flights, annotator and marks, rebuilt with the app's own
 // numbers (UITweaks, MarkStyle, NoteTag, NoteBadge). Every stage is a Mac screen 1440 by 900
 // points, scaled to fit, so a size here is a size in the app.
-import { MARK, FONT, CLAUDE_SVG, POINT_SCALE, escapeXML, SVG_NS, markBounds, marksSVG } from "./marks.js";
-import { reducedMotion, motion, Spring, Motion } from "./springs.js";
+import { MARK, CLAUDE_SVG, POINT_SCALE, SVG_NS, markBounds, marksSVG } from "./marks.js";
+import { motion, Spring, Motion } from "./springs.js";
 
 const SCREEN = { w: 1440, h: 900, menu: 25 };
 const UI = {

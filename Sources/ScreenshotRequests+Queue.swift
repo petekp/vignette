@@ -53,10 +53,14 @@ extension ScreenshotRequests {
         }
     }
 
-    /// The card's tab names the last send that reached its client, and a line taken back out never did.
+    /// The card's tab names the last send that reached its client, and a line taken back out never did:
+    /// the tab goes back to the newest other send of the file that reached its client, or goes.
     private func forgetSent(_ record: Record) {
-        let source = sourceKey(of: record).url
-        if Agent.sent(of: source)?.address == record.address { Agent.forgetSent(on: source) }
+        let source = sourceKey(of: record)
+        guard Agent.sent(of: source.url)?.address == record.address else { return }
+        let others = requests.values.filter { $0.id != record.id && $0.status == .submitted && sourceKey(of: $0) == source }
+        if let earlier = others.max(by: { $0.created < $1.created }) { Agent.record(sent: earlier.sent, on: source.url) }
+        else { Agent.forgetSent(on: source.url) }
     }
 
     static let threadGoneReason = "Codex can't find this thread. You can send it to another one."
@@ -108,9 +112,18 @@ extension ScreenshotRequests {
     /// when the session has the line or the last send was not queued. The tab names the last send that
     /// reached its client (`Agent.Sent`), so a failed send after a queued one leaves it queued.
     func queuedSend(of file: ScreenshotKey) -> Card.Queued? {
-        guard queueWatches.keys.contains(where: { requests[$0].map(sourceKey(of:)) == file }) else { return nil }
-        let reached = requests.values.filter { $0.status == .submitted && sourceKey(of: $0) == file }
-        guard let last = reached.max(by: { $0.created < $1.created }), let watch = queueWatches[last.id], let reason = watch.shown else { return nil }
+        guard let last = queuedRequest(of: file), let watch = queueWatches[last.id], let reason = watch.shown else { return nil }
         return Card.Queued(reason: reason, withdrawing: watch.withdrawing)
+    }
+
+    /// The send `queuedSend(of:)` is about: the newest send of `file` to the session its tab names
+    /// (`Agent.sent(of:)`), while that session's queue is said to hold its line. Answers can come
+    /// back out of order, so the tab, not the newest send, says which one it is.
+    func queuedRequest(of file: ScreenshotKey) -> Record? {
+        guard queueWatches.keys.contains(where: { requests[$0].map(sourceKey(of:)) == file }),
+              let tab = Agent.sent(of: file.url) else { return nil }
+        let named = requests.values.filter { $0.status == .submitted && sourceKey(of: $0) == file && $0.address == tab.address }
+        guard let last = named.max(by: { $0.created < $1.created }), queueWatches[last.id]?.shown != nil else { return nil }
+        return last
     }
 }

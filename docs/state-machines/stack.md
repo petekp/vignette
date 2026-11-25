@@ -4,26 +4,26 @@ This file continues [The corner and the stack: the corner](corner.md), which has
 
 ### Stack selection, focus and hover (implicit)
 
-Owner: `StackModel.swift:37-38,20,23`. Tests: `StackModelTests.testSelectionNumbersCountInTheOrderTheCardsWereSelected`, `testPickingACardAgainPutsItLast`, `testSelectionChangesReportWhatJoinedInOrderAndWhatLeft`. They cover selection order only.
+Owner: `StackModel.swift`. Tests: `StackModelTests.testSelectionNumbersCountInTheOrderTheCardsWereSelected`, `testPickingACardAgainPutsItLast`, `testSelectionChangesReportWhatJoinedInOrderAndWhatLeft`. They cover selection order only.
 
 Which card keys act on, which card the pointer is over, and which cards are selected. `model.focused` is the one variable keys read.
 
-**States**: `selection` (ordered ids), `focused` (`StackModel.swift:38`, the keyboard ring), `hoveredCard` (`:20`, `didSet` calls `onHover`), `holdsHover` (`:23`, hover frozen while the wheel moves the column), `pressedCard`; controller timer `wheelSettling` (`ThumbnailController.swift:52`).
+**States**: `selection` (ordered ids), `focused` (`StackModel.swift`, the keyboard ring), `hoveredCard` (`didSet` calls `onHover`), `holdsHover` (hover frozen while the wheel moves the column), `pressedCard`; controller timer `wheelSettling` (`ThumbnailController.swift`).
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| keyed stack | `toggle`, `moveFocus`, Cmd+A, Esc (`handleKey`, `:1085`) | selection or `focused` change | — |
-| not `holdsHover` | `CardView.onHover` (`CardView.swift:204`) | `hoveredCard` set | `onHover` closure (`:136`) sets `focused` only when `keys.isKeyed` |
+| keyed stack | `toggle`, `moveFocus`, Cmd+A, Esc (`handleKey`) | selection or `focused` change | — |
+| not `holdsHover` | `CardView.onHover` (`CardView.swift`) | `hoveredCard` set | `onHover` closure sets `focused` only when `keys.isKeyed` |
 | `holdsHover` | `CardView.onHover` | — | — (ignored) |
-| `focused == nil` | `takeKeys(.current)` (`:276`) | `focused = hoveredCard ?? cards.first` | — |
+| `focused == nil` | `takeKeys(.current)` | `focused = hoveredCard ?? cards.first` | — |
 | card exists | `takeKeys(.card(id))` | `focused = id` | — |
-| any | `releaseKeys` (`:282`) | `focused = nil` | — |
+| any | `releaseKeys` | `focused = nil` | — |
 | any | `present` | `focused`, `hoveredCard` (unless kept), selection, `lift`, `entranceRanks` cleared | — |
 | any | `StackModel.removeCards`, which `remove(_:)`, `removeOverflow`, the stitch and the slide-out all call | `focused` moves to the newest card if its card left (**fixed**, [corner-3](findings.md#corner-3)); `remove(_:)` also filters the selection, `removeOverflow` deselects the card it drops; `hoveredCard` untouched ([corner-2](plausible-findings-run-to-toolbar.md#corner-2)) | — |
-| any | wheel `scroll` → `holdHover` (`:1187`) | `holdsHover = true`; 0.15 s timer replaced on each step | — |
-| `wheelSettling` fires | `hoverAfterWheel` (`:1198`) | `holdsHover = false` | if `visible`, hover = the card under the pointer now |
+| any | wheel `scroll` → `holdHover` | `holdsHover = true`; 0.15 s timer replaced on each step | — |
+| `wheelSettling` fires | `hoverAfterWheel` | `holdsHover = false` | if `visible`, hover = the card under the pointer now |
 
 **Invariants**
 
@@ -31,15 +31,15 @@ Which card keys act on, which card the pointer is over, and which cards are sele
 
 **Late and concurrent answers**
 
-- The wheel timer is replaced, not stacked (`:1189`). On fire it re-reads the cards and checks `visible`. A hover exit while held is repaired by the recompute (`:1204`).
+- The wheel timer is replaced, not stacked. On fire it re-reads the cards and checks `visible`. A hover exit while held is repaired by the recompute.
 
 ### Stitch converge (implicit)
 
-Owner: `ThumbnailController.stitched` (`:543`). Tests: none.
+Owner: `ThumbnailController.stitched`. Tests: none.
 
 Flies the pieces of a stitch into one new card while the finished image fades in. The flights themselves belong to `TransitionLayer`.
 
-**States**: `model.forming` (`StackModel.swift:19`, cards whose slot is held and drawn empty), `stitchGeneration` (`:66`), the result card at `cards[0]`.
+**States**: `model.forming` (`StackModel.swift`, cards whose slot is held and drawn empty), `stitchGeneration`, the result card at `cards[0]`.
 
 **Transitions**
 
@@ -47,28 +47,28 @@ Flies the pieces of a stitch into one new card while the finished image fades in
 |---|---|---|---|
 | `visible`, `isStack`, `!run.isActive`, 2+ pieces, all on screen | `stitched` | `forming` = pieces + result; pieces removed; result inserted at 0; selection cleared; `focused` cleared if a piece | `flights.converge` |
 | any other | `stitched` | — | refused |
-| converging | converge completion (`:567`) | `forming` minus ids and the result | `showCopied([result.shot])` if `stitchGeneration` is unchanged |
-| converging | `slideOut` (`:687`) | `flights.end` makes each piece answer `dropped` | completion runs a turn later (`TransitionLayer.swift:275`); the result then comes up as a lone thumbnail through `showCopied` → `show` → `present`, which cancels the slide-out's `slidOut` ([corner-6](plausible-findings-run-to-toolbar.md#corner-6)) |
+| converging | converge completion | `forming` minus ids and the result | `showCopied([result.shot])` if `stitchGeneration` is unchanged |
+| converging | `slideOut` | `flights.end` makes each piece answer `dropped` | completion runs a turn later (`TransitionLayer.swift`); the result then comes up as a lone thumbnail through `showCopied` → `show` → `present`, which cancels the slide-out's `slidOut` ([corner-6](plausible-findings-run-to-toolbar.md#corner-6)) |
 
 **Invariants**
 
 - The image is never on screen twice, and a stitch never finishes in silence. Checked by: nothing on the controller side.
 - `targetCards()` does not filter forming cards, so Cmd+A can select the result slot. ([corner-7](plausible-findings-run-to-toolbar.md#corner-7))
-- The destination frame is computed once (`:568`); a card inserted during the converge moves the slot. ([corner-8](plausible-findings-run-to-toolbar.md#corner-8))
+- The destination frame is computed once; a card inserted during the converge moves the slot. ([corner-8](plausible-findings-run-to-toolbar.md#corner-8))
 
 **Late and concurrent answers**
 
-- Dropped pieces still finish the converge: `TransitionLayer.swift:267`.
-- A stale completion skips the Copied notice by generation: `ThumbnailController.swift:572`.
-- `reshape` skips forming cards: `:1276`.
+- Dropped pieces still finish the converge: `TransitionLayer.swift`.
+- A stale completion skips the Copied notice by generation: `ThumbnailController.swift`.
+- `reshape` skips forming cards.
 
 ### shiftUp and card entrance (implicit)
 
-Owner: `ThumbnailController.shiftUp` (`:1430`). Tests: none.
+Owner: `ThumbnailController.shiftUp`. Tests: none.
 
 Inserts a card into the open stack without animating the layout change; the new card slides in after the old ones are lifted back.
 
-**States**: `model.entering` (`StackModel.swift:12`), `model.lift`, `model.liftFraction` (`StackModel.swift:16`), `model.offscreen`, `shift` (`ThumbnailController.swift:1417`), `model.scroll`.
+**States**: `model.entering` (`StackModel.swift`), `model.lift`, `model.liftFraction` (`StackModel.swift`), `model.offscreen`, `shift` (`ThumbnailController.swift`), `model.scroll`.
 
 **Transitions**
 
@@ -85,11 +85,11 @@ Inserts a card into the open stack without animating the layout change; the new 
 
 **Late and concurrent answers**
 
-- The `entering` clear compares ids (`:1451`). A second insert adds to the first's remaining lift through `liftLeft` (`:1457`). `present` recomputes lifts for kept cards.
+- The `entering` clear compares ids. A second insert adds to the first's remaining lift through `liftLeft`. `present` recomputes lifts for kept cards.
 
 ### UndoTimeline (explicit)
 
-Owner: `UndoTimeline.swift`, `UndoTimeline+Connections.swift`; `ThumbnailController.putBack` places the cards, `ThumbnailController+History.swift` feeds it the run's effects and opens or closes the annotator for it. Tests: `UndoTimelineTests`, `AnnotationRunTests.testUndoingTheOpeningEndsTheRunWithNoHandSoTheKeysStayWithTheStack`, `FolderWritesTests.testAFilePutBackFromTheTrashIsNoCaptureAndHoldsBackOlderRemovals`.
+Owner: `UndoTimeline.swift`, `UndoTimeline+Connections.swift`; `ThumbnailController.putBack` places the cards, `ThumbnailController+Timeline.swift` feeds it the run's effects and opens or closes the annotator for it. Tests: `UndoTimelineTests`, `AnnotationRunTests.testUndoingTheOpeningEndsTheRunWithNoHandSoTheKeysStayWithTheStack`, `FolderWritesTests.testAFilePutBackFromTheTrashIsNoCaptureAndHoldsBackOlderRemovals`.
 
 Cmd+Z and Shift+Cmd+Z while the stack or the editor has the keys (`docs/rules/undo-timeline.md`). **States**: `undoSteps` and `redoSteps`, each step a `Name`, an `Action` (`putBack`, `trashAgain`, `unstitch`, `restitch`, `draw`), `editor` (the screenshot in the editor while the step is next, with its history's depth and its file's identity) and `then` (the same once it has run); `leaving`, the screenshot the run took out of the editor until it opens another or ends; `asked`, an opening or a close an Undo or Redo is waiting for; `seen`, the editor's step counts when last read; `inEditor`, the screenshot it saw open; `leftAt`, each screenshot's depth when it left; `renamed`.
 
@@ -132,11 +132,11 @@ Cmd+Z and Shift+Cmd+Z while the stack or the editor has the keys (`docs/rules/un
 
 ### StackSweep (implicit)
 
-Owner: `StackSweep.swift:7`. Tests: none.
+Owner: `StackSweep.swift`. Tests: none.
 
 The drag-select gesture over the selection circles, with auto-scroll while the pointer is near an edge.
 
-**States**: `anchor: Int?` (`:17`, an index into `model.cards`), `selecting` (`:18`), `before` (`:19`), `fromTop` (`:22`), `autoScrollLink` (`:23`).
+**States**: `anchor: Int?` (an index into `model.cards`), `selecting`, `before`, `fromTop`, `autoScrollLink`.
 
 **Transitions**
 
@@ -144,7 +144,7 @@ The drag-select gesture over the selection circles, with auto-scroll while the p
 |---|---|---|---|
 | any | `move(toYFromTop:)` from `model.onSweep` | `anchor` set; selection updated; maybe starts the link | sends `selected` |
 | any | `end()` from `onSweepEnd`, `insert`, `present`, `remove`, `stitched` | `anchor`, `fromTop`, link cleared | — |
-| link running | display-link tick | — | stops itself when `!isVisible()`, `!model.isStack` or speed is 0; `dt` clamped for a stalled run loop (`:109`) |
+| link running | display-link tick | — | stops itself when `!isVisible()`, `!model.isStack` or speed is 0; `dt` clamped for a stalled run loop |
 
 **Invariants**
 
@@ -156,17 +156,17 @@ The drag-select gesture over the selection circles, with auto-scroll while the p
 
 ### HotKey (implicit)
 
-Owner: `HotKey.swift:7`. Tests: none (`HotKeySpecTests` parse key strings only).
+Owner: `HotKey.swift`. Tests: none (`HotKeySpecTests` parse key strings only).
 
 One Carbon global hotkey with a hold timer.
 
-**States**: `isDown` (`:19`), `holdTimer` (`:18`), `ref`, a static `keys` table.
+**States**: `isDown`, `holdTimer`, `ref`, a static `keys` table.
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| `isDown` | Carbon pressed (`:50`) | — | — (ignored, `:62`) |
+| `isDown` | Carbon pressed | — | — (ignored) |
 | not `isDown` | pressed | `isDown = true` | `action()`; arm the hold timer |
 | any | released | `isDown = false`; timer invalidated | — |
 | armed | hold timer fires | — | `hold()` |
@@ -181,11 +181,11 @@ One Carbon global hotkey with a hold timer.
 
 ### ModifierTap and KeyMonitors (implicit)
 
-Owner: `ModifierTap.swift:9`, `KeyMonitors.swift:8`. Tests: none.
+Owner: `ModifierTap.swift`, `KeyMonitors.swift`. Tests: none.
 
 The double-tap-a-modifier shortcut. `KeyMonitors` installs global and local event monitors once Accessibility is granted.
 
-**States**: `ModifierTap.count` (`:18`), `last` (`:19`), `holdTimer` (`:20`), `monitors` (`:17`); `KeyMonitors.monitors` (`:9`), `retry` (`:10`, a 2 s timer).
+**States**: `ModifierTap.count`, `last`, `holdTimer`, `monitors`; `KeyMonitors.monitors`, `retry` (a 2 s timer).
 
 **Transitions**
 
@@ -203,13 +203,13 @@ The double-tap-a-modifier shortcut. `KeyMonitors` installs global and local even
 
 **Late and concurrent answers**
 
-- A global and a local monitor both report one event; only an event newer than the last passes, `KeyMonitors.swift:33`. Callbacks hold `self` weakly.
+- A global and a local monitor both report one event; only an event newer than the last passes, `KeyMonitors.swift`. Callbacks hold `self` weakly.
 
 ### StackSwipe (explicit)
 
-Owner: `StackSwipe.swift:13`, run by `StackSwipeDriver` and fed by `ThumbnailController.scroll` (`:1170`). Tests: `StackSwipeTests`.
+Owner: `StackSwipe.swift`, run by `StackSwipeDriver` and fed by `ThumbnailController.scroll`. Tests: `StackSwipeTests`.
 
-A sideways two-finger swipe moves the column toward the edge and closes the corner (`docs/rules/stack.md`). **States**: `phase` (`:50`) is `idle`, `touching`, `deciding`, `vertical`, `horizontal(raw)`, `closing` or `leaving`, with `offset`, a spring and `carriesColumn` (`model.swipeExit`).
+A sideways two-finger swipe moves the column toward the edge and closes the corner (`docs/rules/stack.md`). **States**: `phase` is `idle`, `touching`, `deciding`, `vertical`, `horizontal(raw)`, `closing` or `leaving`, with `offset`, a spring and `carriesColumn` (`model.swipeExit`).
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
@@ -220,10 +220,10 @@ A sideways two-finger swipe moves the column toward the edge and closes the corn
 | `horizontal` | `ended` toward the edge fast enough, or past the distance | `closing` | `close`: `dismiss(by: .swipe)` |
 | `horizontal` | other `ended`, `cancelled` | `idle`, springing to 0 | — |
 | `horizontal` | swipes turn off | `vertical`, springing to 0 | — |
-| `closing` | `leave` from `slideOut` (`:706`) | `leaving`, springing past the edge | `carriesColumn` |
+| `closing` | `leave` from `slideOut` | `leaving`, springing past the edge | `carriesColumn` |
 | `closing` | the dismissal did not happen | `idle`, springing to 0 | `cancelClose` |
-| `closing`, `leaving` | `presented` from `present` (`:1343`) | `idle`, springing to 0 | `carriesColumn` until it lands |
-| any | `reset` from the removal (`:719`) | `idle`, offset 0; the last axis stays | — |
+| `closing`, `leaving` | `presented` from `present` | `idle`, springing to 0 | `carriesColumn` until it lands |
+| any | `reset` from the removal | `idle`, offset 0; the last axis stays | — |
 | `vertical` | `ended` | `idle` | `scrollColumn` |
 | not `closing`, `leaving` | momentum | unchanged | `scrollColumn` after a vertical gesture |
 | not `closing`, `leaving` | no phase (a wheel) | unchanged | `scrollColumn` |
@@ -235,18 +235,18 @@ A sideways two-finger swipe moves the column toward the edge and closes the corn
 
 ### StackAreaReader (implicit)
 
-Owner: `StackAreaReader.swift:7`. Tests: none.
+Owner: `StackAreaReader.swift`. Tests: none.
 
 Reads where the Dock's tiles are, so the column steps around them. The read can fail while the Dock is starting.
 
-**States**: `dockTiles` (`:15`, the last good read), `dockRetry` (`:16`), `dockReadsLeft` (`:17`).
+**States**: `dockTiles` (the last good read), `dockRetry`, `dockReadsLeft`.
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | any | `read` (every `layoutPanel`), read fails | `dockTiles` kept | schedule one retry in 0.5 s, at most 8 per presentation |
-| any | `read` succeeds | `dockTiles` updated | cancel the pending retry (`:36`) |
+| any | `read` succeeds | `dockTiles` updated | cancel the pending retry |
 | any | `presented` (when `visible` becomes true) | `dockReadsLeft` reset | — |
 | retry fires | not visible | — | dropped |
 | retry fires | Dock answers | — | `relayout` |

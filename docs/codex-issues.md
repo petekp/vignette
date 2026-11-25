@@ -21,6 +21,8 @@ and gets an end-to-end scenario wherever the fake can show it.
 | C6 | Two spellings of one path reach two drawings | Low | Fixed |
 | C7 | "Sent" while Codex still holds the line, and a stopped turn holds it until the next message | Medium | Fixed, merged as 1d5bdef |
 | C8 | Some Codex pushes name no thread, so their cards offer Send, not Reply | Low | Open; cause unverified |
+| C9 | Don't send took every queued line of the file out of Codex's queue | High | Fixed; verified with unit tests |
+| C10 | A line Codex just took may read as removed in Codex | Medium | Open; unverified |
 | X1 | The CLI on this Mac's PATH cannot run the configured model | Not Vignette's | Noted |
 | X2 | The in-app browser agent's right-click opens a menu over the app in front and takes its keys | Not Vignette's | Proposed upstream, not reported |
 
@@ -198,6 +200,33 @@ the thread the Codex app showed, and Pete found the pushing thread by search.
 
 **Not yet known.** Whether `CODEX_THREAD_ID` was empty in those runs, or the agent left the
 parameter out.
+
+### C9: Don't send took every queued line of the file out of Codex's queue
+
+**What happens.** Send a card to Codex thread A while A is busy, so its line is queued, then send
+the same card to thread B. Don't send on B's card cancelled B and also deleted A's line from A's
+queue. The card had shown only B's send, and a removed line clears its request without a word, so
+A's line vanished unseen. Found by the nightly review of 2026-11-18 (petekp/vignette#4, finding 1).
+
+**Fix.** Don't send takes back the send the card shows (`ScreenshotRequests.unsend(file:)`). It
+cancels every send of the file still in its grace, as before, and takes out only the line of the
+newest send to the session the tab names (`queuedRequest(of:)`), which is not always the newest
+send, since answers can come back out of order. Once that line is out, the tab names the newest
+other send of the file that reached its client, so an earlier queued line keeps its tab and its
+Don't send. A live ink note takes back its own request
+(`unsend(request:)`). Deleting the file still takes every queued line of it out.
+`ScreenshotRequestsQueueTests` covers both sends.
+
+### C10: A line Codex just took may read as removed in Codex
+
+**What happens, unverified.** A look finds a line gone from the queue, then searches the thread's
+rollout for the request's id. Found means taken; not found means the person removed it in Codex, and
+the request and the card's Sent record are cleared. If the engine takes the line from the queue
+before it writes the user message to the rollout, a look in between reads a taken line as removed.
+Nobody has checked the order in Codex's source or seen it happen.
+
+**A possible fix.** Call a line removed only when two looks in a row find it gone and not in the
+rollout. The cost is one more look, 3 s or more, before a line deleted in Codex is cleared.
 
 ### X1: The CLI on this Mac's PATH cannot run the configured model
 

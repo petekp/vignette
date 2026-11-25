@@ -8,7 +8,8 @@ the evidence for each, and [Issues](state-machines/issues.md#issues) groups the 
 
 Keep them current. A change that adds a state, an event, a timer or a callback to one of these
 machines updates its section in the same commit. A new finding goes in [Findings](state-machines/findings.md#findings) with
-its evidence and status.
+its evidence and status. A map names a symbol and the file it is in, never a line number, which
+drifts with every edit. The findings and issues cite lines at the commit they name.
 
 ## Terms
 

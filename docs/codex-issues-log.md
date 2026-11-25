@@ -2,6 +2,14 @@
 
 The progress on the issues in `docs/codex-issues.md`, newest first.
 
+## 2026-11-25, C9 and C10: Don't send and the queue watch
+
+- Fixed C9 from the nightly review in petekp/vignette#4: Don't send no longer takes earlier sends'
+  lines out of Codex's queue. Unit tests cover two queued sends of one file, and a send in its grace
+  after a queued one. A review of that fix found two more gaps, fixed the same day: taking back the
+  newer line erased the tab of the earlier one still queued, and Don't send picked the newest send
+  rather than the one the tab names when answers came back out of order. Added C10, the review's unverified follow-up about a taken line read as removed.
+
 ## 2026-11-21, C8: Codex pushes with no thread
 
 - Reading why Send's start was wrong when the Codex app was in front found 9 of 116 Codex pushes

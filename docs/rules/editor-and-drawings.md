@@ -159,7 +159,8 @@
   (`docs/adr/0025-marks-are-sized-to-the-screenshot.md`). A stored drawing keeps both, so a mark
   keeps its size in the image when the drawing is opened on another screen or after the rule
   changes. A change to `ui.markScalePower` or `ui.smallestNoteText` rescales the open drawing
-  (`EditorCore.Input.rescaled`), which hands it over and is no undo step. An agent's note keeps
+  at the backing scale it was made at (`AnnotationController.rescale`, `EditorCore.Input.rescaled`),
+  which hands it over and is no undo step. `ui.newTextSize` alone rescales nothing. An agent's note keeps
   `ui.agentTextSize` of the image's width, with the same floor (`AgentMarks`). Live ink's cards keep
   full-size marks (`UITweaks.liveInkMarkScaleRule`, `docs/live-ink.md`).
   `docs/mark-scale-2026-10-27.md` has the reasons and the measurements.
