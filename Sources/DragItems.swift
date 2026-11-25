@@ -1,8 +1,8 @@
 import AppKit
 
 /// What the cards in a drag out of the stack drop, one item per card. A card with a drawing drops
-/// the drawing, written beside its screenshot as the drag begins, through the item Done's clipboard
-/// uses (`Clipboard.renderingItem`). A card without one drops its file. The drawing is the one now,
+/// the drawing as Done copies it, with its pins' comments, written beside its screenshot as the drag
+/// begins, through the item Done's clipboard uses (`Clipboard.renderingItem`). A card without one drops its file. The drawing is the one now,
 /// with the card's own as the stored one, since every write and removal reaches it at once
 /// (`onChange`) and the drag needs no read from disk.
 ///
@@ -20,6 +20,7 @@ final class DragItems {
         let drawing: Drawing
         let style: TextStyle
         let markStyle: MarkStyle
+        let layout: Rendering.Layout
     }
 
     private let drawings: Drawings
@@ -65,7 +66,7 @@ final class DragItems {
                     Log.write("[drag] rendered files=\(RenderingQueue.paths([file])) \(png.count) bytes")
                 }
             }
-            return Clipboard.renderingItem(file, loggedAs: "drag")
+            return Clipboard.renderingItem(file, loggedAs: "drag", words: Pin.clipboardWords(of: key.drawing))
         }
         Log.write("[drag] cards=\(cards.count) drawings=\(drawn) ready=\(ready)")
         return items
@@ -74,7 +75,8 @@ final class DragItems {
     private func key(for card: Card) -> Key? {
         guard let drawing = drawings.current(of: card.shot.key, stored: { card.marks?.drawing }), !drawing.isEmpty else { return nil }
         let ui = Settings.shared.data.ui
-        return Key(url: card.shot.url, drawing: drawing, style: ui.textStyle, markStyle: ui.markStyle)
+        return Key(url: card.shot.url, drawing: drawing, style: ui.textStyle, markStyle: ui.markStyle,
+                   layout: .withComments(textSize: ui.newTextSize))
     }
 
     /// The kept rendering for `key`, else a new one. A kept rendering that failed is made again, since
@@ -89,7 +91,8 @@ final class DragItems {
         }
         // In turn, so Done's promise keeps its bound: a drop comes after the pointer has travelled,
         // which is time a paste does not have.
-        let rendering = RenderingQueue.shared.render(key.drawing, imageAt: key.url, output: .bytes, style: key.style, markStyle: key.markStyle)
+        let rendering = RenderingQueue.shared.render(key.drawing, imageAt: key.url, output: .bytes, style: key.style, markStyle: key.markStyle,
+                                                     layout: key.layout)
         kept.append((key, rendering))
         trim()
         return rendering

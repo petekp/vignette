@@ -110,6 +110,13 @@ to look at or change. When the answer is easier to show than to say, reply with 
 helper puts your marks on a new card beside the user's other screenshots. They edit those marks
 like their own and can send the result straight back to you.
 
+When the user pinned comments on the image, the line carries their words after the message, pin
+by pin: `Pin 1: remove extra margin. Pin 3: too narrow. / can it pulse?` "Pin 3" is the teardrop
+numbered 3 on the image. Its pointed tip marks the place the comment is about, and a pin about an
+area has that area outlined in its colour. A teardrop that would cover another sits a little
+away, joined to its place by a short line. One pin's comments are joined with " / ", oldest
+first. Answer each pin by its number.
+
 When the user answers an image you sent with words alone, and left your marks as they were, the
 line names that image and sends no new picture:
 

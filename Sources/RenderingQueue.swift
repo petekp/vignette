@@ -30,14 +30,14 @@ final class RenderingQueue: @unchecked Sendable {
     /// File results have distinct paths beside their source and remain until the person deletes them.
     /// `style` must have been made on the main thread. Results of the same order run in request order.
     func render(_ drawing: Drawing, imageAt url: URL, output: Output, style: TextStyle, markStyle: MarkStyle,
-                order: Order = .inTurn) -> PendingRendering {
+                layout: Rendering.Layout = .picture, order: Order = .inTurn) -> PendingRendering {
         let file = output == .file ? Self.resultURL(beside: url) : nil
         let pending = PendingRendering(file: file)
         if output == .file, file == nil {
             pending.finish(png: nil, failure: .writeFailed("could not name a rendering beside \(url.lastPathComponent)"))
             return pending
         }
-        let job: @Sendable () -> Void = { Self.run(drawing, imageAt: url, style: style, markStyle: markStyle, into: pending) }
+        let job: @Sendable () -> Void = { Self.run(drawing, imageAt: url, style: style, markStyle: markStyle, layout: layout, into: pending) }
         lock.withLock { if order == .first { firstJobs.append(job) } else { jobs.append(job) } }
         queue.async { [self] in
             let next = lock.withLock { firstJobs.isEmpty ? jobs.removeFirst() : firstJobs.removeFirst() }
@@ -98,10 +98,10 @@ final class RenderingQueue: @unchecked Sendable {
         return result
     }
 
-    private static func run(_ drawing: Drawing, imageAt url: URL, style: TextStyle, markStyle: MarkStyle,
+    private static func run(_ drawing: Drawing, imageAt url: URL, style: TextStyle, markStyle: MarkStyle, layout: Rendering.Layout,
                             into pending: PendingRendering) {
         do {
-            let png = try Rendering.png(of: drawing, imageAt: url, style: style, markStyle: markStyle)
+            let png = try Rendering.png(of: drawing, imageAt: url, style: style, markStyle: markStyle, layout: layout)
             guard let file = pending.file else { return pending.finish(png: png, failure: nil) }
             do {
                 try png.write(to: file, options: .atomic)

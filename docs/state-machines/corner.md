@@ -156,7 +156,7 @@ A value that holds the one notice each card shows, such as "Copied" or a send's 
 
 **States**: `shown: [ScreenshotKey: (id, Notice)]` (`:103`), `awaitingAnswer: [ScreenshotKey: SendNotice]` (`:104`), `lastID`. `Notice` is `.copied`, `.notCopied`, `.notSaved` or `.send(SendNotice)`. `SendNotice.State` (`:10`) is `inGrace`, `sending`, `sent`, `queued`, `uncertain`, `failed`, `replyFailed`, `done`. A notice "explains" when it carries a reason; it holds three times as long.
 
-Events (`post`, `:112`): `copied`, `notCopied`, `notSaved`, `sending`, `released`, `cancelled`, `answered`, `replyFailed`, `finished`. Also `expire(id, on:)` (`:170`) and `rename(from:to:)` (`:177`). The controller's senders are `showCopied` and `showFailed` (`ThumbnailController.swift:626-640`), and `showNotCopied`, `showNotSaved`, `showSending`, `released`, `cancelled`, `delivered`, `finished` and `replyFailed` in `ThumbnailController+Notices.swift`, called from `AppDelegate`.
+Events (`post`, `:112`): `copied`, `notCopied`, `notSaved`, `sending`, `released`, `cancelled`, `answered`, `replyFailed`, `finished`. Also `expire(id, on:)` (`:170`) and `rename(from:to:)` (`:177`). The controller's senders are `showCopied` (`showCopied(_:after:)` posts it once a rendering succeeds) and `showFailed` (`ThumbnailController.swift:626-640`), and `showNotCopied`, `showNotSaved`, `showSending`, `released`, `cancelled`, `delivered`, `finished` and `replyFailed` in `ThumbnailController+Notices.swift`, called from `AppDelegate`.
 
 **Transitions**
 

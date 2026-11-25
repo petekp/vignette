@@ -47,7 +47,7 @@ Flies the pieces of a stitch into one new card while the finished image fades in
 |---|---|---|---|
 | `visible`, `isStack`, `!run.isActive`, 2+ pieces, all on screen | `stitched` | `forming` = pieces + result; pieces removed; result inserted at 0; selection cleared; `focused` cleared if a piece | `flights.converge` |
 | any other | `stitched` | — | refused |
-| converging | converge completion (`:567`) | `forming` minus ids and the result | `showCopied([result.shot])` if `stitchGeneration` is unchanged |
+| converging | converge completion (`:567`) | `forming` minus ids and the result | `showCopied([result.shot], after: copied)` if `stitchGeneration` is unchanged: a stitch with pins shows Copied once its first rendering is done, and none if it failed |
 | converging | `slideOut` (`:687`) | `flights.end` makes each piece answer `dropped` | completion runs a turn later (`TransitionLayer.swift:275`); the result then comes up as a lone thumbnail through `showCopied` → `show` → `present`, which cancels the slide-out's `slidOut` ([corner-6](plausible-findings-run-to-toolbar.md#corner-6)) |
 
 **Invariants**

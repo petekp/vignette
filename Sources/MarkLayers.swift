@@ -248,7 +248,7 @@ final class MarkLayers {
         pins = pins.filter { pinned.contains($0.key) }
         for pin in drawing.pins {
             let record = pins[pin.id] ?? PinLayer(scale: contentsScale)
-            record.show(pin, pixels: pixels, pointScale: drawing.pointScale, markStyle: markStyle)
+            record.show(pin, on: drawing, markStyle: markStyle)
             pins[pin.id] = record
             layers.append(record.root)
         }

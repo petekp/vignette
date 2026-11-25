@@ -33,6 +33,8 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
   area pin adds `w` and `h`, and its `x` and `y` are the area's top-left corner. A comment has
   `text`, at most 2,000 characters, and `agent` and `agentName` as a mark has them, left out for
   a person's. A file holds at most 99 pins.
+- `pieceNumbers` is a stitch's: where each piece wears its number, as `[x, y, w, h]` in px, so a
+  teardrop turns away from it. It is left out when there are none, and does not raise the version.
 - `nextPin` is the number the next pin gets, and is left out at 1. It never goes down while the
   file exists, so a deleted pin's number is never given again. A write keeps the file's `nextPin`
   when it is higher than the drawing's.

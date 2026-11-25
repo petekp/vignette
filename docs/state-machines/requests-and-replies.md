@@ -16,7 +16,7 @@ The durable record of one send. `ScreenshotRequests` writes it; the client's ans
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| none | `send` (`ScreenshotRequests.swift:272`) | `prepared` | record stored before the image leaves the editor |
+| none | `send` (`ScreenshotRequests.swift:272`) | `prepared` | record stored before the image leaves the editor, with `image.png`, and `pins.json` when the drawing has pins |
 | `prepared` | `handOver` (`:371-377`), from `run(.submit)` (`:333`) or `releaseHeld` (`:448`) | `uncertain` | `handedOver` set before the line leaves |
 | `prepared`, `uncertain` | outcome accepted or queued (`recordOutcome` `:391`, via `finishSubmission` `:385` or `releaseHeld` `:464`) | `submitted` | `delivered` called |
 | `prepared`, `uncertain` | outcome uncertain | `uncertain` | `delivered` called |

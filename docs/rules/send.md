@@ -91,7 +91,10 @@
   Done does, with no error (`docs/rules/annotator-toolbar.md`). An undo back to the agent's drawing
   counts as unchanged. An edit to the picture in another app, a new text style or mark scale, and a
   card path with a line break in it count as changed, so the picture goes
-  (`ScreenshotRequests.Carried`). A file with no
+  (`ScreenshotRequests.Carried`). Send's picture draws pins as numbers and outlines at the
+  screenshot's size. Their words go in the line after the message (`Pin.lineWords`), and the
+  request stores them as `pins.json` beside `image.png`. Words alone carry neither the agent's
+  marks nor its pins. A file with no
   recorded drawing always sends the picture. Send closes the editor
   without a Copied notice, and the queue carries on to the next card: a list of files to annotate is
   something the person asked for, and handing one of them to an agent does not withdraw the rest.

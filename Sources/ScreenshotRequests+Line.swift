@@ -7,8 +7,9 @@ import UniformTypeIdentifiers
 extension ScreenshotRequests {
     /// What a send carries to the agent.
     enum Picture {
-        /// The drawing, rendered. The line names it, and the agent opens it.
-        case drawing(png: Data)
+        /// The drawing, rendered, and its pins, whose words the line carries and `pins.json` keeps. The
+        /// line names the image, and the agent opens it.
+        case drawing(png: Data, pins: [Pin] = [])
         /// The agent's own image, with the drawing exactly as the agent sent it, and the person's
         /// words. The line names the card's file and its title, and no picture travels. A drawing in
         /// answer still needs a picture to go on, so the request keeps the card's own picture,
@@ -20,19 +21,34 @@ extension ScreenshotRequests {
             return false
         }
 
-        /// Writes the picture a reply without its own image draws on, as the request's `image.png`.
-        /// On APFS the clone takes no room until one of the two files changes.
-        func store(at url: URL) throws {
+        /// Writes the picture a reply without its own image draws on, as `image.png` in the request's
+        /// `directory`, and the pins beside it as `pins.json` when there are any. On APFS a clone takes
+        /// no room until one of the two files changes.
+        func store(in directory: URL) throws {
+            let image = directory.appendingPathComponent("image.png")
             switch self {
-            case .drawing(let png), .unchanged(_, _, let png?): try png.write(to: url, options: .atomic)
-            case .unchanged(let card, _, nil): try FileManager.default.copyItem(at: card, to: url)
+            case .drawing(let png, _), .unchanged(_, _, let png?): try png.write(to: image, options: .atomic)
+            case .unchanged(let card, _, nil): try FileManager.default.copyItem(at: card, to: image)
             }
+            guard !pins.isEmpty else { return }
+            try DrawingJSON.encode(["pins": pins.map(PinRecord.init)]).write(to: directory.appendingPathComponent("pins.json"), options: .atomic)
+        }
+
+        var pins: [Pin] {
+            if case .drawing(_, let pins) = self { return pins.sorted { $0.number < $1.number } }
+            return []
+        }
+
+        /// The title the agent gave the unchanged image, which the line repeats.
+        var title: String? {
+            if case .unchanged(_, let title, _) = self { return title }
+            return nil
         }
 
         /// For the `[send] prepared` line.
         var logged: String {
             switch self {
-            case .drawing(let png): return "\(png.count) bytes"
+            case .drawing(let png, let pins): return "\(png.count) bytes" + (pins.isEmpty ? "" : " pins=\(pins.count)")
             case .unchanged: return "unchanged, no picture sent"
             }
         }
@@ -59,11 +75,13 @@ extension ScreenshotRequests {
         }
 
         /// The drawing to render for this press. Words alone keep the card's own picture, without
-        /// the agent's marks, as the one a drawn answer goes on.
+        /// the agent's marks or pins, as the one a drawn answer goes on: what the clone of a PNG card
+        /// holds too.
         func rendering(_ drawing: Drawing) -> Drawing {
             guard self == .wordsAlone else { return drawing }
             var picture = drawing
             picture.marks = []
+            picture.pins = []
             return picture
         }
     }
@@ -94,8 +112,12 @@ extension ScreenshotRequests {
     /// drawing. An unchanged image (`Record.unchanged`) names the card's file, which the agent knows
     /// from its push or its reply, and the title it gave, and says the image is as the agent sent
     /// it, so the agent opens nothing. No image is beside that file, so it names the ticket.
+    ///
+    /// The pins' words follow the message, as `Pin.lineWords` writes them, and lead the line when
+    /// there is no message.
     static func requestLine(record: Record, root: URL, message: String? = nil,
-                            instructions: String = SettingsData.defaultSendInstructions, title: String? = nil) -> String {
+                            instructions: String = SettingsData.defaultSendInstructions, title: String? = nil,
+                            pins: [Pin] = []) -> String {
         let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
         let about: String
         if record.unchanged == true {
@@ -107,7 +129,9 @@ extension ScreenshotRequests {
             about = "\"\(directory.appendingPathComponent("image.png").path)\"."
         }
         let note = "From Vignette: \(about)" + (instructions.isEmpty ? "" : " \(instructions)")
-        return message.map { "\($0) [\(note)]" } ?? note
+        guard !pins.isEmpty else { return message.map { "\($0) [\(note)]" } ?? note }
+        let request = [message.map(Pin.ended), Pin.lineWords(pins)].compactMap { $0 }.joined(separator: " ")
+        return "\(request) [\(note)]"
     }
 }
 

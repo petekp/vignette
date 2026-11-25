@@ -81,7 +81,7 @@ struct DrawingStore: Sendable {
         let pinned = Pin.read(stored.pins, nextPin: stored.nextPin, in: pixels) { what, why in log("[drawing] \(what) \(name): \(why)") }
         guard !marks.isEmpty || !pinned.pins.isEmpty else { return nil }
         return Drawing(key: key, pixels: pixels, pointScale: stored.pointScale, markScale: stored.markScale, marks: marks,
-                       pins: pinned.pins, nextPin: pinned.nextPin)
+                       pins: pinned.pins, nextPin: pinned.nextPin, pieceNumbers: stored.pieceNumbers(in: pixels))
     }
 
     /// The message stored with the screenshot at `key`, whose size is `pixels`: the words last left in
@@ -157,7 +157,7 @@ struct DrawingStore: Sendable {
             }
             catch { throw Refusal.incomplete("\(error)") }
             return Drawing(key: key, pixels: pixels, pointScale: stored.pointScale, markScale: stored.markScale, marks: marks,
-                           pins: pinned.pins, nextPin: pinned.nextPin)
+                           pins: pinned.pins, nextPin: pinned.nextPin, pieceNumbers: stored.pieceNumbers(in: pixels))
         } catch {
             log("[drawing] error incomplete \((key as NSString).lastPathComponent): \(error)")
             throw error

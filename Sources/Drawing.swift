@@ -41,8 +41,13 @@ struct Drawing: Equatable {
     /// The number the next pin takes. It never goes down while the drawing's file exists, so a deleted
     /// pin's number is never used again.
     var nextPin: Int
+    /// Where a stitch's pieces wear their numbers, in px. A teardrop turns away from them (`PinTeardrop`).
+    /// Empty on every other drawing.
+    var pieceNumbers: [CGRect]
 
-    init(key: String, pixels: PixelSize, pointScale: CGFloat, markScale: CGFloat = 1, marks: [Mark], pins: [Pin] = [], nextPin: Int = 1) {
+    init(key: String, pixels: PixelSize, pointScale: CGFloat, markScale: CGFloat = 1, marks: [Mark], pins: [Pin] = [], nextPin: Int = 1,
+         pieceNumbers: [CGRect] = []) {
+        self.pieceNumbers = pieceNumbers
         self.key = key
         self.pixels = pixels
         self.pointScale = pointScale
@@ -74,7 +79,8 @@ struct Drawing: Equatable {
         try DrawingJSON.encode(DrawingRecord(version: Self.fileVersion(aboutPins: !pins.isEmpty || nextPin > 1), key: key,
                                              pixels: [pixels.width, pixels.height], pointScale: pointScale,
                                              markScale: markScale == 1 ? nil : markScale, marks: marks.map(MarkRecord.init),
-                                             pins: pins.isEmpty ? nil : pins.map(PinRecord.init), nextPin: nextPin > 1 ? nextPin : nil))
+                                             pins: pins.isEmpty ? nil : pins.map(PinRecord.init), nextPin: nextPin > 1 ? nextPin : nil,
+                                             pieceNumbers: pieceNumbers.isEmpty ? nil : pieceNumbers.map { [$0.minX, $0.minY, $0.width, $0.height] }))
     }
 }
 
@@ -337,134 +343,6 @@ extension Mark {
     static func shiftInside(from low: CGFloat, to high: CGFloat, within limit: CGFloat) -> CGFloat? {
         guard high - low <= limit else { return nil }
         return low < 0 ? -low : (high > limit ? limit - high : 0)
-    }
-}
-
-// MARK: - The file's encoding
-
-/// A mark as a drawing file and a paste write it: flat fields, without the ones its type does not
-/// use, and without `bend`, `via`, `wrap`, `agent` and `agentName` at their defaults. A text's `size`
-/// is always written. A mark's colour is not: it follows from `agent`.
-struct MarkRecord: Encodable {
-    let type: MarkKind
-    let x: CGFloat
-    let y: CGFloat
-    var w: CGFloat?
-    var h: CGFloat?
-    var x2: CGFloat?
-    var y2: CGFloat?
-    var bend: CGFloat?
-    var via: [[CGFloat]]?
-    var text: String?
-    var wrap: CGFloat?
-    var size: CGFloat?
-    var agent: Bool?
-    var agentName: String?
-
-    init(_ mark: Mark) {
-        switch mark.geometry {
-        case .rectangle(let frame), .ellipse(let frame):
-            x = frame.minX
-            y = frame.minY
-            w = frame.width
-            h = frame.height
-        case .arrow(let arrow):
-            x = arrow.start.x
-            y = arrow.start.y
-            x2 = arrow.end.x
-            y2 = arrow.end.y
-            bend = arrow.bend == 0 ? nil : arrow.bend
-            via = arrow.via.isEmpty ? nil : arrow.via.map { [$0.x, $0.y] }
-        case .text(let text):
-            x = text.origin.x
-            y = text.origin.y
-            self.text = text.text
-            wrap = text.wrap
-            size = text.size
-        }
-        type = mark.kind
-        agent = mark.agent ? true : nil
-        agentName = mark.agentName
-    }
-}
-
-private struct DrawingRecord: Encodable {
-    let version: Int
-    let key: String
-    let pixels: [Int]
-    let pointScale: CGFloat
-    /// Left out at 1.
-    let markScale: CGFloat?
-    let marks: [MarkRecord]
-    /// Left out with no pins.
-    let pins: [PinRecord]?
-    /// Left out at 1.
-    let nextPin: Int?
-}
-
-private struct CopiedMarksRecord: Encodable {
-    let version: Int
-    let pointScale: CGFloat
-    /// Left out at 1.
-    let markScale: CGFloat?
-    let marks: [MarkRecord]
-}
-
-/// Reading and writing the JSON that drawings and copied marks travel in.
-enum DrawingJSON {
-    static func encode(_ value: some Encodable) throws -> Data {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return try encoder.encode(value)
-    }
-
-    /// The decoded object. JSONSerialization refuses a whole document over one number past a Double's
-    /// range, such as `1e999`; such a number is read as null, so the validator drops only its mark.
-    static func object(from data: Data) throws -> Any {
-        try JSONSerialization.jsonObject(with: nullingOverflow(data))
-    }
-
-    /// A finite number JSONSerialization decoded, or nil for anything else. It hands `true` over as
-    /// an NSNumber, which `as? Double` would read as 1.
-    static func number(_ raw: Any?) -> CGFloat? {
-        guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.isFinite else { return nil }
-        return number.doubleValue
-    }
-
-    /// A whole number JSONSerialization decoded, or nil for anything else.
-    static func wholeNumber(_ raw: Any?) -> Int? {
-        guard let number = number(raw), number == number.rounded(), abs(number) < 1e15 else { return nil }
-        return Int(number)
-    }
-
-    /// `data` with every number outside strings that a Double cannot hold replaced by `null`.
-    static func nullingOverflow(_ data: Data) -> Data {
-        let bytes = [UInt8](data)
-        var out = Data(capacity: bytes.count)
-        var inString = false, escaped = false
-        var i = 0
-        while i < bytes.count {
-            let byte = bytes[i]
-            if inString {
-                if escaped { escaped = false } else if byte == UInt8(ascii: "\\") { escaped = true } else if byte == UInt8(ascii: "\"") { inString = false }
-            } else if byte == UInt8(ascii: "\"") {
-                inString = true
-            } else if byte == UInt8(ascii: "-") || (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte) {
-                var end = i + 1
-                while end < bytes.count, "0123456789+-.eE".utf8.contains(bytes[end]) { end += 1 }
-                let token = bytes[i..<end]
-                if let value = Double(String(decoding: token, as: UTF8.self)), value.isInfinite {
-                    out.append(contentsOf: "null".utf8)
-                } else {
-                    out.append(contentsOf: token)
-                }
-                i = end
-                continue
-            }
-            out.append(byte)
-            i += 1
-        }
-        return out
     }
 }
 

@@ -26,6 +26,15 @@ final class ClearedRequestFoldersTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: submissions.path))
     }
 
+    func testAClearedRequestLosesItsImageAndItsPinsWordsButKeepsItsTicket() throws {
+        for name in ["image.png", "pins.json", "ticket.json"] { try Data("x".utf8).write(to: folder.appendingPathComponent(name)) }
+        var folders = ClearedRequestFolders(root: root)
+
+        folders.removePayloads(of: "request", now: later)
+
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), ["ticket.json"])
+    }
+
     func testAPassThatCouldNotLookIntoTheFolderIsNotCountedAsFinished() throws {
         try FileManager.default.createDirectory(at: submissions, withIntermediateDirectories: true)
         var folders = ClearedRequestFolders(root: root)

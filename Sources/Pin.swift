@@ -50,6 +50,33 @@ struct Pin: Equatable, Identifiable {
     var color: MarkColor { comments.first?.agent == true ? .agent : .person }
 }
 
+// MARK: - The pins' words as text
+
+extension Pin {
+    /// The pins' words in number order, as Send's line and the clipboard's text carry them:
+    /// `Pin 1: remove extra margin. Pin 3: too narrow. / can it glow?`. Each comment is put on one line
+    /// (`asOneLine`), a pin's comments are joined by " / ", and a pin's words end in a full stop unless
+    /// they end in other closing punctuation.
+    static func lineWords(_ pins: [Pin]) -> String {
+        pins.sorted { $0.number < $1.number }
+            .map { pin in "Pin \(pin.number): " + ended(pin.comments.map(\.text.asOneLine).joined(separator: " / ")) }
+            .joined(separator: " ")
+    }
+
+    /// What a rendering's file carries as text after its path on the clipboard: the pins' words, or nil
+    /// for a drawing without pins.
+    static func clipboardWords(of drawing: Drawing) -> String? {
+        drawing.pins.isEmpty ? nil : lineWords(drawing.pins)
+    }
+
+    /// `words` with a full stop added when they end in a letter or a digit, so words that end in their
+    /// own punctuation, a question mark or a smiley, keep it as typed.
+    static func ended(_ words: String) -> String {
+        guard let last = words.last, last.isLetter || last.isNumber else { return words }
+        return words + "."
+    }
+}
+
 // MARK: - Checking pins from a file
 
 extension Pin {

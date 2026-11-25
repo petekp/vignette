@@ -83,6 +83,25 @@ files it touches, and `docs/voice.md` for any new words.
    piece's number. Reply's change check. The skill's words. Verified by rendering tests from fixture
    drawings for each output, and a test of the line. Then one send each to a Claude Code session and
    a Codex thread in the VM, measuring the longest line each takes whole.
+
+   Step 2 settled these points the plan left open:
+   - A reply of words alone sends neither the agent's marks nor its pins. Its `image.png` is the
+     picture a drawn answer goes on, as a PNG card's clone already is, and from step 4 a reply card
+     holds live pins, which numbers drawn into its pixels would double.
+   - Send's image and the copy both place teardrops by the rendering's rule: other orientations
+     first, then a move clear with a line back to the place. Only the copy adds the list.
+   - An area's outline is drawn as a rectangle mark in the pin's colour, at the marks' width.
+   - The list follows mock A: white, hairline rules between rows, dark text in the note fonts at a
+     new note's text size, each row led by its teardrop at the picture's size. Its area is capped,
+     so memory stays bounded, and the pins past the cap become one line that says how many.
+   - A stitch's pins get new ids, since each piece keeps its own pins. A stitch whose pins would
+     pass 99 is refused, as one with an unread piece is, with "Not copied" and the reason on a card.
+   - A stitch without pins writes no drawing, so it keeps no `pieceNumbers`. A pin added to it in
+     step 3 can then cover a piece's number.
+   - The stitch's drawing gets its mark scale as an agent's new drawing does
+     (`AppDelegate.newDrawingScreen`), so a pin added later matches a mark added later.
+   - Step 2 did not send to a Claude Code session or a Codex thread, since that needs the VM. Step
+     3's checks include those two sends and the longest line each takes.
 3. The Comment tool and dense areas. The tool and its gestures. The composer in its popover.
    Posting, editing and deleting comments. Moving and resizing pins, undo, and the keys in [Pins in
    the editor](editor.md), Shift+Return placement included. Teardrops at one size on screen, their

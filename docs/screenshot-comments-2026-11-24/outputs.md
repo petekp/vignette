@@ -30,10 +30,16 @@ of each area would make the PNG taller.
   drawing's mark scale, with the editor's orientation rule.
 - Each row of the list starts with its pin's teardrop and number, the same shape as on the picture,
   then the pin's comments in order. The list is set in SF Pro Rounded at the note's text size for
-  the drawing's mark scale, in the screenshot's colour profile. The picture's pixels are unchanged.
+  the drawing's mark scale, in the screenshot's colour profile. An agent's comment is set in SF
+  Mono, as its notes are. The picture's pixels are unchanged.
+- The list's size is capped, so a copy's memory stays bounded. Below a screenshot its area is at most
+  the picture's, or 4 million px when that is more. Beside one it is no taller than the picture, or
+  than 4 million px allows. The pins past the cap become one line: "12 more pins didn't fit. You can
+  read them in Vignette."
 - Where two teardrops' bodies would overlap in the PNG, the later one first tries its other three
   orientations. If each of them collides, its body moves clear, and a short line in the pin's colour
-  joins its tip to its place.
+  joins its tip to its place. Bodies may touch, since teardrops on one place share their tip. Send's
+  image places teardrops the same way.
 - A drawing with no pins copies exactly as it does today, at the screenshot's size.
 - The clipboard keeps the PNG, the TIFF and the file URL. Its text, which a terminal pastes, is the
   path followed by the pins' words in the form Send's line uses. An agent given a pasted path then
@@ -58,8 +64,8 @@ of each area would make the PNG taller.
   with that number on the image, whose tip marks the place, with its area outlined. A newer skill
   reaches agents through the plugin install, as every skill change does.
 - The line's length is unverified. At 99 pins of 2,000 characters a line could pass 200,000
-  characters. Step 2 measures whether Claude Code's monitor and `codex queue` take a long line
-  whole. If one cuts it, the line carries the words up to that length and then names `pins.json`.
+  characters. Step 2 did not measure whether Claude Code's monitor and `codex queue` take a
+  long line whole, since the measurement needs the VM. Step 3's checks measure it. If one cuts it, the line carries the words up to that length and then names `pins.json`.
   `ClaudeReadRule` today lets Claude Code read only `requests/*/image.png` without asking, so that
   step would widen it to `pins.json`.
 - A reply drawn without `--image` is drawn on `image.png`, pins included, as replies are drawn on
@@ -79,12 +85,15 @@ their words.
   drawing is written before its card appears. Its first copy is the rendering with the list, so the
   card's Copied notice waits for that rendering. Unstitch and restitch carry the drawing.
 - A stitch whose pieces hold pins is not made when a piece could not be read, and the card says why.
-  A stitch made without that piece would drop its comments.
+  A stitch made without that piece would drop its comments. For the same reason a stitch is not made
+  when its pieces hold more than 99 pins between them, the most a drawing holds.
 - A stitch draws each piece's number in a red circle with a white number, inset a quarter of its
   size from the piece's top-left corner (`Stitch.drawBadge`). Pins are the same red. The teardrop's
   shape and its tip tell a pin from a piece's number, and the line calls each one "Pin".
 - A teardrop whose body would overlap a piece's number flips away from it, as it flips away from the
-  picture's edge. An area pin anchored at a piece's top-left corner is the common case.
+  picture's edge. An area pin anchored at a piece's top-left corner is the common case. The stitch's
+  drawing keeps where each number is (`pieceNumbers`). When no orientation clears both, the edges
+  win on a card. A rendering moves the body clear, and its line stops at the number's edge.
 
 ## Agents' marks and answers
 

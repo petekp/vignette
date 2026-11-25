@@ -8,6 +8,15 @@ extension ThumbnailController {
         showFailed(.notCopied(reason: reason), on: shot, in: opening)
     }
 
+    /// Copied on `shots` once `rendering`, their copy, is done, or at once with none. A rendering that
+    /// failed adds nothing: whoever copied it says Not copied.
+    func showCopied(_ shots: [Screenshot], after rendering: PendingRendering?) {
+        guard let rendering else { return showCopied(shots) }
+        rendering.whenDone { [weak self] output in
+            if output.failure == nil { self?.showCopied(shots) }
+        }
+    }
+
     /// `shot`'s drawing could not be written after the editor let go of it: the card says so, and
     /// when the card is parking after Done it lands without Copied, as for a failed copy.
     func showNotSaved(_ shot: Screenshot) {
