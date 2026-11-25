@@ -210,7 +210,10 @@ A's line vanished unseen. Found by the nightly review of 2026-11-18 (petekp/vign
 
 **Fix.** Don't send takes back the send the card shows (`ScreenshotRequests.unsend(file:)`). It
 cancels every send of the file still in its grace, as before, and takes out only the line of the
-send the tab names (`queuedSend(of:)`). A live ink note takes back its own request
+newest send to the session the tab names (`queuedRequest(of:)`), which is not always the newest
+send, since answers can come back out of order. Once that line is out, the tab names the newest
+other send of the file that reached its client, so an earlier queued line keeps its tab and its
+Don't send. A live ink note takes back its own request
 (`unsend(request:)`). Deleting the file still takes every queued line of it out.
 `ScreenshotRequestsQueueTests` covers both sends.
 
