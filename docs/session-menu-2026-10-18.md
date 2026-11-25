@@ -114,22 +114,21 @@ Apple's developer tools on a Mac without them, as `/usr/bin/python3` does.
 
 1. Make the folder's path canonical (`URLResourceValues.canonicalPath`), so a case variant such as
    `~/Code/Vignette` finds the folder on disk.
-2. Walk up to the nearest `.git`, checking every folder below the home folder, but not the home
-   folder itself.
+2. Walk up to the nearest `.git` in a folder below the home folder, never the home folder's own.
    - A `.git` folder is a main checkout.
    - A `.git` file names a gitdir. Its `commondir` names the main repository's git folder. Both can
      be relative paths, resolved from the file's folder and from the gitdir.
    - A submodule needs nothing special: the nearest `.git` wins.
-3. If the folder is gone, walk up from its nearest folder that exists. If that finds nothing, read
-   the repository from the path's shape: `~/.codex/worktrees/<any name>/<repo>/…`,
-   `…/worktrees/<repo>/<name>`, `<repo>/.worktrees/<name>` or `<repo>/.claude/worktrees/<name>`.
-4. Codex only, when step 3 found nothing: the last part of `gitInfo.originUrl`, without `.git`. 19
+3. If the walk finds nothing (from a gone folder's nearest existing one), the path's shape names
+   the repository. `<parent>/worktrees/<repo>` and its folders are the checkout at `<parent>/<repo>`.
+   A gone worktree there with no checkout, `~/.codex/worktrees/<any>/<repo>/…`,
+   `<repo>/.worktrees/<name>` and `<repo>/.claude/worktrees/<name>` give the name only.
+4. Codex only, after step 3: the last part of `gitInfo.originUrl`, without `.git`. 19
    of the 20 listed threads whose folder was gone still carried one.
-5. A name found in steps 3 or 4 joins the group whose main checkout has that name, when exactly
+5. A name from steps 3 or 4 joins the group whose main checkout has that name, when exactly
    one does. Otherwise it makes a group of its own.
-6. Otherwise the session has no repository and goes in Other folders. That covers a folder with no
-   `.git` (such as `~/Code`), a folder that is gone with nothing to go on, and a session with no
-   folder.
+6. Otherwise the session goes in Other folders: a folder with no `.git` (`~/Code`), a gone
+   folder with nothing to go on, or no folder.
 7. The branch is the `HEAD` file in the session's own gitdir; a worktree has its own. The default
    branch is the target of `refs/remotes/origin/HEAD` in the main repository's git folder, else
    `main`, else `master`. A detached `HEAD`, or no match, shows no branch.
@@ -346,7 +345,7 @@ choice uses send history too, and the replay here must be run again.
 5. **One submenu per project follows the 5 rows.** Pete chose "top 5, then the rest in one
    submenu" on 2026-10-22. On 2026-10-23 he asked for the rest to be sorted by project instead of
    one list, and chose a submenu per project.
-6. **Sessions in a folder that only holds worktrees stay under Other folders.**
+6. **Sessions in a repository's worktrees folder are filed under it** (Pete, 2026-11-24).
 
 ## Considered and left out
 
