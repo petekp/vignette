@@ -143,7 +143,7 @@ final class ToolbarOfferTests: XCTestCase {
         XCTAssertEqual(model.offer, .send(focusedMew))
         model.answered(answer([codex], complete: false))
         XCTAssertEqual(model.target?.id, "mew", "an answer that settles nothing leaves it")
-        XCTAssertEqual(model.destinations.map(\.id), ["mew"], "a partial answer leaves the image before's whole list in the menu")
+        XCTAssertEqual(model.listing.list.map(\.id), ["mew"], "a partial answer leaves the image before's whole list in the menu")
         model.answered(answer([codex, session("other")], complete: false, herdr: inPane("other")))
         XCTAssertEqual(model.target?.id, "other", "this image's own focus replaces it")
 
@@ -265,6 +265,12 @@ final class ToolbarOfferTests: XCTestCase {
         XCTAssertFalse(toolbar.model.tookKeysOnOpen)
     }
 
+    private func runTheMainQueue() {
+        let ran = expectation(description: "the main queue ran every block queued before this one")
+        DispatchQueue.main.async { ran.fulfill() }
+        wait(for: [ran], timeout: 10)
+    }
+
     func testAPickInTheTargetsMenuLandsOnlyOnTheImageWhoseMenuItCameFrom() {
         let toolbar = AnnotatorToolbar()
         let model = toolbar.model
@@ -273,25 +279,25 @@ final class ToolbarOfferTests: XCTestCase {
         model.begin(replyTo: nil, carryingTarget: false)
         model.targetMenuOpened()
         toolbar.targetMenuActions.onPick?(b, nil)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        runTheMainQueue()
         XCTAssertEqual(model.target?.id, b.id)
 
         toolbar.targetMenuActions.onPick?(a, nil)
         model.begin(replyTo: nil, carryingTarget: true)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        runTheMainQueue()
         XCTAssertEqual(model.target?.id, b.id, "the next image keeps the target it carried")
         XCTAssertFalse(model.isHandPick(a))
 
         model.targetMenuOpened()
         model.begin(replyTo: nil, carryingTarget: true)
         toolbar.targetMenuActions.onPick?(a, nil)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        runTheMainQueue()
         XCTAssertEqual(model.target?.id, b.id, "an image that opened while the menu was open takes no pick made in it")
 
         model.targetMenuOpened()
         toolbar.targetMenuActions.onPick?(a, nil)
         model.shown = false
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        runTheMainQueue()
         XCTAssertEqual(model.target?.id, b.id, "a closed bar takes no pick")
     }
 }

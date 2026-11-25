@@ -37,7 +37,7 @@ extension AnnotatorToolbar {
         let target = model.offer.destination
         let menu = NSMenu()
         menu.autoenablesItems = false
-        let sessions = SessionMenu.menu(model.destinations + model.startable, destination: target, targetNotFirst: true)
+        let sessions = SessionMenu.menu(model.listing.sessions, destination: target, targetNotFirst: true)
         let search = SessionMenu.add(sessions, to: menu, highlightingFirstRow: fromKeys) { row in
             let item = SessionMenu.item(for: row, selected: row.id == target?.id)
             item.target = self.targetMenuActions

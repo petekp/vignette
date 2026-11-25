@@ -670,11 +670,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             sessions.list { [weak self] candidates in
                 guard let self, !answered else { return }
                 let fresh = candidates.fresh
-                if let session = candidates.destinations.first(where: { $0.id == id }) {
+                if let session = SessionMenu.noteSession(id, among: candidates) {
                     answered = true
-                    let title = SessionMenu.cardTitle(of: SessionMenu.row(of: session, among: candidates.destinations))
-                    switch liveInk.ask(words, to: session.client, sendingTo: (session, title)) {
-                    case .success: Commands.ok(cmd, "sending to \(session.project)")
+                    switch liveInk.ask(words, to: session.destination.client, sendingTo: session) {
+                    case .success: Commands.ok(cmd, "sending to \(session.destination.project)")
                     case .failure(let failure): Commands.error(cmd, .liveInkNotAsked, failure.reason)
                     }
                 } else if fresh {

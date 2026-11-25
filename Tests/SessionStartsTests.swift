@@ -89,7 +89,8 @@ final class SessionStartsTests: XCTestCase {
         }
         XCTAssertNil(choose([], for: .send(cameFrom: nil)).pick)
         XCTAssertEqual(choose([running], for: .send(cameFrom: nil)).pick?.id, "r")
-        XCTAssertEqual(choose([], for: .send(cameFrom: nil)).startable, [resume, new])
+        XCTAssertEqual(choose([running], for: .send(cameFrom: nil)).sessions.map(\.id), ["r", past, "new:/site"])
+        XCTAssertEqual(choose([running], for: .liveNote(.remembered(nil))).sessions.map(\.id), ["r", past, "new:/site"])
         XCTAssertNil(choose([], for: .liveNote(.remembered(claude(past)))).pick)
         XCTAssertEqual(choose([], for: .liveNote(.byHand(resume))).pick, resume)
         XCTAssertEqual(ToolbarOffer(replyTo: nil, destinations: [], listed: true, target: nil, startable: [resume, new]), .choose)
