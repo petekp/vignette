@@ -6,8 +6,8 @@
 
 The stage is the trailer's, with live ink: Postcard served with live reload to a Chrome window at
 desktop width and another at mobile width, and the trailer's Claude Code working on it in Ghostty.
-Vignette Demo, the trailer's stage copy, runs on a settings file of its own with live ink on.
-Build it first with `../trailer/trailer.py build`.
+Vignette Demo, the trailer's stage copy, runs on a settings file of its own with live ink on, and
+lets screen recordings see the ink. Build it first with `../trailer/trailer.py build`.
 
 `up` writes what a take needs to `out/dev/stage.json`: the pids, the frames and the app. Everything
 it makes is under `out/dev/`, and `~/Code/postcard` is the copy Claude works in, removed after.

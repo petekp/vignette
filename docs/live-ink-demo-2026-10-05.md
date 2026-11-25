@@ -19,8 +19,13 @@ everything else:
 | Command | What it does |
 |---|---|
 | `demo.py up` | Lays out the stage. |
+| `demo.py up --capture` | Also relaunches Vignette so screen recordings and screen shares see the ink. |
 | `demo.py reset` | Erases the ink and lays the stage out again, for another take. |
-| `demo.py down` | Takes the stage down. |
+| `demo.py down` | Takes the stage down and puts Vignette back as it was. |
+
+**Recording or sharing the screen needs `--capture`.** Live ink keeps its marks out of screen
+captures, so without it a recording shows the windows and no ink. `--capture` relaunches Vignette
+on a copy of the settings file, with its own screenshot folder, and `down` puts the real one back.
 
 ## Before a take
 
