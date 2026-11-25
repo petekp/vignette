@@ -64,4 +64,36 @@ final class SessionMenuFilingTests: XCTestCase {
         XCTAssertEqual(SessionMenu.noteSession("s", among: offered)?.title, "Fix (~/.k/evercars-backend)",
                        "live ink's note words a card's title over its start rows too, so a clone with only a start row is the main one")
     }
+
+    @MainActor
+    func testALiveNoteWordsItsTargetAgainWhenAStartRowArrivesAndTheTargetStays() {
+        let now = Date()
+        let mine = SessionPlaces.home + "/Code/ever/evercars-backend", remote = "github.com/Ever-Cars/evercars-backend"
+        func fix(_ id: String, in root: String, used: Double) -> AgentDestination {
+            AgentDestination(id: id, name: "Fix", address: .claudeSession(id), lastUsed: now.addingTimeInterval(-used * 60),
+                             place: .repository(name: "evercars-backend", root: root, remote: remote, worktree: nil, subfolder: nil))
+        }
+        let b = fix("b", in: SessionPlaces.home + "/.claude/kickflip/repos/ever-cars/evercars-backend", used: 1)
+        let short = fix("s", in: SessionPlaces.home + "/.k/evercars-backend", used: 3)
+        let startInMine = AgentDestination(id: SessionStart.newRowID(folder: mine), name: "New session", detail: "evercars-backend",
+                                           address: .claudeSession(""), lastUsed: now.addingTimeInterval(-600),
+                                           place: .repository(name: "evercars-backend", root: mine, remote: remote, worktree: nil, subfolder: nil),
+                                           hasOwnName: false, folder: mine, start: .new(folder: mine))
+        let note = LiveNotePopover(at: PopoverPlace(anchor: nil, at: .zero, edge: .below, body: .zero, foot: .zero), target: .session(short))
+        var sentTitle: String?
+        note.onAsk = { _, _, title in sentTitle = title }
+        note.setSessions(.init(destinations: [b, short], complete: true, fresh: true))
+        XCTAssertEqual(note.content.session.accessibilityLabel(), "Goes to Fix", "of two clones in dot folders, the shorter path is the main one")
+
+        note.setSessions(.init(destinations: [b, short], complete: true, fresh: true, startable: [startInMine]))
+        XCTAssertEqual(note.target, .session(short))
+        XCTAssertEqual(note.content.session.accessibilityLabel(), "Goes to Fix (~/.k/evercars-backend)",
+                       "a start row in the main clone, listed later, tells the target's clone apart")
+        note.content.field.stringValue = "Why is this red?"
+        note.send()
+        XCTAssertEqual(sentTitle, "Fix (~/.k/evercars-backend)", "and a card sent to it is titled as the target reads")
+        note.setSessions(.init(destinations: [b, short], complete: true, fresh: true))
+        XCTAssertEqual(note.content.session.accessibilityLabel(), "Goes to Fix (~/.k/evercars-backend)",
+                       "a sent note keeps the name it was sent with until the conversation takes its place")
+    }
 }

@@ -434,13 +434,13 @@ final class DrawingsTests: XCTestCase {
         drawings.load([shot.screenshotKey], style: .standard) { loaded.append(contentsOf: $0.values) }
         drawings.write(new, reason: "saved")
         Drawings.loads.sync(flags: .barrier) {}
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        runTheMainQueue()
         XCTAssertEqual(changed.map { $0?.marks }, [new.marks])
         XCTAssertTrue(loaded.isEmpty, "the load read the old drawing, or the new one, and either way the write already said")
 
         drawings.load([shot.screenshotKey], style: .standard) { loaded.append(contentsOf: $0.values) }
         Drawings.loads.sync(flags: .barrier) {}
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        runTheMainQueue()
         XCTAssertEqual(loaded.map { $0?.marks.map(\.geometry) }, [new.marks.map(\.geometry)], "read from disk, so the ids are new")
 
         drawings.remove([shot.screenshotKey])

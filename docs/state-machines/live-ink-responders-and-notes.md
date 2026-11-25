@@ -245,9 +245,9 @@ Reads a Codex session's rollout file to say whether the session is waiting, busy
 
 ### LiveNotePopover (implicit)
 
-Owner: `LiveNotePopover.swift:26`. Tests: `DestinationChoiceTests.testALiveNoteKeepsItsWholeListAndItsTargetOverALaterPartialAnswer` (its session list).
+Owner: `LiveNotePopover.swift:25`. Tests: `DestinationChoiceTests.testALiveNoteKeepsItsWholeListAndItsTargetOverALaterPartialAnswer` (its session list), `SessionMenuFilingTests.testALiveNoteWordsItsTargetAgainWhenAStartRowArrivesAndTheTargetStays` (its target's words).
 
-The note panel a person types into. Created at `showNote` (`LiveInk.swift:616`).
+The note panel a person types into. Created at `showNote` (`LiveInk+Note.swift:20`).
 
 **States**: flags `revealed`, `sent`, `closing`, `handingOver`, `standsAside`, `menuOpen`, `opened`, plus `inkOpacity`, `target`, `handPick`, `candidates`.
 
@@ -260,13 +260,13 @@ The note panel a person types into. Created at `showNote` (`LiveInk.swift:616`).
 | `revealed` | `send` with empty words | `closing` | `dismiss` |
 | `revealed` | `send` with words, no ink, not by the pointer (`mayAsk`) | `revealed` | beep |
 | `sent` | `handOver(when:)` | `closing`, `handingOver` | delayed `ready`, then close |
-| `handingOver` | `fadeAway` | `closing`, `handingOver = false` | closes; the delayed `ready` does not run (392, `guard handingOver` at 380) |
+| `handingOver` | `fadeAway` | `closing`, `handingOver = false` | closes; the delayed `ready` does not run (`handingOver = false` at 420, `guard handingOver` at 399) |
 | any | `dismiss` | `closing` | closes |
-| `closing` or `sent` | `put`, `takeKeys`, `send`, `hang`, `follow`, `standAside` | — (ignored) | — |
-| `candidates` complete | `setSessions` with an incomplete answer (`:201`), such as the first answer of the listing a return of the keys starts | — (ignored, `DestinationChoice.replacesList`) | — |
-| `candidates` nil or incomplete, or the answer complete | `setSessions` | `candidates` replaced | the list and the target chosen again (`DestinationChoice.choose`) |
+| `closing` or `sent` | `put`, `takeKeys`, `send`, `hang`, `follow`, `standAside`, `setSessions` | — (ignored) | — |
+| `candidates` complete | `setSessions` with an incomplete answer (`:200`), such as the first answer of the listing a return of the keys starts | — (ignored, `DestinationChoice.replacesList`) | — |
+| `candidates` nil or incomplete, or the answer complete | `setSessions` | `candidates` replaced | the list and the target chosen again (`DestinationChoice.choose`); a target that stays is worded again over the new list (`wordTarget`), its prompt untouched |
 
 **Invariants**
 
 - Exactly one of `handOver`, `fadeAway`, `dismiss` ends the note. Checked by: the `closing`/`sent` guards.
-- During `sent`, Esc and Return do not reach the note: `LiveInk` already set `note = nil` (`letGoOfNotePanel`, `LiveInk.swift:626`), so Esc goes to `cancelAsk` when Esc has a step. An `onAsk` failure calls `fadeAway` (631). Checked by: nothing.
+- During `sent`, Esc and Return do not reach the note: `LiveInk` already set `note = nil` (`letGoOfNotePanel`, `LiveInk+Note.swift:131`), so Esc goes to `cancelAsk` when Esc has a step. An `onAsk` failure calls `fadeAway` (`LiveInk+Note.swift:58`). Checked by: nothing.
