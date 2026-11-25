@@ -54,7 +54,9 @@
   The orientation is worked out each time from the picture at the drawing's own size and is never
   stored, so every drawer agrees (`PinTeardrop.facing`). A body that would cover a stitch's piece
   number turns away from it (`Drawing.pieceNumbers`). `MarkLayers` shows pins with `PinLayer`
-  and `MarkRendering` draws them with `Pin.draw`, from the same paths.
+  and `MarkRendering` draws them with `Pin.draw`, from the same paths. `MarkLayers` clusters them as
+  `PinPlacement` does at the drawing's own size. A card's teardrops scale with its picture, so that
+  is the editor's rule at the card's size, and a flight shows the card's clusters.
 - A PNG rendering draws pins as `Drawing.renderedTeardrops` places them, since its reader cannot
   hover. It outlines every area in its pin's colour. A body that would overlap an earlier pin's
   body or a piece number tries its other orientations, then moves clear, and a line in the pin's

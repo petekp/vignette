@@ -36,6 +36,7 @@ final class MarkLayers {
     private var shapes: [Mark.ID: ShapeMarkLayer] = [:]
     var texts: [Mark.ID: Text] = [:]
     private var pins: [Pin.ID: PinLayer] = [:]
+    private var clusters: [[Pin.ID]: PinLayer] = [:]
     private var contentsScale: CGFloat = 2
     var shown: Shown?
     /// The scale and the part of the image of the last `show(_:scale:bound:…)`, for `restyle`.
@@ -79,6 +80,7 @@ final class MarkLayers {
         shapes = [:]
         texts = [:]
         pins = [:]
+        clusters = [:]
     }
 
     /// Marks shown at one scale over a part of the image, a card's or a flight's, shown again in a
@@ -92,10 +94,11 @@ final class MarkLayers {
     func setScale(_ scale: CGFloat) {
         contentsScale = scale
         for record in shapes.values { record.setScale(scale) }
-        for record in pins.values { record.setScale(scale) }
+        for record in Array(pins.values) + Array(clusters.values) { record.setScale(scale) }
     }
 
-    /// Shows `drawing`'s marks in order, the newest on top, and its pins above them. `plan` says what each text wants drawn,
+    /// Shows `drawing`'s marks in order, the newest on top, and its pins above them, clustered by the
+    /// editor's rule at the size they are drawn (`PinPlacement`). `plan` says what each text wants drawn,
     /// here and again whenever one of its bitmaps arrives, in the style of `layout`, the text's
     /// layout, which a text that only moved sideways is checked against. A text new here shows the
     /// bitmap one of `sources` has of the same words in the same place and style, until its own
@@ -133,12 +136,24 @@ final class MarkLayers {
                 layers.append(record.root)
             }
         }
-        let pinned = Set(drawing.pins.map(\.id))
-        pins = pins.filter { pinned.contains($0.key) }
-        for pin in drawing.pins {
+        let pointScale = drawing.pointScale
+        let placement = PinPlacement(drawing, side: markStyle.pin.side * pointScale, edge: markStyle.edgeWidth * pointScale, apart: [],
+                                     style: markStyle.pin)
+        let alone = Set(placement.drops.map(\.id))
+        pins = pins.filter { alone.contains($0.key) }
+        for pin in drawing.pins where alone.contains(pin.id) {
             let record = pins[pin.id] ?? PinLayer(scale: contentsScale)
             record.show(pin, on: drawing, markStyle: markStyle)
             pins[pin.id] = record
+            layers.append(record.root)
+        }
+        let grouped = Set(placement.clusters.map(\.pins))
+        clusters = clusters.filter { grouped.contains($0.key) }
+        for cluster in placement.clusters {
+            let record = clusters[cluster.pins] ?? PinLayer(scale: contentsScale)
+            record.show(PinTeardrop(label: cluster.label, agent: cluster.agent, orientation: cluster.orientation, frame: cluster.frame, style: markStyle.pin),
+                        color: cluster.agent ? .agent : .person, pointScale: pointScale, markStyle: markStyle)
+            clusters[cluster.pins] = record
             layers.append(record.root)
         }
         for id in shapes.keys where !seen.contains(id) {
