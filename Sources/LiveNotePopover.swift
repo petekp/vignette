@@ -13,10 +13,9 @@ import AppKit
 /// ink fades (`follow`). While the stack or the annotator holds the screen it hides, and it comes back
 /// as it was once they are gone (`standAside`).
 ///
-/// Under the words, the target: the one picked last, else a responder (`Target.start` decides),
-/// which answers on the screen, with the working sessions listed after the responders
-/// (docs/live-ink-integration-2026-10-04.md, decision 7). A click on it or the Down arrow opens the
-/// list.
+/// Under the words, the target, which `Target.start` picks: a responder answers on the screen, and
+/// working sessions follow the responders in its list (docs/live-ink-integration-2026-10-04.md,
+/// decision 7). A click on it or the Down arrow opens the list.
 ///
 /// A popover's window is a non-activating panel, so its field takes the keys while the app the person
 /// was in stays frontmost. AppKit still counts Vignette as active while the field has them, and a press
@@ -53,7 +52,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     private let remembered: AgentDestination?
     private var handPick: Target?
 
-    /// Out of sight until `reveal`.
     private let hanging = HangingPopover(reshow: .fadingThrough, alpha: 0)
     private var popover: NSPopover { hanging.popover }
     let content = NoteContent()
@@ -98,7 +96,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         popover.animates = false
         content.field.delegate = self
         content.session.onClick = { [weak self] in self?.showTargets() }
-        showTarget()
+        show(target)
         popover.contentSize = content.layOut()
     }
 
@@ -199,13 +197,12 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     /// The sessions after the responder, from answers `DestinationChoice` lets in.
     func setSessions(_ candidates: DestinationChoice.Candidates) {
-        guard DestinationChoice.replacesList(candidates.complete, over: self.candidates?.complete == true) else { return }
+        guard !sent, !closing, DestinationChoice.replacesList(candidates.complete, over: self.candidates?.complete == true) else { return }
         self.candidates = candidates
         let answer = DestinationChoice.choose(candidates, for: .liveNote(ownPick))
         sessions = answer.sessions
         let found = Self.start(pick: answer.pick, handPicked: handPick?.responder, conversing: conversing, responders: responders, list: answer.list)
-        guard found != target else { return }
-        show(found)
+        if found == target { wordTarget() } else { show(found) }
     }
 
     /// What live ink offers: the agents that answer on the screen, and the one the conversation is with.
@@ -213,7 +210,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         guard responders != self.responders || conversing != self.conversing else { return }
         self.responders = responders
         self.conversing = conversing
-        showTarget()
+        show(target)
         if let candidates { setSessions(candidates) }
     }
 
@@ -247,7 +244,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     // MARK: Targets
 
-    private func showTarget() {
+    /// Words the target's button and `targetTitle` over the sessions listed now, which a session's
+    /// words depend on (`SessionMenu.row`).
+    private func wordTarget() {
         switch target {
         case .responder(let client):
             let name = responders.first { $0.client == client }?.name ?? client.label
@@ -262,7 +261,6 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
             content.session.setAccessibilityLabel("Goes to \(row.title)")
             targetTitle = SessionMenu.cardTitle(of: row)
         }
-        showPlaceholder()
     }
 
     /// What the empty note says: what Return does with its target.
@@ -276,8 +274,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// The responder the note is aimed at, as offered.
     private var responder: Responder? { responders.first { $0.client == target.responder } }
 
-    /// The list of targets, under the target, or beside the note when the screen has no room below it,
-    /// so it never covers the words being typed.
+    /// Opens the list of targets where `menuPoint` puts it.
     func showTargets() {
         guard let window = content.window else { return }
         let menu = NSMenu()
@@ -337,8 +334,8 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
 
     private func show(_ target: Target) {
         self.target = target
-        showTarget()
-        refit()
+        wordTarget()
+        showPlaceholder()
     }
 
     // MARK: Keys

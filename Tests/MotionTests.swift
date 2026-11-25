@@ -159,7 +159,8 @@ final class MotionTests: XCTestCase {
         try XCTSkipUnless(RefreshProbe.screenRefreshes(),
                           "The screen is not refreshing, as while it is locked, so its display link never ticks.")
         var seen: [CGFloat] = []
-        let tween = Tween(initial: 0) { seen.append($0) }
+        var onTick: (CGFloat) -> Void = { seen.append($0) }
+        let tween = Tween(initial: 0) { onTick($0) }
         let done = expectation(description: "settled")
         tween.animate(to: 1, duration: 0.3) { done.fulfill() }
         wait(for: [done], timeout: 2)
@@ -167,17 +168,32 @@ final class MotionTests: XCTestCase {
         XCTAssertEqual(seen, seen.sorted(), "a critically damped spring never overshoots")
         XCTAssertLessThanOrEqual(seen.max() ?? 0, 1)
 
-        // Reverse mid-flight: the value turns back from where it is, not from the target.
-        tween.animate(to: 0, duration: 0.3)
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.08))
-        let midway = tween.value
-        XCTAssertGreaterThan(midway, 0)
-        XCTAssertLessThan(midway, 1)
+        var turn: (value: CGFloat, at: CFTimeInterval)?
+        var backUp: [(value: CGFloat, at: CFTimeInterval)] = []
         let back = expectation(description: "back up")
-        tween.animate(to: 1, duration: 0.3) { back.fulfill() }
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
-        XCTAssertLessThan(abs(tween.value - midway), 0.2, "no jump on retarget")
-        wait(for: [back], timeout: 2)
+        onTick = { value in
+            let at = CACurrentMediaTime()
+            if turn != nil {
+                backUp.append((value, at))
+            } else if value > 0, value <= 0.6 {
+                turn = (value, at)
+                tween.animate(to: 1, duration: 0.3) { back.fulfill() }
+            }
+        }
+        func goDown() {
+            tween.animate(to: 0, duration: 0.3) {
+                guard turn == nil else { return }
+                tween.set(1)
+                goDown()
+            }
+        }
+        goDown()
+        wait(for: [back], timeout: 10)
+        let turned = try XCTUnwrap(turn), next = try XCTUnwrap(backUp.first)
+        let fastest = CGFloat(Tween.omega(settling: 0.3) / exp(1)) * CGFloat(next.at - turned.at)
+        XCTAssertLessThanOrEqual(abs(next.value - turned.value), fastest + 0.05,
+                                 "turned back mid-flight, the value moves on from where it was, no faster than the spring can")
+        XCTAssertLessThanOrEqual(backUp.map(\.value).max() ?? 0, 1)
         XCTAssertEqual(tween.value, 1)
     }
 
