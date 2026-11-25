@@ -286,15 +286,14 @@ extension EditorCore {
 
     /// A teardrop's side in px at the current zoom: the size it has in the picture when the picture fits
     /// the frame, kept on screen at every zoom.
-    var pinSide: CGFloat { geometry.screen(PinTeardrop.side * drawing.pointScale * fitZoom) }
+    var pinSide: CGFloat { geometry.screen(markStyle.pin.side * drawing.pointScale * fitZoom) }
 
     /// The pins as the editor draws them now. The open pin, the selected ones and a new one never
     /// join a cluster.
     var pinPlacement: PinPlacement {
         var apart = selection
         if let composer { apart.insert(composer.pin) }
-        return PinPlacement(drawing, side: pinSide, edge: geometry.pt(markStyle.edgeWidth), apart: apart,
-                            overlap: metrics.clusterOverlap)
+        return PinPlacement(drawing, side: pinSide, edge: geometry.pt(markStyle.edgeWidth), apart: apart, style: markStyle.pin)
     }
 
     /// The pins an area's outline shows for: hovered, selected or open.

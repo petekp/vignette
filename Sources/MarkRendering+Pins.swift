@@ -35,17 +35,14 @@ extension Drawing {
         let moved: Bool
     }
 
-    /// The farthest a rendering moves a teardrop's tip from its place, in teardrop sides.
-    static let farthestTeardropMove: CGFloat = 6
-
     /// Each pin's teardrop as a rendering draws it, in number order. A body that would overlap an
     /// earlier pin's body, or cover a piece number, tries the other three orientations that stay inside
     /// the picture, flipped up or down, then left or right, then both. Bodies may touch: teardrops on one
     /// place share their tip. When every orientation overlaps, the body moves to the nearest clear place
-    /// inside the picture, in steps of half its side, up to `farthestTeardropMove` sides away, and
+    /// inside the picture, in steps of half its side, up to `PinStyle.farthestMove` sides away, and
     /// points back at the pin's place. With no clear place in reach, it stays where the edges put it.
-    func renderedTeardrops(edgeWidth: CGFloat) -> [RenderedTeardrop] {
-        let side = PinTeardrop.side * pointScale, edge = edgeWidth * pointScale
+    func renderedTeardrops(markStyle: MarkStyle) -> [RenderedTeardrop] {
+        let side = markStyle.pin.side * pointScale, edge = markStyle.edgeWidth * pointScale
         let picture = CGRect(x: 0, y: 0, width: pixels.width, height: pixels.height)
         var bodies: [CGRect] = []
         func drawn(_ square: CGRect) -> CGRect { square.insetBy(dx: -edge, dy: -edge) }
@@ -56,7 +53,7 @@ extension Drawing {
             }
         }
         func inside(_ square: CGRect) -> Bool { picture.contains(drawn(square)) }
-        let steps = Int(Self.farthestTeardropMove * 2)
+        let steps = Int(markStyle.pin.farthestMove * 2)
         let moves = (-steps...steps).flatMap { x in (-steps...steps).map { y in CGVector(dx: x, dy: y) } }
             .filter { $0 != .zero }
             .sorted { (hypot($0.dx, $0.dy), $0.dy, -$0.dx) < (hypot($1.dx, $1.dy), $1.dy, -$1.dx) }
@@ -78,7 +75,8 @@ extension Drawing {
                     place = move
                 }
             }
-            let drop = PinTeardrop(number: pin.number, agent: pin.color == .agent, tip: place.tip, orientation: place.orientation, side: side)
+            let drop = PinTeardrop(number: pin.number, agent: pin.color == .agent, tip: place.tip, orientation: place.orientation, side: side,
+                                   style: markStyle.pin)
             bodies.append(drop.square)
             placed.append(RenderedTeardrop(pin: pin, drop: drop, moved: place.tip != pin.tip))
         }
@@ -94,7 +92,7 @@ extension Drawing {
             Mark(geometry: .rectangle(frame), agent: pin.color == .agent)
                 .draw(in: ctx, pointScale: pointScale, imageWidth: CGFloat(pixels.width), style: style, markStyle: markStyle)
         }
-        let drops = renderedTeardrops(edgeWidth: markStyle.edgeWidth)
+        let drops = renderedTeardrops(markStyle: markStyle)
         ctx.saveGState()
         ctx.setLineCap(.round)
         if !pieceNumbers.isEmpty {
@@ -141,10 +139,6 @@ struct CommentList {
         let rule: CGRect?
     }
 
-    /// The comments' width, as a multiple of the text size: about 75 characters below a screenshot,
-    /// and 50 beside one.
-    static let widestBelow: CGFloat = 36
-    static let widthBeside: CGFloat = 24
     /// The list's largest area below a screenshot, as a share of the screenshot's, or `smallestCap` px
     /// when that is more. Beside one, the list is no taller than the screenshot, or than `smallestCap`
     /// px allows. Either way a large capture's bitmap about doubles at most.
@@ -164,11 +158,13 @@ struct CommentList {
     /// The list for `drawing`'s pins with comments set at `textSize` drawing pt, or nil when it has no pins.
     init?(_ drawing: Drawing, textSize: CGFloat, style: TextStyle, markStyle: MarkStyle) {
         guard !drawing.pins.isEmpty else { return nil }
-        let size = textSize * drawing.pointScale, side = PinTeardrop.side * drawing.pointScale
+        let pinStyle = markStyle.pin
+        let size = textSize * drawing.pointScale, side = pinStyle.side * drawing.pointScale
         let picture = CGSize(width: drawing.pixels.width, height: drawing.pixels.height)
-        let margin = size, pad = size * 0.6, wordsX = margin + side + size * 0.75
+        let margin = size, pad = size * pinStyle.listRowPadding, gap = size * pinStyle.listWordsGap, wordsX = margin + side + gap
         below = picture.width >= picture.height
-        let wordsWidth = below ? min(max(picture.width - wordsX - margin, 12 * size), Self.widestBelow * size) : Self.widthBeside * size
+        let wordsWidth = below ? min(max(picture.width - wordsX - margin, pinStyle.listNarrowest * size), pinStyle.listWidestBelow * size)
+            : pinStyle.listWidthBeside * size
         let width = below ? max(picture.width, wordsX + wordsWidth + margin) : wordsX + wordsWidth + margin
         let tallest = below ? max(picture.width * picture.height * Self.areaShare, Self.smallestCap) / width
             : max(picture.height, Self.smallestCap / width)
@@ -177,10 +173,10 @@ struct CommentList {
         let wordsTop = max(0, (side - lineHeight) / 2)
         let hairline = max(1, drawing.pointScale)
         let pins = drawing.pins.sorted { $0.number < $1.number }
-        let lastLine = { (count: Int) in Self.frame(Self.notShownWords(count), font: person, width: wordsWidth + side + size * 0.75) }
+        let lastLine = { (count: Int) in Self.frame(Self.notShownWords(count), font: person, width: wordsWidth + side + gap) }
         var rows: [Row] = [], y = margin, notShown: (words: CTFrame, frame: CGRect)?
         for (index, pin) in pins.enumerated() {
-            let set = Self.frame(Self.words(of: pin, size: size, style: style), font: person, width: wordsWidth)
+            let set = Self.frame(Self.words(of: pin, size: size, spacing: pinStyle.listParagraphSpacing, style: style), font: person, width: wordsWidth)
             let height = pad * 2 + max(side, wordsTop + set.height)
             let left = pins.count - index - 1
             let reserve = left > 0 ? lastLine(left).height + pad * 2 : 0
@@ -191,7 +187,7 @@ struct CommentList {
                 break
             }
             let drop = PinTeardrop(number: pin.number, agent: pin.color == .agent, tip: CGPoint(x: margin, y: y + pad + side),
-                                   orientation: .upRight, side: side)
+                                   orientation: .upRight, side: side, style: pinStyle)
             rows.append(Row(pin: pin, drop: drop, words: set.frame,
                             wordsFrame: CGRect(x: wordsX, y: y + pad + wordsTop, width: set.width, height: set.height),
                             rule: rows.isEmpty ? nil : CGRect(x: margin, y: y - hairline / 2, width: width - 2 * margin, height: hairline)))
@@ -229,9 +225,9 @@ struct CommentList {
     }
 
     /// The pin's comments, one paragraph each, in the font of the note its writer would write.
-    static func words(of pin: Pin, size: CGFloat, style: TextStyle) -> NSAttributedString {
+    static func words(of pin: Pin, size: CGFloat, spacing: CGFloat, style: TextStyle) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
-        paragraph.paragraphSpacing = size * 0.4
+        paragraph.paragraphSpacing = size * spacing
         let words = NSMutableAttributedString()
         for (index, comment) in pin.comments.enumerated() {
             let font = comment.agent ? style.forAgent(named: comment.agentName).font(size: size) : style.font(size: size)

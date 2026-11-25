@@ -2,7 +2,7 @@ import CoreGraphics
 
 /// How marks are painted, from settings.json's `ui` (`UITweaks.markStyle`): the stroke and the edge
 /// around every mark, the colour that says who drew a mark, the words' colour, the shadows' strength,
-/// and the arrowhead's proportions. Widths are in pt of the drawing.
+/// the arrowhead's proportions, and how pins are drawn. Widths are in pt of the drawing.
 struct MarkStyle: Equatable, Sendable {
     var strokeWidth: CGFloat
     /// The edge outside a stroke on both sides, and outside a note's tag. It keeps a mark visible on
@@ -19,6 +19,7 @@ struct MarkStyle: Equatable, Sendable {
     /// its tip to its base, and this wide across the base.
     var arrowheadLength: CGFloat
     var arrowheadWidth: CGFloat
+    var pin: PinStyle
 
     /// The tweaks' defaults.
     static let standard = UITweaks().markStyle
@@ -34,6 +35,32 @@ struct MarkStyle: Equatable, Sendable {
         case .agent: return agentColor.cgColor
         }
     }
+}
+
+/// How pins are drawn and laid out, from settings.json's `ui` (`UITweaks.markStyle`), in the editor, on
+/// the cards and in the renderings alike.
+struct PinStyle: Equatable, Sendable {
+    /// The side of the square a teardrop fits in, in pt of the drawing.
+    var side: CGFloat
+    /// The number's size, and the widest it is set, as shares of `side`. A longer number is set smaller.
+    var numberSize: CGFloat
+    var numberWidth: CGFloat
+    /// Two teardrops cluster when their bodies overlap by more than this share of their width.
+    var clusterOverlap: CGFloat
+    /// The room beside a cluster's label, as a share of `side`.
+    var clusterPadding: CGFloat
+    /// The farthest a rendering moves a teardrop's tip from its place, in teardrop sides.
+    var farthestMove: CGFloat
+    /// A rendering's list of comments (`CommentList`), in multiples of its text size: the comments'
+    /// width below a screenshot, at least `listNarrowest` and at most `listWidestBelow`, and beside
+    /// one; the room above and below a row, the gap between a row's teardrop and its words, and the
+    /// space after each comment.
+    var listNarrowest: CGFloat
+    var listWidestBelow: CGFloat
+    var listWidthBeside: CGFloat
+    var listRowPadding: CGFloat
+    var listWordsGap: CGFloat
+    var listParagraphSpacing: CGFloat
 }
 
 /// A colour in sRGB, from settings.json's `#rrggbb`.

@@ -201,12 +201,12 @@ final class PinTests: XCTestCase {
             (CGPoint(x: 400, y: 10), .downRight),
             (CGPoint(x: 790, y: 300), .upLeft),
             (CGPoint(x: 790, y: 10), .downLeft),
-            (CGPoint(x: 400, y: PinTeardrop.side * 2 + 1), .downRight),
-            (CGPoint(x: 800 - PinTeardrop.side * 2 - 1, y: 300), .upLeft),
+            (CGPoint(x: 400, y: MarkStyle.standard.pin.side * 2 + 1), .downRight),
+            (CGPoint(x: 800 - MarkStyle.standard.pin.side * 2 - 1, y: 300), .upLeft),
         ]
         for (tip, orientation) in cases {
             let drop = PinTeardrop(Pin(id: UUID(), number: 12, place: .point(tip), comments: [Pin.Comment(text: "a")]),
-                                   in: pixels, pointScale: 2, edgeWidth: MarkStyle.standard.edgeWidth)
+                                   in: pixels, pointScale: 2, markStyle: .standard)
             XCTAssertEqual(drop.orientation, orientation, "at \(tip)")
             XCTAssertTrue(picture.contains(drop.square), "at \(tip): \(drop.square)")
             XCTAssertTrue(drop.body.contains(tip.moved(toward: drop.square, by: 1)), "the tip is the body's corner at \(tip)")

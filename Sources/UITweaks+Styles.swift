@@ -11,8 +11,7 @@ extension UITweaks {
         EditorMetrics(dragDistance: dragDistance, hitMargin: hitMargin, cornerHitSize: cornerHitSize, edgeHitSize: edgeHitSize,
                       smallSide: smallSide, handleSize: handleSize, dotRadius: dotRadius, dotHitRadius: dotHitRadius,
                       smallestRectangle: smallestRectangle, shortestArrow: shortestArrow, textDragDelay: textDragDelay,
-                      textDragDistance: textDragDistance, newTextSize: newTextSize, selectionOutlineWidth: selectionOutlineWidth,
-                      clusterOverlap: clusterOverlap)
+                      textDragDistance: textDragDistance, newTextSize: newTextSize, selectionOutlineWidth: selectionOutlineWidth)
     }
 
     /// The style every text is set in. The system font draws only its nine named weights, whatever
@@ -46,6 +45,14 @@ extension UITweaks {
         func color(_ path: KeyPath<UITweaks, String>) -> SRGB { SRGB(hex: self[keyPath: path]) ?? SRGB(hex: UITweaks()[keyPath: path])! }
         return MarkStyle(strokeWidth: strokeWidth, edgeWidth: edgeWidth, personColor: color(\.personColor), agentColor: color(\.agentColor),
                          edgeColor: color(\.edgeColor), wordColor: color(\.noteTextColor), shadowOpacity: shadowOpacity,
-                         arrowheadLength: arrowheadLength, arrowheadWidth: arrowheadWidth)
+                         arrowheadLength: arrowheadLength, arrowheadWidth: arrowheadWidth, pin: pinStyle)
+    }
+
+    var pinStyle: PinStyle {
+        PinStyle(side: pinSize, numberSize: pinNumberSize, numberWidth: pinNumberWidth, clusterOverlap: clusterOverlap,
+                 clusterPadding: clusterPadding, farthestMove: pinFarthestMove, listNarrowest: commentListNarrowest,
+                 listWidestBelow: commentListWidestBelow, listWidthBeside: commentListWidthBeside,
+                 listRowPadding: commentListRowPadding, listWordsGap: commentListWordsGap,
+                 listParagraphSpacing: commentListParagraphSpacing)
     }
 }

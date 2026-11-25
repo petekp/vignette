@@ -130,8 +130,21 @@ struct UITweaks: Codable, Equatable {
     var textDragDistance = 24.0      // and the sideways travel it needs
     var newTextSize = 17.0           // pt of the drawing, not of the screen
     var selectionOutlineWidth = 3.5  // the whole outline, light edge included; it runs this far outside a mark
-    var clusterOverlap = 0.34        // pins cluster when their bodies overlap by more than this share of their width
     var noteSettleDuration = 0.25    // seconds a note takes to move to its balanced lines when typing ends
+    // Comments (`PinStyle`): drawing pt, or shares of a pin's size, or multiples of the list's text size
+    var pinSize = 24.0               // the square a teardrop fits in
+    var pinNumberSize = 0.5
+    var pinNumberWidth = 0.64        // the widest a number is set
+    var clusterOverlap = 0.34        // pins cluster when their bodies overlap by more than this share of their width
+    var clusterPadding = 0.7         // beside a cluster's label
+    var pinFarthestMove = 6.0        // pin sizes a rendering may move a teardrop from its place
+    var commentListNarrowest = 12.0  // a rendering's list of comments
+    var commentListWidestBelow = 36.0
+    var commentListWidthBeside = 24.0
+    var commentListRowPadding = 0.6
+    var commentListWordsGap = 0.75
+    var commentListParagraphSpacing = 0.4
+    var pinPopoverWidth = 280.0      // screen pt
     // Marks (`MarkStyle`, `TextStyle`, `docs/mark-style-settings-2026-09-29.md`)
     var personColor = "#e03131"      // a person's marks, as #rrggbb
     var agentColor = "#364fc7"       // every agent's marks

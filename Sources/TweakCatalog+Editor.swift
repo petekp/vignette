@@ -21,9 +21,25 @@ extension TweakCatalog {
                 .number("textDragDistance", "Text drag distance", \.textDragDistance, 0...80, unit: "pt", safe: 0...10_000),
                 .number("noteSettleDuration", "Note settles", \.noteSettleDuration, 0...1, step: 0.05, unit: "s", safe: 0...60),
             ], caption: { _ in "Sizes are screen points, the same at any zoom. A press with the Text tool sets how wide the text wraps if it is held this long and then dragged this far sideways. When typing ends, a note's lines are evened out over the settle time." }),
+        ]),
+        TweakSection("Comments", [
             TweakGroup(nil, [
+                .number("pinSize", "Pin size", \.pinSize, 8...64, step: 0.5, unit: "pt", safe: 1...1000),
+                .number("pinNumberSize", "Number size", \.pinNumberSize, 0.2...1, step: 0.01, safe: 0.01...10),
+                .number("pinNumberWidth", "Widest number", \.pinNumberWidth, 0.2...1, step: 0.01, safe: 0.01...10),
                 .number("clusterOverlap", "Pins cluster past", \.clusterOverlap, 0...1, step: 0.05, safe: 0...1),
-            ], caption: { _ in "Two pins are drawn as one cluster when their bodies overlap by more than this share of their width." }),
+                .number("clusterPadding", "Cluster padding", \.clusterPadding, 0...2, step: 0.05, safe: 0...10),
+                .number("pinPopoverWidth", "Popover width", \.pinPopoverWidth, 200...480, step: 4, unit: "pt", safe: 100...2000),
+            ], caption: { _ in "A pin's size is in the drawing's points, and its number's size and widest setting are shares of it. Two pins are drawn as one cluster when their bodies overlap by more than the cluster share of their width, and a cluster's label has its padding, a share of the pin's size, beside it. The popover's width is in screen points." }),
+            TweakGroup("Renderings", [
+                .number("pinFarthestMove", "Farthest move", \.pinFarthestMove, 0...12, step: 0.5, safe: 0...24),
+                .number("commentListNarrowest", "Narrowest list", \.commentListNarrowest, 4...40, step: 0.5, safe: 1...1000),
+                .number("commentListWidestBelow", "Widest list below", \.commentListWidestBelow, 12...80, step: 0.5, safe: 1...1000),
+                .number("commentListWidthBeside", "List width beside", \.commentListWidthBeside, 8...60, step: 0.5, safe: 1...1000),
+                .number("commentListRowPadding", "Row padding", \.commentListRowPadding, 0...2, step: 0.05, safe: 0...10),
+                .number("commentListWordsGap", "Gap before words", \.commentListWordsGap, 0...3, step: 0.05, safe: 0...10),
+                .number("commentListParagraphSpacing", "Space after a comment", \.commentListParagraphSpacing, 0...2, step: 0.05, safe: 0...10),
+            ], caption: { _ in "Copy, Send and Stitch move a teardrop that would cover another up to the farthest move, in pin sizes, from its place. The list of comments below or beside the picture is measured in multiples of its text size: the comments' width below the picture, between the narrowest and the widest, and beside it, the room above and below each row, the gap between a row's teardrop and its words, and the space after each comment." }),
         ]),
         TweakSection("Marks", [
             TweakGroup(nil, [

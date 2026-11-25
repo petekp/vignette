@@ -14,9 +14,9 @@
   stitch's gap, padding, and badge (`Stitch.swift`), the editor's steps (`EditorCore`: the nudges,
   the copy offset, the snap angle, the 0.3 s hand-over), the editor's own colours (`EditorStyle`),
   the badge's own proportions (`NoteBadge`) and the tag's shadows (`NoteTag`). The editor's sizes
-  and how every mark looks are `UITweaks`, the Editor, Marks and Notes sections of the panel: the
-  colours, the stroke and edge widths, the shadows' strength and the arrowhead reach the drawing as
-  `MarkStyle`, and the fonts, weights, sizes, padding, width cap and the badge's place as
+  and how every mark looks are `UITweaks`, the Editor, Comments, Marks and Notes sections of the panel: the
+  colours, the stroke and edge widths, the shadows' strength, the arrowhead and every pin number
+  (`PinStyle`) reach the drawing as `MarkStyle`, and the fonts, weights, sizes, padding, width cap and the badge's place as
   `TextStyle` (`docs/mark-style-settings-2026-09-29.md`). A change
   reaches every place that draws marks at once: the open editor (`AnnotationController.applyTweaks`),
   the cards and flights (`ThumbnailController.applyTweaks`), live ink (`LiveInk.applyTweaks`), and

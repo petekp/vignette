@@ -1,7 +1,7 @@
 import AppKit
 import QuartzCore
 
-/// How a pin is drawn: a teardrop, a circle `side` pt across with the quarter toward its tip squared off
+/// How a pin is drawn: a teardrop, a circle `PinStyle.side` pt across with the quarter toward its tip squared off
 /// into a point. The tip is the corner of the square the circle fits in, and the pin's number sits in
 /// the middle of the round part, the body. The renderer draws it (`Pin.draw`) and `PinLayer` shows the
 /// same paths, so a pin looks the same in the editor, on a card, in flight and in a PNG.
@@ -17,13 +17,6 @@ struct PinTeardrop {
         case upLeft, downRight, downLeft
     }
 
-    /// The side of the square the teardrop fits in, in drawing pt.
-    static let side: CGFloat = 24
-    /// The number's size, as a share of `side`.
-    static let numberSize: CGFloat = 0.5
-    /// The widest the number is set, as a share of `side`. A longer number is set smaller.
-    static let numberWidth: CGFloat = 0.64
-
     let orientation: Orientation
     /// The square the teardrop fits in, in px.
     let square: CGRect
@@ -32,33 +25,33 @@ struct PinTeardrop {
     /// The number's letters, as outlines in px.
     let number: CGPath
 
-    /// `pin`'s teardrop on a drawing of `pointScale` on an image of `pixels`, inside an edge `edgeWidth`
-    /// drawing pt wide, turned away from `pieceNumbers` where it can be.
-    init(_ pin: Pin, in pixels: PixelSize, pointScale: CGFloat, edgeWidth: CGFloat, pieceNumbers: [CGRect] = []) {
-        let side = Self.side * pointScale
-        let orientation = Self.facing(tip: pin.tip, side: side, edge: edgeWidth * pointScale, in: pixels, avoiding: pieceNumbers)
-        self.init(number: pin.number, agent: pin.color == .agent, tip: pin.tip, orientation: orientation, side: side)
+    /// `pin`'s teardrop in `markStyle` on a drawing of `pointScale` on an image of `pixels`, turned away
+    /// from `pieceNumbers` where it can be.
+    init(_ pin: Pin, in pixels: PixelSize, pointScale: CGFloat, markStyle: MarkStyle, pieceNumbers: [CGRect] = []) {
+        let side = markStyle.pin.side * pointScale
+        let orientation = Self.facing(tip: pin.tip, side: side, edge: markStyle.edgeWidth * pointScale, in: pixels, avoiding: pieceNumbers)
+        self.init(number: pin.number, agent: pin.color == .agent, tip: pin.tip, orientation: orientation, side: side, style: markStyle.pin)
     }
 
     /// A teardrop `side` px across whose tip is at `tip`, wearing `number`, or no number for 0.
-    init(number: Int, agent: Bool, tip: CGPoint, orientation: Orientation, side: CGFloat) {
+    init(number: Int, agent: Bool, tip: CGPoint, orientation: Orientation, side: CGFloat, style: PinStyle) {
         self.orientation = orientation
         square = Self.square(tip: tip, orientation: orientation, side: side)
         body = CGPath(ellipseIn: square, transform: nil).union(CGPath(rect: Self.corner(tip: tip, orientation: orientation, side: side), transform: nil))
-        self.number = number > 0 ? Self.letters("\(number)", centredIn: square, side: side, widest: side * Self.numberWidth, agent: agent)
+        self.number = number > 0 ? Self.letters("\(number)", centredIn: square, size: side * style.numberSize, widest: side * style.numberWidth, agent: agent)
             : CGMutablePath()
     }
 
     /// A cluster: a teardrop widened into a capsule that fills `frame`, its tip at the corner of
     /// `frame` the orientation points from, wearing `label`.
-    init(label: String, agent: Bool, orientation: Orientation, frame: CGRect) {
+    init(label: String, agent: Bool, orientation: Orientation, frame: CGRect, style: PinStyle) {
         self.orientation = orientation
         square = frame
         let side = frame.height, tip = CGPoint(x: frame.minX, y: frame.minY)
         let right = orientation == .upRight || orientation == .downRight, up = orientation == .upRight || orientation == .upLeft
         let corner = Self.corner(tip: CGPoint(x: right ? tip.x : frame.maxX, y: up ? frame.maxY : tip.y), orientation: orientation, side: side)
         body = CGPath(roundedRect: frame, cornerWidth: side / 2, cornerHeight: side / 2, transform: nil).union(CGPath(rect: corner, transform: nil))
-        number = Self.letters(label, centredIn: frame, side: side, widest: frame.width - side * Self.numberWidth / 2, agent: agent)
+        number = Self.letters(label, centredIn: frame, size: side * style.numberSize, widest: frame.width - side * style.numberWidth / 2, agent: agent)
     }
 
     /// The quarter of the square toward the tip, which squares the round body off into a point.
@@ -118,17 +111,17 @@ struct PinTeardrop {
         return (system.withDesign(agent ? .monospaced : .rounded) ?? system) as CTFontDescriptor
     }
 
-    /// `words` as letter outlines, centred in `square`, set at `numberSize` of `side` and no wider than
+    /// `words` as letter outlines, centred in `square`, set at `size` px, or smaller to be no wider than
     /// `widest`.
-    private static func letters(_ words: String, centredIn square: CGRect, side: CGFloat, widest: CGFloat, agent: Bool) -> CGPath {
+    private static func letters(_ words: String, centredIn square: CGRect, size: CGFloat, widest: CGFloat, agent: Bool) -> CGPath {
         let face = face(agent: agent)
         func line(_ size: CGFloat) -> (line: CTLine, font: CTFont, width: CGFloat) {
             let font = CTFontCreateWithFontDescriptor(face, size, nil)
             let line = CTLineCreateWithAttributedString(NSAttributedString(string: words, attributes: [.font: font]))
             return (line, font, CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)))
         }
-        var set = line(side * numberSize)
-        if set.width > widest { set = line(side * numberSize * widest / set.width) }
+        var set = line(size)
+        if set.width > widest { set = line(size * widest / set.width) }
         let origin = CGPoint(x: square.midX - set.width / 2, y: square.midY + CTFontGetCapHeight(set.font) / 2)
         let path = CGMutablePath()
         for run in (CTLineGetGlyphRuns(set.line) as? [CTRun]) ?? [] {
@@ -145,7 +138,7 @@ extension Pin {
     /// Draws the pin's teardrop in its colour, inside its edge, with its number, as `Drawing.draw` does,
     /// for a drawing of `pointScale` on an image of `pixels`.
     func draw(in ctx: CGContext, pixels: PixelSize, pointScale: CGFloat, markStyle: MarkStyle, pieceNumbers: [CGRect] = []) {
-        draw(PinTeardrop(self, in: pixels, pointScale: pointScale, edgeWidth: markStyle.edgeWidth, pieceNumbers: pieceNumbers),
+        draw(PinTeardrop(self, in: pixels, pointScale: pointScale, markStyle: markStyle, pieceNumbers: pieceNumbers),
              in: ctx, pointScale: pointScale, markStyle: markStyle)
     }
 
@@ -190,7 +183,7 @@ final class PinLayer {
         let (pixels, pointScale, pieceNumbers) = (drawing.pixels, drawing.pointScale, drawing.pieceNumbers)
         if let shown, shown.pin == pin, shown.pixels == pixels, shown.pointScale == pointScale, shown.markStyle == markStyle,
            shown.pieceNumbers == pieceNumbers { return }
-        show(PinTeardrop(pin, in: pixels, pointScale: pointScale, edgeWidth: markStyle.edgeWidth, pieceNumbers: pieceNumbers),
+        show(PinTeardrop(pin, in: pixels, pointScale: pointScale, markStyle: markStyle, pieceNumbers: pieceNumbers),
              color: pin.color, pointScale: pointScale, markStyle: markStyle)
         shown = (pin, pixels, pointScale, markStyle, pieceNumbers)
     }

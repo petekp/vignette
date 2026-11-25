@@ -56,7 +56,7 @@ final class PinDrawingTests: XCTestCase {
 
     private func bodyPoint(of drawing: Drawing, at scale: CGFloat = 1) throws -> CGPoint {
         let pin = try XCTUnwrap(drawing.pins.first)
-        let square = PinTeardrop(pin, in: drawing.pixels, pointScale: drawing.pointScale, edgeWidth: MarkStyle.standard.edgeWidth).square
+        let square = PinTeardrop(pin, in: drawing.pixels, pointScale: drawing.pointScale, markStyle: MarkStyle.standard).square
         return CGPoint(x: (square.minX + square.width * 0.2) * scale, y: square.midY * scale)
     }
 
@@ -87,7 +87,7 @@ final class PinDrawingTests: XCTestCase {
         context.scaleBy(x: 1, y: -1)
         pins.layer.render(in: context)
         let editor = NSBitmapImageRep(cgImage: try XCTUnwrap(context.makeImage()))
-        let square = PinTeardrop(try XCTUnwrap(drawing.pins.first), in: drawing.pixels, pointScale: 1, edgeWidth: MarkStyle.standard.edgeWidth).square
+        let square = PinTeardrop(try XCTUnwrap(drawing.pins.first), in: drawing.pixels, pointScale: 1, markStyle: MarkStyle.standard).square
         let points = stride(from: square.minX - 4, through: square.maxX + 4, by: 2).flatMap { x in
             stride(from: square.minY - 4, through: square.maxY + 4, by: 2).map { CGPoint(x: x, y: $0) }
         }
@@ -223,7 +223,7 @@ final class PinDrawingTests: XCTestCase {
         let (shot, pinnedDrawing) = try pinned(pins: [pin(1, .point(CGPoint(x: 150, y: 100)))])
         var drawing = pinnedDrawing
         drawing.pieceNumbers = [CGRect(x: 130, y: 80, width: 40, height: 40)]
-        let drop = try XCTUnwrap(drawing.renderedTeardrops(edgeWidth: MarkStyle.standard.edgeWidth).first)
+        let drop = try XCTUnwrap(drawing.renderedTeardrops(markStyle: .standard).first)
         XCTAssertEqual(drop.drop.tip, CGPoint(x: 150, y: 76))
         let image = try XCTUnwrap(NSBitmapImageRep(data: Rendering.png(of: drawing, imageAt: shot, style: .standard, markStyle: .standard)))
         XCTAssertTrue(isRed(image, at: CGPoint(x: 150, y: 78)))
@@ -242,7 +242,7 @@ final class PinDrawingTests: XCTestCase {
     func testTeardropsOnOnePlaceTurnUntilTheyOverlapThenMoveAway() throws {
         let place = Pin.Place.point(CGPoint(x: 150, y: 100))
         let (_, drawing) = try pinned(pins: (1...5).map { pin($0, place) })
-        let drops = drawing.renderedTeardrops(edgeWidth: MarkStyle.standard.edgeWidth)
+        let drops = drawing.renderedTeardrops(markStyle: .standard)
         XCTAssertEqual(drops.prefix(4).map(\.drop.orientation), [.upRight, .downRight, .upLeft, .downLeft])
         XCTAssertEqual(drops.map(\.moved), [false, false, false, false, true])
         for (index, drop) in drops.enumerated() {
