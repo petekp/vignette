@@ -9,6 +9,8 @@ struct ToolbarView: View {
     let onTargetMenu: () -> Void
     let onFocusMessage: () -> Void
     let onTargetFrame: (CGRect) -> Void
+    let onPins: () -> Void
+    let onPinsFrame: (CGRect) -> Void
     /// The bar's width changed. A control coming or going opens or closes in the row, so the
     /// width moves on every frame of the spring, and the panel grows with it.
     let onWidth: () -> Void
@@ -61,6 +63,12 @@ struct ToolbarView: View {
                 .padding(Self.toolSlop.negated)
                 .modifier(FocusRing(on: model.focus == .tool(tool)))
                 .modifier(TipSpot(control: .tool(tool), text: "\(tool.label) (\(String(tool.key).uppercased()))", hover: tip))
+            }
+            if model.pinCount > 0 {
+                pinsButton
+                    .modifier(FocusRing(on: model.focus == .pins))
+                    .modifier(TipSpot(control: .pins, text: "Pins", hover: tip))
+                    .transition(Self.slot)
             }
             Divider().frame(height: 20).padding(.horizontal, 6)
             // One slot per control rather than one branch per offer, so a control two offers share
@@ -139,6 +147,30 @@ struct ToolbarView: View {
         }
         .onChange(of: model.presses) { hideTip() }
         .onChange(of: model.shown) { hideTip() }
+    }
+
+    /// How many pins there are. A press lists them all (`EditorView.showPinList`).
+    private var pinsButton: some View {
+        Button { onPins() } label: {
+            HStack(spacing: 6) {
+                Text("\(model.pinCount)")
+                    .monospacedDigit()
+                    .padding(.horizontal, 6)
+                    .frame(minWidth: 20, minHeight: 20)
+                    .background(Capsule().fill(Color.primary.opacity(0.12)))
+                Text("Pins")
+            }
+            .font(.system(size: 13, weight: .medium))
+            .padding(.horizontal, 6)
+            .frame(height: 30)
+            .padding(Self.toolSlop)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(TactileButtonStyle(shape: .rounded, hitSlop: Self.toolSlop))
+        .padding(Self.toolSlop.negated)
+        .accessibilityLabel("Pins")
+        .accessibilityValue("\(model.pinCount)")
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onPinsFrame($0) }
     }
 
     /// The pointer came onto a control or left it. Like AppKit's, a tooltip comes up after the pointer

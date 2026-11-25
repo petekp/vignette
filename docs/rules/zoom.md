@@ -8,7 +8,8 @@
   them as a `ZoomRequest` through `onZoom`. While the toolbar's message field has the keys, the
   bar's panel reads the zoom keys by the same rule (`EditorCore.zoomRequest`, `FieldCommand`). While typing, the editor sends the caret's rect in image
   px through `onReveal` whenever it moves, and the zoom pans a magnified picture just far enough to
-  show it, since a text wraps at the image's edge and not the frame's.
+  show it with a line's room, since a text wraps at the image's edge and not the frame's. A pin
+  picked from a list comes through `EditorPinUI.onReveal` with no such room (`lineRoom: false`).
 
   The rules are one pure value, `AnnotatorZoom` (`Sources/AnnotatorZoom.swift`, its inputs and effects in
   `AnnotatorZoom+Types.swift`), held by

@@ -14,6 +14,7 @@ extension AnnotationController {
         opened = opening
         // A send still rendering belongs to the session before this one, which its answer will find gone.
         toolbar.model.resetSend()
+        editor.closePinList()
         // The window and the editor are this image's now, so the last image's removal must not take them.
         removal.cancel()
         let win = window ?? makeWindow()

@@ -13,7 +13,7 @@ extension AnnotatorZoom {
         case wheel(points: CGFloat, at: CGPoint?, fingers: Bool)   // a scroll with Cmd or Ctrl held
         case lift                                      // the fingers left the trackpad
         case pan(by: CGVector)                         // a plain scroll, in points
-        case reveal(CGRect, image: CGSize)             // the caret, in image px
+        case reveal(CGRect, image: CGSize, lineRoom: Bool = true)   // the caret with a line's room round it, or a pin with none, in image px
         case tick(CGFloat)                             // the spring's level now
         case arrived                                   // the spring reached its target
         case close                                     // the card is about to fly home

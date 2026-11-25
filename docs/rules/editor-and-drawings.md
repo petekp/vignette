@@ -82,6 +82,11 @@
   the open and a new one. The core needs the fit zoom and the visible rect for that and for
   Shift+Return, and the view sends both (`viewChanged`) before each `zoomChanged`. A pin is
   selected, moved, nudged and deleted with the marks, by its `id` in `selection`.
+- A cluster's list and the toolbar's Pins button open one list (`EditorView.showPinList`). A pick
+  goes through `openFromList`: `EditorPinUI.onReveal` pans to its teardrop and area, or `onZoom(.fit)`
+  when they are larger than `EditorCore.visible`, then the composer opens. The controller closes the
+  list when another image opens or the editor leaves (`closePinList`). The bar shows the button while
+  `Model.pinCount`, which `EditorPinUI.onCount` sets, is above 0, and Tab reaches it after the tools.
 - A new pin has number 0 and is left out of every hand-over (`drawingForHost`) until its first
   comment gives it `nextPin`. The editor opens with the file's `nextPin` and `pieceNumbers` even
   when the file reads as no drawing (`AnnotationController.storedNumbering`), so a number a

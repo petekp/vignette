@@ -147,8 +147,8 @@ struct AnnotatorZoom: Equatable {
             return target < 1 ? zoom(by: nil, at: nil, from: .step) : nil
         case .pan(let delta):
             return panPicture(by: delta)
-        case .reveal(let rect, let image):
-            return reveal(rect, image: image)
+        case .reveal(let rect, let image, let lineRoom):
+            return reveal(rect, image: image, lineRoom: lineRoom)
         case .prepare, .landed, .lifted, .refit, .refitTick, .tick, .close:
             return nil
         }
@@ -306,15 +306,15 @@ struct AnnotatorZoom: Equatable {
     }
 
     /// Moves the part of a magnified picture in view just far enough to show `rect`, in image px,
-    /// with a line's height of room around it: the caret while typing. A text wraps at the image's
+    /// with a line's height of room around it for the caret while typing (`lineRoom`). A text wraps at the image's
     /// edge, not the frame's, so without this the words typed past the frame ran on out of sight.
-    private mutating func reveal(_ rect: CGRect, image: CGSize) -> Effect? {
+    private mutating func reveal(_ rect: CGRect, image: CGSize, lineRoom: Bool) -> Effect? {
         guard camera.width > 1 || camera.height > 1 else { return nil }
         let w = image.width, h = image.height
         guard w > 0, h > 0, [rect.minX, rect.minY, rect.width, rect.height].allSatisfy(\.isFinite) else { return nil }
         let visible = Zoom.visible(center: center, camera: camera)
         // As fractions of the image, y from the top, as `center` is.
-        let pad = CGSize(width: min(rect.height / w, visible.width / 4), height: min(rect.height / h, visible.height / 4))
+        let pad = lineRoom ? CGSize(width: min(rect.height / w, visible.width / 4), height: min(rect.height / h, visible.height / 4)) : .zero
         let want = CGRect(x: rect.minX / w - pad.width, y: rect.minY / h - pad.height,
                           width: rect.width / w + 2 * pad.width, height: rect.height / h + 2 * pad.height)
         var c = center

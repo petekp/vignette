@@ -132,6 +132,10 @@ files it touches, and `docs/voice.md` for any new words.
      teardrop, and the rendering's list of comments. The popover's width is `ui.pinPopoverWidth`.
      `clusterOverlap` moved there from `EditorMetrics` and keeps its key.
    - An Option-drag copies the selected marks and leaves the selected pins where they were.
+   - The toolbar's list is a Pins button after the tools, with the count, shown while a pin has a
+     number. It opens the cluster's list with every pin. A pick pans the picture to the pin, or
+     zooms to fit when its teardrop and area are larger than what is in view, since the zoom has
+     no level between.
    - A stored history leaves pin ids out of the selections it keeps, so an undo after reopening
      selects the marks it touched and no pin.
 4. Agents answer on pins (Choice 5). Its ADR is written first. Then the reply helper takes

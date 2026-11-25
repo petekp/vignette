@@ -187,6 +187,7 @@ extension AnnotationController {
         // `hideSoon` takes the bar down only if no other image has asked for it by the next turn
         // of the run loop.
         toolbar.hideSoon()
+        editor.closePinList()
         // The flight home is added at this frame in this turn, above this window, and starts moving
         // on the next. The window server takes a window down at once, and ordered out here the
         // window left the frame empty for 4 to 9 frames before the flight showed (measured). So the

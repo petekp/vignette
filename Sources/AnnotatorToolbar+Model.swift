@@ -4,6 +4,8 @@ import SwiftUI
 extension AnnotatorToolbar {
     final class Model: ObservableObject {
         @Published var tool: EditorCore.Tool? = nil
+        /// The open image's pins that have a number. Past 0 the bar shows the Pins button.
+        @Published var pinCount = 0
         @Published var shown = false     // drives the entrance and exit
         /// The answer whose sessions the target's menu lists (`DestinationChoice.replacesList`). Whether
         /// a reply's Claude Code session has closed is read from its `complete`, so the bar shows no
@@ -83,7 +85,7 @@ extension AnnotatorToolbar {
 
         /// A control Tab reaches, in the bar's order.
         enum Control: Hashable {
-            case tool(EditorCore.Tool), copy, target, message, action
+            case tool(EditorCore.Tool), pins, copy, target, message, action
 
             /// For `[state]`: `copy`, or `tool.arrow`.
             var name: String {
@@ -108,6 +110,7 @@ extension AnnotatorToolbar {
         var controls: [Control] {
             let offer = self.offer
             var controls = EditorCore.Tool.allCases.map(Control.tool)
+            if pinCount > 0 { controls.append(.pins) }
             if offer.destination == nil || offer.isSend { controls.append(.copy) }
             if offer.offersTarget { controls.append(.target) }
             if offer.destination != nil { controls += nothingToReply ? [.message] : [.message, .action] }

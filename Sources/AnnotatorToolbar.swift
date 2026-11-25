@@ -27,6 +27,9 @@ final class AnnotatorToolbar {
     var onLeave: ((_ backward: Bool) -> Bool)?
     /// The target's frame in the hosting view, where its menu drops down from.
     private(set) var targetFrame: CGRect?
+    /// A press on the Pins button, with the button's rect in `barView`: the editor lists every pin from it.
+    var onPins: ((CGRect, NSView) -> Void)?
+    private var pinsFrame: CGRect?
     let targetMenuActions = TargetMenuActions()
     private var hosting: NSHostingView<ToolbarView>!
     /// The view the bar is drawn in, where the target's frame is measured and its menu drops from.
@@ -75,6 +78,8 @@ final class AnnotatorToolbar {
                                                       onTargetMenu: { [weak self] in self?.showTargetMenu() },
                                                       onFocusMessage: { [weak self] in self?.focusMessage() },
                                                       onTargetFrame: { [weak self] in self?.targetFrame = $0 },
+                                                      onPins: { [weak self] in self?.showPins() },
+                                                      onPinsFrame: { [weak self] in self?.pinsFrame = $0 },
                                                       onWidth: { [weak self] in self?.refit() },
                                                       onMessageEnd: { [weak self] in self?.onMessageEnd?() },
                                                       onClose: { [weak self] in self?.onClose?() }))
@@ -184,5 +189,14 @@ final class AnnotatorToolbar {
             guard let self, self.hideGeneration == gen else { return }
             self.panel.orderOut(nil)
         }
+    }
+}
+
+extension AnnotatorToolbar {
+    /// The Pins button was pressed, or Space was on it.
+    func showPins() {
+        guard model.pinCount > 0, let frame = pinsFrame else { return }
+        let rect = barView.isFlipped ? frame : CGRect(x: frame.minX, y: barView.bounds.height - frame.maxY, width: frame.width, height: frame.height)
+        onPins?(rect, barView)
     }
 }
