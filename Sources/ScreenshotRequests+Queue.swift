@@ -108,9 +108,16 @@ extension ScreenshotRequests {
     /// when the session has the line or the last send was not queued. The tab names the last send that
     /// reached its client (`Agent.Sent`), so a failed send after a queued one leaves it queued.
     func queuedSend(of file: ScreenshotKey) -> Card.Queued? {
+        guard let last = queuedRequest(of: file), let watch = queueWatches[last.id], let reason = watch.shown else { return nil }
+        return Card.Queued(reason: reason, withdrawing: watch.withdrawing)
+    }
+
+    /// The send `queuedSend(of:)` is about: the last send of `file` that reached its client, while
+    /// the session's queue is said to hold its line.
+    func queuedRequest(of file: ScreenshotKey) -> Record? {
         guard queueWatches.keys.contains(where: { requests[$0].map(sourceKey(of:)) == file }) else { return nil }
         let reached = requests.values.filter { $0.status == .submitted && sourceKey(of: $0) == file }
-        guard let last = reached.max(by: { $0.created < $1.created }), let watch = queueWatches[last.id], let reason = watch.shown else { return nil }
-        return Card.Queued(reason: reason, withdrawing: watch.withdrawing)
+        guard let last = reached.max(by: { $0.created < $1.created }), queueWatches[last.id]?.shown != nil else { return nil }
+        return last
     }
 }

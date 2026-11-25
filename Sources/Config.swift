@@ -143,8 +143,8 @@ protocol Actions: AnyObject {
     func copyAnnotated(_ shots: [Screenshot])
     func stitch(_ shots: [Screenshot])
     func moveToTrash(_ shots: [Screenshot])
-    /// Cancels every send of these screenshots still in its grace, as the Don't send button on a
-    /// send's card does.
+    /// Takes back the send each screenshot's card shows, as its Don't send button does
+    /// (`ScreenshotRequests.unsend(file:)`).
     func unsend(_ shots: [Screenshot])
     /// Hands each recording to the app macOS opens it with, QuickTime Player unless the user chose another.
     func open(_ shots: [Screenshot])
