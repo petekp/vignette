@@ -15,7 +15,7 @@ extension EditorCore {
                 guard case .mark(_, let click) = gesture.press.target else { return cursor(over: hover) }
                 if case .type = click { return .iBeam }
                 return .arrow
-            case .drawing, .wrapping: return .crosshair
+            case .drawing, .wrapping, .placing: return .crosshair
             case .brushing: return .arrow
             case .moving, .draggingEnd, .bending: return .closedHand
             case .resizing(_, let position): return .resize(position)
@@ -30,6 +30,7 @@ extension EditorCore {
         case .handle(_, let position)?: return .resize(position)
         case .dot?: return .openHand
         case .mark(let id)?: return clickTypes(in: id) ? .iBeam : .arrow
+        case .pin?, .cluster?: return .arrow
         case nil: return tool == .select ? .arrow : .crosshair
         }
     }

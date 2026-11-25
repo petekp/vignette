@@ -33,13 +33,18 @@ extension AppDelegate {
         // The drawing is written before the card appears, so the card shows the pins from the start.
         let shot = Screenshot(key: key)
         var copied: PendingRendering?, saved = true
-        if let drawing = stitchDrawing(composed, of: key) {
+        let drawing = stitchDrawing(composed, of: key)
+        if let drawing, !drawing.pins.isEmpty {
             saved = drawings.write(drawing, reason: "stitched")
             if !saved {
                 Log.write("[stitch] error \(CommandError.writeFailed.rawValue) \(key.name): its drawing was not written; the copy holds its pins")
             }
             copied = copyRendering(of: drawing, shot: shot, verb: "stitched", in: nil)
         } else {
+            // Without pins only the piece numbers' places are lost, which a pin added later avoids.
+            if let drawing, !drawings.write(drawing, reason: "stitched") {
+                Log.write("[stitch] warning \(key.name): where its pieces wear their numbers was not written")
+            }
             Clipboard.copyFiles([key.url])
         }
         // readerScale is what a vision model's resize leaves of the composition; see Stitch.swift.
@@ -55,9 +60,10 @@ extension AppDelegate {
     }
 
     /// The stitch's drawing: its pieces' pins and where the pieces wear their numbers, sized as an
-    /// agent's new drawing is, so a pin added later matches a mark added later. Nil with no pins.
+    /// agent's new drawing is, so a pin added later matches a mark added later. Nil with no pins and
+    /// no piece numbers.
     private func stitchDrawing(_ composed: Stitch.Composition, of key: ScreenshotKey) -> Drawing? {
-        guard !composed.pins.isEmpty else { return nil }
+        guard !composed.pins.isEmpty || !composed.badges.isEmpty else { return nil }
         let pixels = PixelSize(width: Int(composed.size.width), height: Int(composed.size.height))
         var drawing = Drawing(key: key.path, pixels: pixels, sizedFor: Self.newDrawingScreen, rule: settings.data.ui.markScaleRule)
         drawing.pins = composed.pins

@@ -66,5 +66,8 @@ extension EditorCore {
         case handle(Mark.ID, HandlePosition)
         case dot(Mark.ID, DotKind)
         case mark(Mark.ID)
+        case pin(Pin.ID)
+        /// Pins drawn as one capsule, in number order.
+        case cluster([Pin.ID])
     }
 }

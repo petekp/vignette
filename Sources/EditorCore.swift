@@ -39,6 +39,13 @@ struct EditorCore {
         case enterCanvas(backward: Bool)
         /// The host's zoom: screen pt per image px.
         case zoomChanged(CGFloat)
+        /// Where the picture sits: the zoom at which it fits the frame, which a pin keeps its size at,
+        /// and the part of the image in view, in px.
+        case viewChanged(fit: CGFloat, visible: CGRect)
+        /// The pin popover's composer: its words, its keys, or a comment or a pin chosen in a popover.
+        case composer(ComposerInput)
+        /// VoiceOver's Add Pin: a new pin at the middle of the picture in view.
+        case addPin
         /// The text style, sizes and arrowhead the host uses now, in place of the ones `open` gave. The
         /// drawing, the selection, the history, a gesture and a typing session stay; a text keeps its
         /// origin, and its lines break where the new style breaks them.
@@ -134,7 +141,7 @@ struct EditorCore {
     }
 
     enum Tool: String, CaseIterable {
-        case select, rectangle, arrow, text
+        case select, rectangle, arrow, text, comment
 
         var label: String {
             switch self {
@@ -142,6 +149,7 @@ struct EditorCore {
             case .rectangle: return "Rectangle"
             case .arrow: return "Arrow"
             case .text: return "Text"
+            case .comment: return "Comment"
             }
         }
 
@@ -152,6 +160,7 @@ struct EditorCore {
             case .rectangle: return "r"
             case .arrow: return "a"
             case .text: return "t"
+            case .comment: return "c"
             }
         }
 
@@ -162,6 +171,7 @@ struct EditorCore {
             case .rectangle: return "rectangle"
             case .arrow: return "arrow.up.right"
             case .text: return "textformat"
+            case .comment: return "text.bubble"
             }
         }
     }
@@ -219,6 +229,10 @@ struct EditorCore {
         case page(Page, isRepeat: Bool)
         /// Ask the host to close the editor.
         case close
+        /// The pin popover is now this, or closed with nil.
+        case composer(Composer?)
+        /// A click on a cluster: its pins, in number order, listed by the cluster at this rect in px.
+        case showCluster([Pin.ID], at: CGRect)
         /// Render this drawing and finish.
         case done(Drawing)
         /// Render this drawing and send it; the editor stays open. A key's send has no destination:
@@ -256,16 +270,10 @@ struct EditorCore {
         case smart(at: CGPoint)
     }
 
-    private static func markID(_ target: Target) -> Mark.ID {
-        switch target {
-        case .handle(let id, _), .dot(let id, _), .mark(let id): return id
-        }
-    }
-
     // MARK: State
 
     private(set) var isOpen = false
-    private(set) var drawing = Drawing(key: "", pixels: PixelSize(width: 0, height: 0), pointScale: 1, marks: [])
+    var drawing = Drawing(key: "", pixels: PixelSize(width: 0, height: 0), pointScale: 1, marks: [])
     private(set) var style = TextStyle.standard
     private(set) var metrics = EditorMetrics.standard
     private(set) var markStyle = MarkStyle.standard
@@ -273,7 +281,8 @@ struct EditorCore {
     private(set) var tool = Tool.rectangle
     /// The host's to set, whenever what its bar offers changes. Opening an image leaves it alone.
     var finishes = Finishes()
-    private(set) var selection: Set<Mark.ID> = []
+    /// Marks and pins.
+    var selection: Set<Mark.ID> = []
     private(set) var gesture: Gesture?
     private(set) var hover: Target?
     private(set) var typing: Typing?
@@ -285,8 +294,14 @@ struct EditorCore {
     private var typingMessage = false
     /// Screen pt per image px.
     private(set) var zoom: CGFloat = 1
+    private(set) var fitZoom: CGFloat = 1
+    /// The part of the image in view, in px; null until the host says.
+    private(set) var visible = CGRect.null
+    /// The pin whose popover is open.
+    var composer: Composer?
+    private var reportedComposer: Composer?
     /// The changes an open gesture or typing session has made so far.
-    private var edit: MarkEdit?
+    var edit: MarkEdit?
     private(set) var pointer: CGPoint?
     private(set) var modifiers: Modifiers = []
     private var heldArrows: Set<Key> = []
@@ -328,6 +343,8 @@ struct EditorCore {
         case mark(Mark.ID, click: Click)
         case handle(Mark.ID, HandlePosition, click: Click)
         case dot(Mark.ID, DotKind)
+        case pin(Pin.ID, click: Click)
+        case cluster([Pin.ID])
     }
 
     /// What a press on a mark or its handle does when the button comes up without a drag.
@@ -338,6 +355,8 @@ struct EditorCore {
         case pressed
         /// A rectangle or an arrow being drawn.
         case drawing(Mark.ID)
+        /// A Comment tool drag choosing a new pin's area.
+        case placing(Pin.ID)
         /// A Text tool drag setting a new text's wrap width.
         case wrapping
         /// With Shift, the brush adds to the selection from before the press.
@@ -429,14 +448,24 @@ struct EditorCore {
         case .setTool(let tool):
             if gesture != nil { cancelGesture() }
             if typing != nil { endTyping() }
+            if composer != nil { closeComposer() }
             self.tool = tool
         case .enterCanvas(let backward):
             if gesture != nil { cancelGesture() }
             if typing != nil { endTyping() }
-            let order = geometry.readingOrder(drawing.marks)
+            let order = readingOrder
             selection = (backward ? order.last : order.first).map { [$0] } ?? []
         case .zoomChanged(let zoom):
             if zoom > 0, zoom.isFinite { self.zoom = zoom }
+        case .viewChanged(let fit, let visible):
+            if fit > 0, fit.isFinite { fitZoom = fit }
+            self.visible = visible
+        case .composer(let input): composerInput(input)
+        case .addPin:
+            if gesture != nil { cancelGesture() }
+            if typing != nil { endTyping() }
+            if composer != nil { closeComposer() }
+            placePinInView()
         case .tweaksChanged(let style, let metrics, let markStyle):
             self.style = style
             self.metrics = metrics
@@ -462,7 +491,11 @@ struct EditorCore {
     /// Reports what an input changed that the view shows on its own: the tool, the cursor, and the
     /// selection for VoiceOver.
     private mutating func settle() {
-        if let hovered = hover.map(Self.markID), mark(hovered) == nil { hover = nil }
+        if let hovered = hover, !exists(hovered) { hover = nil }
+        if composer != reportedComposer {
+            reportedComposer = composer
+            emit(.composer(composer))
+        }
         if tool != reportedTool {
             reportedTool = tool
             emit(.tool(tool))
@@ -480,7 +513,7 @@ struct EditorCore {
         }
     }
 
-    private mutating func emit(_ effect: Effect) {
+    mutating func emit(_ effect: Effect) {
         effects.append(effect)
     }
 
@@ -488,9 +521,10 @@ struct EditorCore {
 
     private mutating func open(_ drawing: Drawing, style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle, selectsNewest: Bool) {
         if typing != nil { emit(.endTyping) }
-        let kept = (zoom, finishes, effects)
+        if composer != nil { emit(.composer(nil)) }
+        let kept = (zoom, fitZoom, visible, finishes, effects)
         self = EditorCore()
-        (zoom, finishes, effects) = kept
+        (zoom, fitZoom, visible, finishes, effects) = kept
         guard drawing.pixels.width > 0, drawing.pixels.height > 0, drawing.pointScale > 0, drawing.pointScale.isFinite else { return }
         isOpen = true
         self.drawing = drawing
@@ -511,9 +545,10 @@ struct EditorCore {
     private mutating func finishForHost() {
         if gesture != nil { released(nil) }
         if typing != nil { endTyping() }
+        if composer != nil { closeComposer() }
     }
 
-    private mutating func finish(_ finish: Finish, to destination: AgentDestination? = nil) {
+    mutating func finish(_ finish: Finish, to destination: AgentDestination? = nil) {
         finishForHost()
         emit(finish == .done ? .done(drawingForHost) : .send(drawingForHost, to: destination))
     }
@@ -544,7 +579,11 @@ struct EditorCore {
     /// text being typed that holds no text yet.
     var drawingForHost: Drawing {
         var result = drawing
-        if gesture != nil, let edit { result.marks = edit.reverted(result.marks) }
+        if gesture != nil, let edit {
+            result.marks = edit.reverted(result.marks)
+            result.pins = edit.startPins
+        }
+        result.pins.removeAll { $0.number == 0 }
         if let typing, let mark = result.marks.first(where: { $0.id == typing.id }), Self.isBlank(mark) {
             result.marks.removeAll { $0.id == typing.id }
         }
@@ -552,7 +591,7 @@ struct EditorCore {
     }
 
     /// Something changed that the host must receive.
-    private mutating func changed() {
+    mutating func changed() {
         unsaved = true
         emit(.scheduleTimer)
     }
@@ -587,7 +626,7 @@ struct EditorCore {
     /// Runs `change` as one undo step of its own, beside any gesture or typing session under way.
     private mutating func step(named name: StepName, _ change: (inout EditorCore) -> Void) {
         let open = edit
-        edit = MarkEdit(marks: drawing.marks, selectionBefore: selection)
+        edit = newEdit
         change(&self)
         commitEdit(named: name)
         edit = open
@@ -596,20 +635,21 @@ struct EditorCore {
     /// Ends the open edit, turning what it changed into an undo step named `name`; returns whether it
     /// changed anything.
     @discardableResult
-    private mutating func commitEdit(named name: StepName) -> Bool {
+    mutating func commitEdit(named name: StepName) -> Bool {
         guard let edit else { return false }
         self.edit = nil
-        guard let step = edit.step(named: name, ending: drawing.marks, selection: selection) else { return false }
+        guard let step = edit.step(named: name, ending: drawing, selection: selection) else { return false }
         push(.drawing(step))
         changed()
         return true
     }
 
     /// Puts back every mark the open edit touched, exactly as it was.
-    private mutating func revertEdit() {
+    mutating func revertEdit() {
         guard let edit else { return }
         self.edit = nil
         drawing.marks = edit.reverted(drawing.marks)
+        drawing.pins = edit.startPins
     }
 
     private mutating func push(_ step: HistoryStep) {
@@ -620,6 +660,7 @@ struct EditorCore {
 
     /// Undo and redo say what they did, "Undo Arrow", in place of the selection they leave.
     private mutating func undo() {
+        if composer != nil { closeComposer() }
         guard let step = undoSteps.popLast() else { return }
         restore(step, forward: false)
         redoSteps.append(step)
@@ -627,6 +668,7 @@ struct EditorCore {
     }
 
     private mutating func redo() {
+        if composer != nil { closeComposer() }
         guard let step = redoSteps.popLast() else { return }
         restore(step, forward: true)
         undoSteps.append(step)
@@ -638,7 +680,7 @@ struct EditorCore {
         switch step {
         case .drawing(let step):
             drawing = step.applied(to: drawing, forward: forward)
-            let ids = Set(drawing.marks.map(\.id))
+            let ids = Set(drawing.marks.map(\.id) + drawing.pins.map(\.id))
             selection = (forward ? step.selectionAfter : step.selectionBefore).intersection(ids)
             announcedSelection = selection
             changed()
@@ -696,11 +738,12 @@ struct EditorCore {
             }
             if case .mark(let id)? = target(at: at), id != typing.id, mark(id)?.kind == .text {
                 endTyping()
-                beginTyping(id, caret: .at(at), edit: MarkEdit(marks: drawing.marks, selectionBefore: selection))
+                beginTyping(id, caret: .at(at), edit: newEdit)
                 return
             }
             endTyping()
         }
+        if composer != nil { closeComposer() }
         let before = selection
         func press(_ target: PressTarget) {
             gesture = Gesture(press: Press(location: at, time: event.time, target: target, selectionBefore: before), phase: .pressed, pointer: at)
@@ -714,10 +757,18 @@ struct EditorCore {
             press(.handle(id, position, click: types ? .type(.selectAll) : .nothing))
         case .dot(let id, let kind)?:
             press(.dot(id, kind))
+        case .pin(let id)?:
+            if clickCount >= 2 {
+                openComposer(on: id)
+                return
+            }
+            press(.pin(id, click: pinClick(id, event.modifiers)))
+        case .cluster(let ids)?:
+            press(.cluster(ids))
         case .mark(let id)?:
             guard let mark = mark(id) else { return }
             if mark.kind == .text, tool == .text || clickCount >= 2 {
-                beginTyping(id, caret: tool == .text ? .at(at) : .selectAll, edit: MarkEdit(marks: drawing.marks, selectionBefore: selection))
+                beginTyping(id, caret: tool == .text ? .at(at) : .selectAll, edit: newEdit)
                 return
             }
             var click = Click.nothing
@@ -775,9 +826,12 @@ struct EditorCore {
             switch tool {
             case .select: return .brushing
             case .rectangle, .arrow: return .drawing(UUID())
+            case .comment: return drawing.pins.count < Pin.maxCount ? .placing(UUID()) : nil
             case .text: return nil
             }
-        case .frame, .mark:
+        case .cluster:
+            return nil
+        case .frame, .mark, .pin:
             let originals = drawing.marks.filter { selection.contains($0.id) }.map(\.id)
             return .moving(originals: originals, copies: originals.map { _ in UUID() })
         case .handle(let id, let position, _): return .resizing(id, position)
@@ -790,21 +844,21 @@ struct EditorCore {
     private mutating func startDrag(_ gesture: inout Gesture) {
         hover = nil
         switch gesture.phase {
-        case .drawing:
-            edit = MarkEdit(marks: drawing.marks, selectionBefore: selection)
+        case .drawing, .placing:
+            edit = newEdit
             selection = []
         case .moving(let originals, _):
-            edit = MarkEdit(marks: drawing.marks, selectionBefore: selection)
+            edit = newEdit
             for id in originals { edit?.note(id) }
         case .resizing(let id, _):
-            edit = MarkEdit(marks: drawing.marks, selectionBefore: selection)
+            edit = newEdit
             edit?.note(id)
         case .draggingEnd(let id, let kind):
-            edit = MarkEdit(marks: drawing.marks, selectionBefore: selection)
+            edit = newEdit
             edit?.note(id)
             hover = .dot(id, kind)
         case .bending(let id):
-            edit = MarkEdit(marks: drawing.marks, selectionBefore: selection)
+            edit = newEdit
             edit?.note(id)
             hover = .dot(id, .middle)
         case .pressed, .wrapping, .brushing:
@@ -820,6 +874,8 @@ struct EditorCore {
         switch gesture.phase {
         case .pressed, .wrapping:
             break
+        case .placing(let id):
+            placeArea(id, from: press.location, to: at)
         case .drawing(let id):
             let start = geometry.inside(press.location)
             let shape: Mark.Geometry
@@ -843,10 +899,11 @@ struct EditorCore {
             let base = modifiers.contains(.shift) ? press.selectionBefore : []
             let brush = CGRect(x: min(press.location.x, at.x), y: min(press.location.y, at.y),
                                width: abs(at.x - press.location.x), height: abs(at.y - press.location.y))
-            selection = base.union(drawing.marks.filter { geometry.brush(brush, selects: $0) }.map(\.id))
+            selection = base.union(drawing.marks.filter { geometry.brush(brush, selects: $0) }.map(\.id)).union(pins(in: brush))
         case .moving(let originals, let copies):
             move(originals: originals, copies: copies, by: delta)
         case .resizing(let id, let position):
+            if resizePin(id, by: position, delta: delta) { return }
             guard var mark = edit?.original(id) else { return }
             switch mark.geometry {
             case .rectangle(let frame):
@@ -903,13 +960,14 @@ struct EditorCore {
     private mutating func move(originals: [Mark.ID], copies: [Mark.ID], by delta: CGVector) {
         guard let edit else { return }
         let starts = originals.compactMap { edit.original($0) }
-        guard let extent = geometry.movingExtent(of: starts) else { return }
+        let pins = edit.startPins.filter { edit.selectionBefore.contains($0.id) }
+        guard let extent = movingExtent(of: starts, pins: pins) else { return }
         var delta = delta
         if modifiers.contains(.shift) {
             if abs(delta.dx) >= abs(delta.dy) { delta.dy = 0 } else { delta.dx = 0 }
         }
         delta = geometry.clamped(delta, keeping: extent)
-        let copying = modifiers.contains(.option)
+        let copying = modifiers.contains(.option) && !starts.isEmpty
         for (original, copyID) in zip(starts, copies) {
             let moved = geometry.translated(original, by: delta)
             if copying {
@@ -921,7 +979,9 @@ struct EditorCore {
                 remove(copyID)
             }
         }
-        selection = Set(copying ? copies.filter { mark($0) != nil } : originals)
+        // A copy holds the marks alone, so the pins stay where they were.
+        movePins(pins, by: copying ? .zero : delta)
+        selection = Set(copying ? copies.filter { mark($0) != nil } : originals + pins.map(\.id))
     }
 
     /// The button came up at `event`, or, with nil, the drag ends where it is for park, Done or Send.
@@ -946,20 +1006,26 @@ struct EditorCore {
                 // Select cleared the selection on the press; a click that draws nothing clears it too.
                 if tool == .text {
                     newText(at: press.location, wrap: nil)
+                } else if tool == .comment {
+                    placePin(at: press.location)
                 } else if tool != .select {
                     selection = []
                 }
             case .frame:
                 selection = []
-            case .mark(let id, .deselect):
+            case .mark(let id, .deselect), .pin(let id, .deselect):
                 selection.remove(id)
-            case .mark(let id, .selectOnly):
+            case .mark(let id, .selectOnly), .pin(let id, .selectOnly):
                 selection = [id]
+            case .cluster(let ids):
+                showCluster(ids)
             case .mark(let id, .type(let caret)), .handle(let id, _, .type(let caret)):
-                beginTyping(id, caret: caret, edit: MarkEdit(marks: drawing.marks, selectionBefore: selection))
-            case .mark(_, .nothing), .handle, .dot:
+                beginTyping(id, caret: caret, edit: newEdit)
+            case .mark(_, .nothing), .handle, .dot, .pin:
                 break
             }
+        case .placing(let id):
+            finishPlacing(id, at: press.location, released: event != nil)
         case .wrapping:
             guard event != nil else { return }
             let span = wrapSpan(gesture)
@@ -1013,7 +1079,7 @@ struct EditorCore {
 
     /// Esc, a tool key, Cmd+Z, or an input the gesture does not expect: the drawing and the selection
     /// go back to how they were before the press.
-    private mutating func cancelGesture() {
+    mutating func cancelGesture() {
         guard let gesture else { return }
         self.gesture = nil
         revertEdit()
@@ -1046,6 +1112,7 @@ struct EditorCore {
                 break
             }
         }
+        overlay.handles += areaPinHandles
         if chosen.count == 1, let mark = chosen.first, case .arrow(let arrow) = mark.geometry {
             for (kind, center) in geometry.dotCenters(of: arrow) {
                 overlay.dots.append(Dot(mark: mark.id, kind: kind, center: center, radius: geometry.screen(metrics.dotRadius),
@@ -1083,6 +1150,7 @@ struct EditorCore {
         if let handle = overlay.handles.first(where: { $0.hitArea.encloses(point) }) {
             return .handle(handle.mark, handle.position)
         }
+        if let pin = pinTarget(at: point) { return pin }
         return markHit(at: point).map(Target.mark)
     }
 
@@ -1145,7 +1213,7 @@ struct EditorCore {
 
     private mutating func newText(_ anchor: TextAnchor, wrap: CGFloat?) {
         let id = UUID()
-        var edit = MarkEdit(marks: drawing.marks, selectionBefore: selection)
+        var edit = newEdit
         edit.note(id)
         var mark = Mark(id: id, geometry: .text(Mark.Text(origin: anchor.point, text: "", wrap: wrap, size: metrics.newTextSize)))
         guard case .text(let empty) = mark.geometry else { return }
@@ -1188,7 +1256,7 @@ struct EditorCore {
     }
 
     /// Ends the session. A text left with no words goes; otherwise the text stays selected.
-    private mutating func endTyping() {
+    mutating func endTyping() {
         guard let typing else { return }
         self.typing = nil
         emit(.endTyping)
@@ -1276,11 +1344,15 @@ struct EditorCore {
             if modifiers.isDisjoint(with: [.shift, .option]) {
                 finish(command ? finishes.commandReturn : finishes.returnKey)
             } else if selection.count == 1, let id = selection.first, mark(id)?.kind == .text {
-                beginTyping(id, caret: .selectAll, edit: MarkEdit(marks: drawing.marks, selectionBefore: selection))
+                beginTyping(id, caret: .selectAll, edit: newEdit)
+            } else if selection.count == 1, let id = selection.first, pin(id) != nil {
+                openComposer(on: id)
+            } else if selection.isEmpty, tool == .comment {
+                placePinInView()
             }
         case .tab:
-            // The marks, then the toolbar's controls, then the marks again.
-            let order = geometry.readingOrder(drawing.marks)
+            // The marks and pins, then the toolbar's controls, then the marks and pins again.
+            let order = readingOrder
             let backward = modifiers.contains(.shift)
             let positions = order.indices.filter { selection.contains(order[$0]) }
             let next = backward ? (positions.first ?? order.count) - 1 : (positions.last ?? -1) + 1
@@ -1297,13 +1369,14 @@ struct EditorCore {
             switch Command(rawValue: character) {
             case .undo:
                 if modifiers.contains(.shift) { redo() } else { undo() }
-            case .selectAll: selection = Set(drawing.marks.map(\.id))
+            case .selectAll: selection = Set(drawing.marks.map(\.id) + drawing.pins.map(\.id))
             case .copy: copy()
             case .cut:
-                // Unlike Copy, Cut never falls back to the drawing, which it could not delete.
-                guard !selection.isEmpty else { break }
+                // Unlike Copy, Cut never falls back to the drawing, which it could not delete. It takes
+                // the marks alone, since the clipboard holds no pins.
+                guard drawing.marks.contains(where: { selection.contains($0.id) }) else { break }
                 copy()
-                deleteSelection(as: .cut)
+                deleteSelection(as: .cut, pins: false)
             case .paste: emit(.readClipboard)
             case .duplicate: duplicate()
             case nil:
@@ -1367,8 +1440,8 @@ struct EditorCore {
     /// Moves the selection one nudge along every arrow key held, stopping together at the image's
     /// edges. The presses and repeats of one hold are one undo step.
     private mutating func nudge(by points: CGFloat) {
-        let marks = drawing.marks.filter { selection.contains($0.id) }
-        guard let extent = geometry.movingExtent(of: marks) else { return }
+        let marks = drawing.marks.filter { selection.contains($0.id) }, pins = drawing.pins.filter { selection.contains($0.id) }
+        guard let extent = movingExtent(of: marks, pins: pins) else { return }
         var direction = CGVector.zero
         for key in heldArrows { if let d = key.direction { direction.dx += d.dx; direction.dy += d.dy } }
         let offset = geometry.clamped(CGVector(dx: direction.dx * geometry.pt(points), dy: direction.dy * geometry.pt(points)), keeping: extent)
@@ -1376,6 +1449,7 @@ struct EditorCore {
         let depth = undoSteps.count
         step(named: .move) { core in
             for mark in marks { core.replace(core.geometry.translated(mark, by: offset)) }
+            core.movePins(pins, by: offset)
         }
         guard undoSteps.count > depth else { return }
         nudging = true
@@ -1386,11 +1460,13 @@ struct EditorCore {
         }
     }
 
-    private mutating func deleteSelection(as name: StepName = .delete) {
+    private mutating func deleteSelection(as name: StepName = .delete, pins withPins: Bool = true) {
         let ids = drawing.marks.map(\.id).filter { selection.contains($0) }
-        guard !ids.isEmpty else { return }
+        let pins = withPins ? drawing.pins.map(\.id).filter { selection.contains($0) } : []
+        guard !ids.isEmpty || !pins.isEmpty else { return }
         step(named: name) { core in
             for id in ids { core.remove(id) }
+            for id in pins { core.removePin(id) }
         }
     }
 
@@ -1403,7 +1479,7 @@ struct EditorCore {
     }
 
     /// Puts `marks` on top as one step named `name`, selected.
-    private mutating func insert(_ marks: [Mark], as name: StepName = .paste) {
+    mutating func insert(_ marks: [Mark], as name: StepName = .paste) {
         guard !marks.isEmpty else { return }
         step(named: name) { core in
             for mark in marks { core.add(mark) }
@@ -1412,98 +1488,8 @@ struct EditorCore {
     }
 
     /// A mark with the same fields and a new id.
-    private static func fresh(_ mark: Mark) -> Mark {
+    static func fresh(_ mark: Mark) -> Mark {
         Mark(geometry: mark.geometry, agent: mark.agent, agentName: mark.agentName)
-    }
-
-    // MARK: Clipboard
-
-    /// Cmd+C and Cmd+X: the selected marks, or, for Cmd+C, the drawing when nothing is selected.
-    private mutating func copy() {
-        let marks = drawing.marks.filter { selection.contains($0.id) }
-        guard !marks.isEmpty else {
-            emit(.copyDrawing(drawingForHost))
-            return
-        }
-        let order = geometry.readingOrder(marks)
-        let words = order.compactMap { id -> String? in
-            guard case .text(let text)? = mark(id)?.geometry else { return nil }
-            return text.text
-        }
-        emit(.copyMarks(CopiedMarks(pointScale: drawing.pointScale, markScale: drawing.markScale, marks: marks),
-                        text: words.isEmpty ? nil : words.joined(separator: "\n")))
-    }
-
-    private mutating func paste(_ content: PasteContent) {
-        if gesture != nil { cancelGesture() }
-        if typing != nil { endTyping() }
-        switch content {
-        case .marks(let copied):
-            pasteMarks(copied)
-        case .text(let string):
-            let words = Self.capped(string.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n"))
-            guard !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            let image = geometry.image
-            let at = pointer.flatMap { image.encloses($0) ? $0 : nil } ?? CGPoint(x: image.midX, y: image.midY)
-            let size = metrics.newTextSize
-            let text = Mark.Text(origin: geometry.textOrigin(at: at, size: size), text: words, wrap: nil, size: size)
-            guard let mark = geometry.placed(Mark(geometry: .text(text))) else { return }
-            insert([mark])
-        case .image, .other:
-            emit(.beep)
-        }
-    }
-
-    /// Copied marks keep their places and their boxes in the screenshot's points, and a text keeps
-    /// its size in drawing pt with its lines, so it takes the size of the notes already there. On the
-    /// same screenshot, while the marks they came from are still there, they land 10 pt right and
-    /// down, and 10 pt more for each copy already there, with their texts' lines as they were;
-    /// anywhere else, where the originals were, placed as marks from outside.
-    private mutating func pasteMarks(_ copied: CopiedMarks) {
-        let factor = drawing.screenScale / copied.screenScale, lines = drawing.pointScale / copied.pointScale
-        let converted = copied.marks.map { mark -> Mark in
-            var mark = Self.fresh(mark)
-            switch mark.geometry {
-            case .rectangle(let frame): mark.geometry = .rectangle(Self.scaled(frame, by: factor))
-            case .ellipse(let frame): mark.geometry = .ellipse(Self.scaled(frame, by: factor))
-            case .arrow(var arrow):
-                arrow.start = CGPoint(x: arrow.start.x * factor, y: arrow.start.y * factor)
-                arrow.end = CGPoint(x: arrow.end.x * factor, y: arrow.end.y * factor)
-                arrow.bend *= factor
-                arrow.via = arrow.via.map { CGPoint(x: $0.x * factor, y: $0.y * factor) }
-                mark.geometry = .arrow(arrow)
-            case .text(var text):
-                text.origin = CGPoint(x: text.origin.x * factor, y: text.origin.y * factor)
-                text.wrap = text.wrap.map { $0 * lines }
-                mark.geometry = .text(text)
-            }
-            return mark
-        }
-        // A mark already where one of them would land means the originals, or copies of them, are here.
-        func present(_ marks: [Mark]) -> Bool {
-            marks.contains { candidate in drawing.marks.contains { $0.geometry == candidate.geometry } }
-        }
-        guard present(converted) else {
-            return insert(geometry.placedGroup(converted, offset: .zero, keepingLines: false))
-        }
-        let step = geometry.pt(Self.copyOffset)
-        func landing(_ copies: Int) -> [Mark] {
-            geometry.placedGroup(converted, offset: CGVector(dx: step * CGFloat(copies), dy: step * CGFloat(copies)), keepingLines: true)
-        }
-        var copies = 1
-        var candidate = landing(1)
-        while present(candidate), copies < 1000 {
-            copies += 1
-            let next = landing(copies)
-            // Held against an edge, another step lands in the same place.
-            if next.map(\.geometry) == candidate.map(\.geometry) { break }
-            candidate = next
-        }
-        insert(candidate)
-    }
-
-    private static func scaled(_ rect: CGRect, by factor: CGFloat) -> CGRect {
-        CGRect(x: rect.minX * factor, y: rect.minY * factor, width: rect.width * factor, height: rect.height * factor)
     }
 
     /// The open screenshot's file was renamed: the drawing is the same, under this key.
@@ -1523,21 +1509,6 @@ struct EditorCore {
         }
         handOver()
     }
-
-    // MARK: Inspecting
-
-    /// What VoiceOver says for the selection: the kind of one mark, with a text's words, or how many.
-    private var selectionWords: String? {
-        let chosen = drawing.marks.filter { selection.contains($0.id) }
-        guard let first = chosen.first else { return nil }
-        guard chosen.count == 1 else { return "\(chosen.count) marks" }
-        switch first.geometry {
-        case .rectangle: return "Rectangle"
-        case .ellipse: return "Ellipse"
-        case .arrow: return "Arrow"
-        case .text(let text): return "Text: \(text.text)"
-        }
-    }
 }
 
 private extension EditorCore.Input {
@@ -1545,7 +1516,8 @@ private extension EditorCore.Input {
     /// A key decides for itself (`startsNote`).
     var keepsNoteMark: Bool {
         switch self {
-        case .keyDown, .keyUp, .pointerMoved, .pointerExited, .modifiersChanged, .zoomChanged, .tweaksChanged, .rescaled, .timerFired: return true
+        case .keyDown, .keyUp, .pointerMoved, .pointerExited, .modifiersChanged, .zoomChanged, .viewChanged, .tweaksChanged, .rescaled, .timerFired:
+            return true
         default: return false
         }
     }
@@ -1554,7 +1526,7 @@ private extension EditorCore.Input {
     var keepsNudge: Bool {
         switch self {
         case .keyDown(let key, _, _): return key.direction != nil
-        case .keyUp, .pointerMoved, .pointerExited, .modifiersChanged, .zoomChanged, .tweaksChanged, .rescaled, .timerFired: return true
+        case .keyUp, .pointerMoved, .pointerExited, .modifiersChanged, .zoomChanged, .viewChanged, .tweaksChanged, .rescaled, .timerFired: return true
         default: return false
         }
     }

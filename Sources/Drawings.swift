@@ -158,7 +158,7 @@ final class Drawings {
 
     private func save(_ drawing: Drawing, message: String? = nil, history: EditorHistory, reason: String) throws -> Bool {
         let key = ScreenshotKey(asGiven: drawing.key), name = key.name
-        if !drawing.isEmpty || message?.isEmpty == false, !FileManager.default.fileExists(atPath: drawing.key) {
+        if drawing.isFiled || message?.isEmpty == false, !FileManager.default.fileExists(atPath: drawing.key) {
             Log.write("[drawing] dropped \(name): its screenshot is gone")
             return false
         }
@@ -166,7 +166,7 @@ final class Drawings {
         if keepsMessage, messages.insert(key).inserted { Log.write("[drawing] message saved \(name)") }
         if !keepsMessage, messages.remove(key) != nil { Log.write("[drawing] message removed \(name)") }
         changedAt[key] = ProcessInfo.processInfo.systemUptime
-        if drawing.isEmpty {
+        if !drawing.isFiled {
             guard keys.remove(key) != nil else { return true }
             Log.write("[drawing] removed \(name)")
             Log.write("[drawings] \(keys.count)")
@@ -174,7 +174,7 @@ final class Drawings {
         } else {
             Log.write("[drawing] \(reason) \(name)")
             if keys.insert(key).inserted { Log.write("[drawings] \(keys.count)") }
-            changed(key, drawing)
+            changed(key, drawing.isEmpty ? nil : drawing)
         }
         return true
     }
@@ -305,7 +305,8 @@ final class Drawings {
         guard let pixels = PixelSize(imageAt: url) else {
             throw Failure(code: .unreadableImage, description: "\(name) is not an image this Mac can read")
         }
-        var drawing = read(key, pixels: pixels, style: style) ?? Drawing(key: key.path, pixels: pixels, sizedFor: newScreen, rule: rule)
+        var drawing = read(key, pixels: pixels, style: style)
+            ?? Drawing(key: key.path, pixels: pixels, sizedFor: newScreen, rule: rule).numbered(numbering(of: key, pixels: pixels))
         let made = marks(agentMarks, from: agent, in: pixels, pointScale: drawing.pointScale, style: style, rule: rule, name: name)
         guard !made.isEmpty else { return 0 }
         var history = history(of: key, pixels: pixels, drawing: drawing)

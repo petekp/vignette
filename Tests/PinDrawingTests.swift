@@ -67,6 +67,38 @@ final class PinDrawingTests: XCTestCase {
         XCTAssertFalse(isRed(image, at: CGPoint(x: 250, y: 50)))
     }
 
+    func testTheEditorDrawsATeardropOnThePixelsTheRenderingDrawsAtTheFitZoom() throws {
+        let (shot, drawing) = try pinned()
+        let rendering = try XCTUnwrap(NSBitmapImageRep(data: Rendering.png(of: drawing, imageAt: shot, style: .standard, markStyle: .standard)))
+        var core = EditorCore()
+        _ = core.reduce(.open(drawing, style: .standard, metrics: .standard, markStyle: .standard))
+        _ = core.reduce(.viewChanged(fit: 1, visible: CGRect(x: 0, y: 0, width: 300, height: 200)))
+        _ = core.reduce(.zoomChanged(1))
+        let pins = EditorPins()
+        pins.setScale(1)
+        pins.show(EditorPins.Shown(placement: core.pinPlacement, outlined: [], selected: [], markStyle: .standard, outlineWidth: 1,
+                                   dropScale: 1, areaScale: 1, transform: .identity))
+        let context = try XCTUnwrap(CGContext(data: nil, width: 300, height: 200, bitsPerComponent: 8, bytesPerRow: 0,
+                                              space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)),
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 300, height: 200))
+        context.translateBy(x: 0, y: 200)
+        context.scaleBy(x: 1, y: -1)
+        pins.layer.render(in: context)
+        let editor = NSBitmapImageRep(cgImage: try XCTUnwrap(context.makeImage()))
+        let square = PinTeardrop(try XCTUnwrap(drawing.pins.first), in: drawing.pixels, pointScale: 1, edgeWidth: MarkStyle.standard.edgeWidth).square
+        let points = stride(from: square.minX - 4, through: square.maxX + 4, by: 2).flatMap { x in
+            stride(from: square.minY - 4, through: square.maxY + 4, by: 2).map { CGPoint(x: x, y: $0) }
+        }
+        let redInRendering = points.filter { isRed(rendering, at: $0) }
+        XCTAssertGreaterThan(redInRendering.count, 20)
+        let redInEither = points.filter { isRed(rendering, at: $0) || isRed(editor, at: $0) }
+        let redInBoth = redInEither.filter { isRed(rendering, at: $0) && isRed(editor, at: $0) }
+        XCTAssertGreaterThan(Double(redInBoth.count) / Double(redInEither.count), 0.9)
+        XCTAssertFalse(isRed(editor, at: CGPoint(x: 250, y: 50)))
+    }
+
     func testADrawingHoldingOnlyPinsFollowsARename() throws {
         let (shot, drawing) = try pinned()
         drawings.write(drawing, reason: "saved")

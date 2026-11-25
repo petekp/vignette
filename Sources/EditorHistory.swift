@@ -19,9 +19,12 @@ struct MarkEdit {
     private(set) var touched: [Mark.ID] = []
     /// The selection when the edit began, which undoing its step puts back.
     let selectionBefore: Set<Mark.ID>
+    /// The pins when the edit began. Putting the edit back puts every pin back as it was.
+    let startPins: [Pin]
 
-    init(marks: [Mark], selectionBefore: Set<Mark.ID>) {
+    init(marks: [Mark], pins: [Pin], selectionBefore: Set<Mark.ID>) {
         start = marks
+        startPins = pins
         self.selectionBefore = selectionBefore
     }
 
@@ -133,7 +136,7 @@ struct EditStep {
 /// What one undo step did, in the words Undo and Redo give it: "Undo Arrow", "Redo Typing". The raw
 /// value is the step's name in a drawing file's history.
 enum StepName: String, CaseIterable {
-    case rectangle, ellipse, arrow, typing, move, resize, bend, arrowEnd, duplicate, delete, paste, cut, agentMarks
+    case rectangle, ellipse, arrow, typing, move, resize, bend, arrowEnd, duplicate, delete, paste, cut, agentMarks, comment
 
     /// The words after Undo or Redo.
     var title: String {
@@ -151,6 +154,7 @@ enum StepName: String, CaseIterable {
         case .paste: return "Paste"
         case .cut: return "Cut"
         case .agentMarks: return "Agent's Marks"
+        case .comment: return "Comment"
         }
     }
 }
@@ -257,6 +261,9 @@ extension EditorHistory {
             guard let placed else { return nil }
             return ["index": placed.index, "mark": try DrawingJSON.object(from: DrawingJSON.encode(MarkRecord(placed.mark)))]
         }
+        // The file names a selection's marks by number and has no way to name a pin in one.
+        var pinIDs = Set(drawing.pins.map(\.id))
+        for case .drawing(let step) in self.undo + self.redo { pinIDs.formUnion(step.pins.map(\.id)) }
         func pin(_ pin: Pin?) throws -> Any? {
             try pin.map { try DrawingJSON.object(from: DrawingJSON.encode(PinRecord($0))) }
         }
@@ -279,8 +286,8 @@ extension EditorHistory {
                         return item
                     }
                 }
-                object["selectionBefore"] = step.selectionBefore.map(number).sorted()
-                object["selectionAfter"] = step.selectionAfter.map(number).sorted()
+                object["selectionBefore"] = step.selectionBefore.subtracting(pinIDs).map(number).sorted()
+                object["selectionAfter"] = step.selectionAfter.subtracting(pinIDs).map(number).sorted()
             case .message(let step):
                 object["message"] = ["before": step.before, "after": step.after]
             }

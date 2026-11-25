@@ -38,6 +38,8 @@ final class AnnotationController {
     var onMessage: ((String, Drawing, EditorHistory) -> Void)?
     /// The stored drawing for a screenshot whose size as displayed is the given one, if any.
     var storedDrawing: ((ScreenshotKey, PixelSize) -> Drawing?)?
+    /// For a screenshot with no stored drawing, the numbering its file keeps, if any.
+    var storedNumbering: ((ScreenshotKey, PixelSize) -> Drawing.Numbering?)?
     /// The message stored for a screenshot whose size as displayed is the given one, or "".
     var storedMessage: ((ScreenshotKey, PixelSize) -> String)?
     /// The undo and redo history stored for a screenshot whose size as displayed is the given one, for

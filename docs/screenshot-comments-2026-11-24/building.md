@@ -115,6 +115,21 @@ files it touches, and `docs/voice.md` for any new words.
    deleting an earlier pin, and with long comments on a small screenshot. He checks a copy of a
    drawing with one arrow, a terminal paste, reopening, Stitch, and a reply of marks only, in Claude
    Code and in Codex. He checks VoiceOver by hand.
+   Step 3 settled these points the plan left open:
+   - A stitch writes its `pieceNumbers` whether or not its pieces hold pins, so a pin added to
+     it later turns away from a piece's number. This replaces step 2's point. The file counts as a
+     drawing in `Drawings.keys`, so a rename and the sweep carry it, and it reads as no drawing.
+     Its `nextPin` lasts as long as the file.
+   - A new pin has number 0 and stays out of every hand-over and undo step until its first
+     comment. Closed with nothing posted, it goes and leaves no step.
+   - The cluster distance is `ui.clusterOverlap`, the share of a body's width two bodies overlap
+     past: 0.34. The area outline's width is the marks' width, and the selection ring's is the
+     editor's outline width, both settings already.
+   - The pin's size is still `PinTeardrop.side`. A setting must reach the card, the flight, every
+     rendering and the stitch, or the hand-over steps; see the step's report.
+   - An Option-drag copies the selected marks and leaves the selected pins where they were.
+   - A stored history leaves pin ids out of the selections it keeps, so an undo after reopening
+     selects the marks it touched and no pin.
 4. Agents answer on pins (Choice 5). Its ADR is written first. Then the reply helper takes
    `--comments`, `ReplyProtocol.version` goes up, a request stores `base.png`, the reply card holds
    the person's pins with the answers, and the skill says how. Verified by protocol tests and one

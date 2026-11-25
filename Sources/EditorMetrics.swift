@@ -32,6 +32,8 @@ struct EditorMetrics: Equatable {
     /// The selection outline's whole width on screen, its light edge included. It runs this far
     /// outside a mark's ink, so the mark's colour shows.
     var selectionOutlineWidth: CGFloat
+    /// Two pins' teardrops cluster when their bodies overlap by more than this share of their width.
+    var clusterOverlap: CGFloat
 
     /// The tweaks' defaults.
     static let standard = UITweaks().editorMetrics

@@ -21,6 +21,9 @@ extension TweakCatalog {
                 .number("textDragDistance", "Text drag distance", \.textDragDistance, 0...80, unit: "pt", safe: 0...10_000),
                 .number("noteSettleDuration", "Note settles", \.noteSettleDuration, 0...1, step: 0.05, unit: "s", safe: 0...60),
             ], caption: { _ in "Sizes are screen points, the same at any zoom. A press with the Text tool sets how wide the text wraps if it is held this long and then dragged this far sideways. When typing ends, a note's lines are evened out over the settle time." }),
+            TweakGroup(nil, [
+                .number("clusterOverlap", "Pins cluster past", \.clusterOverlap, 0...1, step: 0.05, safe: 0...1),
+            ], caption: { _ in "Two pins are drawn as one cluster when their bodies overlap by more than this share of their width." }),
         ]),
         TweakSection("Marks", [
             TweakGroup(nil, [

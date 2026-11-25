@@ -8,7 +8,7 @@ parks and zooms the editor, and the rest of the app, which stores and renders it
 
 ## Summary
 
-- The editor has four tools: Select, Rectangle, Arrow and Text. It also covers selection, typing,
+- The editor has five tools: Select, Rectangle, Arrow, Text and Comment. It also covers selection, typing,
   keys, undo and the clipboard.
 - A drawing is a small JSON file that Vignette owns. Its geometry is in the screenshot's pixels,
   so a drawing looks the same on any display.
@@ -188,9 +188,9 @@ areas stay the same size on screen. Each step of a zoom moves both in the same f
 
 | Trigger | Result |
 |---|---|
-| V, R, A, T, with or without Shift, while not typing | Select, Rectangle, Arrow, Text. Right after a box or an arrow is drawn, the next key can still make the letter the start of a note (section 5, A note for a box or an arrow). |
+| V, R, A, T, C, with or without Shift, while not typing | Select, Rectangle, Arrow, Text, Comment. Right after a box or an arrow is drawn, the next key can still make the letter the start of a note (section 5). |
 | Any other letter while not typing | Right after a box or an arrow is drawn, it starts a note. Otherwise M and P go to the message field (section 6), and the rest do nothing. |
-| The toolbar's buttons | The same four tools |
+| The toolbar's buttons | The same tools |
 | A new screenshot opens | Rectangle |
 | A screenshot with a drawing opens | Select, with the newest mark the person drew selected. An agent's mark is never the one picked. Opened by Left or Right, nothing is selected, so the arrows go on to the next screenshot (section 6). |
 | A mark is finished | The tool stays, and the new mark is selected, per Decision 1 |

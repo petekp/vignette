@@ -167,7 +167,7 @@ struct DrawingStore: Sendable {
     /// Writes `drawing` atomically with `message`, or with the message the file holds when `message` is
     /// nil, and with `history`, the editor's, which ends at them; any history the file held goes. A higher
     /// `nextPin` in the file is kept, so a pin number is never used twice while the file exists. Removes
-    /// the file when there is no mark, no pin and no message. Answers whether the file holds a message now.
+    /// the file when there is no mark, no pin, no piece number and no message. Answers whether the file holds a message now.
     /// Throws, after its one log line, when the write fails or the file is from a newer build, which is
     /// left as it is.
     @discardableResult
@@ -177,7 +177,7 @@ struct DrawingStore: Sendable {
         let existing = contents(of: url)
         try refuse(existing, name: name)
         let kept = message ?? Self.message(in: existing, fitting: drawing)
-        guard !drawing.isEmpty || !kept.isEmpty else {
+        guard drawing.isFiled || !kept.isEmpty else {
             try remove(key: drawing.key)
             return false
         }
@@ -210,7 +210,7 @@ struct DrawingStore: Sendable {
             try put(Self.encoded(empty, message: message, history: history, endingAt: drawing), at: url, name: name)
             return true
         }
-        guard !stored.marks.isEmpty || !stored.pins.isEmpty || !message.isEmpty else {
+        guard !stored.marks.isEmpty || !stored.pins.isEmpty || !stored.pieceNumbers.isEmpty || !message.isEmpty else {
             try remove(key: drawing.key)
             return false
         }
@@ -294,7 +294,7 @@ struct DrawingStore: Sendable {
 
     /// The files this build can read, by the key of their screenshot.
     struct Scan: Equatable {
-        /// The keys whose file holds a drawing: marks, pins or both.
+        /// The keys whose file holds a drawing: marks, pins or a stitch's piece numbers.
         var drawings: Set<String> = []
         /// The keys whose file holds a message.
         var messages: Set<String> = []
@@ -312,7 +312,7 @@ struct DrawingStore: Sendable {
             case .stored(let stored):
                 // A file under another key's name would be read, written and removed as that key's.
                 guard file.deletingPathExtension().lastPathComponent == Self.id(for: stored.key) else { break }
-                if !stored.marks.isEmpty || !stored.pins.isEmpty { keys.drawings.insert(stored.key) }
+                if !stored.marks.isEmpty || !stored.pins.isEmpty || !stored.pieceNumbers.isEmpty { keys.drawings.insert(stored.key) }
                 if !stored.message.isEmpty { keys.messages.insert(stored.key) }
             case .invalid(let reason):
                 setAside(file, reason: reason)
