@@ -243,8 +243,12 @@ final class PinTests: XCTestCase {
         XCTAssertEqual(listed.last?["w"] as? Double, 30)
         XCTAssertEqual((listed.last?["comments"] as? [[String: Any]])?.count, 2)
 
+        let plainArrived = expectation(description: "the plain line reached the client")
+        catcher.onSubmit = { plainArrived.fulfill() }
         let plain = try requests.send(.drawing(png: Data([1])), source: URL(fileURLWithPath: key).screenshotKey,
                                       to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")))
+        await fulfillment(of: [plainArrived], timeout: 3)
+        XCTAssertEqual(catcher.lines.count, 2)
         let plainFolder = ReplyProtocol.requestDirectory(root: root, requestID: plain.id)
         XCTAssertFalse(FileManager.default.fileExists(atPath: plainFolder.appendingPathComponent("pins.json").path))
     }
