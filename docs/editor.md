@@ -33,7 +33,7 @@ parks and zooms the editor, and the rest of the app, which stores and renders it
 
 | # | Question | Answer | Why |
 |---|---|---|---|
-| 1 | Which tool is active after drawing a mark? | The same tool. The new mark is selected, and its handles work while the tool is active. Over another mark the cursor becomes the Select cursor and the mark gets the hover outline. A press there selects the mark. A press anywhere else draws. V goes back to Select. Section 3 has the details. | Marking several things in a row is common. The cursor and the outline say before the press whether it will select or draw. |
+| 1 | Which tool is active after drawing a mark? | The same tool. The new mark is selected, and its handles work while the tool is active. A press on a mark acts as in Select (the Text tool edits a text), and a press anywhere else draws. V goes back to Select. Section 3 has the details. | Marking several things in a row is common. The cursor and the outline say before the press whether it will select or draw. |
 | 2 | What does a click without a drag do with the Rectangle tool? | Nothing is created. | A click gives no size, and a default box would cover part of a small crop. The Arrow tool behaves the same way. |
 | 3 | Do arrows attach to the marks they point at? | No. The tip lands exactly where the pointer was released and stays there. | An arrow points at a place, and attaching would move the tip away from it. Revisit if people expect an arrow to follow the box it points at. |
 | 4 | Do rectangles and arrows carry text labels? | No. The Text tool is the one way to add words. | One way to add words keeps the tools simple. |
@@ -176,7 +176,7 @@ Most numbers below are defaults. The tweaks panel's Editor, Marks and Notes sect
 | Brush | A rectangle with a 1 screen pt stroke, grey at 25% opacity, over a grey fill at 10%. The same rectangle shows the width a Text tool drag sets. |
 | Caret while typing | The colour of the words on the tag |
 | Selected text while typing | Blue background, white letters |
-| Cursors | The system's: a crosshair while drawing, the arrow in Select, resize cursors on handles, an open hand on arrow dots, a closed hand while moving. On macOS 14, which has no diagonal resize cursor, a corner handle shows the crosshair. |
+| Cursors | The system's: a crosshair while drawing, the arrow in Select, the I-beam where a click types, resize cursors on handles, an open hand on arrow dots, a closed hand while moving. On macOS 14, which has no diagonal resize cursor, a corner handle shows the crosshair. |
 | Behind the image | `#1a1a1a`, so a screenshot's transparent pixels are never see-through: in the editor, on a card and in flight |
 
 Marks and text scale with the zoom. Handles, selection and hover outlines, dots, the brush and hit
@@ -209,10 +209,10 @@ everywhere else. The cursor and the hover outline show which will happen before 
 | A mark, by the hit rules in section 4 | The arrow, and the hover outline on the mark | Selects the mark. A drag moves it. Shift adds it to the selection. The tool stays. |
 | A selected mark's resize handle | That handle's resize cursor | Resizes the mark |
 | A selected arrow's dot | The open hand | Drags the dot |
-| A text, with the Text tool | The I-beam | Edits the text, with the caret at the click |
+| The lone selected text, or any text with the Text tool | The I-beam | Edits it, caret at the click |
 
 - The empty inside of a selected rectangle draws, so a second box can go inside the one just drawn.
-  In Select, the same press would move the rectangle.
+  In Select, the same press moves the rectangle.
 - An arrow cannot start on a note, because a press on its tag selects it. To draw from a note,
   start just outside its tag.
 
@@ -288,8 +288,8 @@ Hover, press and release use one rule:
 
 - The mark under the pointer gets the hover outline in Select, with a drawing tool per section 3,
   and while a text is being typed.
-- A hovered handle changes the cursor.
-- In Select, the cursor stays the arrow over a mark. A drawing tool changes it, per section 3.
+- The cursor says what a press will do. It is the I-beam over the lone selected text, unless
+  Shift, Command or Control is held, and over any text while one is typed.
 
 ### Selecting
 
@@ -372,8 +372,7 @@ The double-click interval is the system's setting, for editing and for zoom.
 
 | Where | Result |
 |---|---|
-| A text, in Select | Typing starts with all its text selected |
-| A selected text, single click inside it | Typing starts with the caret at the click |
+| A text or a selected text's handle, any tool | Typing starts with all its text selected |
 | Empty space or the screenshot, in Select | Smart zoom: twice as close at that point, or back to fit from anywhere closer |
 | A rectangle, ellipse or arrow | Nothing |
 | A double-click that starts on empty space | The first click clears the selection |
@@ -386,11 +385,11 @@ The double-click interval is the system's setting, for editing and for zoom.
 |---|---|
 | Text tool click or drag | Typing starts in the new text |
 | A character typed right after drawing a box or an arrow | Typing starts in a note for that mark, with that character |
-| Double-click a text | Typing starts, all text selected |
-| Click a selected text | Typing starts, caret at the click |
+| Double-click a text or its handle | Typing starts, all text selected |
+| Click the lone selected text | Typing starts, caret at the click |
 | Shift+Return or Option+Return with one text selected | Typing starts, all text selected |
 | While typing, click another text | Typing moves there, caret at the click |
-| While typing, click anywhere else | Typing ends, and the click acts as a normal click |
+| While typing, click anywhere else | Typing ends, and the click acts as usual |
 | Return | Typing ends. The text stays selected. |
 | Cmd+Return | Typing ends, then what Cmd+Return does in section 6 |
 | Esc | Typing ends and the text is kept. A second Esc closes the editor. |

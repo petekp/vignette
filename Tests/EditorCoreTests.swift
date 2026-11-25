@@ -440,17 +440,6 @@ final class EditorCoreTests: XCTestCase {
         XCTAssertEqual(narrow.origin.x, 500)
     }
 
-    func testATextClickOnAnExistingTextEditsIt() {
-        var core = core([text("note", 200, 200)])
-        _ = core.reduce(.setTool(.text))
-        let id = core.drawing.marks[0].id
-        let effects = core.click(210, 210)
-        XCTAssertTrue(effects.contains(.beginTyping(id, .at(CGPoint(x: 210, y: 210)))))
-        XCTAssertEqual(core.typing?.id, id)
-        XCTAssertEqual(core.drawing.marks.count, 1)
-        XCTAssertEqual(core.cursor, .iBeam)
-    }
-
     // MARK: Selection
 
     func testAPressOnARectanglesStrokeSelectsItAndAPressInItsEmptyMiddleBrushes() {

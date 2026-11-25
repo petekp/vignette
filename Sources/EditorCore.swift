@@ -287,8 +287,8 @@ struct EditorCore {
     private(set) var zoom: CGFloat = 1
     /// The changes an open gesture or typing session has made so far.
     private var edit: MarkEdit?
-    private var pointer: CGPoint?
-    private var modifiers: Modifiers = []
+    private(set) var pointer: CGPoint?
+    private(set) var modifiers: Modifiers = []
     private var heldArrows: Set<Key> = []
     /// The top undo step is the nudge the arrow keys held now are making.
     private var nudging = false
@@ -326,12 +326,12 @@ struct EditorCore {
         /// a click clears them.
         case frame
         case mark(Mark.ID, click: Click)
-        case handle(Mark.ID, HandlePosition)
+        case handle(Mark.ID, HandlePosition, click: Click)
         case dot(Mark.ID, DotKind)
     }
 
-    /// What a press on a mark does when the button comes up without a drag.
-    enum Click: Equatable { case nothing, deselect, selectOnly, type }
+    /// What a press on a mark or its handle does when the button comes up without a drag.
+    enum Click: Equatable { case nothing, deselect, selectOnly, type(Caret) }
 
     enum Phase: Equatable {
         /// Not yet past the drag distance.
@@ -367,7 +367,7 @@ struct EditorCore {
         /// The text's size when the session began. As it grows it gets smaller than this, and back as it
         /// shrinks, unless it has a wrap width (`EditorGeometry.fittedSize`).
         let size: CGFloat
-        /// The session began with a single click on the selected text, so a second click selects all of it.
+        /// The session began at a click in the text, so the click that makes it a double-click selects all of it.
         var startedByClick: Bool
         /// The words when the session began. An agent's note whose words the person changed is theirs.
         var startText = ""
@@ -710,12 +710,13 @@ struct EditorCore {
         hover = hit
         switch hit {
         case .handle(let id, let position)?:
-            press(.handle(id, position))
+            let types = clickCount >= 2 && mark(id)?.kind == .text
+            press(.handle(id, position, click: types ? .type(.selectAll) : .nothing))
         case .dot(let id, let kind)?:
             press(.dot(id, kind))
         case .mark(let id)?:
             guard let mark = mark(id) else { return }
-            if mark.kind == .text, tool == .text || (tool == .select && clickCount >= 2) {
+            if mark.kind == .text, tool == .text || clickCount >= 2 {
                 beginTyping(id, caret: tool == .text ? .at(at) : .selectAll, edit: MarkEdit(marks: drawing.marks, selectionBefore: selection))
                 return
             }
@@ -723,7 +724,7 @@ struct EditorCore {
             if !event.modifiers.isDisjoint(with: [.shift, .command]) {
                 if selection.contains(id) { click = .deselect } else { selection.insert(id) }
             } else if selection.contains(id) {
-                if selection.count > 1 { click = .selectOnly } else if tool == .select, mark.kind == .text, clickCount == 1 { click = .type }
+                if selection.count > 1 { click = .selectOnly } else if mark.kind == .text, clickCount == 1 { click = .type(.at(at)) }
             } else {
                 selection = [id]
             }
@@ -779,7 +780,7 @@ struct EditorCore {
         case .frame, .mark:
             let originals = drawing.marks.filter { selection.contains($0.id) }.map(\.id)
             return .moving(originals: originals, copies: originals.map { _ in UUID() })
-        case .handle(let id, let position): return .resizing(id, position)
+        case .handle(let id, let position, _): return .resizing(id, position)
         case .dot(let id, .middle): return .bending(id)
         case .dot(let id, let kind): return .draggingEnd(id, kind)
         }
@@ -954,9 +955,8 @@ struct EditorCore {
                 selection.remove(id)
             case .mark(let id, .selectOnly):
                 selection = [id]
-            case .mark(let id, .type):
-                beginTyping(id, caret: .at(press.location), edit: MarkEdit(marks: drawing.marks, selectionBefore: selection))
-                typing?.startedByClick = true
+            case .mark(let id, .type(let caret)), .handle(let id, _, .type(let caret)):
+                beginTyping(id, caret: caret, edit: MarkEdit(marks: drawing.marks, selectionBefore: selection))
             case .mark(_, .nothing), .handle, .dot:
                 break
             }
@@ -1107,35 +1107,6 @@ struct EditorCore {
         return closest?.id ?? inside
     }
 
-    /// The box of the text being typed.
-    var typingBox: CGRect? {
-        guard let typing, let mark = mark(typing.id), case .text(let text) = mark.geometry else { return nil }
-        return geometry.layout(text, of: mark).box
-    }
-
-    var cursor: Cursor {
-        if let gesture {
-            switch gesture.phase {
-            case .pressed: return cursor(over: hover)
-            case .drawing, .wrapping: return .crosshair
-            case .brushing: return .arrow
-            case .moving, .draggingEnd, .bending: return .closedHand
-            case .resizing(_, let position): return .resize(position)
-            }
-        }
-        if let pointer, let box = typingBox, box.encloses(pointer) { return .iBeam }
-        return cursor(over: hover)
-    }
-
-    private func cursor(over target: Target?) -> Cursor {
-        switch target {
-        case .handle(_, let position)?: return .resize(position)
-        case .dot?: return .openHand
-        case .mark(let id)?: return tool == .text && mark(id)?.kind == .text ? .iBeam : .arrow
-        case nil: return tool == .select ? .arrow : .crosshair
-        }
-    }
-
     // MARK: Typing
 
     /// Whether the editor takes this key. While a text is being typed it takes Esc, Return without
@@ -1192,7 +1163,7 @@ struct EditorCore {
         self.edit = edit
         self.edit?.note(id)
         selection = [id]
-        typing = Typing(id: id, anchor: anchor ?? TextAnchor(text.origin), wrap: text.wrap, size: text.size, startedByClick: false,
+        typing = Typing(id: id, anchor: anchor ?? TextAnchor(text.origin), wrap: text.wrap, size: text.size, startedByClick: caret != .end && caret != .selectAll,
                         startText: text.text)
         emit(.beginTyping(id, caret))
     }
