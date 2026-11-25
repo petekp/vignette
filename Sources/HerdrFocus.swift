@@ -268,7 +268,7 @@ extension HerdrFocus {
 
     private static func projectName(_ place: Place) -> String? {
         switch place {
-        case .repository(let name, _, _, _): return name
+        case .repository(let name, _, _, _, _): return name
         case .folder(let path): return path
         case .none: return nil
         }

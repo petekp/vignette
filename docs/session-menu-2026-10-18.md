@@ -72,8 +72,9 @@ The names above are made up.
   session's own name, so request records and log lines do not change.
 - **Second line,** parts joined by " · ", each part once (the same text in another case counts as
   the same):
-  1. the worktree's folder name, when the session is in a worktree. For a worktree Codex made under
-     `~/.codex/worktrees`, "Codex worktree", since that folder's name is the repository's;
+  1. the clone's path from home, for a clone other than the main one (Groups), and the worktree's
+     folder name: "Codex worktree" for one under `~/.codex/worktrees`, whose folder is named for
+     the repository;
   2. the branch, only when it is not the repository's default;
   3. the session's goal, from the inbox mod; with no goal, the session's name when it differs from
      the title.
@@ -89,7 +90,8 @@ The names above are made up.
   is the worktree, subfolder, branch and how long ago the session was used. Codex threads have no
   herdr tab or goal today, so they read this way.
 - **Equal titles in one group** take a suffix in parentheses: the first of the herdr tab, the
-  worktree, the subfolder, the place (both, or a folder's path) and the branch that no two share.
+  worktree, the subfolder, the place (both, or a folder's path) and the branch that no two share,
+  each after the clone's path in a clone other than the main one.
   The tab counts only when all have one. One may lack any other and keeps the plain title, as the
   main checkout's top folder does: "New session" and "New session (worktrees)". Else "#1",
   "#2" by when the sessions started: the creation time of the inbox's `session` file for Claude
@@ -106,9 +108,12 @@ The names above are made up.
 
 ## Groups
 
-**A row's header names its repository.** The header is the main checkout's folder name as it is on
-disk, such as `evercars-backend`. It is never the remote's name: `circuit-v1`'s remote is
-`circuit`, and two clones stay two groups.
+**A group is one repository: its origin remote, else its main checkout's path**
+(`SessionMenu.Filer`), so clones of one remote share it. Its header is the main clone's folder
+name on disk, not the remote's last part (`circuit-v1`'s is `circuit`). The main clone is the first
+outside a dot folder, where tools keep clones (kickflip's `~/.claude/kickflip/repos`), then by the
+shorter path, then by path. Session counts do not decide it. Remotes compare by host and path,
+ignoring case and scheme (`SessionPlaces.remoteAddress`).
 
 **How a session finds its repository and branch.** This runs in the listing job, off the main
 thread, and reads files only. It never runs `/usr/bin/git`, which raises the install dialog for
@@ -121,16 +126,17 @@ Apple's developer tools on a Mac without them, as `/usr/bin/python3` does.
    - A `.git` file names a gitdir. Its `commondir` names the main repository's git folder. Both can
      be relative paths, resolved from the file's folder and from the gitdir.
    - A submodule needs nothing special: the nearest `.git` wins.
+   - The remote is `[remote "origin"]`'s `url` in the main git folder's `config`.
 3. If the walk finds nothing (from a gone folder's nearest existing one), the path's shape names
    the repository. `<parent>/worktrees/<repo>` and its folders are the checkout at `<parent>/<repo>`.
    A gone worktree there with no checkout, `~/.codex/worktrees/<any>/<repo>/…`,
    `<repo>/.worktrees/<name>` and `<repo>/.claude/worktrees/<name>` give the name only. A path
    in Codex's worktrees (`CODEX_HOME` or any `.codex`) is read only as a Codex worktree.
    `<repo>` is never the home folder.
-4. Codex only, after step 3: the last part of `gitInfo.originUrl`, without `.git`. 19
-   of the 20 listed threads whose folder was gone still carried one.
-5. A name from steps 3 or 4 joins the group whose main checkout has that name, when exactly
-   one does. Otherwise it makes a group of its own.
+4. Codex only: a gone folder's remote is `gitInfo.originUrl`, and with no name from step 3, its
+   last part names the repository. 19 of 20 threads with a gone folder had one.
+5. A session known by name only joins the repository of that name when exactly one does. With
+   two, the name cannot say which, so it gets a group of its own.
 6. Otherwise the session goes in Other folders: a folder with no `.git` (`~/Code`), a gone
    folder with nothing to go on, or no folder.
 7. The branch is the `HEAD` file in the session's own gitdir; a worktree has its own. The default
@@ -146,9 +152,9 @@ arrives, about 0.1 s later, so a Codex row can be one listing old in that time.
 session" go: macOS 14's section headers are flat, so a header over headers reads as an empty group.
 In live ink's menu a separator already sets the responder apart.
 
-**Two repositories with one folder name** add their parent folder to both headers, such as
-`ever/foo` and `Code/foo`. Other folders cannot collide with a repository, because its rows show
-paths from home.
+**Two repositories with one folder name** add the remote's owner to their headers, such as
+`Ever-Cars/foo` and `petekp/foo`, else show the main clone's path from home. Other folders
+cannot collide with a repository, because its rows show paths from home.
 
 **With no sessions** the menu has no header and no session rows; live ink's menu still lists the
 responder. With one session, it shows under its header.
@@ -237,8 +243,8 @@ submenus.
 
 - **The destination control and live ink's target button** show the agent's logo and the row's
   title, cut in the middle at their current widths. A row that starts a session reads "New
-  session in <folder>" or "Last session in <folder>"; live ink's adds its suffix when another reads
-  the same.
+  session in <folder>" or "Last session in <folder>", with the row's suffix when another reads the
+  same, decided over every row the menu offers.
 - **The sent card** names the session by the title the destination control or live ink's target
   button showed when Send was pressed, or by its project folder's name for a session Send starts
   (`SessionMenu.cardTitle`). That holds for every headline in `docs/voice.md`'s send table that
@@ -294,16 +300,6 @@ slow source has to change rows after the menu is built, such as the author searc
 the files each session edited for the text under the ink, which guesses the session a drawing is
 about (question 9 of the session-detection note).
 
-## Two smaller fixes in the same menus
-
-- **Live ink's menu falls back to the responder without saying so.** When the session picked from
-  the menu has ended by the time it is applied, `pickTarget` falls back to "Claude, on the screen".
-  It should carry the destination, as the toolbar's menu does, so the send says the session ended.
-- **Live ink's note can show an old copy of a hand-picked destination.** `DestinationChoice.start`
-  returns the session stored with the pick, not the list's record of the same id, so its folder and
-  time can be stale. It should return the list's record. The toolbar already uses the fresh record
-  (`Model.answered`).
-
 ## How to build it, and how to tell if it helps
 
 A throwaway script over the live inboxes on 2026-10-23 found no two equal titles in one group among
@@ -346,6 +342,7 @@ choice uses send history too, and the replay here must be run again.
    submenu" on 2026-10-22. On 2026-10-23 he asked for the rest to be sorted by project instead of
    one list, and chose a submenu per project.
 6. **Sessions in a repository's worktrees folder are filed under it** (Pete, 2026-11-24).
+7. **Clones of one remote share one group** (Pete, 2026-11-24).
 
 ## Considered and left out
 

@@ -91,7 +91,9 @@ final class SessionPlacesTests: XCTestCase {
         XCTAssertEqual(place(".codex/worktrees/6684/evercars"),
                        .repository(name: "evercars", root: nil, worktree: SessionPlaces.codexWorktree, subfolder: nil))
         XCTAssertEqual(place(".codex/worktrees/6684", origin: "git@github.com:Ever-Cars/evercars-backend.git"),
-                       .repository(name: "evercars-backend", root: nil, worktree: nil, subfolder: nil))
+                       .repository(name: "evercars-backend", root: nil, remote: "github.com/Ever-Cars/evercars-backend", worktree: nil, subfolder: nil))
+        XCTAssertEqual(place(".codex/worktrees/6684/evercars", origin: "https://github.com/Ever-Cars/evercars.git"),
+                       .repository(name: "evercars", root: nil, remote: "github.com/Ever-Cars/evercars", worktree: SessionPlaces.codexWorktree, subfolder: nil))
         let moved = ["CODEX_HOME": try makeFolder("home/agents/codex", in: base).path]
         XCTAssertEqual(place("agents/codex/worktrees/6684/evercars/apps", environment: moved),
                        .repository(name: "evercars", root: nil, worktree: SessionPlaces.codexWorktree, subfolder: "apps"))
@@ -103,9 +105,63 @@ final class SessionPlacesTests: XCTestCase {
         XCTAssertEqual(place("Code/vignette/.worktrees/menu/Sources"), .repository(name: "vignette", root: nil, worktree: "menu", subfolder: "Sources"))
         XCTAssertEqual(place("Code/vignette/.claude/worktrees/menu"), .repository(name: "vignette", root: nil, worktree: "menu", subfolder: nil))
         XCTAssertEqual(place("Code/gone", origin: "git@github.com:Ever-Cars/evercars-backend.git"),
-                       .repository(name: "evercars-backend", root: nil, worktree: nil, subfolder: nil))
+                       .repository(name: "evercars-backend", root: nil, remote: "github.com/Ever-Cars/evercars-backend", worktree: nil, subfolder: nil))
         XCTAssertEqual(place("Code/gone"), .folder(fromHome: "~/Code/gone"))
-        XCTAssertEqual(SessionPlaces.remoteName("https://github.com/Ever-Cars/evercars-backend.git"), "evercars-backend")
+    }
+
+    func testEveryWayOfWritingOneRemoteGivesOneAddress() {
+        for url in ["https://github.com/Ever-Cars/evercars-backend.git", "git@github.com:Ever-Cars/evercars-backend.git",
+                    "ssh://git@GitHub.com:22/Ever-Cars/evercars-backend/", "https://token@github.com/Ever-Cars/evercars-backend",
+                    " git://github.com/Ever-Cars/evercars-backend.git\n"] {
+            XCTAssertEqual(SessionPlaces.remoteAddress(url), "github.com/Ever-Cars/evercars-backend", url)
+        }
+        XCTAssertEqual(SessionPlaces.remoteAddress("file:///srv/git/notes.git"), "/srv/git/notes")
+        XCTAssertEqual(SessionPlaces.remoteAddress("file://localhost/srv/git/notes.GIT"), "/srv/git/notes")
+        XCTAssertEqual(SessionPlaces.remoteAddress("ssh://git@[2001:db8::1]:22/o/foo"), "[2001:db8::1]/o/foo")
+        XCTAssertNotEqual(SessionPlaces.remoteAddress("https://[2001:db8::1]/o/foo"), SessionPlaces.remoteAddress("https://[2001:db8::2]/o/foo"))
+        XCTAssertEqual(SessionPlaces.remoteAddress("/srv/git/notes.git"), "/srv/git/notes")
+        XCTAssertNil(SessionPlaces.remoteAddress("../notes.git"), "a relative path names a different repository from each checkout")
+        XCTAssertNil(SessionPlaces.remoteAddress(""))
+    }
+
+    func testTheOriginIsReadFromTheRepositorysConfigForEveryCheckoutOfIt() throws {
+        let base = temporaryFolder()
+        let home = try makeFolder("home", in: base)
+        let main = try makeFolder("home/Code/evercars", in: base)
+        try write("ref: refs/heads/main\n", to: main.appendingPathComponent(".git/HEAD"))
+        try write("""
+        [core]
+        \turl = https://example.com/not-a-remote
+        [remote "upstream"]
+        \turl = https://github.com/someone/evercars.git
+        [Remote "origin"]
+        \tfetch = +refs/heads/*:refs/remotes/origin/*
+        \tURL = "git@github.com:Ever-Cars/evercars.git" ; the company's
+        """, to: main.appendingPathComponent(".git/config"))
+        let worktree = try makeFolder("home/Code/worktrees/evercars/live-ink", in: base)
+        let gitdir = main.appendingPathComponent(".git/worktrees/live-ink")
+        try write("gitdir: \(gitdir.path)\n", to: worktree.appendingPathComponent(".git"))
+        try write("../..\n", to: gitdir.appendingPathComponent("commondir"))
+        let root = canonical(main)
+        func place(_ folder: URL) -> Place { SessionPlaces.resolve(folder: folder.path, home: home.path).place }
+        let remote = "github.com/Ever-Cars/evercars"
+        XCTAssertEqual(place(main), .repository(name: "evercars", root: root, remote: remote, worktree: nil, subfolder: nil))
+        XCTAssertEqual(place(worktree), .repository(name: "evercars", root: root, remote: remote, worktree: "live-ink", subfolder: nil))
+        XCTAssertEqual(place(worktree.deletingLastPathComponent().appendingPathComponent("gone")),
+                       .repository(name: "evercars", root: root, remote: remote, worktree: "gone", subfolder: nil))
+        XCTAssertEqual(SessionPlaces.resolve(folder: main.path, originURL: "https://github.com/someone/else.git", home: home.path).place,
+                       .repository(name: "evercars", root: root, remote: remote, worktree: nil, subfolder: nil),
+                       "the checkout's own config wins over a thread's stored remote")
+
+        let unnamed = try makeFolder("home/Code/unnamed", in: base)
+        try write("[remote \"Origin\"]\n\turl = https://github.com/Ever-Cars/unnamed.git\n", to: unnamed.appendingPathComponent(".git/config"))
+        XCTAssertEqual(place(unnamed), .repository(name: "unnamed", root: canonical(unnamed), worktree: nil, subfolder: nil),
+                       "a remote's name keeps its case")
+        for config in ["[remote.origin]\n\turl = https://github.com/o/unnamed\n", "[remote\t\"origin\"]\r\n\turl = https://github.com/o/unnamed\r\n",
+                       "[remote \"origin\"] url = https://github.com/o/unnamed\n"] {
+            try write(config, to: unnamed.appendingPathComponent(".git/config"))
+            XCTAssertEqual(place(unnamed), .repository(name: "unnamed", root: canonical(unnamed), remote: "github.com/o/unnamed", worktree: nil, subfolder: nil), config)
+        }
     }
 
     func testTheFolderHoldingARepositorysWorktreesAndEveryFolderInItAreFiledUnderTheRepository() throws {

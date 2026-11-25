@@ -204,6 +204,13 @@ final class SessionMenuRowsTests: XCTestCase {
         XCTAssertEqual(SessionMenu.row(of: beside, among: [main, worktree], now: now).title, "New session in evercars-backend (worktrees)")
         XCTAssertEqual(SessionMenu.row(of: main, among: [beside, worktree], now: now).title, SessionMenu.newSession(in: "evercars-backend"))
         XCTAssertEqual(SessionMenu.row(of: worktree, among: [main, beside], now: now).title, SessionMenu.newSession(in: "live-ink"))
+        let toolbar = AnnotatorToolbar.Model()
+        toolbar.begin(replyTo: nil, carryingTarget: false)
+        toolbar.answered(DestinationChoice.Answer(list: [], complete: true, decided: true, pick: nil, startable: [main, beside]))
+        toolbar.pick(beside)
+        XCTAssertEqual(toolbar.targetRow(for: beside).title, "New session in evercars-backend (worktrees)")
+        toolbar.answered(DestinationChoice.Answer(list: [], complete: true, decided: true, pick: nil, startable: [beside]))
+        XCTAssertEqual(toolbar.targetRow(for: beside).title, SessionMenu.newSession(in: "evercars-backend"))
         let code = start("/Users/p/Code", place: .folder(fromHome: "~/Code"), used: 60)
         let notes = start("/Users/p/notes", place: .folder(fromHome: "~/notes"), used: 120)
         XCTAssertEqual(SessionMenu.menu([code, notes], destination: nil, now: now).topRows.map(\.title),

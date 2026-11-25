@@ -11,8 +11,8 @@ final class AnnotatorToolbar {
         @Published var shown = false     // drives the entrance and exit
         /// The agent sessions Send can go to, the one used last first (`DestinationChoice.replacesList`).
         @Published private(set) var destinations: [AgentDestination] = [] { didSet { refreshTargetRow(); reportOffer() } }
-        /// The sessions Vignette can start, which only the target's menu shows.
-        @Published private(set) var startable: [AgentDestination] = [] { didSet { reportOffer() } }
+        /// The sessions Vignette can start, which only the target shows.
+        @Published private(set) var startable: [AgentDestination] = [] { didSet { refreshTargetRow(); reportOffer() } }
         /// Every client has answered. Until then a session missing from the list may only be late.
         @Published private(set) var listed = false
         /// Every client answered `destinations`. Whether a reply's Claude Code session has closed is
@@ -25,15 +25,15 @@ final class AnnotatorToolbar {
         @Published private(set) var target: AgentDestination? { didSet { refreshTargetRow(); reportOffer() } }
         private var cachedTargetRow: SessionMenu.Row?
 
-        /// The target's row among the listed sessions, worded once when either changes: ranking and
-        /// wording every row to read one is too much for a view body that runs on every keystroke.
+        /// The target's row among the sessions on offer, cached: wording every row is too much for a
+        /// view body that runs on every keystroke.
         func targetRow(for target: AgentDestination) -> SessionMenu.Row {
             if let cached = cachedTargetRow, cached.destination.id == target.id { return cached }
-            return SessionMenu.row(of: target, among: destinations)
+            return SessionMenu.row(of: target, among: destinations + startable)
         }
 
         private func refreshTargetRow() {
-            cachedTargetRow = target.map { SessionMenu.row(of: $0, among: destinations) }
+            cachedTargetRow = target.map { SessionMenu.row(of: $0, among: destinations + startable) }
         }
         /// The target was picked in the menu, so no later answer changes it.
         private var picked = false

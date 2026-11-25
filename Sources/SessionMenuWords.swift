@@ -9,23 +9,27 @@ extension SessionMenu.Filer {
         for session in sessions { byGroup[filing(session).key + "\n" + Self.titleParts(of: session).title.lowercased(), default: []].append(session) }
         var suffixes: [String: String] = [:]
         for members in byGroup.values where members.count > 1 {
-            for (id, suffix) in Self.suffixes(for: members) { suffixes[id] = suffix }
+            for (id, suffix) in self.suffixes(for: members) { suffixes[id] = suffix }
         }
         return suffixes
     }
 
     /// What tells apart sessions with one title: the first of the herdr tab, the worktree, the
-    /// subfolder, the place (both of those, or a folder's path) and the branch that no two share.
-    /// The tab counts only when every one has one. One may lack any other and keeps the plain title,
-    /// as the main checkout's top folder does. Else "#1", "#2" by when they started.
-    static func suffixes(for members: [AgentDestination]) -> [String: String] {
+    /// subfolder, the place (both of those, or a folder's path) and the branch that no two share,
+    /// each after the clone's path in a clone other than the main one. The tab counts only when every
+    /// one has one. One may lack any other and keeps the plain title, as the main checkout's top
+    /// folder does. Else "#1", "#2" by when they started.
+    func suffixes(for members: [AgentDestination]) -> [String: String] {
         func inRepository(_ session: AgentDestination) -> (worktree: String?, subfolder: String?) {
-            if case .repository(_, _, let worktree, let subfolder) = session.place { return (worktree, subfolder) }
-            return (nil, nil)
+            guard case .repository(_, _, _, let worktree, let subfolder) = session.place else { return (nil, nil) }
+            let clone = filing(session).clone
+            func inClone(_ part: String?) -> String? { part == nil ? clone : Self.distinct([clone, part]).joined(separator: " · ") }
+            return (inClone(worktree), inClone(subfolder))
         }
         func place(_ session: AgentDestination) -> String? {
             switch session.place {
-            case .repository(_, _, let worktree, let subfolder): return distinct([worktree, subfolder]).joined(separator: " · ")
+            case .repository(_, _, _, let worktree, let subfolder):
+                return Self.distinct([filing(session).clone, worktree, subfolder]).joined(separator: " · ")
             case .folder(let path): return path
             case .none: return nil
             }
@@ -68,14 +72,14 @@ extension SessionMenu.Filer {
 
     static func shortTab(of session: AgentDestination) -> String? {
         guard var label = session.hostLabel?.trimmingCharacters(in: .whitespaces), !label.isEmpty else { return nil }
-        if case .repository(let name, _, _, _) = session.place,
+        if case .repository(let name, _, _, _, _) = session.place,
            label.lowercased().hasPrefix(name.lowercased() + ":") {
             label = String(label.dropFirst(name.count + 1)).trimmingCharacters(in: .whitespaces)
         }
         return label.isEmpty ? nil : label
     }
 
-    static func row(for session: AgentDestination, titleSuffix: String?, now: Date, header: String) -> SessionMenu.Row {
+    static func row(for session: AgentDestination, titleSuffix: String?, now: Date, filing: Filing) -> SessionMenu.Row {
         let (tab, baseTitle) = titleParts(of: session)
         let title = titleSuffix.map { "\(baseTitle) (\($0))" } ?? baseTitle
         let named = session.hasOwnName && session.name.lowercased() != baseTitle.lowercased() ? session.name : nil
@@ -86,21 +90,21 @@ extension SessionMenu.Filer {
         var tooltipAge: String?
         if let start = session.start {
             // Where it would run, then which session it continues.
-            parts = placeParts(session, withSubfolder: true)
+            parts = placeParts(session, clone: filing.clone, withSubfolder: true)
             if case .resume = start {
                 parts.append(session.hasOwnName ? session.name : nil)
                 tooltipAge = lastActive
             }
         } else if tab == nil && purpose == nil {
             // No herdr tab and nothing from the inbox mod: the session's name leads, and its place follows.
-            parts = placeParts(session, withSubfolder: true)
+            parts = placeParts(session, clone: filing.clone, withSubfolder: true)
             tooltipAge = lastActive
         } else {
-            parts = placeParts(session, withSubfolder: false)
+            parts = placeParts(session, clone: filing.clone, withSubfolder: false)
             parts.append(purpose)
         }
         let details = distinct(parts).joined(separator: " · ")
-        let tooltip = [title, distinct(parts + [tooltipAge]).joined(separator: " · "), header].filter { !$0.isEmpty }.joined(separator: "\n")
+        let tooltip = [title, distinct(parts + [tooltipAge]).joined(separator: " · "), filing.header].filter { !$0.isEmpty }.joined(separator: "\n")
         return SessionMenu.Row(destination: session, title: title, details: details, activity: activity(for: session, lastActive: lastActive), tooltip: tooltip)
     }
 
@@ -112,12 +116,12 @@ extension SessionMenu.Filer {
         return lastActive.map(SessionMenu.Activity.lastActive)
     }
 
-    /// Worktree and branch, or the path from home, with the subfolder when no herdr tab or goal
-    /// says more.
-    private static func placeParts(_ session: AgentDestination, withSubfolder: Bool) -> [String?] {
+    /// Clone, worktree and branch, or the path from home, with the subfolder when no herdr tab or
+    /// goal says more.
+    private static func placeParts(_ session: AgentDestination, clone: String?, withSubfolder: Bool) -> [String?] {
         switch session.place {
-        case .repository(_, _, let worktree, let subfolder):
-            return [worktree] + (withSubfolder ? [subfolder] : []) + [session.branch]
+        case .repository(_, _, _, let worktree, let subfolder):
+            return [clone, worktree] + (withSubfolder ? [subfolder] : []) + [session.branch]
         case .folder(let path): return [path]
         case .none: return []
         }

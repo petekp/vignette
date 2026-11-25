@@ -26,8 +26,8 @@ enum SessionMenu {
         /// suffix when another session in the group has the same title, unless it is the one row the
         /// suffix leaves plain.
         let title: String
-        /// Worktree, branch and goal, or the path from home and goal, joined by " · ". The row does
-        /// not draw them; its tooltip shows them and search looks through them.
+        /// Clone, worktree, branch and goal, or the path from home and goal, joined by " · ". The row
+        /// does not draw them; its tooltip shows them and search looks through them.
         let details: String
         /// What the row says at its right edge: working, or when the session was last active, or none.
         let activity: Activity?
@@ -37,11 +37,10 @@ enum SessionMenu {
 
     /// The rows under one header, in rank order.
     struct Group: Equatable {
-        /// The repository's name, with its parent folder when another repository has the same
-        /// name; or `otherFolders`.
+        /// The repository's name, or with another repository of that name, its remote's owner and
+        /// name or its path from home (`Filer`); or `otherFolders`.
         let header: String
-        /// Identifies the group across menus: the main checkout's path, a bare repository name when
-        /// the path is unknown, or `otherFolders`.
+        /// Identifies the group across menus (`Filer.Filing.key`).
         let key: String
         let rows: [Row]
     }
@@ -128,7 +127,8 @@ enum SessionMenu {
     }
 
     /// `destination`'s row among `listed`, as the destination control and live ink's target button
-    /// show it. A session that is not running is titled by its project, which its menu row leaves to
+    /// show it. `listed` is what their menu is built from, the rows that start a session included,
+    /// since the suffix that tells start rows apart is decided over all of them. A session that is not running is titled by its project, which its menu row leaves to
     /// the header above it; the tooltip keeps the menu row's words.
     /// When another such session would read the same, the menu row's suffix follows.
     static func row(of destination: AgentDestination, among listed: [AgentDestination], now: Date = Date()) -> Row {
@@ -187,59 +187,5 @@ enum SessionMenu {
         let rest = filled.dropFirst(lead.count)
         let keys = lead + rest.filter { $0 != otherFolders } + rest.filter { $0 == otherFolders }
         return keys.map { Group(header: headers[$0] ?? $0, key: $0, rows: members[$0] ?? []) }
-    }
-
-    /// How every session on offer is filed and worded, decided over all of them so that a session
-    /// reads the same whichever menu it is in.
-    struct Filer {
-        let sessions: [AgentDestination]
-        private let roots: [String]
-        private let headers: [String: String]
-        private let filings: [String: (key: String, header: String)]
-
-        init(_ sessions: [AgentDestination]) {
-            self.sessions = sessions
-            var named: [String: Set<String>] = [:]
-            var rootsFound: [String] = []
-            for session in sessions {
-                guard case .repository(let name, let root?, _, _) = session.place else { continue }
-                named[name, default: []].insert(root)
-                if !rootsFound.contains(root) { rootsFound.append(root) }
-            }
-            roots = rootsFound
-            var headers: [String: String] = [:]
-            for (name, paths) in named {
-                for path in paths {
-                    let parent = (path as NSString).deletingLastPathComponent
-                    headers[path] = paths.count > 1 ? "\((parent as NSString).lastPathComponent)/\(name)" : name
-                }
-            }
-            self.headers = headers
-            filings = Dictionary(sessions.map { ($0.id, Self.filing(of: $0, roots: rootsFound, headers: headers)) }) { first, _ in first }
-        }
-
-        /// The group key and header for a session on offer.
-        func filing(_ session: AgentDestination) -> (key: String, header: String) {
-            filings[session.id]!
-        }
-
-        private static func filing(of session: AgentDestination, roots: [String], headers: [String: String]) -> (key: String, header: String) {
-            guard case .repository(let name, let root, _, _) = session.place else { return (SessionMenu.otherFolders, SessionMenu.otherFolders) }
-            if let root { return (root, headers[root] ?? name) }
-            // Known by name only: it joins the one checkout of that name, when there is exactly one.
-            let same = roots.filter { ($0 as NSString).lastPathComponent == name }
-            if same.count == 1 { return (same[0], headers[same[0]] ?? name) }
-            return ("name:\(name)", name)
-        }
-
-        /// Every session's row.
-        func rows(now: Date) -> [String: Row] {
-            let suffixes = titleSuffixes()
-            var rows: [String: Row] = [:]
-            for session in sessions {
-                rows[session.id] = Self.row(for: session, titleSuffix: suffixes[session.id], now: now, header: filing(session).header)
-            }
-            return rows
-        }
     }
 }
