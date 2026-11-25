@@ -166,7 +166,7 @@ final class ScreenshotRequestsQueueTests: XCTestCase {
         XCTAssertEqual(Agent.sent(of: first.source)?.address, second.address)
     }
 
-    func testDontSendOnASendInItsGraceLeavesAnEarlierQueuedLineAndDeletingTheFileTakesItOut() async throws {
+    func testDontSendOnASendInItsGraceLeavesAnEarlierQueuedLineAndDeletingTheFileLeavesItToo() async throws {
         let events = GraceEvents()
         let first = try await queue(.queued(detail: "", reason: "r", line: line), events: events)
         let second = try requests.send(png: try Data(contentsOf: first.source), source: first.source.screenshotKey,
@@ -177,7 +177,12 @@ final class ScreenshotRequestsQueueTests: XCTestCase {
         XCTAssertEqual(requests.queued(first.record.id), "r")
 
         requests.fileRemoved(Screenshot(key: first.source.screenshotKey))
-        try await events.wait(for: "withdraw q1")
+        XCTAssertFalse(events.all.contains("withdrawing"))
+        XCTAssertEqual(requests.queued(first.record.id), "r")
+        XCTAssertEqual(try stored(first.record).status, .submitted)
+        await look(first.clock, after: 3, events: events)
+        XCTAssertTrue(events.all.contains("look q1"))
+        XCTAssertNotNil(requests.queued(first.record.id))
     }
 
     func testDontSendOnALineTheSessionAlreadyTookOrCouldNotRemoveKeepsTheRequest() async throws {

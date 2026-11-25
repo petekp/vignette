@@ -125,11 +125,11 @@ final class ScreenshotRequests {
         ReplyProtocol.replyID(fromFileName: url.lastPathComponent) == nil
     }
 
-    /// A file left the watch folder. A send of it still in its grace is cancelled, since deleting the
+    /// A file left the watch folder. A send of it in its grace is cancelled, since deleting the
     /// card is a way of not sending it. A deleted published reply stays deleted: publication happened,
     /// and the recovery copy is not used to put the file back.
     func fileRemoved(_ shot: Screenshot) {
-        unsendEverySend(of: shot.key)
+        cancelSendsInGrace(of: shot.key)
         let url = shot.url.standardizedFileURL
         guard var reply = replies.values.first(where: { $0.stage == .published && !$0.deleted && $0.publishedURL == url })
         else { return }
