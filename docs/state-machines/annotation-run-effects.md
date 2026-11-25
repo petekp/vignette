@@ -34,7 +34,7 @@ Carries out the run's effects and keeps the stack, the dim and the keys in step 
 
 **Invariants**
 
-- The editor is open exactly while the run is (comment). Checked by: nothing; the reducer tests cover only `endRun` once per run.
+- The editor is open exactly while the run is (a code comment says so). Checked by: nothing; the reducer tests cover only `endRun` once per run.
 - `parkedMarks` is consumed by `homeFlightMarks` and cleared at `.prepare` and `.hideAnnotator`. A stale value is used only when its `drawing.key` matches the card. Checked by: nothing.
 
 **Late and concurrent answers**
@@ -84,8 +84,8 @@ Phases, derived:
 
 **Invariants**
 
-- `hide` is called once per `prepare` (comment). Checked by: nothing in the controller; the run emits one `park` or `abandon` per opening.
-- The window and editor are reused, and the last image's `removal` must not take them (comment). Checked by: `removal.cancel()`.
+- `hide` is called once per `prepare` (a code comment says so). Checked by: nothing in the controller; the run emits one `park` or `abandon` per opening.
+- The window and editor are reused, and the last image's `removal` must not take them (a code comment says so). Checked by: `removal.cancel()`.
 - `eventProbe` never answers for an opening that ended. Checked by: the compare and `stopProbe()` in `hide` and `abandon`.
 - `landed()`, `onClosed`, `onFinished` and `onSend` rely on `current != nil` meaning "the run's current opening". That holds because `hide` clears `current` in the call that begins the park, and the run emits `prepare` only after `parked`. Checked by: nothing.
 

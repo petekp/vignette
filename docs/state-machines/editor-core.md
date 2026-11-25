@@ -4,7 +4,7 @@ The editor is a pure reducer (`EditorCore`) driven by a view (`EditorView`) that
 
 ### EditorCore (explicit)
 
-Owner: `EditorCore.swift`, reducer `reduce` at `EditorCore.swift`. Tests: `EditorCoreSequenceTests.testRandomSequencesKeepTheInvariants` (drives `checkShape`, `checkUndo`, `apply`), `EditorCoreTests`, `EditorCoreOpeningTests`, `EditorCoreTextEditingTests`.
+Owner: `EditorCore.swift`, reducer `reduce`. Tests: `EditorCoreSequenceTests.testRandomSequencesKeepTheInvariants` (drives `checkShape`, `checkUndo`, `apply`), `EditorCoreTests`, `EditorCoreOpeningTests`, `EditorCoreTextEditingTests`.
 
 The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save timer, and agent marks joining. `EditorView` sends one `Input` per event and runs the returned `Effect`s in order. A drawing is a screenshot's marks (`Drawing.swift`); a hand-over gives the host the drawing to store.
 
@@ -68,7 +68,7 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 - `gesture` and `typing` are never both non-nil. Every writer of `typing` runs after the gesture is cancelled or cleared. Checked by: nothing.
 - `edit != nil` exactly while a changing gesture or a typing session is open. Checked by: nothing.
 - `unsaved` implies a `.scheduleTimer` was emitted since the last `.handOver` or `.cancelTimer`: only `changed()` sets `unsaved`, and it emits `.scheduleTimer` in the same call. Checked by: nothing; the sequence test never compares hand-over payloads with `drawingForHost`.
-- `finishes` is the host's, and opening an image leaves it alone (comment). Checked by: `EditorCoreOpeningTests.testTheNextImageFinishesWithWhatTheBarStillOffers` ([editor-1](findings.md#editor-1))
+- `finishes` is the host's, and opening an image leaves it alone (a code comment says so). Checked by: `EditorCoreOpeningTests.testTheNextImageFinishesWithWhatTheBarStillOffers` ([editor-1](findings.md#editor-1))
 - A held arrow key is cleared by `park` and by the stale-key guard. Checked by: nothing.
 - Any new undo step clears the redo stack, an agent push and a message step included (`push`), so agent marks arriving after Cmd+Z drop the redo history. Checked by: `EditorCoreTests.testTheMessageFieldsTypingIsOneStepInOrderWithTheMarksAndUndoPutsItsWordsBack` for a message step.
 

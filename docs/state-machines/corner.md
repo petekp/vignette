@@ -83,7 +83,7 @@ Runs the reducer's effects on the panel, the backdrop and the click-outside watc
 
 **Invariants**
 
-- `heldPanelUp` is true only between `holdKeys` and the next `listed(true)` or `releaseKeys`. Checked by: nothing (comment).
+- `heldPanelUp` is true only between `holdKeys` and the next `listed(true)` or `releaseKeys`. Checked by: nothing (a code comment says so).
 - `acceptsKeys` is false while `mode == .hidden` and not listing. Checked by: `testRandomSequencesKeepTheKeysWithTheStack`, on the reducer's effects only.
 
 **Late and concurrent answers**
@@ -141,7 +141,7 @@ Takes lone thumbnails off screen after a delay.
 
 **Invariants**
 
-- The newest `leaveCorner` call sets the time, and no timer runs while the stack is up. Checked by: nothing (comment).
+- The newest `leaveCorner` call sets the time, and no timer runs while the stack is up. Checked by: nothing (a code comment says so).
 - `leavesOnItsOwn` going false invalidates the timer but going true again does not re-arm it. ([corner-5](plausible-findings-run-to-toolbar.md#corner-5))
 
 **Late and concurrent answers**

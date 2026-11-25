@@ -70,7 +70,7 @@ Each text mark's words are drawn off the main thread into a bitmap and shown on 
 
 **Invariants**
 
-- A bitmap is shown only while its text still wants exactly that target (comment). Checked by: `EditorViewTests.testABitmapThatArrivesAfterItsTextMovedIsNotShown`, `testNoBitmapIsShownAfterParkOrOnAnotherImage`.
+- A bitmap is shown only while its text still wants exactly that target (a code comment says so). Checked by: `EditorViewTests.testABitmapThatArrivesAfterItsTextMovedIsNotShown`, `testNoBitmapIsShownAfterParkOrOnAnotherImage`.
 - A text holds at most two bitmaps, a whole and a detail (comment at `EditorLayers.swift`). Checked by: `CardMarksTests` (a card's bitmap size only, `testACardsTextBitmapHasNoMorePixelsThanTheCard`).
 - `drawn != nil` implies the whole layer shows that target. Checked by: nothing; a failed draw breaks it. ([editor-8](plausible-findings-run-to-toolbar.md#editor-8))
 

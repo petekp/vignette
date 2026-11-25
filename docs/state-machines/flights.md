@@ -55,17 +55,17 @@ Events and senders:
 **Invariants**
 
 - The panel is up whenever a flight, a swallow rect, `staysUp` or a held press exists (comments). Checked by: nothing.
-- `ignoresMouseEvents` is never set on the panel (comment). Checked by: nothing.
+- `ignoresMouseEvents` is never set on the panel (a code comment says so). Checked by: nothing.
 - A flight's `dropped` runs only if the flight did not arrive, and at most once. Checked by: the filter and `dropped = nil`; no test.
 - `arrived` runs once the bouncing spring is within 0.5 pt of its target (`arrivalTolerance`; `Anim.settle`), and for the other timings 50 ms after `covered` (`FlightTiming.settles`, `TransitionLayer+Timing.swift`). Checked by: `MotionTests.testAFlightHandsOverOnlyOnceItIsThere` (timing helper only).
-- `covered` runs before `arrived`, at least 50 ms before for every timing but motion 0 (comment); `FlightTiming.covers` is `min(settle, passesTarget)` for the bouncing spring, `Anim.settle` for the spring with no bounce, and 50 ms past the duration for a curve (`TransitionLayer+Timing.swift`). Checked by: `MotionTests.testAFlightCoversItsTargetFromTheMomentItReachesIt` (timing helpers only).
+- `covered` runs before `arrived`, at least 50 ms before for every timing but motion 0 (a code comment says so); `FlightTiming.covers` is `min(settle, passesTarget)` for the bouncing spring, `Anim.settle` for the spring with no bounce, and 50 ms past the duration for a curve (`TransitionLayer+Timing.swift`). Checked by: `MotionTests.testAFlightCoversItsTargetFromTheMomentItReachesIt` (timing helpers only).
 - No two live flights share a generation. Checked by: `nextGeneration`; no test.
 
 **Late and concurrent answers**
 
 - A timer for a flight that was re-aimed or removed: ignored by `isCurrent(id, gen)` (used), by the `generation == gen` check in the first hop and by the index lookup.
 - Two `fly` calls in one turn: the second `start` bumps `generation`, so the first hop returns.
-- A reused id: generations never repeat (comment).
+- A reused id: generations never repeat (a code comment says so).
 - `covered` and `arrived` due at the same instant (motion 0): `covered` is scheduled first and the deadlines come from two successive `.now()` calls, so the order holds.
 - A lift asked before arrival: held in `pendingLift`, run, cleared on re-aim.
 - A `dropped` handler that re-enters the layer: `end(where:)` removes first and calls handlers after; `converge`'s `land` defers a turn.

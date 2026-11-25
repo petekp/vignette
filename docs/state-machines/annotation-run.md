@@ -128,7 +128,7 @@ After every `T` result:
 
 - The queue is empty whenever idle and right after a cancel or dismiss. `endRun` comes exactly when the run goes idle, once per run. Nothing opens while a dismissal ends the run. Every opening is new. A flight lifts once. Handover, landed and lift name the opening in the editor. A file that does not open is never prepared. A failed copy leaves its card unmarked. A page replaces the queue. A repeat in flight changes nothing. Checked by: `AnnotationRunTests.testRandomSequencesKeepTheInvariants`.
 - Once Esc, a dismissal or the open file going empties the queue, nothing refills it before the park ends. Checked by: `AnnotationRunTests.testACardSelectedWhileEscParksQueuesNothing` (**fixed**, [run-1](findings.md#run-1)).
-- `ending` describes only the image it was set for (comment). Checked by: `AnnotationRunTests.testAHandoverForgetsHowTheImageBeforeEnded` (**fixed**, [run-4](findings.md#run-4)).
+- `ending` describes only the image it was set for (a code comment says so). Checked by: `AnnotationRunTests.testAHandoverForgetsHowTheImageBeforeEnded` (**fixed**, [run-4](findings.md#run-4)).
 - `place ... of total` stays inside `1...total`. Checked by: the random test. `total` is not reduced when a queued file is removed, so the log says "2 of 3" for two files (`AnnotationRunTests.testAFileGoneFromTheQueueSkipsNoNumber` asserts it); log only ([run-6](plausible-findings-run-to-toolbar.md#run-6)).
 
 **Late and concurrent answers**

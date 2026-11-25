@@ -102,7 +102,7 @@ Runs the effects `LiveAsks` returns and keeps per-ask tables that must agree wit
 **Invariants**
 
 - Every ask that leaves the list releases `held`, `answerers`, `handing`, `handingTo`, ×, buttons and its tour (`release`). Checked by: reducer-level `ended` ordering only.
-- After `.send(id)`, `held[id]` and `answerers[id]` exist (comment). A miss would leave the ask `asking` forever. Checked by: nothing.
+- After `.send(id)`, `held[id]` and `answerers[id]` exist (a code comment says so). A miss would leave the ask `asking` forever. Checked by: nothing.
 - `sendNote` is always set in the app (`AppDelegate.swift`); `share` returns without ending the ask if it were nil (`LiveInk.swift`). Unreachable now.
 - The step advance closure only runs for a tour still held. Checked by: nothing ([asks-2](plausible-findings-requests-to-live-ink.md#asks-2)).
 

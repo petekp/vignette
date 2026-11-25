@@ -91,8 +91,8 @@ Brings the zoom back to the fitted size before the annotator's window comes down
 
 **Invariants**
 
-- `hide` is called once per `prepare`, by the reducer (comment). Checked by: nothing.
-- The deadline covers a spring that never arrives (comment). Checked by: nothing.
+- `hide` is called once per `prepare`, by the reducer (a code comment says so). Checked by: nothing.
+- The deadline covers a spring that never arrives (a code comment says so). Checked by: nothing.
 
 **Late and concurrent answers**
 
