@@ -437,22 +437,6 @@ final class AgentConnectionTests: XCTestCase {
         XCTAssertEqual(row(folder, now: now).details, "~/Code · Plan the week")
     }
 
-    /// Equal titles in one group take the first of tab, worktree and branch that tells all of them apart, else
-    /// a number by start; the same title in another group takes none.
-    func testEqualTitlesInOneGroupAreToldApart() {
-        let now = Date()
-        func make(_ id: String, worktree: String?, branch: String?, started: Double, root: String = "/c/inbox") -> AgentDestination {
-            AgentDestination(id: id, name: "Fix", address: .claudeSession(id), lastUsed: now, place: .repository(name: "inbox", root: root, worktree: worktree, subfolder: nil),
-                             branch: branch, started: now.addingTimeInterval(started))
-        }
-        let byWorktree = [make("a", worktree: "one", branch: "x", started: 0), make("b", worktree: "two", branch: "x", started: 1)]
-        XCTAssertEqual(SessionMenu.menu(byWorktree, destination: nil, now: now).topRows.map(\.title), ["Fix (one)", "Fix (two)"])
-        let numbered = [make("a", worktree: nil, branch: nil, started: 5), make("b", worktree: "w", branch: nil, started: 1)]
-        XCTAssertEqual(SessionMenu.menu(numbered, destination: nil, now: now).topRows.map(\.title), ["Fix (#2)", "Fix (#1)"])
-        let apart = [make("a", worktree: nil, branch: nil, started: 0), make("b", worktree: nil, branch: nil, started: 1, root: "/c/other")]
-        XCTAssertEqual(SessionMenu.menu(apart, destination: nil, now: now).topRows.map(\.title), ["Fix", "Fix"])
-    }
-
     // MARK: The inbox mod's store
 
     func testTheInboxModsGoalIsReadBySession() throws {

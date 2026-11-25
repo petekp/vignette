@@ -83,11 +83,22 @@ final class SessionPlacesTests: XCTestCase {
     func testAFolderThatIsGoneIsReadFromItsShapeThenItsRemote() throws {
         let base = temporaryFolder()
         let home = try makeFolder("home", in: base)
-        func place(_ path: String, origin: String? = nil) -> Place {
-            SessionPlaces.resolve(folder: home.appendingPathComponent(path).path, originURL: origin, home: home.path).place
+        func place(_ path: String, origin: String? = nil, environment: [String: String] = [:]) -> Place {
+            SessionPlaces.resolve(folder: home.appendingPathComponent(path).path, originURL: origin, home: home.path, environment: environment).place
         }
         XCTAssertEqual(place(".codex/worktrees/6684/evercars/apps/ui"),
                        .repository(name: "evercars", root: nil, worktree: SessionPlaces.codexWorktree, subfolder: "apps/ui"))
+        XCTAssertEqual(place(".codex/worktrees/6684/evercars"),
+                       .repository(name: "evercars", root: nil, worktree: SessionPlaces.codexWorktree, subfolder: nil))
+        XCTAssertEqual(place(".codex/worktrees/6684", origin: "git@github.com:Ever-Cars/evercars-backend.git"),
+                       .repository(name: "evercars-backend", root: nil, worktree: nil, subfolder: nil))
+        let moved = ["CODEX_HOME": try makeFolder("home/agents/codex", in: base).path]
+        XCTAssertEqual(place("agents/codex/worktrees/6684/evercars/apps", environment: moved),
+                       .repository(name: "evercars", root: nil, worktree: SessionPlaces.codexWorktree, subfolder: "apps"))
+        XCTAssertEqual(place(".codex/worktrees/6684/evercars", environment: moved),
+                       .repository(name: "evercars", root: nil, worktree: SessionPlaces.codexWorktree, subfolder: nil))
+        XCTAssertEqual(place(".claude/worktrees/agent-1"), .folder(fromHome: "~/.claude/worktrees/agent-1"))
+        XCTAssertEqual(place(".worktrees/menu"), .folder(fromHome: "~/.worktrees/menu"))
         XCTAssertEqual(place("Code/worktrees/vignette/menu"), .repository(name: "vignette", root: nil, worktree: "menu", subfolder: nil))
         XCTAssertEqual(place("Code/vignette/.worktrees/menu/Sources"), .repository(name: "vignette", root: nil, worktree: "menu", subfolder: "Sources"))
         XCTAssertEqual(place("Code/vignette/.claude/worktrees/menu"), .repository(name: "vignette", root: nil, worktree: "menu", subfolder: nil))

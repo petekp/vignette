@@ -166,4 +166,47 @@ final class SessionMenuRowsTests: XCTestCase {
         XCTAssertEqual(SessionMenu.menu(list, destination: list[0], now: now).topRows.map(\.id), ["a", "c", "b"],
                        "other menus keep the target first")
     }
+
+    func testEqualTitlesInOneGroupAreToldApartByWhatDiffers() {
+        let now = Date()
+        func make(_ id: String, worktree: String?, branch: String?, started: Double, root: String = "/c/inbox") -> AgentDestination {
+            AgentDestination(id: id, name: "Fix", address: .claudeSession(id), lastUsed: now, place: .repository(name: "inbox", root: root, worktree: worktree, subfolder: nil),
+                             branch: branch, started: now.addingTimeInterval(started))
+        }
+        let byWorktree = [make("a", worktree: "one", branch: "x", started: 0), make("b", worktree: "two", branch: "x", started: 1)]
+        XCTAssertEqual(SessionMenu.menu(byWorktree, destination: nil, now: now).topRows.map(\.title), ["Fix (one)", "Fix (two)"])
+        let mainAndWorktree = [make("a", worktree: nil, branch: nil, started: 5), make("b", worktree: "w", branch: nil, started: 1)]
+        XCTAssertEqual(SessionMenu.menu(mainAndWorktree, destination: nil, now: now).topRows.map(\.title), ["Fix", "Fix (w)"])
+        let numbered = [make("a", worktree: nil, branch: nil, started: 5), make("b", worktree: nil, branch: nil, started: 1)]
+        XCTAssertEqual(SessionMenu.menu(numbered, destination: nil, now: now).topRows.map(\.title), ["Fix (#2)", "Fix (#1)"])
+        let apart = [make("a", worktree: nil, branch: nil, started: 0), make("b", worktree: nil, branch: nil, started: 1, root: "/c/other")]
+        XCTAssertEqual(SessionMenu.menu(apart, destination: nil, now: now).topRows.map(\.title), ["Fix", "Fix"])
+    }
+
+    func testRowsThatStartASessionInOneGroupAreToldApartByWhereTheyStart() {
+        let now = Date()
+        let root = "/Users/p/Code/ever/evercars-backend"
+        func start(_ folder: String, place: Place, used: Double) -> AgentDestination {
+            AgentDestination(id: SessionStart.newRowID(folder: folder), name: "New session", detail: (folder as NSString).lastPathComponent,
+                             address: .claudeSession(""), lastUsed: now.addingTimeInterval(-used), place: place, hasOwnName: false,
+                             folder: folder, start: .new(folder: folder))
+        }
+        func inRepository(worktree: String?, subfolder: String?) -> Place {
+            .repository(name: "evercars-backend", root: root, worktree: worktree, subfolder: subfolder)
+        }
+        let main = start(root, place: inRepository(worktree: nil, subfolder: nil), used: 60)
+        let beside = start("/Users/p/Code/ever/worktrees/evercars-backend", place: inRepository(worktree: nil, subfolder: "worktrees"), used: 120)
+        let worktree = start("/Users/p/Code/ever/worktrees/evercars-backend/live-ink", place: inRepository(worktree: "live-ink", subfolder: nil), used: 180)
+        XCTAssertEqual(SessionMenu.menu([main, beside], destination: nil, now: now).topRows.map(\.title),
+                       [SessionMenu.newSession, "New session (worktrees)"])
+        XCTAssertEqual(SessionMenu.menu([main, beside, worktree], destination: nil, now: now).topRows.map(\.title),
+                       [SessionMenu.newSession, "New session (worktrees)", "New session (live-ink)"])
+        XCTAssertEqual(SessionMenu.row(of: beside, among: [main, worktree], now: now).title, "New session in evercars-backend (worktrees)")
+        XCTAssertEqual(SessionMenu.row(of: main, among: [beside, worktree], now: now).title, SessionMenu.newSession(in: "evercars-backend"))
+        XCTAssertEqual(SessionMenu.row(of: worktree, among: [main, beside], now: now).title, SessionMenu.newSession(in: "live-ink"))
+        let code = start("/Users/p/Code", place: .folder(fromHome: "~/Code"), used: 60)
+        let notes = start("/Users/p/notes", place: .folder(fromHome: "~/notes"), used: 120)
+        XCTAssertEqual(SessionMenu.menu([code, notes], destination: nil, now: now).topRows.map(\.title),
+                       ["New session (~/Code)", "New session (~/notes)"])
+    }
 }

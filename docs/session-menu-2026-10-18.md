@@ -89,9 +89,11 @@ The names above are made up.
   is the worktree, subfolder, branch and how long ago the session was used. Codex threads have no
   herdr tab or goal today, so they read this way.
 - **Equal titles in one group** take a suffix in parentheses: the first of the herdr tab, the
-  worktree and the branch that every one of them has and no two share. If none tells them apart,
-  "#1", "#2" by when the sessions started: the creation time of the inbox's `session` file for
-  Claude Code, and the thread's `createdAt` for Codex.
+  worktree, the subfolder, the place (both, or a folder's path) and the branch that no two share.
+  The tab counts only when all have one. One may lack any other and keeps the plain title, as the
+  main checkout's top folder does: "New session" and "New session (worktrees)". Else "#1",
+  "#2" by when the sessions started: the creation time of the inbox's `session` file for Claude
+  Code, the thread's `createdAt` for Codex.
 - **Tooltips.** The tooltip of a row, of the destination control and of live ink's target button
   is the title, the second line, then the repository or the path from home. Before macOS 14.4 an
   item has no subtitle, so the tooltip is where the second line is. Do not use an attributed title:
@@ -122,7 +124,9 @@ Apple's developer tools on a Mac without them, as `/usr/bin/python3` does.
 3. If the walk finds nothing (from a gone folder's nearest existing one), the path's shape names
    the repository. `<parent>/worktrees/<repo>` and its folders are the checkout at `<parent>/<repo>`.
    A gone worktree there with no checkout, `~/.codex/worktrees/<any>/<repo>/…`,
-   `<repo>/.worktrees/<name>` and `<repo>/.claude/worktrees/<name>` give the name only.
+   `<repo>/.worktrees/<name>` and `<repo>/.claude/worktrees/<name>` give the name only. A path
+   in Codex's worktrees (`CODEX_HOME` or any `.codex`) is read only as a Codex worktree.
+   `<repo>` is never the home folder.
 4. Codex only, after step 3: the last part of `gitInfo.originUrl`, without `.git`. 19
    of the 20 listed threads whose folder was gone still carried one.
 5. A name from steps 3 or 4 joins the group whose main checkout has that name, when exactly
@@ -232,9 +236,9 @@ submenus.
 ## Outside the menu
 
 - **The destination control and live ink's target button** show the agent's logo and the row's
-  title, cut in the middle at their current widths. Their tooltip is the title, the second line,
-  then the repository or the path from home. Before this, the toolbar's tooltip said the name and
-  the agent client, and live ink's was the same for every session.
+  title, cut in the middle at their current widths. A row that starts a session reads "New
+  session in <folder>" or "Last session in <folder>"; live ink's adds its suffix when another reads
+  the same.
 - **The sent card** names the session by the title the destination control or live ink's target
   button showed when Send was pressed, or by its project folder's name for a session Send starts
   (`SessionMenu.cardTitle`). That holds for every headline in `docs/voice.md`'s send table that
@@ -244,7 +248,7 @@ submenus.
 - **`AgentDestination.detail` stays.** The `[send]` log lines, the `project` field of the JSON
   `annotate` answer, and matching a session again after `/clear` read it. `project` stays as the
   fallback label. Live ink's answer row (`Mark.answerer`) and the `sending to` line of the
-  `live-ink-ask` and `annotate` answers read `project`; this note does not change what they say.
+  `live-ink-ask` and `annotate` answers read `project` too.
 
 ## Where the data comes from
 
@@ -301,10 +305,6 @@ about (question 9 of the session-detection note).
   (`Model.answered`).
 
 ## How to build it, and how to tell if it helps
-
-The data was built first (`custom-title`, the repository and branch steps, the herdr tab label,
-`handedOver`), then the rows, the order and the sent card, which were built in one change because
-they read one builder.
 
 A throwaway script over the live inboxes on 2026-10-23 found no two equal titles in one group among
 28 sessions. 48 places resolved in 124 ms in one process, cold start included.
