@@ -606,8 +606,8 @@ final class EditorViewTests: XCTestCase {
         let beforeKey = pasteboard.changeCount
         key("c", 8, .command)
         let oneCopy = pasteboard.changeCount - beforeKey
-        let data = try XCTUnwrap(pasteboard.data(forType: CopiedMarks.pasteboardType))
-        XCTAssertEqual(CopiedMarks(data: data)?.marks.map(\.geometry), view.core.drawing.marks.map(\.geometry))
+        let data = try XCTUnwrap(pasteboard.data(forType: CopiedItems.pasteboardType))
+        XCTAssertEqual(CopiedItems(data: data)?.marks.map(\.geometry), view.core.drawing.marks.map(\.geometry))
         XCTAssertEqual(pasteboard.string(forType: .string), "a note")
         key("v", 9, .command)
         XCTAssertEqual(view.core.drawing.marks.count, 2)
@@ -620,7 +620,7 @@ final class EditorViewTests: XCTestCase {
         let beforeEquivalent = pasteboard.changeCount
         XCTAssertTrue(window.performKeyEquivalent(with: keyEvent("c", 8, .command)))
         XCTAssertEqual(pasteboard.changeCount - beforeEquivalent, oneCopy)
-        XCTAssertNotNil(pasteboard.data(forType: CopiedMarks.pasteboardType))
+        XCTAssertNotNil(pasteboard.data(forType: CopiedItems.pasteboardType))
         XCTAssertTrue(window.performKeyEquivalent(with: keyEvent("v", 9, .command)))
         XCTAssertEqual(view.core.drawing.marks.count, 3)
         XCTAssertEqual(text(view.core.drawing.marks.last)?.origin, CGPoint(x: 120, y: 120))

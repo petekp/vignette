@@ -74,7 +74,8 @@ files it touches, and `docs/voice.md` for any new words.
    - A history step leaves out `changes` when it changed only pins, and `pins` when it changed
      only marks. A file with no pins and `nextPin` 1 keeps the `basis` it had before pins, so
      stored histories stay valid.
-   - Copied marks on the clipboard stay version 1, since they never hold pins.
+   - Copied marks on the clipboard are version 1, so a build from before pins still pastes them.
+     Copied pins make them version 2 (`CopiedItems`).
    - Reading a file with no marks and no pins gives no drawing, even when it keeps a `nextPin`
      beside a message. A write keeps the file's higher `nextPin`. Step 3 must open the editor
      with the stored `nextPin`, so a new pin's number is not one a deleted pin had.

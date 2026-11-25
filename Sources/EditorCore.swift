@@ -177,7 +177,7 @@ struct EditorCore {
     }
 
     enum PasteContent {
-        case marks(CopiedMarks)
+        case items(CopiedItems)
         case text(String)
         /// An image, or a file dropped on the editor.
         case image
@@ -206,9 +206,9 @@ struct EditorCore {
         case cancelTimer
         /// The drawing for the host to store. With no marks, the host removes its file.
         case handOver(Drawing)
-        /// The marks on the clipboard in Vignette's own type, and the words of any texts among them
-        /// as plain text.
-        case copyMarks(CopiedMarks, text: String?)
+        /// The marks and pins on the clipboard in Vignette's own type, and as plain text the words of
+        /// any texts among them and the pins' words.
+        case copyItems(CopiedItems, text: String?)
         /// The drawing's rendering on the clipboard, the same as Done's.
         case copyDrawing(Drawing)
         /// Cmd+V: read the clipboard and answer with `paste`.
@@ -1372,11 +1372,10 @@ struct EditorCore {
             case .selectAll: selection = Set(drawing.marks.map(\.id) + drawing.pins.map(\.id))
             case .copy: copy()
             case .cut:
-                // Unlike Copy, Cut never falls back to the drawing, which it could not delete. It takes
-                // the marks alone, since the clipboard holds no pins.
-                guard drawing.marks.contains(where: { selection.contains($0.id) }) else { break }
+                // Unlike Copy, Cut never falls back to the drawing, which it could not delete.
+                guard drawing.marks.contains(where: { selection.contains($0.id) }) || !selectedPins.isEmpty else { break }
                 copy()
-                deleteSelection(as: .cut, pins: false)
+                deleteSelection(as: .cut)
             case .paste: emit(.readClipboard)
             case .duplicate: duplicate()
             case nil:
@@ -1460,9 +1459,9 @@ struct EditorCore {
         }
     }
 
-    private mutating func deleteSelection(as name: StepName = .delete, pins withPins: Bool = true) {
+    private mutating func deleteSelection(as name: StepName = .delete) {
         let ids = drawing.marks.map(\.id).filter { selection.contains($0) }
-        let pins = withPins ? drawing.pins.map(\.id).filter { selection.contains($0) } : []
+        let pins = drawing.pins.map(\.id).filter { selection.contains($0) }
         guard !ids.isEmpty || !pins.isEmpty else { return }
         step(named: name) { core in
             for id in ids { core.remove(id) }

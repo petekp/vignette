@@ -208,14 +208,7 @@ extension EditorCore {
 
     /// `pins`, as they were, moved by `delta` and kept inside the image.
     mutating func movePins(_ pins: [Pin], by delta: CGVector) {
-        for start in pins {
-            var moved = start
-            switch start.place {
-            case .point(let point): moved.place = .point(CGPoint(x: point.x + delta.dx, y: point.y + delta.dy))
-            case .area(let frame): moved.place = .area(frame.offsetBy(dx: delta.dx, dy: delta.dy))
-            }
-            replacePin(moved.placed(in: drawing.pixels) ?? start)
-        }
+        for start in pins { replacePin(start.moved(by: delta).placed(in: drawing.pixels) ?? start) }
     }
 
     /// A handle drag on an area pin resizes its area as a rectangle's. False when `id` is no pin.

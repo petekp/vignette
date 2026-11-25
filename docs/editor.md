@@ -506,13 +506,12 @@ Per Decision 10, Cmd+C copies what is selected, and the whole drawing when nothi
 | Action | Result |
 |---|---|
 | Cmd+C with nothing selected | The drawing as a PNG, the same as Copy's, and a new rendering file beside the screenshot. The editor stays open. With no drawing, the original file. |
-| Cmd+C with marks selected | The marks. Any texts among them also go on the clipboard as plain text, so pasting into another app gives their words. |
-| Cmd+X with marks selected | Copies them as Cmd+C does, then deletes them. One undo step. |
+| Cmd+C with marks or pins selected | The marks, and the pins with their comments. Their words also go as plain text. |
+| Cmd+X with marks or pins selected | Copies as Cmd+C does, then deletes them. One undo step. |
 | Cmd+X with nothing selected | Nothing |
-| Cmd+V with copied marks | Pastes them, selected, as one undo step. Where they land is below. |
+| Cmd+V with copied marks or pins | Pastes them, selected, as one undo step. Where they land is below. |
 | Cmd+V with text | A text mark at the pointer, or at the image's centre when the pointer is outside it, selected, as one undo step. It follows the growth rules in section 5. |
-| Cmd+V with an image or a file | Nothing is added, and the Mac beeps. |
-| Cmd+V with anything else | Nothing is added, and the Mac beeps. |
+| Cmd+V with an image, a file or anything else | Nothing is added, and the Mac beeps. |
 | A file dropped on the editor | The same as Cmd+V with an image |
 | A URL on the clipboard | Pasted as text. Nothing is fetched. |
 | Cmd+C, Cmd+X or Cmd+V while typing | The text clipboard, per section 5 |
@@ -521,25 +520,27 @@ When the clipboard holds several kinds, Cmd+V reads them in this order: copied m
 a URL, an image. A file comes before text because Finder puts a copied file's name beside it as
 text, and that name must not become a text mark.
 
-Copied marks:
+Copied marks and pins:
 
-- They go on the clipboard in a type of Vignette's own. It holds the marks as the drawing file does,
-  with the source drawing's point scale and mark scale.
+- They go on the clipboard in a type of Vignette's own. It holds them as the drawing file does, with
+  the source drawing's point scale and mark scale.
 - Any app can write that type, so a paste checks the marks with the same validator as a file.
 - Pasted into the same screenshot while the originals are still there, they land 10 pt right and
   down, like Cmd+D. Each further paste steps another 10 pt.
 - Anywhere else, including another screenshot or after a cut, they land where the originals were.
-- Positions, and the sizes of boxes, ellipses and arrows, carry over in screen pt. A box drawn
-  around a button keeps its size on a capture from a display of another scale.
+- Positions, and the sizes of boxes, ellipses, arrows and area pins, carry over in screen pt, so a
+  box around a button fits it on a capture of another scale.
 - Strokes and text take the size of the marks already on the screenshot, per section 1's Size. A
   note keeps its lines.
 - Either way they are kept inside the image.
-- A pasted mark keeps the original's fields, so an agent's mark pasted is still the agent's.
+- A pasted mark keeps the original's fields, so an agent's mark stays the agent's.
+- Pasted pins take the next numbers, in their old numbers' order, and new ids. Past 99, the rest
+  are left out with a beep.
 
 A mark is selected right after it is drawn, and on reopen the newest mark is selected. So Cmd+C at
-those moments copies that mark, not the drawing, as the visible selection shows. With any tool but
-Text, a click on empty space clears the selection. So copying the whole drawing is one click and
-Cmd+C away. A copy shows nothing, as in other Mac apps.
+those moments copies that mark, not the drawing. With any tool but Text, a click on empty space
+clears the selection. So copying the whole drawing is one click and Cmd+C away. A copy shows
+nothing, as in other Mac apps.
 
 Return copies the drawing and closes the editor. It is the main way to share. On a card that names
 the session it came from, Return replies instead. Return never sends to a session the host picked.

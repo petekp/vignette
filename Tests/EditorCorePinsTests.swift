@@ -125,13 +125,52 @@ final class EditorCorePinsTests: XCTestCase {
         XCTAssertEqual(core.composer, Core.Composer(pin: three.id, editing: nil, draft: ""))
     }
 
-    func testCutTakesTheSelectedMarksAndLeavesTheSelectedPins() throws {
+    private func copied(_ effects: [Core.Effect]) throws -> (items: CopiedItems, text: String?) {
+        let found = effects.lazy.compactMap { effect -> (items: CopiedItems, text: String?)? in
+            guard case .copyItems(let items, let text) = effect else { return nil }
+            return (items, text)
+        }.first
+        return try XCTUnwrap(found, "Copy emitted no copied items")
+    }
+
+    func testCutTakesTheSelectedMarksAndPinsAndPasteBringsThePinsBackWithNewNumbers() throws {
         let box = Mark(geometry: .rectangle(CGRect(x: 100, y: 100, width: 100, height: 100)))
-        var core = core([box], pins: [pin(1, 500, 300)], nextPin: 2)
+        let original = pin(1, 500, 300)
+        var core = core([box], pins: [original], nextPin: 2)
         core.key(.character("a"), .command)
-        core.key(.character("x"), .command)
+        let cut = try copied(core.key(.character("x"), .command))
         XCTAssertEqual(core.drawing.marks, [])
-        XCTAssertEqual(core.drawing.pins.count, 1)
+        XCTAssertEqual(core.drawing.pins, [])
+        XCTAssertEqual(cut.items.pins, [original])
+        XCTAssertEqual(cut.text, "Pin 1: Too tight.")
+        _ = core.reduce(.paste(.items(cut.items)))
+        let pasted = try XCTUnwrap(core.drawing.pins.first)
+        XCTAssertEqual(core.drawing.marks.map(\.geometry), [box.geometry])
+        XCTAssertEqual(pasted.place, original.place)
+        XCTAssertEqual(pasted.comments, original.comments)
+        XCTAssertEqual(pasted.number, 2)
+        XCTAssertNotEqual(pasted.id, original.id)
+        XCTAssertEqual(core.drawing.nextPin, 3)
+        XCTAssertEqual(core.selection, Set(core.drawing.marks.map(\.id) + [pasted.id]))
+        core.key(.character("z"), .command)
+        XCTAssertEqual(core.drawing.pins, [])
+        XCTAssertEqual(core.drawing.nextPin, 3, "an undone paste leaves its numbers unused")
+    }
+
+    func testDuplicateAndPasteOfPinsLandTenPointsOffInNumberOrderWithTheNextNumbers() throws {
+        var core = core(pins: [pin(4, 500, 300, "Second"), pin(2, 100, 100, "First")], nextPin: 5)
+        core.key(.character("a"), .command)
+        let copy = try copied(core.key(.character("c"), .command))
+        XCTAssertEqual(copy.text, "Pin 2: First. Pin 4: Second.")
+        core.key(.character("d"), .command)
+        XCTAssertEqual(core.undoTitle, "Undo Duplicate")
+        let duplicated = core.drawing.pins.dropFirst(2)
+        XCTAssertEqual(duplicated.map(\.number), [5, 6])
+        XCTAssertEqual(duplicated.map(\.tip), [CGPoint(x: 110, y: 110), CGPoint(x: 510, y: 310)])
+        _ = core.reduce(.paste(.items(copy.items)))
+        XCTAssertEqual(core.drawing.pins.dropFirst(4).map(\.tip), [CGPoint(x: 120, y: 120), CGPoint(x: 520, y: 320)])
+        XCTAssertEqual(core.drawing.pins.dropFirst(4).map(\.number), [7, 8])
+        XCTAssertEqual(Set(core.drawing.pins.map(\.id)).count, 6)
     }
 
     func testAPressOnATeardropBesideAMarkSelectsThePinAndOneOnTheMarkSelectsTheMark() throws {
