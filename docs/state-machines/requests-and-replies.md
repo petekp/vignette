@@ -61,7 +61,7 @@ A pure reducer that holds each send's line until its deadline. `ScreenshotReques
 | absent | `.sent`, grace <= 0 | absent | `.submit` now |
 | waiting | `.due`, at >= deadline | absent | `.submit` (waited) |
 | waiting | `.due`, early | waiting | `.arm` for what is left |
-| waiting | `.cancelled(requests:)` (`unsend(file:)` in `ScreenshotRequests+Unsend.swift`: Don't send and `vignette://unsend`; `unsend(request:)`: a live ink note; `unsendEverySend(of:)`: `fileRemoved`) | absent | `.discard`; every wait of the file, or the note's, in send order |
+| waiting | `.cancelled(requests:)` (`unsend(file:)` in `ScreenshotRequests+Unsend.swift`: Don't send and `vignette://unsend`; `unsend(request:)`: a live ink note; `cancelSendsInGrace(of:)`: `fileRemoved`) | absent | `.discard`; every wait of the file, or the note's, in send order |
 | waiting | `.cleared` (`clear(_:)`) | absent | `.dropped` |
 | waiting | `.quit` (`releaseHeld`) | absent, all waits | `.submit` each, in send order |
 | absent | `.due`, `.cancelled`, `.cleared`, `.quit` | — | — (stale, ignored; a cancel after hand-over is refused, no `.discard`) |

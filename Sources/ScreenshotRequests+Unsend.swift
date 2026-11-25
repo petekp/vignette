@@ -25,12 +25,10 @@ extension ScreenshotRequests {
         cancelInGrace([id]).first ?? withdraw(id)
     }
 
-    /// The file left the watch folder: every send of it still in its grace is cancelled, and every
-    /// line of it a session's queue holds is taken back out.
+    /// Cancels every send of `file` still in its grace, and leaves the lines a session's queue holds.
     @discardableResult
-    func unsendEverySend(of file: ScreenshotKey) -> [Record] {
-        let sent = sends(of: file).map(\.id)
-        return cancelInGrace(sent) + sent.compactMap(withdraw)
+    func cancelSendsInGrace(of file: ScreenshotKey) -> [Record] {
+        cancelInGrace(sends(of: file).map(\.id))
     }
 
     /// Every request sent of `file`, oldest first.

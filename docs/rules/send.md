@@ -169,8 +169,9 @@
   (`Callbacks.laterAnswer`), with the watch going on. Don't send takes out only the line of the newest send
   to the session the tab names, since answers can come back out of order, and only when no send of the file in its grace is newer, so an earlier send's line,
   to this session or another, stays (`ScreenshotRequests.unsend(file:)`). A live ink note takes back
-  its own request. Deleting the file takes back every send of it: those in their grace, and every
-  line of it a queue holds. A line the person deletes in Codex clears the
+  its own request. Deleting the file cancels every send of it still in its
+  grace and leaves every line of it a queue holds, since a queued line is a message to the session
+  already (`ScreenshotRequests.fileRemoved`). The watch on that line goes on. A line the person deletes in Codex clears the
   request and puts the attribute back the same way, without a word. A thread Codex can no longer find ends the watch with a
   failure on the card. A clear stops the watch and leaves the line in the queue.
   `docs/codex-queued-sends-2026-11-16.md` has the live runs behind each reading.
