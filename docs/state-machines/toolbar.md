@@ -6,22 +6,22 @@ A destination is an `AgentDestination`: one agent session a line can go to. A st
 
 ### AnnotatorToolbar.Model: target and offer (implicit)
 
-Owner: `AnnotatorToolbar.swift:9`. Tests: `ToolbarOfferTests.testTheTargetSettlesOnHerdrsFocusAndStaysWhenCodexAnswersLater`, `testWithNoFocusTheTargetIsTheSessionUsedLastAndIsReplacedOnlyWhenItIsGone`, `testASwapKeepsTheTargetOnTheBarUntilTheNextImagesSettles`.
+Owner: `AnnotatorToolbar.swift`. Tests: `ToolbarOfferTests.testTheTargetSettlesOnHerdrsFocusAndStaysWhenCodexAnswersLater`, `testWithNoFocusTheTargetIsTheSessionUsedLastAndIsReplacedOnlyWhenItIsGone`, `testASwapKeepsTheTargetOnTheBarUntilTheNextImagesSettles`.
 
-Holds which session Send goes to for the open image. `AnnotationController.beginDestinations` (`AnnotationController.swift:617`) and `destinationsAnswered` (`:623`) drive it, called from `AppDelegate.refreshDestinations` and `listDestinations` (`AppDelegate+Send.swift`).
+Holds which session Send goes to for the open image. `AnnotationController.beginDestinations` (`AnnotationController.swift`) and `destinationsAnswered` drive it, called from `AppDelegate.refreshDestinations` and `listDestinations` (`AppDelegate+Send.swift`).
 
 **States**: the properties together:
-- `listing` (`:15`): the last answer `DestinationChoice.replacesList` let in, which may be the image before's. Its `list` is the running sessions, its `startable` the rows Send would start, and its `sessions` both, the list every session menu and the target's words are built from. Its `complete`: every client answered it.
-- `listed` (`:17`): every client has answered for this image.
-- `replyTo` (`:20`): the session this image came from. `target` (`:22`): the chosen destination.
-- `picked` (`:36`): the person chose the target. `isHandPick(_:)` reads it, and a Send to a hand pick sets the kept pick (the next machine). `carried` (`:39`): the target is the image before's and waits for this image's first deciding answer.
-- `offer` (`:122`) is derived (next machine) from `listing`. `reportOffer` (`:130`) calls `onOfferChanged` only when the offer changed.
+- `listing`: the last answer `DestinationChoice.replacesList` let in, which may be the image before's. Its `list` is the running sessions, its `startable` the rows Send would start, and its `sessions` both, the list every session menu and the target's words are built from. Its `complete`: every client answered it.
+- `listed`: every client has answered for this image.
+- `replyTo`: the session this image came from. `target`: the chosen destination.
+- `picked`: the person chose the target. `isHandPick(_:)` reads it, and a Send to a hand pick sets the kept pick (the next machine). `carried`: the target is the image before's and waits for this image's first deciding answer.
+- `offer` is derived (next machine) from `listing`. `reportOffer` calls `onOfferChanged` only when the offer changed.
 
 A `decided` answer is one `DestinationChoice` marks as settled: complete, or any session marked by herdr.
 
 **Transitions**
 
-Events: `begin(replyTo:carryingTarget:)` (`:139`, sent by `beginDestinations` with `carryingTarget: toolbar.model.shown`, right after `annotator.prepare`, `AppDelegate.swift:116-118`); `answered(_:)` (`:156`, once per `SessionListing.deliver`); `pick(_:)` (`:174`, from the target menu a turn later, `AnnotatorToolbar+TargetPick.swift:9-22`).
+Events: `begin(replyTo:carryingTarget:)` (sent by `beginDestinations` with `carryingTarget: toolbar.model.shown`, right after `annotator.prepare`, `AppDelegate.swift`); `answered(_:)` (once per `SessionListing.deliver`); `pick(_:)` (from the target menu a turn later, `AnnotatorToolbar+TargetPick.swift`).
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
@@ -29,16 +29,16 @@ Events: `begin(replyTo:carryingTarget:)` (`:139`, sent by `beginDestinations` wi
 | `target != nil`, not carried | `begin(carryingTarget: true)` | `carried = true`; `listing`, `target` kept; `listed`, `picked` false | — |
 | any | `answered`, complete, or `listing` is not complete | the answer replaces `listing` (`DestinationChoice.replacesList`); then the rows below | — |
 | `listing.complete` | `answered`, not complete | `listing` kept; `listed` false; then the rows below | — |
-| carried | `answered`, not decided | `target` refreshed from the answer if same id (`:160`); stays carried | — |
+| carried | `answered`, not decided | `target` refreshed from the answer if same id; stays carried | — |
 | carried | `answered`, decided | `carried = false`; `target = answer.pick` (may be nil) | — |
 | not picked, not carried, `target == nil` | `answered`, decided | `target = answer.pick` | — |
-| not picked, not carried, target set | `answered` | target kept, unless the answer is complete, the target is absent from it (`gone`) and the answer is decided: then `target = answer.pick` (`:168`) | — |
-| picked | `answered` | `listed` updates, `listing` as above; `target` only refreshed to the object with the same id (`:160`), never replaced | — |
+| not picked, not carried, target set | `answered` | target kept, unless the answer is complete, the target is absent from it (`gone`) and the answer is decided: then `target = answer.pick` | — |
+| picked | `answered` | `listed` updates, `listing` as above; `target` only refreshed to the object with the same id, never replaced | — |
 | any | `pick(d)` | `target = d`, `picked = true`, `carried = false`. No check that `d` is in a list | — |
 
 **Invariants**
 
-- The target settles once, then changes only when its session is gone from a complete list (doc comment `:153-155`). A nil `pick` leaves `target == nil`, so the next decided answer settles it. Checked by: `ToolbarOfferTests.testTheTargetSettlesOnHerdrsFocusAndStaysWhenCodexAnswersLater`, `testWithNoFocusTheTargetIsTheSessionUsedLastAndIsReplacedOnlyWhenItIsGone`. A failed Codex listing can break it ([toolbar-2](plausible-findings-run-to-toolbar.md#toolbar-2)).
+- The target settles once, then changes only when its session is gone from a complete list (doc comment). A nil `pick` leaves `target == nil`, so the next decided answer settles it. Checked by: `ToolbarOfferTests.testTheTargetSettlesOnHerdrsFocusAndStaysWhenCodexAnswersLater`, `testWithNoFocusTheTargetIsTheSessionUsedLastAndIsReplacedOnlyWhenItIsGone`. A failed Codex listing can break it ([toolbar-2](plausible-findings-run-to-toolbar.md#toolbar-2)).
 - A pick stays even when the list no longer has it. Checked by: the same two tests.
 - A swap keeps the old target until this image's first deciding answer. Checked by: `ToolbarOfferTests.testASwapKeepsTheTargetOnTheBarUntilTheNextImagesSettles`.
 - Reply stays Send until the whole list answers. Checked by: the same test.
@@ -47,8 +47,8 @@ Events: `begin(replyTo:carryingTarget:)` (`:139`, sent by `beginDestinations` wi
 
 **Late and concurrent answers**
 
-- A list answer for an ended opening: dropped, guard at `AppDelegate+Send.swift:113` (`annotator.opening == opening`), and again after the off-main read at `:96`. `Opening` ids are never reused, so closing and reopening the same file is another opening. `annotator.opening` is nil when `current == nil` (`AnnotationController.swift:594`).
-- A carried target whose session is gone: Send still shows. A send to it fails at the preflight (`AgentConnection.swift:416-420`, "closed" or "cleared") and never lands on another session.
+- A list answer for an ended opening: dropped, guard at `AppDelegate+Send.swift` (`annotator.opening == opening`), and again after the off-main read. `Opening` ids are never reused, so closing and reopening the same file is another opening. `annotator.opening` is nil when `current == nil` (`AnnotationController.swift`).
+- A carried target whose session is gone: Send still shows. A send to it fails at the preflight (`AgentConnection.swift`, "closed" or "cleared") and never lands on another session.
 - A menu pick whose image is no longer open, because a `begin` ran while the menu was open or after the pick, or the bar hid: dropped ([target menu pick](target-menu.md)).
 
 ### Kept pick: AnnotationController.keptPick (implicit)
@@ -87,7 +87,7 @@ The session Send starts on after the person picked it in the target's menu and s
 
 Owner: `ToolbarOffer.swift`. Tests: `ToolbarOfferTests.testEachOfferSaysWhatReturnAndCmdReturnDo`.
 
-What the bar offers for the open image. It is computed from `Model` inputs and never stored. `AnnotationController.offerChanged` passes it to `editor.finishes` (`:639`); the bar's `controls` and `offersTarget` read it.
+What the bar offers for the open image. It is computed from `Model` inputs and never stored. `AnnotationController.offerChanged` passes it to `editor.finishes`; the bar's `controls` and `offersTarget` read it.
 
 **States**: `copy`, `choose`, `send(d)`, `reply(d)`.
 
@@ -112,9 +112,9 @@ The offer is recomputed whenever `replyTo`, `listing` or `target` changes. `Tool
 
 ### Send progress: sending, failure (implicit)
 
-Owner: `Model.sending` (`AnnotatorToolbar.swift:47`), `failure` (`:51`), `failures` (`:56`). Tests: `EditorCoreSendTests`.
+Owner: `Model.sending` (`AnnotatorToolbar.swift`), `failure`, `failures`. Tests: `EditorCoreSendTests`.
 
-Tracks one Send press from the bar to the stored request. `sendDrawing` (`AppDelegate+Send.swift:29`) renders and submits.
+Tracks one Send press from the bar to the stored request. `sendDrawing` (`AppDelegate+Send.swift`) renders and submits.
 
 **States**: idle (`sending == false`, `failure == nil`); sending; notSent (`failure != nil`). A press's destination travels with it, in `EditorCore.Input.send` and `Effect.send(_:to:)`.
 
@@ -122,16 +122,16 @@ Tracks one Send press from the bar to the stored request. `sendDrawing` (`AppDel
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| idle or notSent | press (button, Cmd+Return, Space on the action, field Return: `AnnotatorToolbar.swift:283,335,795,799,955`) | — | `onSend` calls `editor.send(to:)` (`AnnotationController.swift:99`). The core emits `.send(drawing, to: destination)` only while open, and a key's send with `to: nil`. `editor.onSend` (`:135`) uses that destination, else `offer.destination`, then `sendDrawing` sets `sending = true`, which clears `failure` (`:47`) ([toolbar-1](plausible-findings-run-to-toolbar.md#toolbar-1)) |
+| idle or notSent | press (button, Cmd+Return, Space on the action, field Return: `AnnotatorToolbar.swift`) | — | `onSend` calls `editor.send(to:)` (`AnnotationController.swift`). The core emits `.send(drawing, to: destination)` only while open, and a key's send with `to: nil`. `editor.onSend` uses that destination, else `offer.destination`, then `sendDrawing` sets `sending = true`, which clears `failure` ([toolbar-1](plausible-findings-run-to-toolbar.md#toolbar-1)) |
 | idle or notSent | Return, no message, drawing as sent | as Done (`nothingToReply`) | — |
 | sending | press | refused at every entry (`!model.sending` in `sendDrawing`) | — |
-| sending | render fails, or `requests.send` throws | notSent: `sending = false`, `failure = reason`, `failures += 1` (`sendFailed`, `:56`) | — |
+| sending | render fails, or `requests.send` throws | notSent: `sending = false`, `failure = reason`, `failures += 1` (`sendFailed`) | — |
 | sending | render answers for an ended opening | dropped by the `opening` guard; `sending` untouched | next `prepare` resets |
-| sending | request stored | stays sending until the bar leaves | next `prepare` calls `resetSend` (`:63`, from `AnnotationController.swift:166`) |
+| sending | request stored | stays sending until the bar leaves | next `prepare` calls `resetSend` (from `AnnotationController.swift`) |
 
 **Invariants**
 
-- `sending` stays on from the press until the bar has left, and `prepare` resets it. Checked by: `prepare` at `AnnotationController.swift:166`.
+- `sending` stays on from the press until the bar has left, and `prepare` resets it. Checked by: `prepare` at `AnnotationController.swift`.
 - A press the editor ignored leaves nothing for the next image. Held by the destination travelling in the input, with no flag outside the core; `EditorCoreSendTests` checks the core's side only ([toolbar-1](plausible-findings-run-to-toolbar.md#toolbar-1)).
 
 **Late and concurrent answers**
@@ -141,11 +141,11 @@ Tracks one Send press from the bar to the stored request. `sendDrawing` (`AppDel
 
 ### Bar presence: shown, hideGeneration, sliding (implicit)
 
-Owner: `AnnotatorToolbar.swift:233` (`hideGeneration`). Tests: none (needs `NSPanel`).
+Owner: `AnnotatorToolbar.swift` (`hideGeneration`). Tests: none (needs `NSPanel`).
 
-Whether the bar's panel is on screen, and when it fades out. `prepare` calls `place`, `AnnotationController.show` (`:358`) calls `show`, and `hideWindows` (`:519`) calls `hideSoon`.
+Whether the bar's panel is on screen, and when it fades out. `prepare` calls `place`, `AnnotationController.show` calls `show`, and `hideWindows` calls `hideSoon`.
 
-**States**: the properties `Model.shown` (`:11`), `sliding` (`:503`), `placedBelow` (`:215`), `slideX` and `slideY` (`:499`), `hideGeneration` (`:229`), and `panel.isVisible`. Together:
+**States**: the properties `Model.shown`, `sliding`, `placedBelow`, `slideX` and `slideY`, `hideGeneration`, and `panel.isVisible`. Together:
 - absent: panel out, `shown == false`.
 - entering: panel in, `shown` false until the next turn.
 - up: `shown == true`.
@@ -154,7 +154,7 @@ Whether the bar's panel is on screen, and when it fades out. `prepare` calls `pl
 
 **Transitions**
 
-Events: `place(below:gap:)` (`:436`), `show()` (`:521`), `hideSoon()` (`:532`), `hide()` (`:542`), `refit()` (`:448`, from SwiftUI `onWidth`).
+Events: `place(below:gap:)`, `show()`, `hideSoon()`, `hide()`, `refit()` (from SwiftUI `onWidth`).
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
@@ -166,24 +166,24 @@ Events: `place(below:gap:)` (`:436`), `show()` (`:521`), `hideSoon()` (`:532`), 
 | fading | `place` | fading; `shown` stays false | cancels the orderOut; content stays hidden until `show()` |
 | fading | `show` | up | cancels the orderOut |
 | fading | timer, generation unchanged | absent | `orderOut` |
-| up or fading | `refit` | — | next turn `position(slide: sliding)` if `shown || !panel.isVisible`; a bar on its way out is left alone (`:450`) |
+| up or fading | `refit` | — | next turn `position(slide: sliding)` if `shown || !panel.isVisible`; a bar on its way out is left alone |
 
 **Invariants**
 
-- A swap does not hide the next image's bar: `hideSoon` is queued before the next `place` in the same turn. Checked by: comments at `:430-435`, `:528-531`; nothing else. If the order flipped, the bar would be absent during the next flight, not stuck, since `show()` orders it in again.
+- A swap does not hide the next image's bar: `hideSoon` is queued before the next `place` in the same turn. Checked by: comments; nothing else. If the order flipped, the bar would be absent during the next flight, not stuck, since `show()` orders it in again.
 
 **Late and concurrent answers**
 
-- A deferred `hide` or orderOut after a newer event: dropped by the generation compare (`:536`, `:549`).
-- `show()`'s deferred `shown = true` (`:525`) has no generation check. It is safe today because `hide()` can only run from a `hideSoon` queued after `show()`.
+- A deferred `hide` or orderOut after a newer event: dropped by the generation compare.
+- `show()`'s deferred `shown = true` has no generation check. It is safe today because `hide()` can only run from a `hideSoon` queued after `show()`.
 
 ### Keyboard focus: focus, keyed, tookKeysOnOpen, toolLetter, heldLetter (implicit)
 
-Owner: `Model.focus` (`AnnotatorToolbar.swift:100`), `keyed` (`:82`), `tookKeysOnOpen` (`:84`), `toolLetter` (`:86`), `messageAsks` (`:102`); `AnnotatorToolbar.heldLetter` (`:215`); `ToolbarPanel.pressOnField` (`AnnotatorToolbar+Panel.swift:10`), `wantsKeys` (`:11`), `caretToEnd` (`:46`). Tests: none for the panel; `HeldToolLetter` below has one.
+Owner: `Model.focus` (`AnnotatorToolbar.swift`), `keyed`, `tookKeysOnOpen`, `toolLetter`, `messageAsks`; `AnnotatorToolbar.heldLetter`; `ToolbarPanel.pressOnField` (`AnnotatorToolbar+Panel.swift`), `wantsKeys`, `caretToEnd`. Tests: none for the panel; `HeldToolLetter` below has one.
 
 Decides whether the bar's panel or the editor has the keys. Only a press on the message field or an explicit ask lets the panel take them.
 
-**States**: the panel is key or not (`panel.isKeyWindow`, mirrored by `keyed` through `didBecomeKey` and `didResignKey`, `:303-317`). `focus` is nil, a tool, copy, the target, an action, or `.message`. `tookKeysOnOpen` says the field got the keys without a press.
+**States**: the panel is key or not (`panel.isKeyWindow`, mirrored by `keyed` through `didBecomeKey` and `didResignKey`). `focus` is nil, a tool, copy, the target, an action, or `.message`. `tookKeysOnOpen` says the field got the keys without a press.
 
 **Transitions**
 
@@ -193,15 +193,15 @@ Decides whether the bar's panel or the editor has the keys. Only a press on the 
 | any | `didResignKey` | `keyed = false`, `tookKeysOnOpen = false`, `caretToEnd = false`; `focus = nil` if it was `.message` | `makeFirstResponder(nil)` |
 | any | `begin` | `imageNumber += 1`, `focus = nil`, `tookKeysOnOpen = false`, `toolLetter` reset | `keyed` and `panel.isKeyWindow` untouched; `message` stays as `restore` set it when the image opened |
 | any | `restore(message:)` (`AnnotationController.open`) | `message` and `messageOnOpen` set to the words stored for the image, or "" | the controller's `storedWords` set, so they are not written back |
-| bar shown, a field on it | a pick in the target's menu (`typeAfterPick`, `AnnotatorToolbar+Focus.swift:45`) | `tookKeysOnOpen = false` (`Model.pick`); `focus = .message` | the controller's `editorUntouched = false` first; the panel takes the keys |
-| panel not key | `typeOnOpen` (`AnnotatorToolbar+Focus.swift:59`, from `offerTyping`) | `focus = .message`, `tookKeysOnOpen = true` if the panel became key, else `focus = nil` | false when it did not: logs, and `editorUntouched` stays, so a later offer tries again |
-| panel already key | `typeOnOpen` | — | refused (`:60`) |
+| bar shown, a field on it | a pick in the target's menu (`typeAfterPick`, `AnnotatorToolbar+Focus.swift`) | `tookKeysOnOpen = false` (`Model.pick`); `focus = .message` | the controller's `editorUntouched = false` first; the panel takes the keys |
+| panel not key | `typeOnOpen` (`AnnotatorToolbar+Focus.swift`, from `offerTyping`) | `focus = .message`, `tookKeysOnOpen = true` if the panel became key, else `focus = nil` | false when it did not: logs, and `editorUntouched` stays, so a later offer tries again |
+| panel already key | `typeOnOpen` | — | refused |
 | panel key | Cmd+W, Cmd+Plus, Cmd+Minus, Cmd+0; Cmd+C in an empty field, nothing being composed; Cmd+Z and Shift+Cmd+Z, nothing being composed | — | `FieldCommand`: the window's close, the zoom, the drawing copied, or the editor's undo and redo; other Command keys go to the field |
 | any | Tab, Shift+Tab (`move`); Space (`activate`); M or P (`focusMessage`); press (`onPress`); `keyDown` | `focus` moves | — |
 
 **Invariants**
 
-- The panel can be key only by `canBecomeKey = pressOnField || wantsKeys || isKeyWindow` (`AnnotatorToolbar+Panel.swift:25`). Checked by: the guard there. `resignKey` clears `pressOnField`, so after a resign only a press or `takeKeys` makes it key.
+- The panel can be key only by `canBecomeKey = pressOnField || wantsKeys || isKeyWindow` (`AnnotatorToolbar+Panel.swift`). Checked by: the guard there. `resignKey` clears `pressOnField`, so after a resign only a press or `takeKeys` makes it key.
 
 **Late and concurrent answers**
 
@@ -209,7 +209,7 @@ Decides whether the bar's panel or the editor has the keys. Only a press on the 
 
 ### HeldToolLetter (explicit)
 
-Owner: `HeldToolLetter.swift:7`. Tests: `ToolbarOfferTests.testAToolLetterTypedFirstPicksItsToolUntilAWordShowsItBeganOne`.
+Owner: `HeldToolLetter.swift`. Tests: `ToolbarOfferTests.testAToolLetterTypedFirstPicksItsToolUntilAWordShowsItBeganOne`.
 
 Holds a tool letter typed first on an untouched field, until the next key shows whether it began a word. The editor's `startsNote` uses the same value after a box or arrow ([editor-core](editor-core.md#heldkey-implicit)), so both read a key's character the same way (`HeldToolLetter.character`).
 
@@ -227,7 +227,7 @@ Holds a tool letter typed first on an untouched field, until the next key shows 
 
 **Invariants**
 
-- `heldLetter` (toolbar) and `toolBefore` (model) agree where it matters. `begin` resets `toolLetter` but not `heldLetter` (`AnnotatorToolbar.swift:144`), and a stale `heldLetter` is read only after a `hold` sets it again. Checked by: `testAToolLetterTypedFirstPicksItsToolUntilAWordShowsItBeganOne`.
+- `heldLetter` (toolbar) and `toolBefore` (model) agree where it matters. `begin` resets `toolLetter` but not `heldLetter` (`AnnotatorToolbar.swift`), and a stale `heldLetter` is read only after a `hold` sets it again. Checked by: `testAToolLetterTypedFirstPicksItsToolUntilAWordShowsItBeganOne`.
 
 **Late and concurrent answers**
 

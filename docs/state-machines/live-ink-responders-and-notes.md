@@ -4,20 +4,20 @@ This file continues [Live ink: asks and responders: asks](live-ink-asks.md), whi
 
 ### LiveResponders (implicit)
 
-Owner: `LiveResponders.swift:9`. Tests: none.
+Owner: `LiveResponders.swift`. Tests: none.
 
 Owns one `LiveResponder` per agent and remembers what picture each has been sent.
 
-**States**: `all[client]`; `conversing` (set at each `ask`, 83; reset by `stop`); `pictures[client]` = (conversation number, subject, text signature, line ids sent). `content(of:)` (110) records the picture as sent when the ask is written (`LiveResponder.sendNext` calls `ask.content`). Hooks: `status.onCodexSignIn`, `status.onCodexSigningOut`, `willTerminate`.
+**States**: `all[client]`; `conversing` (set at each `ask`, 83; reset by `stop`); `pictures[client]` = (conversation number, subject, text signature, line ids sent). `content(of:)` records the picture as sent when the ask is written (`LiveResponder.sendNext` calls `ask.content`). Hooks: `status.onCodexSignIn`, `status.onCodexSigningOut`, `willTerminate`.
 
 **Invariants**
 
-- A follow-up about the same window and text sends no picture, and the answer may name only lines already sent (`linesSent`, 126). Holds because `pictures` is keyed by the responder's `conversation` number, which changes with every new process. Checked by: nothing.
+- A follow-up about the same window and text sends no picture, and the answer may name only lines already sent (`linesSent`,). Holds because `pictures` is keyed by the responder's `conversation` number, which changes with every new process. Checked by: nothing.
 - `cancel()` goes to every agent. Safe because only one ask is ever with a responder. Checked by: nothing.
 
 ### ClaudeDriver (implicit)
 
-Owner: `ClaudeDriver.swift:8`. Tests: none.
+Owner: `ClaudeDriver.swift`. Tests: none.
 
 Speaks Claude Code's streaming JSON through a `JSONLinesProcess`.
 
@@ -29,19 +29,19 @@ Speaks Claude Code's streaming JSON through a `JSONLinesProcess`.
 
 ### JSONLinesProcess (implicit)
 
-Owner: `JSONLinesProcess.swift:6`. Tests: `JSONLinesProcessTests`.
+Owner: `JSONLinesProcess.swift`. Tests: `JSONLinesProcessTests`.
 
 A child process read and written as lines. Lines hop to the main thread with `DispatchQueue.main.async` and check `relay.onLine` there. `stop()` nils both callbacks, terminates, and closes stdin on the writer queue.
 
 **Late and concurrent answers**
 
-- A write to a dead process: SIGPIPE is disabled, the error is logged and `onEnd` reports, `JSONLinesProcess.swift:29, 71`.
-- A line in flight when `stop()` runs: dropped because `relay.onLine` is nil (77-83).
+- A write to a dead process: SIGPIPE is disabled, the error is logged and `onEnd` reports, `JSONLinesProcess.swift`.
+- A line in flight when `stop()` runs: dropped because `relay.onLine` is nil.
 - A line of output that is not a JSON object: logged as `[live-ink] responder output not JSON`, cut to 200 bytes, and not reported.
 
 ### CodexDriver and CodexRun (explicit phase inside an implicit machine)
 
-Owner: `CodexDriver.swift:16`; the run is `CodexRun` at `CodexDriver.swift:117`, with `Phase` at line 120. Tests: `CodexDriverTests`, for the account check only.
+Owner: `CodexDriver.swift`; the run is `CodexRun` at `CodexDriver.swift`, with `Phase`. Tests: `CodexDriverTests`, for the account check only.
 
 Runs a Codex thread through a local provider and `AppServerSession`.
 
@@ -61,24 +61,24 @@ Runs a Codex thread through a local provider and `AppServerSession`.
 
 **Invariants**
 
-- Only the ask thread's `turn/completed` completes asks (`notified`, `case .ready(let thread) where onThread == thread`, `CodexDriver.swift:347`). Checked by: nothing.
-- `send` does nothing unless `phase == .ready` (`guard case .ready`, 170). `LiveResponder` only sends after `.ready`. Checked by: nothing.
+- Only the ask thread's `turn/completed` completes asks (`notified`, `case .ready(let thread) where onThread == thread`, `CodexDriver.swift`). Checked by: nothing.
+- `send` does nothing unless `phase == .ready` (`guard case .ready`,). `LiveResponder` only sends after `.ready`. Checked by: nothing.
 
 **Late and concurrent answers**
 
 - After stop: `run` is dropped; every callback is weak (`WeakRun`, `[weak self]`).
-- A stopped start's catalog write: `CatalogClaim` withdraws it under one lock (`CodexIsolation.swift:62-80`).
-- The provider's `ready` fires once: `Once` (`CodexDriver.swift:245-256`).
+- A stopped start's catalog write: `CatalogClaim` withdraws it under one lock (`CodexIsolation.swift`).
+- The provider's `ready` fires once: `Once` (`CodexDriver.swift`).
 
 ### ResponderStatus (implicit)
 
-Owner: `ResponderStatus.swift:7`. Tests: none.
+Owner: `ResponderStatus.swift`. Tests: none.
 
 Tells Settings, Setup and note waits which agents can answer, and runs Codex sign-in and sign-out.
 
 **States**: `availability[client]` (`checking`, `ready`, `notInstalled`, `signedOut`); `signIn` (`idle`, `waiting`, `signingOut`, `failed(reason)`); `login`; `claudeAsked`, `claudeAsking`.
 
-**Events**: `check` (off-thread read, then a main-thread write, lines 79-84; sent when live ink turns on, when a note opens, when Settings appears or becomes key, and by Setup's 0.5 s poll, `SetupWindow.swift:427,453`), `startSignIn`, `cancelSignIn`, `signOut`, the login outcome.
+**Events**: `check` (off-thread read, then a main-thread write; sent when live ink turns on, when a note opens, when Settings appears or becomes key, and by Setup's 0.5 s poll, `SetupWindow.swift`), `startSignIn`, `cancelSignIn`, `signOut`, the login outcome.
 
 **Transitions**
 
@@ -90,7 +90,7 @@ Tells Settings, Setup and note waits which agents can answer, and runs Codex sig
 | `waiting` | failed | `failed(reason)` | — |
 | any | `signOut` | `signingOut` | `onCodexSigningOut()` calls `LiveResponder.stop(failingAsks: true)` at once (**fixed**, [asks-1](findings.md#asks-1)); logout runs off-thread (up to 15 s) |
 | `signingOut` | logout done | `idle` | `availability = .signedOut`, `onCodexSignIn(false)` |
-| any | `check` result lands | — | `availability[client] = found`, unconditionally (line 84). A check that read before a sign-in or sign-out can overwrite its result ([asks-5](plausible-findings-requests-to-live-ink.md#asks-5)) |
+| any | `check` result lands | — | `availability[client] = found`, unconditionally. A check that read before a sign-in or sign-out can overwrite its result ([asks-5](plausible-findings-requests-to-live-ink.md#asks-5)) |
 
 **Invariants**
 
@@ -99,50 +99,50 @@ Tells Settings, Setup and note waits which agents can answer, and runs Codex sig
 
 ### CodexLogin (implicit)
 
-Owner: `CodexSignIn.swift:36`. Tests: none.
+Owner: `CodexSignIn.swift`. Tests: none.
 
 One Codex sign-in or sign-out process. **States**: `done` (completion, once), `session`, `loginID`, `limit` timer (15 s to start, 10 min for the sign-in).
 
 **Invariants**
 
-- `finish` is the one exit. It clears `done` first, so cancel, completion, process end and the timer cannot report twice. Checked by: the `guard let done` at `CodexSignIn.swift:147`.
+- `finish` is the one exit. It clears `done` first, so cancel, completion, process end and the timer cannot report twice. Checked by: the `guard let done` at `CodexSignIn.swift`.
 
 **Late and concurrent answers**
 
-- A notification for a login id that is not the current one: ignored by `notified` (162).
-- Port 1455 taken: refused before starting (81).
-- A test launch on the person's own home: `CodexSignIn.defaultHome` is nil (`Launch.isOnPersonsHome`), so it fails before starting, "no Codex home in a test launch" (80).
+- A notification for a login id that is not the current one: ignored by `notified`.
+- Port 1455 taken: refused before starting.
+- A test launch on the person's own home: `CodexSignIn.defaultHome` is nil (`Launch.isOnPersonsHome`), so it fails before starting, "no Codex home in a test launch".
 
 ### LiveNoteCards (implicit)
 
-Owner: `LiveNoteCards.swift:7`. Tests: none (the pure parts are tested under `NoteCardWait`; the window-in-front check, `isInFront`, by `NoteCardWaitTests.testOnlyTheFrontAppsFrontWindowOnTheScreenIsInFront`).
+Owner: `LiveNoteCards.swift`. Tests: none (the pure parts are tested under `NoteCardWait`; the window-in-front check, `isInFront`, by `NoteCardWaitTests.testOnlyTheFrontAppsFrontWindowOnTheScreenIsInFront`).
 
 Glue between `ScreenshotRequests` and `NoteCardGroups`. After a person sends a live-ink note to a session, it watches the session's turn, then draws the result: a look at the window again, a result card, "Done", or the session's own reply.
 
-**States**: `notes[request]` (`Note`: shot, destination, title, window, ink, `before`, `resultCard`), `waits` (`NoteCardGroups`), `timer` (0.5 s; started on `.watchTurn`, stops itself when nothing is watched, line 257), `readingTurns` (one read in flight), `hold` (`EventHold<Input>`, 48).
+**States**: `notes[request]` (`Note`: shot, destination, title, window, ink, `before`, `resultCard`), `waits` (`NoteCardGroups`), `timer` (0.5 s; started on `.watchTurn`, stops itself when nothing is watched), `readingTurns` (one read in flight), `hold` (`EventHold<Input>`,).
 
-**Events**: `Input` (line 22): `.event(NoteCardGroups.Input)`, `.looked(...)`, `.answer(record, answer, done)`. Callbacks from `ScreenshotRequests` (wired at `AppDelegate.swift:1293-1325`): `released` (only for a send that had a grace), `cancelled` (Don't send, or the request cleared while held), `delivered` (once the client answered), `presentLive` (a reply with a `LiveAnswer`; replies import one at a time and `done` must be called once or the import queue stalls).
+**Events**: `Input`: `.event(NoteCardGroups.Input)`, `.looked(...)`, `.answer(record, answer, done)`. Callbacks from `ScreenshotRequests` (wired at `AppDelegate.swift`): `released` (only for a send that had a grace), `cancelled` (Don't send, or the request cleared while held), `delivered` (once the client answered), `presentLive` (a reply with a `LiveAnswer`; replies import one at a time and `done` must be called once or the import queue stalls).
 
-`EventHold.send` (`AnnotationRun.swift:282`) appends the input; if one is being handled it returns, else it drains in order. An event sent from inside a handler runs after the current one finishes. Direct calls (`released`, `cancelled`, `delivered`, `unsend`) first read or mutate `notes`, then queue.
+`EventHold.send` (`AnnotationRun.swift`) appends the input; if one is being handled it returns, else it drains in order. An event sent from inside a handler runs after the current one finishes. Direct calls (`released`, `cancelled`, `delivered`, `unsend`) first read or mutate `notes`, then queue.
 
-**Transitions**: `handle` (171) maps the input, runs the actions, drops notes whose wait is gone (186) and clears `before` for notes no longer watching or looking again (187-190).
+**Transitions**: `handle` maps the input, runs the actions, drops notes whose wait is gone and clears `before` for notes no longer watching or looking again.
 
 **Invariants**
 
-- `done` of `.answer` is called exactly once on every path (`handle` 177, `runNote` 241-250, `drawFresh`, `drawOnResultCard`). Checked by: nothing.
-- A note whose `.sent` is still in `hold` is not registered: `delivered` reads `waits[request]?.delivered` before the queued events (153-160), and `handle`'s prune ignores unregistered notes (`registered`, 182). Checked by: the guards.
+- `done` of `.answer` is called exactly once on every path (`handle`, `runNote`, `drawFresh`, `drawOnResultCard`). Checked by: nothing.
+- A note whose `.sent` is still in `hold` is not registered: `delivered` reads `waits[request]?.delivered` before the queued events, and `handle`'s prune ignores unregistered notes (`registered`,). Checked by: the guards.
 - A window capture held in `Note.resultCard` is released when the note is pruned, but pruning runs only at the end of `handle`, so after the last note it can stay in memory ([asks-3](plausible-findings-requests-to-live-ink.md#asks-3)). Checked by: nothing.
 - A reply that arrives while the result card is being written goes on the sent picture, not the result card ([asks-4](plausible-findings-requests-to-live-ink.md#asks-4)). Checked by: nothing.
 
 **Late and concurrent answers**
 
-- `.answer` for a note that is not registered or is gone: `done(nil)` (177).
-- A result card for a group whose lead note is gone: `guard … let lead = notes[ids[0]]` returns (199).
-- Overlapping turn-read ticks: `readingTurns` (262).
+- `.answer` for a note that is not registered or is gone: `done(nil)`.
+- A result card for a group whose lead note is gone: `guard … let lead = notes[ids[0]]` returns.
+- Overlapping turn-read ticks: `readingTurns`.
 
 ### NoteCardWait (explicit)
 
-Owner: `LiveNoteCardWait.swift:5`, with `Phase` at line 6. Tests: `NoteCardWaitTests.testAnyOrderOfEventsEndsTheWaitOnce` (166), `testAHeldNoteWatchesNoTurnUntilItsLineIsReleased`, `testACancelledHeldNoteIsNeverWaitedFor`, `testANoteIsForgottenOnlyOnceDeliveredAndOver`, `testAFailedDeliveryEndsTheWaitSilently`, `testAWindowInFrontSaysDoneAndALateAnswerGoesOnAFreshCapture`, and the `NoteCardGroups` tests.
+Owner: `LiveNoteCardWait.swift`, with `Phase`. Tests: `NoteCardWaitTests.testAnyOrderOfEventsEndsTheWaitOnce`, `testAHeldNoteWatchesNoTurnUntilItsLineIsReleased`, `testACancelledHeldNoteIsNeverWaitedFor`, `testANoteIsForgottenOnlyOnceDeliveredAndOver`, `testAFailedDeliveryEndsTheWaitSilently`, `testAWindowInFrontSaysDoneAndALateAnswerGoesOnAFreshCapture`, and the `NoteCardGroups` tests.
 
 The wait of one sent note. It decides when the note's turn is over and what to draw.
 
@@ -177,7 +177,7 @@ The wait of one sent note. It decides when the note's turn is over and what to d
 | `unwatched`, within 3 min | `answer` | `unwatched` | fresh capture if there is a window, else sent picture |
 | `unwatched`, later | `answer` | `over` | `drawReplyOnSentPicture` |
 
-`isFinished(at:)` (89) needs `delivered`. `over` is finished at once, `unwatched` after 3 min, `resultCard` and `seenInFront` after 30 min. `lookingAgain` is never finished.
+`isFinished(at:)` needs `delivered`. `over` is finished at once, `unwatched` after 3 min, `resultCard` and `seenInFront` after 30 min. `lookingAgain` is never finished.
 
 **Invariants**
 
@@ -193,7 +193,7 @@ The wait of one sent note. It decides when the note's turn is over and what to d
 
 ### TurnWatch (implicit)
 
-Owner: `LiveNoteCardWait.swift:180`, `read` at line 208. Tests: `LiveInkTests.testATurnSeenToStartEndsOnceItHasBeenIdleTwoSeconds`, `testABusyMomentBetweenTurnsStartsTheIdleSpellOver`.
+Owner: `LiveNoteCardWait.swift`, `read`. Tests: `LiveInkTests.testATurnSeenToStartEndsOnceItHasBeenIdleTwoSeconds`, `testABusyMomentBetweenTurnsStartsTheIdleSpellOver`.
 
 Decides from readings of a session (`waiting`, `busy`, `idle`, or nil when it cannot tell) whether its turn has ended.
 
@@ -214,28 +214,28 @@ Decides from readings of a session (`waiting`, `busy`, `idle`, or nil when it ca
 
 ### NoteCardGroups (explicit)
 
-Owner: `LiveNoteCardGroups.swift:7`. Tests: `NoteCardGroupsTests` (which notes end together), `NoteCardGroupsEndingTests` (how a look ends them, `testAChangeInTheWindowInFrontMakesNoCard` among them) and `NoteCardGroupsRandomTests` (any order of events).
+Owner: `LiveNoteCardGroups.swift`. Tests: `NoteCardGroupsTests` (which notes end together), `NoteCardGroupsEndingTests` (how a look ends them, `testAChangeInTheWindowInFrontMakesNoCard` among them) and `NoteCardGroupsRandomTests` (any order of events).
 
 Holds the waits of all sent notes and decides which note makes the result card when several end together.
 
 **States**: `held[request]` (in its grace, not yet a wait), `entries[request]` (a `NoteCardWait` plus session, window and sequence).
 
-**Events** (`Input`): `sent`, `held`, `released`, `cancelled`, `delivered`, `turns`, `looked`, `cardFailed`, `answer`. Each is routed to the entry's `NoteCardWait`. `looked` resolves one maker (the first changed, unreplied, compared member), one `makeResultCard`, or none when the look found the window in front (`inFront`: every member the card would have answered gets `windowInFront`), and a `sayDone` for each other note made quiet except the newest (`sayingDoneOnce`, 155). Finished entries are pruned at the end of every `handle` (149).
+**Events** (`Input`): `sent`, `held`, `released`, `cancelled`, `delivered`, `turns`, `looked`, `cardFailed`, `answer`. Each is routed to the entry's `NoteCardWait`. `looked` resolves one maker (the first changed, unreplied, compared member), one `makeResultCard`, or none when the look found the window in front (`inFront`: every member the card would have answered gets `windowInFront`), and a `sayDone` for each other note made quiet except the newest (`sayingDoneOnce`,). Finished entries are pruned at the end of every `handle`.
 
 **Invariants**
 
-- A held note is not in `entries`, so `.turns` skips it (111). Checked by: `testAHeldNoteWatchesNoTurnUntilItsLineIsReleased`.
+- A held note is not in `entries`, so `.turns` skips it. Checked by: `testAHeldNoteWatchesNoTurnUntilItsLineIsReleased`.
 - Entries are pruned only when an input arrives, so a finished `resultCard` can outlive its 30 min until then ([asks-3](plausible-findings-requests-to-live-ink.md#asks-3)). Checked by: nothing.
 
 **Late and concurrent answers**
 
-- A line released twice: `held.removeValue` (91).
-- A reading for a note that ended since the tick started: `guard … entry.wait.isWatching` (111).
-- A `lookedAgain` for a note whose send failed during the look: the `looking` filter on `isLookingAgain` (127), `testANoteWhoseSendFailedDuringTheLookIsLeftOut`.
+- A line released twice: `held.removeValue`.
+- A reading for a note that ended since the tick started: `guard … entry.wait.isWatching`.
+- A `lookedAgain` for a note whose send failed during the look: the `looking` filter on `isLookingAgain`, `testANoteWhoseSendFailedDuringTheLookIsLeftOut`.
 
 ### RolloutTurns and CodexTurns (implicit)
 
-Owner: `CodexRollout.swift:16` (`RolloutTurns`) and `CodexRollout.swift:101` (`CodexTurns`). Tests: `CodexRolloutTests` (not mapped in detail).
+Owner: `CodexRollout.swift` (`RolloutTurns`) and `CodexRollout.swift` (`CodexTurns`). Tests: `CodexRolloutTests` (not mapped in detail).
 
 Reads a Codex session's rollout file to say whether the session is waiting, busy or idle, for `TurnWatch`.
 
@@ -245,9 +245,9 @@ Reads a Codex session's rollout file to say whether the session is waiting, busy
 
 ### LiveNotePopover (implicit)
 
-Owner: `LiveNotePopover.swift:25`. Tests: `DestinationChoiceTests.testALiveNoteKeepsItsWholeListAndItsTargetOverALaterPartialAnswer` (its session list), `SessionMenuFilingTests.testALiveNoteWordsItsTargetAgainWhenAStartRowArrivesAndTheTargetStays` (its target's words).
+Owner: `LiveNotePopover.swift`. Tests: `DestinationChoiceTests.testALiveNoteKeepsItsWholeListAndItsTargetOverALaterPartialAnswer` (its session list), `SessionMenuFilingTests.testALiveNoteWordsItsTargetAgainWhenAStartRowArrivesAndTheTargetStays` (its target's words).
 
-The note panel a person types into. Created at `showNote` (`LiveInk+Note.swift:20`).
+The note panel a person types into. Created at `showNote` (`LiveInk+Note.swift`).
 
 **States**: flags `revealed`, `sent`, `closing`, `handingOver`, `standsAside`, `menuOpen`, `opened`, plus `inkOpacity`, `target`, `handPick`, `candidates`.
 
@@ -260,13 +260,13 @@ The note panel a person types into. Created at `showNote` (`LiveInk+Note.swift:2
 | `revealed` | `send` with empty words | `closing` | `dismiss` |
 | `revealed` | `send` with words, no ink, not by the pointer (`mayAsk`) | `revealed` | beep |
 | `sent` | `handOver(when:)` | `closing`, `handingOver` | delayed `ready`, then close |
-| `handingOver` | `fadeAway` | `closing`, `handingOver = false` | closes; the delayed `ready` does not run (`handingOver = false` at 420, `guard handingOver` at 399) |
+| `handingOver` | `fadeAway` | `closing`, `handingOver = false` | closes; the delayed `ready` does not run (`handingOver = false`, `guard handingOver`) |
 | any | `dismiss` | `closing` | closes |
 | `closing` or `sent` | `put`, `takeKeys`, `send`, `hang`, `follow`, `standAside`, `setSessions` | — (ignored) | — |
-| `candidates` complete | `setSessions` with an incomplete answer (`:200`), such as the first answer of the listing a return of the keys starts | — (ignored, `DestinationChoice.replacesList`) | — |
+| `candidates` complete | `setSessions` with an incomplete answer, such as the first answer of the listing a return of the keys starts | — (ignored, `DestinationChoice.replacesList`) | — |
 | `candidates` nil or incomplete, or the answer complete | `setSessions` | `candidates` replaced | the list and the target chosen again (`DestinationChoice.choose`); a target that stays is worded again over the new list (`wordTarget`), its prompt untouched |
 
 **Invariants**
 
 - Exactly one of `handOver`, `fadeAway`, `dismiss` ends the note. Checked by: the `closing`/`sent` guards.
-- During `sent`, Esc and Return do not reach the note: `LiveInk` already set `note = nil` (`letGoOfNotePanel`, `LiveInk+Note.swift:131`), so Esc goes to `cancelAsk` when Esc has a step. An `onAsk` failure calls `fadeAway` (`LiveInk+Note.swift:58`). Checked by: nothing.
+- During `sent`, Esc and Return do not reach the note: `LiveInk` already set `note = nil` (`letGoOfNotePanel`, `LiveInk+Note.swift`), so Esc goes to `cancelAsk` when Esc has a step. An `onAsk` failure calls `fadeAway` (`LiveInk+Note.swift`). Checked by: nothing.
