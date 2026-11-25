@@ -1,18 +1,13 @@
 #!/usr/bin/env python3
 """Sets the live ink demo's stage: four windows on a plain desktop, each with something to ask about.
 
-    demo.py up [--capture]   lay out the stage; --capture also lets screen recordings see the ink
-    demo.py reset            erase the ink and lay the stage out again, for the next take
-    demo.py down             take the stage down and put Vignette back as it was
+    demo.py up      lay out the stage
+    demo.py reset   erase the ink and lay the stage out again, for the next take
+    demo.py down    take the stage down
 
 The windows are an invoice and a settings page in a Chrome of the demo's own, launch notes in
 TextEdit, and a failing test in a Ghostty of its own. `docs/live-ink-demo-2026-10-05.md` has the
 beats. Everything the stage makes is under `out/`, which Git ignores.
-
-Live ink leaves its marks out of screen captures, so a recording or a screen share shows none of
-them. `--capture` relaunches the running Vignette as a demo copy that lets captures see the marks:
-it runs on a copy of the settings file and its own screenshot folder, and `down` puts the real
-instance back.
 """
 import json
 import os
@@ -32,7 +27,6 @@ GHOSTTY = '/Applications/Ghostty.app/Contents/MacOS/ghostty'
 PROFILE = os.path.join(OUT, 'chrome')
 TERMINAL = os.path.join(HERE, 'failing-test.sh')
 NOTES = os.path.join(OUT, 'launch-notes.rtf')
-REAL_SETTINGS = os.path.expanduser('~/.config/vignette/settings.json')
 LOG = os.path.expanduser('~/Library/Logs/Vignette.log')
 
 
@@ -119,48 +113,6 @@ def state(app):
     sys.exit('demo: Vignette did not answer')
 
 
-def bundle_id(app):
-    return run('defaults', 'read', os.path.join(app, 'Contents', 'Info'), 'CFBundleIdentifier').stdout.strip()
-
-
-def capture_on(stage):
-    """Relaunches the running Vignette as a copy whose marks screen recordings can see."""
-    pid, app = vignette()
-    if not app:
-        sys.exit('demo: Vignette is not running')
-    folder = os.path.join(OUT, 'vignette')
-    os.makedirs(os.path.join(folder, 'shots'), exist_ok=True)
-    settings = os.path.join(folder, 'settings.json')
-    shutil.copyfile(REAL_SETTINGS, settings)
-    run('defaults', 'write', bundle_id(app) + '.screencapture', 'location', os.path.join(folder, 'shots'))
-    stop(pid, timeout=10)
-    claude = shutil.which('claude') or os.path.expanduser('~/.local/bin/claude')
-    run('open', '-g', '--env', f'VIGNETTE_SETTINGS={settings}', '--env', 'VIGNETTE_SHARE_LIVE_INK=1',
-        '--env', f'VIGNETTE_CLAUDE={claude}', app)
-    copy = wait_for('the demo copy of Vignette', lambda: vignette()[0])
-    time.sleep(2)
-    report = state(app)
-    if report['app']['settingsFile'] != settings:
-        sys.exit(f"demo: the copy that came up runs on {report['app']['settingsFile']}; stopping")
-    stage.update(capture=True, app=app, vignette=copy)
-    print('Vignette relaunched so recordings see the ink')
-
-
-def capture_off(stage):
-    """Puts the real Vignette back after `capture_on`."""
-    if not stage.get('capture'):
-        return
-    stop(stage.get('vignette'), timeout=10)
-    run('open', '-g', stage['app'])
-    wait_for('Vignette', lambda: vignette()[0])
-    time.sleep(2)
-    report = state(stage['app'])
-    if report['app']['settingsFile'] != REAL_SETTINGS:
-        print(f"demo: Vignette came back on {report['app']['settingsFile']}; quit it and open it again")
-    else:
-        print('Vignette is back on its own settings')
-
-
 # MARK: The stage
 
 def layout(screen):
@@ -228,14 +180,12 @@ def ghostty(frame):
     return pid
 
 
-def up(capture=False):
+def up():
     stage = saved()
     if stage.get('desktop'):
         sys.exit('demo: the stage is up already; run `demo.py down` or `demo.py reset`')
     os.makedirs(OUT, exist_ok=True)
     build_stage_bin()
-    if capture and not stage.get('capture'):
-        capture_on(stage)
     stage['desktop'], screen = desktop()
     frames = layout(screen)
     stage['terminal'] = ghostty(frames['terminal'])
@@ -268,7 +218,6 @@ def take_down(stage):
 def down():
     stage = saved()
     take_down(stage)
-    capture_off(stage)
     if os.path.exists(PIDS):
         os.remove(PIDS)
     print('The stage is down.')
@@ -285,7 +234,7 @@ def reset():
 if __name__ == '__main__':
     command = sys.argv[1] if len(sys.argv) > 1 else ''
     if command == 'up':
-        up(capture='--capture' in sys.argv)
+        up()
     elif command == 'down':
         down()
     elif command == 'reset':

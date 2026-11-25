@@ -3,7 +3,7 @@
 
     take.py [--only BEAT,...]
 
-The stage must be up with `demo.py up --capture`. The take moves the pointer and holds ⌃⌥ for
+The stage must be up with `demo.py up`. The take moves the pointer and holds ⌃⌥ for
 about three minutes, so nobody may use the Mac meanwhile. Every press checks first that the window
 under it is the stage's, and every key goes to Vignette's own process, except ⌘M, which is sent
 only while the stage's Chrome is frontmost. A take that cannot go on lets go of everything, stops
@@ -50,11 +50,12 @@ class Hand:
 class Take:
     def __init__(self):
         stage = demo.saved()
-        if not stage.get('desktop') or not stage.get('capture'):
-            raise TakeFailed('the stage is not up with --capture; run `demo.py up --capture` first')
-        self.app = stage['app']
+        if not stage.get('desktop'):
+            raise TakeFailed('the stage is not up; run `demo.py up` first')
+        self.vignette, self.app = demo.vignette()
+        if not self.app:
+            raise TakeFailed('Vignette is not running')
         self.chrome, self.textedit, self.ghostty = stage['chrome'], stage['textedit'], stage['terminal']
-        self.vignette = demo.vignette()[0]
         self.desktop = demo.pids_of(lambda c: c.endswith('out/bin/stage desktop'))
         self.hand = Hand()
         self.started = None
@@ -63,10 +64,7 @@ class Take:
     # MARK: Looking
 
     def live(self):
-        report = demo.state(self.app)
-        if report['app']['settingsFile'] != os.path.join(demo.OUT, 'vignette', 'settings.json'):
-            raise TakeFailed(f"Vignette is on {report['app']['settingsFile']}, not the demo's copy")
-        return report['liveInk']
+        return demo.state(self.app)['liveInk']
 
     def wait(self, test, timeout, what):
         end = time.monotonic() + timeout
