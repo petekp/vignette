@@ -6,7 +6,7 @@ A destination is an `AgentDestination`: one agent session a line can go to. A st
 
 ### AnnotatorToolbar.Model: target and offer (implicit)
 
-Owner: `AnnotatorToolbar.swift`. Tests: `ToolbarOfferTests.testTheTargetSettlesOnHerdrsFocusAndStaysWhenCodexAnswersLater`, `testWithNoFocusTheTargetIsTheSessionUsedLastAndIsReplacedOnlyWhenItIsGone`, `testASwapKeepsTheTargetOnTheBarUntilTheNextImagesSettles`.
+Owner: `AnnotatorToolbar+Model.swift`. Tests: `ToolbarOfferTests.testTheTargetSettlesOnHerdrsFocusAndStaysWhenCodexAnswersLater`, `testWithNoFocusTheTargetIsTheSessionUsedLastAndIsReplacedOnlyWhenItIsGone`, `testASwapKeepsTheTargetOnTheBarUntilTheNextImagesSettles`.
 
 Holds which session Send goes to for the open image. `AnnotationController.beginDestinations` and `destinationsAnswered` (`AnnotationController+Send.swift`) drive it, called from `AppDelegate.refreshDestinations` and `listDestinations` (`AppDelegate+Send.swift`).
 
@@ -112,7 +112,7 @@ The offer is recomputed whenever `replyTo`, `listing` or `target` changes. `Tool
 
 ### Send progress: sending, failure (implicit)
 
-Owner: `Model.sending` (`AnnotatorToolbar.swift`), `failure`, `failures`. Tests: `EditorCoreSendTests`.
+Owner: `Model.sending` (`AnnotatorToolbar+Model.swift`), `failure`, `failures`. Tests: `EditorCoreSendTests`.
 
 Tracks one Send press from the bar to the stored request. `sendDrawing` (`AppDelegate+Send.swift`) renders and submits.
 
@@ -122,7 +122,7 @@ Tracks one Send press from the bar to the stored request. `sendDrawing` (`AppDel
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| idle or notSent | press (button, Cmd+Return, Space on the action, field Return: `AnnotatorToolbar.swift`) | — | `onSend` calls `editor.send(to:)` (`AnnotationController.swift`). The core emits `.send(drawing, to: destination)` only while open, and a key's send with `to: nil`. `editor.onSend` uses that destination, else `offer.destination`, then `sendDrawing` sets `sending = true`, which clears `failure` ([toolbar-1](plausible-findings-run-to-toolbar.md#toolbar-1)) |
+| idle or notSent | press (button, Cmd+Return, Space on the action, field Return: `AnnotatorToolbarView+Controls.swift`) | — | `onSend` calls `editor.send(to:)` (`AnnotationController.swift`). The core emits `.send(drawing, to: destination)` only while open, and a key's send with `to: nil`. `editor.onSend` uses that destination, else `offer.destination`, then `sendDrawing` sets `sending = true`, which clears `failure` ([toolbar-1](plausible-findings-run-to-toolbar.md#toolbar-1)) |
 | idle or notSent | Return, no message, drawing as sent | as Done (`nothingToReply`) | — |
 | sending | press | refused at every entry (`!model.sending` in `sendDrawing`) | — |
 | sending | render fails, or `requests.send` throws | notSent: `sending = false`, `failure = reason`, `failures += 1` (`sendFailed`) | — |
@@ -179,7 +179,7 @@ Events: `place(below:gap:)`, `show()`, `hideSoon()`, `hide()`, `refit()` (from S
 
 ### Keyboard focus: focus, keyed, tookKeysOnOpen, toolLetter, heldLetter (implicit)
 
-Owner: `Model.focus` (`AnnotatorToolbar.swift`), `keyed`, `tookKeysOnOpen`, `toolLetter`, `messageAsks`; `AnnotatorToolbar.heldLetter`; `ToolbarPanel.pressOnField` (`AnnotatorToolbar+Panel.swift`), `wantsKeys`, `caretToEnd`. Tests: none for the panel; `HeldToolLetter` below has one.
+Owner: `Model.focus` (`AnnotatorToolbar+Model.swift`), `keyed`, `tookKeysOnOpen`, `toolLetter`, `messageAsks`; `AnnotatorToolbar.heldLetter`; `ToolbarPanel.pressOnField` (`AnnotatorToolbar+Panel.swift`), `wantsKeys`, `caretToEnd`. Tests: none for the panel; `HeldToolLetter` below has one.
 
 Decides whether the bar's panel or the editor has the keys. Only a press on the message field or an explicit ask lets the panel take them.
 
