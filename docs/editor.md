@@ -505,7 +505,7 @@ Per Decision 10, Cmd+C copies what is selected, and the whole drawing when nothi
 
 | Action | Result |
 |---|---|
-| Cmd+C with nothing selected | The drawing as a PNG, the same as Copy's, and a new rendering file beside the screenshot. The editor stays open. With no marks, the original file. |
+| Cmd+C with nothing selected | The drawing as a PNG, the same as Copy's, and a new rendering file beside the screenshot. The editor stays open. With no drawing, the original file. |
 | Cmd+C with marks selected | The marks. Any texts among them also go on the clipboard as plain text, so pasting into another app gives their words. |
 | Cmd+X with marks selected | Copies them as Cmd+C does, then deletes them. One undo step. |
 | Cmd+X with nothing selected | Nothing |
@@ -625,7 +625,7 @@ The host sets what Return and Cmd+Return do from what its toolbar offers (`Edito
 - **Park.** The host parks the drawing for Esc, a swap, or a click outside. The editor hands it back
   at once, per Decision 14. Typing ends first, per section 5. A drag in progress ends as if the
   button were released, so what is drawn is kept.
-- A drawing with no marks removes its file.
+- An empty drawing removes its file.
 - The editor never hides itself. It asks the host to close, and the host's transition reducer
   decides.
 
@@ -633,7 +633,7 @@ The host sets what Return and Cmd+Return do from what its toolbar offers (`Edito
 
 | Output | What it is |
 |---|---|
-| Copy | The screenshot with its marks, at the screenshot's exact pixel size, in its colour profile and with its DPI. With no marks, the host copies the original file and writes nothing. |
+| Copy | The screenshot with its marks, at the screenshot's exact pixel size, in its colour profile and with its DPI. With no drawing, the host copies the original file and writes nothing. |
 | Send | The same rendering, even with no marks, so the image keeps its orientation and DPI. No file is written. The editor stays open while it renders. Once the request is stored, the card goes home without a Copied notice, and a queue opens its next card. A failed rendering sends nothing, and the drawing stays as it is. |
 | Copy Drawing | The same rendering for each selected card, without opening them. A card without a drawing copies its own file. |
 | A card with a drawing, dragged out of the stack | The same rendering, started when the drag begins. A card without a drawing drops its own file. |

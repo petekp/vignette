@@ -31,7 +31,7 @@ final class DrawingFileTests: XCTestCase {
         let rectangle = [Mark(geometry: .rectangle(CGRect(x: 1, y: 1, width: 5, height: 5)))]
         try store.write(Drawing(key: "/a.png", pixels: pixels, pointScale: 1, marks: rectangle))
         try store.write(Drawing(key: "/b.png", pixels: pixels, pointScale: 1, marks: rectangle))
-        try put(#"{"version": 2, "key": "/c.png"}"#, for: "/c.png")
+        try put(#"{"version": 3, "key": "/c.png"}"#, for: "/c.png")
         try put("not json", for: "/d.png")
         try Data("x".utf8).write(to: dir.appendingPathComponent("notes.txt"))
         XCTAssertEqual(store.scan().drawings, ["/a.png", "/b.png"])
@@ -122,7 +122,7 @@ final class DrawingFileTests: XCTestCase {
         XCTAssertFalse(reopened.canUndo)
 
         let note = Mark(geometry: .text(Mark.Text(origin: CGPoint(x: CGFloat(pixels.width) - 40, y: 100), text: "Hello there", size: 24)))
-        let typed = EditorHistory(undo: [.marks(EditStep(name: .typing, changes: [EditStep.Change(id: note.id, before: nil, after: PlacedMark(mark: note, index: 0))],
+        let typed = EditorHistory(undo: [.drawing(EditStep(name: .typing, changes: [EditStep.Change(id: note.id, before: nil, after: PlacedMark(mark: note, index: 0))],
                                                           selectionBefore: [], selectionAfter: [note.id]))])
         try store.write(Drawing(key: key, pixels: pixels, pointScale: 2, marks: [note]), message: "", history: typed)
         let moved = try XCTUnwrap(read())
@@ -157,7 +157,8 @@ final class DrawingFileTests: XCTestCase {
 
     func testAFileKeepsTheNewestStepsWithinItsCapDroppingTheOldestUndoFirst() throws {
         let steps = (0..<150).map { HistoryStep.message(MessageStep(name: .typing, before: "\($0)", after: "\($0 + 1)")) }
-        let kept = try EditorHistory(fileObject: XCTUnwrap(EditorHistory(undo: steps).fileObject(marks: [], message: "150")), marks: [],
+        let blank = Drawing(key: key, pixels: PixelSize(width: 10, height: 10), pointScale: 1, marks: [])
+        let kept = try EditorHistory(fileObject: XCTUnwrap(EditorHistory(undo: steps).fileObject(endingAt: blank, message: "150")), marks: [],
                                      basis: EditorHistory.basis(marks: [], message: "150"))
         XCTAssertEqual(kept.undo.count, EditorHistory.maxSteps)
         guard case .message(let oldest)? = kept.undo.first, case .message(let newest)? = kept.undo.last else { return XCTFail("no message steps") }
@@ -167,7 +168,7 @@ final class DrawingFileTests: XCTestCase {
         let long = String(repeating: "a", count: 100_000)
         let pasted = HistoryStep.message(MessageStep(name: .paste, before: "", after: long))
         let big = EditorHistory(undo: Array(repeating: pasted, count: 4), redo: [pasted])
-        let fitted = try EditorHistory(fileObject: XCTUnwrap(big.fileObject(marks: [], message: "")), marks: [],
+        let fitted = try EditorHistory(fileObject: XCTUnwrap(big.fileObject(endingAt: blank, message: "")), marks: [],
                                        basis: EditorHistory.basis(marks: [], message: ""))
         XCTAssertEqual(fitted.undo.count, 1)
         XCTAssertEqual(fitted.redo.count, 1)

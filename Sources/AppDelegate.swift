@@ -538,7 +538,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         let ui = settings.data.ui, style = ui.textStyle
         let renderings = shots.map { shot -> (shot: Screenshot, rendering: PendingRendering?) in
             let drawing = drawings.current(of: shot.key, style: style)
-            guard let drawing, !drawing.marks.isEmpty else { return (shot, nil) }
+            guard let drawing, !drawing.isEmpty else { return (shot, nil) }
             return (shot, RenderingQueue.shared.render(drawing, imageAt: shot.url, output: .file,
                                                        style: style, markStyle: ui.markStyle))
         }
@@ -588,7 +588,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// not started. `verb` names the moment in the log line.
     private func copyRendering(of drawing: Drawing, shot: Screenshot, verb: String, in opening: Opening?) {
         let name = shot.url.lastPathComponent
-        guard !drawing.marks.isEmpty else {
+        guard !drawing.isEmpty else {
             Clipboard.copyFiles([shot.url])
             Log.write("[annotate] \(verb) \(name) nothing drawn, original copied")
             return

@@ -217,7 +217,7 @@ final class DrawingTests: XCTestCase {
         // Another app can write the type: a mark that fails is dropped and the rest are pasted.
         let written = #"{"version": 1, "pointScale": 1, "marks": [{"type": "rectangle", "x": 1e999, "y": 0, "w": 1, "h": 1, "color": "red"}, {"type": "rectangle", "x": 0, "y": 0, "w": 1, "h": 1, "color": "red"}]}"#
         XCTAssertEqual(CopiedMarks(data: Data(written.utf8))?.marks.map(\.geometry), [.rectangle(CGRect(x: 0, y: 0, width: 1, height: 1))])
-        XCTAssertNil(CopiedMarks(data: Data(#"{"version": 2, "pointScale": 1, "marks": []}"#.utf8)), "a newer build's marks")
+        XCTAssertNil(CopiedMarks(data: Data(#"{"version": 3, "pointScale": 1, "marks": []}"#.utf8)), "a newer build's marks")
         XCTAssertNil(CopiedMarks(data: Data(#"{"version": 1, "pointScale": 9, "marks": [{"type": "rectangle", "x": 0, "y": 0, "w": 1, "h": 1, "color": "red"}]}"#.utf8)))
         XCTAssertNil(CopiedMarks(data: Data(#"{"version": 1, "pointScale": 1, "markScale": 2, "marks": [{"type": "rectangle", "x": 0, "y": 0, "w": 1, "h": 1}]}"#.utf8)))
         XCTAssertNil(CopiedMarks(data: Data(#"{"version": 1, "pointScale": 1, "marks": []}"#.utf8)))

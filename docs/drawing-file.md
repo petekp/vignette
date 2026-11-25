@@ -27,32 +27,51 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
 - A mark's fields are the ones its type uses. `bend`, `via`, `wrap`, `agent` and `agentName` are
   left out at their defaults. A text's `size` is always written. A mark has no id and no colour in
   the file.
+- `pins` holds the drawing's pins, in number order, and is left out when there are none. A pin has
+  a random `id` in UUID form, which never changes, a `number` from 1, `x` and `y` in px, and
+  `comments`, a list of at least one, oldest first. A point pin's `x` and `y` are its point. An
+  area pin adds `w` and `h`, and its `x` and `y` are the area's top-left corner. A comment has
+  `text`, at most 2,000 characters, and `agent` and `agentName` as a mark has them, left out for
+  a person's. A file holds at most 99 pins.
+- `nextPin` is the number the next pin gets, and is left out at 1. It never goes down while the
+  file exists, so a deleted pin's number is never given again. A write keeps the file's `nextPin`
+  when it is higher than the drawing's.
 - `message` is what was last typed in the editor's message field for the screenshot, as typed,
   and is left out when the field is empty. The screenshot opens in the editor with it. A file can
-  hold a message and no marks, and then has no drawing. A file without `message`, as every file
+  hold a message and no marks or pins, and then has no drawing. A file without `message`, as every file
   written before it was kept, opens with an empty field.
 - The host writes the file atomically whenever it receives the drawing: after the 300 ms pause, at
   park, and when the app quits. The message is written 300 ms after it last changed, beside the
   marks the file holds, and with the drawing at each of those writes.
 - `history` is the editor's undo and redo steps for the screenshot ([undo and redo](editor-undo.md)), and is left out when there are none. The editor writes it with the drawing or the
   message, and agents' marks added while the screenshot is closed add one step to it. `undo` and `redo` are lists, oldest first. A step has a `name` and either the marks
-  it changed or the message's words `before` and `after`. Each changed mark is a `mark` number, with
+  and pins it changed or the message's words `before` and `after`. Each changed mark is a `mark` number, with
   its `before` and `after` as an `index` in the marks and the `mark`; a step also lists the
-  `selectionBefore` and `selectionAfter` as mark numbers. A mark's number is its index in `marks`,
+  `selectionBefore` and `selectionAfter` as mark numbers. A step that changed pins lists them under
+  `pins`, each by its `id` with its `before` and `after` as the file writes a pin, and leaves out
+  `changes` when no mark changed. A mark's number is its index in `marks`,
   or from the count of `marks` on for a mark the drawing no longer holds.
-- `basis` is a SHA-256 of the marks as stored and the message the history ends at. When a file's
-  marks or message no longer match it, the screenshot opens without its history, with a log line.
+- `basis` is a SHA-256 of the marks as stored and the message the history ends at, and of the pins
+  and `nextPin` when there are pins or `nextPin` is over 1. When a file's drawing or message no
+  longer match it, the screenshot opens without its history, with a log line.
   Every other writer, such as a reply's install or live ink, writes the file without one. A rename
   keeps it. At most 100 steps and about 256 KB, as written, are kept: the oldest undo steps go first, then the
   farthest redo steps. A file without `history`, as every file written before it was kept, opens
-  with an empty history. The format's `version` stays 1, since a build without it ignores the key.
-- A file with no marks and no message is removed, with its history.
+  with an empty history.
+- `version` is 2 when the file holds pins, a `nextPin`, or a history step that changed pins, and
+  1 otherwise, so a build from before pins still reads every file without them. A build from before
+  pins leaves a version 2 file alone, as below.
+- A file with no marks, no pins and no message is removed, with its history, whatever its
+  `nextPin`.
 - Builds from different worktrees share this folder. A file whose `version` is newer than the build
   knows is left alone: the image opens without it, and the build never writes over it.
 - Everything read from a file is checked with the same validator as agents' marks. Numbers must be
   finite, types known, a text's `size` at most 1,000 pt, and a text at most 2,000 characters and
   100,000 bytes. A mark that fails is dropped, with a log line. A mark that no longer
-  fits inside the image is moved in, with a log line. A file that does not parse is renamed to
+  fits inside the image is moved in, with a log line. A pin is dropped, with a log line, when it
+  fails, has no comment, repeats the `number` or the `id` of a pin before it, or comes after the
+  99th. A pin outside the image is moved in, with a log line. A `nextPin` at or below a kept
+  pin's number is raised past the highest. A file that does not parse is renamed to
   `<id>.json.invalid` at launch, with a log line. If a file stops parsing while the app runs, its
   image opens with no drawing and a log line says so. The file stays where it is until the next
   launch. Nothing in a drawing file can crash the app.

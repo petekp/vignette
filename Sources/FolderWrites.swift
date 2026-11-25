@@ -108,7 +108,7 @@ final class FolderWrites {
             Log.write("[add] warning \(name): its \(part.rawValue) is longer than \(part.limit) characters and was cut")
         }
         // The agent saw the drawing only when the file had none before this push.
-        let agentsDrawing = origin != nil && (callbacks.storedDrawing(key)?.marks.isEmpty ?? true)
+        let agentsDrawing = origin != nil && (callbacks.storedDrawing(key)?.isEmpty ?? true)
         guard !marks.isEmpty else {
             recordSentDrawing(of: key, at: destination, agentsDrawing)
             presentAdd(key)

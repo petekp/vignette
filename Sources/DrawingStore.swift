@@ -37,7 +37,7 @@ struct DrawingStore: Sendable {
     /// The drawing stored for the screenshot at `key`, whose size is `pixels`, or nil when there is
     /// none this build can use. A file it cannot use stays where it is: a read runs beside the main
     /// thread's writes, and a set-aside here could move the file a write had just put in its place.
-    /// Each mark is checked and placed inside the image.
+    /// Each mark and each pin is checked and placed inside the image.
     func read(key: String, pixels: PixelSize, style: TextStyle) -> Drawing? {
         let url = url(for: key)
         let name = (key as NSString).lastPathComponent
@@ -78,8 +78,10 @@ struct DrawingStore: Sendable {
                 log("[drawing] dropped mark=\(index + 1) \(name): \(error)")
             }
         }
-        guard !marks.isEmpty else { return nil }
-        return Drawing(key: key, pixels: pixels, pointScale: stored.pointScale, markScale: stored.markScale, marks: marks)
+        let pinned = Pin.read(stored.pins, nextPin: stored.nextPin, in: pixels) { what, why in log("[drawing] \(what) \(name): \(why)") }
+        guard !marks.isEmpty || !pinned.pins.isEmpty else { return nil }
+        return Drawing(key: key, pixels: pixels, pointScale: stored.pointScale, markScale: stored.markScale, marks: marks,
+                       pins: pinned.pins, nextPin: pinned.nextPin)
     }
 
     /// The message stored with the screenshot at `key`, whose size is `pixels`: the words last left in
@@ -91,15 +93,20 @@ struct DrawingStore: Sendable {
     }
 
     /// The undo and redo history stored with the screenshot at `key`, whose size is `pixels`, for the
-    /// drawing read from its file: empty when there is none, or when the marks or the message changed
-    /// since the editor wrote it, such as by a reply's drawing installed while it was closed.
-    func readHistory(key: String, pixels: PixelSize, marks: [Mark]) -> EditorHistory {
+    /// drawing read from its file, whose marks are `marks` and pins `pins`: empty when there is none, or
+    /// when the marks, the pins or the message changed since the editor wrote it, such as by a reply's
+    /// drawing installed while it was closed.
+    func readHistory(key: String, pixels: PixelSize, marks: [Mark], pins: [Pin] = []) -> EditorHistory {
         guard case .stored(let stored) = contents(of: url(for: key)), stored.key == key, stored.pixels == pixels,
               let history = stored.object["history"] else { return EditorHistory() }
         do {
             let written = try stored.marks.map { try Mark(validating: $0) }
             guard written.count == marks.count else { throw MarkProblem("a mark was dropped as the file was read") }
-            return try EditorHistory(fileObject: history, marks: marks, basis: EditorHistory.basis(marks: written, message: stored.message))
+            let writtenPins = try stored.pins.map { try Pin(validating: $0) }
+            guard writtenPins.count == pins.count else { throw MarkProblem("a pin was dropped as the file was read") }
+            let basis = try EditorHistory.basis(marks: written, pins: writtenPins, nextPin: Pin.writtenNextPin(stored.nextPin) ?? 1,
+                                                message: stored.message)
+            return try EditorHistory(fileObject: history, marks: marks, basis: basis)
         } catch {
             log("[drawing] history dropped \((key as NSString).lastPathComponent): \(error)")
             return EditorHistory()
@@ -123,8 +130,11 @@ struct DrawingStore: Sendable {
             case .stored(let contents): stored = contents
             }
             guard stored.key == key else { throw Refusal.incomplete("the key does not match") }
-            guard !stored.marks.isEmpty else { return nil }
+            guard !stored.marks.isEmpty || !stored.pins.isEmpty else { return nil }
             guard stored.pixels == pixels else { throw Refusal.incomplete("the image size does not match") }
+            var pinProblem: String?
+            let pinned = Pin.read(stored.pins, nextPin: stored.nextPin, in: pixels) { what, why in pinProblem = pinProblem ?? "\(what): \(why)" }
+            if let pinProblem { throw Refusal.incomplete(pinProblem) }
             let marks: [Mark]
             do {
                 marks = try stored.marks.map {
@@ -146,7 +156,8 @@ struct DrawingStore: Sendable {
                 }
             }
             catch { throw Refusal.incomplete("\(error)") }
-            return Drawing(key: key, pixels: pixels, pointScale: stored.pointScale, markScale: stored.markScale, marks: marks)
+            return Drawing(key: key, pixels: pixels, pointScale: stored.pointScale, markScale: stored.markScale, marks: marks,
+                           pins: pinned.pins, nextPin: pinned.nextPin)
         } catch {
             log("[drawing] error incomplete \((key as NSString).lastPathComponent): \(error)")
             throw error
@@ -154,8 +165,9 @@ struct DrawingStore: Sendable {
     }
 
     /// Writes `drawing` atomically with `message`, or with the message the file holds when `message` is
-    /// nil, and with `history`, the editor's, which ends at them; any history the file held goes. Removes
-    /// the file when there is neither a mark nor a message. Answers whether the file holds a message now.
+    /// nil, and with `history`, the editor's, which ends at them; any history the file held goes. A higher
+    /// `nextPin` in the file is kept, so a pin number is never used twice while the file exists. Removes
+    /// the file when there is no mark, no pin and no message. Answers whether the file holds a message now.
     /// Throws, after its one log line, when the write fails or the file is from a newer build, which is
     /// left as it is.
     @discardableResult
@@ -165,17 +177,20 @@ struct DrawingStore: Sendable {
         let existing = contents(of: url)
         try refuse(existing, name: name)
         let kept = message ?? Self.message(in: existing, fitting: drawing)
-        guard !drawing.marks.isEmpty || !kept.isEmpty else {
+        guard !drawing.isEmpty || !kept.isEmpty else {
             try remove(key: drawing.key)
             return false
         }
+        var drawing = drawing
+        drawing.nextPin = max(drawing.nextPin, Self.nextPin(in: existing, fitting: drawing))
         try put(Self.encoded(drawing, message: kept, history: history), at: url, name: name)
         return !kept.isEmpty
     }
 
     /// Writes `message` into the file of `drawing`'s screenshot, with `history`, which ends at
-    /// `drawing`'s marks and `message`, and leaves its stored marks as they are. With no file that fits
-    /// the image, a file with no marks holds the message; with no marks and no message the file goes.
+    /// `drawing`'s marks, pins and `message`, and leaves its stored marks and pins as they are. With no file
+    /// that fits the image, a file with no marks and no pins holds the message; with no mark, no pin and
+    /// no message the file goes.
     /// Answers whether the file holds a message now. Throws like `write`.
     @discardableResult
     func writeMessage(_ message: String, for drawing: Drawing, history: EditorHistory = EditorHistory()) throws -> Bool {
@@ -191,10 +206,11 @@ struct DrawingStore: Sendable {
             guard !message.isEmpty else { return false }
             var empty = drawing
             empty.marks = []
-            try put(Self.encoded(empty, message: message, history: history, endingAt: drawing.marks), at: url, name: name)
+            empty.pins = []
+            try put(Self.encoded(empty, message: message, history: history, endingAt: drawing), at: url, name: name)
             return true
         }
-        guard !stored.marks.isEmpty || !message.isEmpty else {
+        guard !stored.marks.isEmpty || !stored.pins.isEmpty || !message.isEmpty else {
             try remove(key: drawing.key)
             return false
         }
@@ -202,7 +218,9 @@ struct DrawingStore: Sendable {
         object["message"] = message.isEmpty ? nil : message
         // Until the next hand-over writes the marks, the file's may lag the history's; reading it then
         // drops the history.
-        object["history"] = try history.fileObject(marks: drawing.marks, message: message)
+        object["history"] = try history.fileObject(endingAt: drawing, message: message)
+        let aboutPins = !stored.pins.isEmpty || (Pin.writtenNextPin(stored.nextPin) ?? 1) > 1 || EditorHistory.mentionsPins(object["history"])
+        object["version"] = Drawing.fileVersion(aboutPins: aboutPins)
         try put(Self.data(of: object), at: url, name: name)
         return !message.isEmpty
     }
@@ -218,13 +236,15 @@ struct DrawingStore: Sendable {
     }
 
     /// `drawing`'s file, with `message` under "message" when there is one and `history` under "history"
-    /// when it has steps. The history's marks are `marks`, the drawing's own unless given.
-    private static func encoded(_ drawing: Drawing, message: String, history: EditorHistory, endingAt marks: [Mark]? = nil) throws -> Data {
+    /// when it has steps. The history ends at `end`, the drawing itself unless given. A history step about
+    /// pins makes the file version 2.
+    private static func encoded(_ drawing: Drawing, message: String, history: EditorHistory, endingAt end: Drawing? = nil) throws -> Data {
         let file = try drawing.encoded()
-        let historyObject = try history.fileObject(marks: marks ?? drawing.marks, message: message)
+        let historyObject = try history.fileObject(endingAt: end ?? drawing, message: message)
         guard !message.isEmpty || historyObject != nil, var object = try DrawingJSON.object(from: file) as? [String: Any] else { return file }
         object["message"] = message.isEmpty ? nil : message
         object["history"] = historyObject
+        if EditorHistory.mentionsPins(historyObject) { object["version"] = Drawing.fileVersion(aboutPins: true) }
         return try data(of: object)
     }
 
@@ -236,6 +256,12 @@ struct DrawingStore: Sendable {
     private static func message(in contents: Contents, fitting drawing: Drawing) -> String {
         guard case .stored(let stored) = contents, stored.key == drawing.key, stored.pixels == drawing.pixels else { return "" }
         return stored.message
+    }
+
+    /// The `nextPin` a file holds for `drawing`'s image, or 1 when it holds none or does not fit it.
+    private static func nextPin(in contents: Contents, fitting drawing: Drawing) -> Int {
+        guard case .stored(let stored) = contents, stored.key == drawing.key, stored.pixels == drawing.pixels else { return 1 }
+        return Pin.writtenNextPin(stored.nextPin) ?? 1
     }
 
     /// Removes the drawing stored for `key`, if there is one. Throws like `write`.
@@ -268,7 +294,7 @@ struct DrawingStore: Sendable {
 
     /// The files this build can read, by the key of their screenshot.
     struct Scan: Equatable {
-        /// The keys whose file holds marks.
+        /// The keys whose file holds a drawing: marks, pins or both.
         var drawings: Set<String> = []
         /// The keys whose file holds a message.
         var messages: Set<String> = []
@@ -286,7 +312,7 @@ struct DrawingStore: Sendable {
             case .stored(let stored):
                 // A file under another key's name would be read, written and removed as that key's.
                 guard file.deletingPathExtension().lastPathComponent == Self.id(for: stored.key) else { break }
-                if !stored.marks.isEmpty { keys.drawings.insert(stored.key) }
+                if !stored.marks.isEmpty || !stored.pins.isEmpty { keys.drawings.insert(stored.key) }
                 if !stored.message.isEmpty { keys.messages.insert(stored.key) }
             case .invalid(let reason):
                 setAside(file, reason: reason)
@@ -317,64 +343,5 @@ struct DrawingStore: Sendable {
         let refusal = Refusal.newerVersion(version)
         log("[drawing] warning not-written \(name): \(refusal)")
         throw refusal
-    }
-
-    /// A file's top level, checked; its marks are checked one at a time by `read`.
-    private struct Stored {
-        let key: String
-        let pixels: PixelSize
-        let pointScale: CGFloat
-        let markScale: CGFloat
-        let marks: [Any]
-        /// What was typed in the message field for the screenshot, or "".
-        let message: String
-        /// The whole file, as parsed.
-        let object: [String: Any]
-    }
-
-    private enum Contents {
-        case missing
-        case unreadable(String)
-        case invalid(String)
-        case newer(Int)
-        case stored(Stored)
-    }
-
-    private func contents(of url: URL) -> Contents {
-        guard FileManager.default.fileExists(atPath: url.path) else { return .missing }
-        let data: Data
-        do { data = try Data(contentsOf: url) } catch { return .unreadable(error.localizedDescription) }
-        let object: [String: Any]
-        do {
-            guard let decoded = try DrawingJSON.object(from: data) as? [String: Any] else { return .invalid("the top level is not an object") }
-            object = decoded
-        } catch {
-            // The debug description says where parsing stopped; the localized one says only that it did.
-            return .invalid((error as NSError).userInfo[NSDebugDescriptionErrorKey] as? String ?? "not JSON")
-        }
-        guard let version = DrawingJSON.wholeNumber(object["version"]), version >= 1 else {
-            return .invalid("version must be a whole number from 1")
-        }
-        if version > Drawing.version { return .newer(version) }
-        guard let key = object["key"] as? String else { return .invalid("key must be a string") }
-        guard let pixels = object["pixels"] as? [Any], pixels.count == 2,
-              let width = DrawingJSON.wholeNumber(pixels[0]), let height = DrawingJSON.wholeNumber(pixels[1]),
-              width > 0, height > 0 else {
-            return .invalid("pixels must be two whole numbers above 0")
-        }
-        guard let pointScale = DrawingJSON.number(object["pointScale"]), Drawing.pointScales.contains(pointScale) else {
-            let range = Drawing.pointScales
-            return .invalid("pointScale must be a number from \(String(format: "%g", range.lowerBound)) to \(String(format: "%g", range.upperBound))")
-        }
-        let markScale = object["markScale"] == nil ? 1 : DrawingJSON.number(object["markScale"])
-        guard let markScale, Drawing.markScales.contains(markScale) else {
-            let range = Drawing.markScales
-            return .invalid("markScale must be a number from \(String(format: "%g", range.lowerBound)) to \(String(format: "%g", range.upperBound))")
-        }
-        guard let marks = object["marks"] as? [Any] else { return .invalid("marks must be a list") }
-        // A file written before the message was kept has none.
-        let message = (object["message"] as? String).map { String($0.prefix(MarkFields.maxTextLength)) } ?? ""
-        return .stored(Stored(key: key, pixels: PixelSize(width: width, height: height), pointScale: pointScale, markScale: markScale,
-                              marks: marks, message: message, object: object))
     }
 }
