@@ -4,10 +4,12 @@ import Foundation
 enum Place: Equatable, Sendable {
     /// `name` is the main checkout's folder name as it is on disk. `root` is that checkout's
     /// canonical path, nil when the repository was read from the shape of a path or from a remote's
-    /// address, so only its name is known. `worktree` is set when the session is in a worktree;
-    /// `subfolder` is the path below the checkout, without folders whose name starts with a dot. A
-    /// folder in `<parent>/worktrees/<repo>` that is no worktree has `worktrees` and the path below it.
-    case repository(name: String, root: String?, worktree: String?, subfolder: String?)
+    /// address, so only its name is known. `remote` is the origin remote's address as host and path
+    /// (`SessionPlaces.remoteAddress`), nil when none is known. `worktree` is set when the session is
+    /// in a worktree; `subfolder` is the path below the checkout, without folders whose name starts
+    /// with a dot. A folder in `<parent>/worktrees/<repo>` that is no worktree has `worktrees` and the
+    /// path below it.
+    case repository(name: String, root: String?, remote: String? = nil, worktree: String?, subfolder: String?)
     /// A folder with no repository, as a path from home.
     case folder(fromHome: String)
     /// A session with no folder.
@@ -28,7 +30,11 @@ enum SessionPlaces {
     /// What the worktrees Codex makes are called, since their folder's name is the repository's.
     static let codexWorktree = "Codex worktree"
 
-    /// `folder`'s place. `originURL` is a Codex thread's remote, used last for a folder that is gone.
+    /// The home folder's canonical path, which every `root` is below or beside.
+    static let home = canonical(NSHomeDirectory()) ?? NSHomeDirectory()
+
+    /// `folder`'s place. `originURL` is a Codex thread's remote: the remote of a folder that is gone,
+    /// and its name when nothing else names its repository.
     /// `environment` says where Codex's folder is (`CODEX_HOME`), whose worktrees are named for Codex.
     static func resolve(folder: String?, originURL: String? = nil, home: String = NSHomeDirectory(),
                         environment: [String: String] = ProcessInfo.processInfo.environment) -> Found {
@@ -51,22 +57,26 @@ enum SessionPlaces {
         while directory.path != "/", directory.path != canonicalHome {
             if let checkout = checkout(at: directory, home: canonicalHome, environment: environment) {
                 let below = relative(from: directory.path, to: start, gone: gone)
+                let remote = origin(in: checkout.commonDirectory)
                 var place = Place.repository(name: checkout.mainFolder.lastPathComponent, root: checkout.mainFolder.path,
-                                             worktree: checkout.worktree, subfolder: subfolder(below))
+                                             remote: remote, worktree: checkout.worktree, subfolder: subfolder(below))
                 // A worktree that is gone lies inside its repository's folder or beside it. Its path
                 // says which worktree it was, which walking up to the checkout cannot.
-                if !gone.isEmpty, case .repository(let name, _, let worktree?, let rest)? = shaped(),
+                if !gone.isEmpty, case .repository(let name, _, _, let worktree?, let rest)? = shaped(),
                    name == checkout.mainFolder.lastPathComponent {
-                    place = .repository(name: name, root: checkout.mainFolder.path, worktree: worktree, subfolder: rest)
+                    place = .repository(name: name, root: checkout.mainFolder.path, remote: remote, worktree: worktree, subfolder: rest)
                     return Found(place: place, branch: nil)
                 }
                 return Found(place: place, branch: branch(of: checkout))
             }
             directory.deleteLastPathComponent()
         }
-        if let shaped = shaped() { return Found(place: shaped, branch: nil) }
-        if let name = remoteName(originURL) {
-            return Found(place: .repository(name: name, root: nil, worktree: nil, subfolder: nil), branch: nil)
+        let remote = remoteAddress(originURL)
+        if case .repository(let name, let root, let known, let worktree, let rest)? = shaped() {
+            return Found(place: .repository(name: name, root: root, remote: known ?? remote, worktree: worktree, subfolder: rest), branch: nil)
+        }
+        if let remote, let name = remote.split(separator: "/").last {
+            return Found(place: .repository(name: String(name), root: nil, remote: remote, worktree: nil, subfolder: nil), branch: nil)
         }
         let path = components.isEmpty ? "/" : "/" + components.joined(separator: "/")
         return Found(place: .folder(fromHome: fromHome(path, home: canonicalHome)), branch: nil)
@@ -79,13 +89,69 @@ enum SessionPlaces {
         return path
     }
 
-    /// The last part of a remote's address without `.git`: `git@github.com:ever/foo.git` is `foo`.
-    static func remoteName(_ url: String?) -> String? {
-        guard var text = url?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
-        while text.hasSuffix("/") { text.removeLast() }
-        if text.hasSuffix(".git") { text.removeLast(4) }
-        guard let last = text.split(whereSeparator: { $0 == "/" || $0 == ":" }).last, !last.isEmpty else { return nil }
-        return String(last)
+    /// A remote's address as its host and path, which every way of writing one remote shares:
+    /// `https://github.com/Ever-Cars/foo.git`, `git@github.com:Ever-Cars/foo` and
+    /// `ssh://git@github.com:22/Ever-Cars/foo/` are all `github.com/Ever-Cars/foo`. The user, the
+    /// port, the scheme and `.git` go, and the host is lowercased; the path keeps its case, which
+    /// `SessionMenu.Filer` ignores when it compares. A local remote keeps its absolute path; a relative
+    /// one is nil.
+    static func remoteAddress(_ url: String?) -> String? {
+        guard let text = url?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+        var host = ""
+        var path = text
+        if let scheme = text.range(of: "://") {
+            let rest = text[scheme.upperBound...]
+            let authority = rest.prefix { $0 != "/" }
+            path = String(rest.dropFirst(authority.count))
+            let server = authority.split(separator: "@").last ?? ""
+            // An IPv6 host is in brackets, with colons inside them.
+            let bracketed = server.hasPrefix("[") ? server.firstIndex(of: "]").map { server[...$0] } : nil
+            host = String(bracketed ?? server.split(separator: ":").first ?? "")
+            if text[..<scheme.lowerBound].lowercased() == "file" { host = "" }
+            if host.isEmpty { path = "/" + path.drop { $0 == "/" } }
+        } else if let colon = text.firstIndex(of: ":"), !text[..<colon].contains("/") {
+            // The scp form, `[user@]host:path`.
+            host = String(text[..<colon].split(separator: "@").last ?? "")
+            path = String(text[text.index(after: colon)...])
+        }
+        let parts = path.split(separator: "/").map(String.init)
+        guard var last = parts.last else { return nil }
+        if last.lowercased().hasSuffix(".git") { last.removeLast(4) }
+        guard !last.isEmpty else { return nil }
+        let joined = (parts.dropLast() + [last]).joined(separator: "/")
+        if !host.isEmpty { return host.lowercased() + "/" + joined }
+        // A relative path names a different repository from each checkout, so it says nothing.
+        return path.hasPrefix("/") ? "/" + joined : nil
+    }
+
+    /// The URL of `[remote "origin"]` in a repository's `config`, as `remoteAddress` writes it. It does
+    /// not follow `include` or apply `insteadOf`, whose usual rewrite, between a host's ssh and https
+    /// forms, gives the same address.
+    private static func origin(in common: URL) -> String? {
+        guard let text = try? String(contentsOf: common.appendingPathComponent("config"), encoding: .utf8) else { return nil }
+        var inOrigin = false
+        for raw in text.split(whereSeparator: \.isNewline) {
+            var line = Substring(raw.trimmingCharacters(in: .whitespaces))
+            if line.hasPrefix("["), let close = line.firstIndex(of: "]") {
+                // The section's name ignores case; its subsection, the remote's name, does not, except
+                // in the old `[remote.origin]` form. A key may follow on the same line.
+                let header = line[line.index(after: line.startIndex)..<close]
+                let words = header.split(whereSeparator: \.isWhitespace)
+                inOrigin = header.lowercased() == "remote.origin"
+                    || (words.count == 2 && words[0].lowercased() == "remote" && words[1] == "\"origin\"")
+                line = line[line.index(after: close)...]
+            }
+            guard inOrigin, let equals = line.firstIndex(of: "="),
+                  line[..<equals].trimmingCharacters(in: .whitespaces).lowercased() == "url" else { continue }
+            var value = line[line.index(after: equals)...].trimmingCharacters(in: .whitespaces)
+            if value.hasPrefix("\""), let close = value.dropFirst().firstIndex(of: "\"") {
+                value = String(value[value.index(after: value.startIndex)..<close])
+            } else if let comment = value.firstIndex(where: { $0 == "#" || $0 == ";" }) {
+                value = value[..<comment].trimmingCharacters(in: .whitespaces)
+            }
+            return remoteAddress(value)
+        }
+        return nil
     }
 
     // MARK: Reading .git
@@ -228,7 +294,7 @@ enum SessionPlaces {
         if let folder = canonical(repositoryFolder), folder != home,
            let found = checkout(at: URL(fileURLWithPath: folder), home: home, environment: environment) {
             return .repository(name: found.mainFolder.lastPathComponent, root: found.mainFolder.path,
-                               worktree: worktree, subfolder: subfolder(rest))
+                               remote: origin(in: found.commonDirectory), worktree: worktree, subfolder: subfolder(rest))
         }
         guard let worktree else { return nil }
         return .repository(name: name, root: nil, worktree: worktree, subfolder: subfolder(rest))

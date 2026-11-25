@@ -396,16 +396,14 @@ final class AgentConnectionTests: XCTestCase {
                      "a note on the responder forces no row in")
     }
 
-    /// A repository known only by name joins the one checkout of that name; two checkouts with one name
-    /// get their parent folder in the header.
-    func testRepositoriesJoinByNameAndSameNamesAddTheirParentFolder() {
+    func testRepositoriesJoinByNameAndSameNamesShowTheirPath() {
         let now = Date()
-        let list = [session("a", used: 1, place: repo("foo", at: "/Users/p/ever/foo"), now: now),
+        let list = [session("a", used: 1, place: repo("foo", at: "/p/ever/foo"), now: now),
                     session("b", used: 2, place: .repository(name: "bar", root: nil, worktree: nil, subfolder: nil), now: now),
                     session("c", used: 3, place: repo("bar"), now: now),
-                    session("d", used: 4, place: repo("foo", at: "/Users/p/Code/foo"), now: now)]
+                    session("d", used: 4, place: repo("foo", at: "/p/Code/foo"), now: now)]
         let menu = SessionMenu.menu(list, destination: nil, now: now)
-        XCTAssertEqual(menu.top.map(\.header), ["ever/foo", "bar", "Code/foo"])
+        XCTAssertEqual(menu.top.map(\.header), ["/p/ever/foo", "bar", "/p/Code/foo"])
         XCTAssertEqual(menu.top[1].rows.map(\.id), ["b", "c"], "the name-only session joined the one checkout called bar")
     }
 

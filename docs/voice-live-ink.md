@@ -46,7 +46,7 @@ The menu bar menu names the switch as the Live Ink tab does.
 | The destination control in the bar | The row's title; its tooltip is the title, the second line whole, with the time the row shows at its right when the row has no herdr tab or goal or continues a session, and the repository |
 | The destination control when no session runs and some can be started (`ToolbarView.chooseSession`) | Choose a session; its tooltip: No session is running. You can continue a past one or start a new one. |
 | A project's rows when it has no running session (`SessionMenu.continueLast`, `newSession`), found by search, or in the top rows when no session runs | Continue last session, under it the worktree, branch, the session's name and how long ago it was used / New session, under it the worktree and branch |
-| The destination control, and the note's target, once a row of a project with no running session is picked (`SessionMenu.lastSession(in:)`, `newSession(in:)`) | Last session in *project* / New session in *project*; the note's target adds the menu row's suffix in parentheses when another such row reads the same; the tooltip keeps the menu row's words |
+| The destination control, and the note's target, once a row of a project with no running session is picked (`SessionMenu.lastSession(in:)`, `newSession(in:)`) | Last session in *project* / New session in *project*; both add the menu row's suffix in parentheses when another such row reads the same; the tooltip keeps the menu row's words |
 
 *agent* is the note's target, Claude or Codex, and *other* is the agent that is not.
 
