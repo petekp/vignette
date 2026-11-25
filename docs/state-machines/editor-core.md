@@ -4,7 +4,7 @@ The editor is a pure reducer (`EditorCore`) driven by a view (`EditorView`) that
 
 ### EditorCore (explicit)
 
-Owner: `EditorCore.swift:12`, reducer `reduce` at `EditorCore.swift:477`. Tests: `EditorCoreSequenceTests.testRandomSequencesKeepTheInvariants` (drives `checkShape`, `checkUndo`, `apply`), `EditorCoreTests`, `EditorCoreOpeningTests.testTheNextImageFinishesWithWhatTheBarStillOffers`.
+Owner: `EditorCore.swift:12`, reducer `reduce` at `EditorCore.swift:477`. Tests: `EditorCoreSequenceTests.testRandomSequencesKeepTheInvariants` (drives `checkShape`, `checkUndo`, `apply`), `EditorCoreTests`, `EditorCoreOpeningTests`, `EditorCoreTextEditingTests`.
 
 The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save timer, and agent marks joining. `EditorView` sends one `Input` per event and runs the returned `Effect`s in order. A drawing is a screenshot's marks (`Drawing.swift`); a hand-over gives the host the drawing to store.
 
@@ -32,7 +32,7 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 | open, idle | `pointerPressed` | `gesture = pressed`, or typing begins, or a zoom request | `pressed` (`:733`) ends typing first if any; the press target decides. |
 | `pressed` | drag past the drag distance | `drawing`, `moving`, `resizing`, `draggingEnd`, `bending`, `wrapping` or `brushing` | `dragPhase` (`:818`) picks the phase; `startDrag` (`:842`) opens `edit` for the phases that change marks. |
 | any gesture | `pointerDragged`, `modifiersChanged` | same gesture, redrawn | `update` (`:868`) redraws from the press to the pointer. |
-| any gesture | `pointerReleased` | `gesture = nil` | `released` (`:980`): a big-enough `drawing` commits, otherwise reverts; moves, resizes, end drags and bends commit. A commit calls `changed()`. |
+| any gesture | `pointerReleased` | `gesture = nil` | `released` (`:928`): a big-enough `drawing` commits, otherwise reverts; moves, resizes, end drags and bends commit. A commit calls `changed()`. A click marked `.type` begins typing. |
 | any gesture | `pointerMoved` | `gesture = nil` | `cancelGesture` (`:728`): the release was lost. Reverts the edit, restores `selectionBefore`. |
 | any gesture | `pointerPressed` | new press | `cancelGesture` (`:734`) first. |
 | any gesture | `keyDown` | `gesture = nil` unless the key is a zoom key | A zoom key is forwarded. Any other key calls `cancelGesture` and may pick a tool (`:1322-1329`). Cmd+Z here cancels and undoes nothing more. |
@@ -67,7 +67,7 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 - `gesture` and `typing` are never both non-nil. Every writer of `typing` runs after the gesture is cancelled or cleared. Checked by: nothing.
 - `edit != nil` exactly while a changing gesture or a typing session is open. Checked by: nothing.
 - `unsaved` implies a `.scheduleTimer` was emitted since the last `.handOver` or `.cancelTimer`: only `changed()` sets `unsaved`, and it emits `.scheduleTimer` in the same call (`:641`). Checked by: nothing; the sequence test never compares hand-over payloads with `drawingForHost`.
-- `finishes` is the host's, and opening an image leaves it alone (comment at `:367`). `open` reset it until [issue 1](issues.md#issue-1). Checked by: `EditorCoreOpeningTests.testTheNextImageFinishesWithWhatTheBarStillOffers` ([editor-1](findings.md#editor-1))
+- `finishes` is the host's, and opening an image leaves it alone (comment at `:367`). Checked by: `EditorCoreOpeningTests.testTheNextImageFinishesWithWhatTheBarStillOffers` ([editor-1](findings.md#editor-1))
 - A held arrow key is cleared by `park` and by the stale-key guard (`:1335`). Checked by: nothing.
 - Any new undo step clears the redo stack, an agent push and a message step included (`push`), so agent marks arriving after Cmd+Z drop the redo history. Checked by: `EditorCoreTests.testTheMessageFieldsTypingIsOneStepInOrderWithTheMarksAndUndoPutsItsWordsBack` for a message step.
 
