@@ -14,7 +14,7 @@ import time
 import urllib.parse
 
 from e2e import PROBE, Failed
-from scenarios import card_for, start
+from scenarios import start
 
 # x, y, w and h in global top-left points, inside the VM's 1024 by 768 screen.
 PAGE = [150, 140, 660, 360]
@@ -231,7 +231,7 @@ def ink_to_session(app):
     if not line.startswith(WORDS) or "Drawn with Vignette's live ink on" not in line:
         raise Failed(f'the request line does not carry the words and the place: {line[:200]}')
     app.report.step('one line in the inbox with the words and where they were drawn', detail=line.strip()[:160])
-    ink = wait_ink(app, lambda ink: not person_marks(ink) and ink['note'] is None, 'the ink leaving the window')
+    wait_ink(app, lambda ink: not person_marks(ink) and ink['note'] is None, 'the ink leaving the window')
     app.report.step('the ink left the window')
     s = app.wait_state(lambda s: any(os.path.basename(c['file']).startswith('Live ink note') and c['drawing']
                                      for c in s['stack']['cards']), 'the note card with its drawing in the corner')
