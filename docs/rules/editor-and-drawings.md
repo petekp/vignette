@@ -97,7 +97,7 @@
   none is shown after `park()`. A text keeps at most two bitmaps, a whole and a sharper detail, the
   one on its way included. Each owner's plan caps them: the editor's at the view's size in device
   pixels, a card's at the part of the image the card shows at its rest size. The comments in
-  `MarkLayers.swift` and `MarksView.swift` say how bitmaps are shared between the editor and a
+  `MarkLayers+TextBitmaps.swift` and `MarksView.swift` say how bitmaps are shared between the editor and a
   flight, restyled, and flattened on a card.
 - Drawings are owned by the app, and every write goes through `Drawings` (`Drawings.swift`, with
   `DrawingStore` for the files): one JSON file per screenshot under
