@@ -5,7 +5,8 @@ enum Place: Equatable, Sendable {
     /// `name` is the main checkout's folder name as it is on disk. `root` is that checkout's
     /// canonical path, nil when the repository was read from the shape of a path or from a remote's
     /// address, so only its name is known. `worktree` is set when the session is in a worktree;
-    /// `subfolder` is the path below the checkout, without folders whose name starts with a dot.
+    /// `subfolder` is the path below the checkout, without folders whose name starts with a dot. A
+    /// folder in `<parent>/worktrees/<repo>` that is no worktree has `worktrees` and the path below it.
     case repository(name: String, root: String?, worktree: String?, subfolder: String?)
     /// A folder with no repository, as a path from home.
     case folder(fromHome: String)
@@ -42,7 +43,9 @@ enum SessionPlaces {
             existing.deleteLastPathComponent()
         }
         let start = canonical(existing.path) ?? existing.path
-        let components = (start as NSString).pathComponents.dropFirst() + gone
+        let components = Array((start as NSString).pathComponents.dropFirst() + gone)
+        let onDisk = components.count - gone.count
+        func shaped() -> Place? { shape(of: components, onDisk: onDisk, home: canonicalHome, environment: environment) }
 
         var directory = URL(fileURLWithPath: start)
         while directory.path != "/", directory.path != canonicalHome {
@@ -52,7 +55,7 @@ enum SessionPlaces {
                                              worktree: checkout.worktree, subfolder: subfolder(below))
                 // A worktree that is gone lies inside its repository's folder or beside it. Its path
                 // says which worktree it was, which walking up to the checkout cannot.
-                if !gone.isEmpty, case .repository(let name, _, let worktree?, let rest)? = shape(of: Array(components)),
+                if !gone.isEmpty, case .repository(let name, _, let worktree?, let rest)? = shaped(),
                    name == checkout.mainFolder.lastPathComponent {
                     place = .repository(name: name, root: checkout.mainFolder.path, worktree: worktree, subfolder: rest)
                     return Found(place: place, branch: nil)
@@ -61,7 +64,7 @@ enum SessionPlaces {
             }
             directory.deleteLastPathComponent()
         }
-        if let shaped = shape(of: Array(components)) { return Found(place: shaped, branch: nil) }
+        if let shaped = shaped() { return Found(place: shaped, branch: nil) }
         if let name = remoteName(originURL) {
             return Found(place: .repository(name: name, root: nil, worktree: nil, subfolder: nil), branch: nil)
         }
@@ -174,10 +177,11 @@ enum SessionPlaces {
         return shown.isEmpty ? nil : shown.joined(separator: "/")
     }
 
-    /// A repository read from the shape of the path, for a folder that is gone:
+    /// A repository read from the shape of the path, for a folder with no `.git` above it:
     /// `…/.codex/worktrees/<any>/<repo>/…`, `…/.claude/worktrees/<name>` below `<repo>`,
-    /// `…/worktrees/<repo>/<name>/…`, and `<repo>/.worktrees/<name>/…`.
-    private static func shape(of path: [String]) -> Place? {
+    /// `<parent>/worktrees/<repo>/…`, and `<repo>/.worktrees/<name>/…`. The first `onDisk`
+    /// components of `path` exist; the rest are gone.
+    private static func shape(of path: [String], onDisk: Int, home: String, environment: [String: String]) -> Place? {
         func place(_ name: String, worktree: String, rest: ArraySlice<String>) -> Place {
             .repository(name: name, root: nil, worktree: worktree, subfolder: subfolder(Array(rest)))
         }
@@ -189,12 +193,33 @@ enum SessionPlaces {
         for index in path.indices where path[index] == ".claude" && index > 0 && index + 2 < path.count && path[index + 1] == "worktrees" {
             return place(path[index - 1], worktree: path[index + 2], rest: path[(index + 3)...])
         }
-        for index in path.indices where path[index] == "worktrees" && index + 2 < path.count {
-            return place(path[index + 1], worktree: path[index + 2], rest: path[(index + 3)...])
+        for index in path.indices where path[index] == "worktrees" && index + 1 < path.count {
+            if let found = worktreesFolder(path, at: index, onDisk: onDisk, home: home, environment: environment) { return found }
         }
         for index in path.indices where path[index] == ".worktrees" && index > 0 && index + 1 < path.count {
             return place(path[index - 1], worktree: path[index + 1], rest: path[(index + 2)...])
         }
         return nil
+    }
+
+    /// `<parent>/worktrees/<repo>` and every folder below it belong to the checkout at
+    /// `<parent>/<repo>`, which is how worktrees are laid out beside their repository. A folder below
+    /// it that is on disk is a subfolder, since a worktree there has a `.git` the walk up finds first;
+    /// the first one that is gone is taken for the worktree it was. With no checkout there, only a
+    /// worktree that is gone still names its repository.
+    private static func worktreesFolder(_ path: [String], at index: Int, onDisk: Int, home: String,
+                                        environment: [String: String]) -> Place? {
+        let name = path[index + 1]
+        let firstBelow = index + 2
+        let worktree = firstBelow < path.count && firstBelow >= onDisk ? path[firstBelow] : nil
+        let rest = worktree == nil ? [path[index]] + path.dropFirst(firstBelow) : Array(path.dropFirst(firstBelow + 1))
+        let repositoryFolder = "/" + (path[..<index] + [name]).joined(separator: "/")
+        if let folder = canonical(repositoryFolder), folder != home,
+           let found = checkout(at: URL(fileURLWithPath: folder), home: home, environment: environment) {
+            return .repository(name: found.mainFolder.lastPathComponent, root: found.mainFolder.path,
+                               worktree: worktree, subfolder: subfolder(rest))
+        }
+        guard let worktree else { return nil }
+        return .repository(name: name, root: nil, worktree: worktree, subfolder: subfolder(rest))
     }
 }
