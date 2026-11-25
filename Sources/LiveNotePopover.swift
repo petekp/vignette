@@ -68,7 +68,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
     /// Where the caret was when the note lost the keys, which it takes back with them.
     private var caret: NSRange?
     private var sessions: [AgentDestination] = []
-    /// The last session list, which a change in whether Claude can answer resolves again.
+    /// The list shown, which a change in whether Claude can answer resolves again.
     private var candidates: DestinationChoice.Candidates?
     private(set) var closing = false
     var promptWaiting: Task<Void, Never>?
@@ -197,9 +197,9 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         content.field.currentEditor()?.selectedRange = caret ?? end
     }
 
-    /// The working sessions to offer after the responder. The list can arrive in several answers, a
-    /// kept one and fresh ones; `DestinationChoice` says which target each one starts the note on.
+    /// The sessions after the responder, from answers `DestinationChoice` lets in.
     func setSessions(_ candidates: DestinationChoice.Candidates) {
+        guard DestinationChoice.replacesList(candidates.complete, over: self.candidates?.complete == true) else { return }
         self.candidates = candidates
         let answer = DestinationChoice.choose(candidates, for: .liveNote(ownPick))
         // The menu lists the sessions Vignette can start after the running ones (`SessionMenu.ranked`).

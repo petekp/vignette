@@ -245,7 +245,7 @@ Reads a Codex session's rollout file to say whether the session is waiting, busy
 
 ### LiveNotePopover (implicit)
 
-Owner: `LiveNotePopover.swift:26`. Tests: none.
+Owner: `LiveNotePopover.swift:26`. Tests: `DestinationChoiceTests.testALiveNoteKeepsItsWholeListAndItsTargetOverALaterPartialAnswer` (its session list).
 
 The note panel a person types into. Created at `showNote` (`LiveInk.swift:616`).
 
@@ -263,6 +263,8 @@ The note panel a person types into. Created at `showNote` (`LiveInk.swift:616`).
 | `handingOver` | `fadeAway` | `closing`, `handingOver = false` | closes; the delayed `ready` does not run (392, `guard handingOver` at 380) |
 | any | `dismiss` | `closing` | closes |
 | `closing` or `sent` | `put`, `takeKeys`, `send`, `hang`, `follow`, `standAside` | — (ignored) | — |
+| `candidates` complete | `setSessions` with an incomplete answer (`:201`), such as the first answer of the listing a return of the keys starts | — (ignored, `DestinationChoice.replacesList`) | — |
+| `candidates` nil or incomplete, or the answer complete | `setSessions` | `candidates` replaced | the list and the target chosen again (`DestinationChoice.choose`) |
 
 **Invariants**
 

@@ -11,27 +11,29 @@ Owner: `AnnotatorToolbar.swift:9`. Tests: `ToolbarOfferTests.testTheTargetSettle
 Holds which session Send goes to for the open image. `AnnotationController.beginDestinations` (`AnnotationController.swift:617`) and `destinationsAnswered` (`:623`) drive it, called from `AppDelegate.refreshDestinations` and `listDestinations` (`AppDelegate+Send.swift`).
 
 **States**: the properties together:
-- `destinations` (`:14`): the last list answered for this image. `startable` (`:16`): rows Send would start.
-- `listed` (`:18`): every client has answered. `whole` (`:22`): the last complete list, possibly the image before's.
-- `replyTo` (`:25`): the session this image came from. `target` (`:27`): the chosen destination.
-- `picked` (`:41`): the person chose the target. `isHandPick(_:)` reads it, and a Send to a hand pick sets the kept pick (the next machine). `carried` (`:44`): the target is the image before's and waits for this image's first deciding answer.
-- `offer` (`:131`) is derived (next machine). `reportOffer` (`:139`) calls `onOfferChanged` only when the offer changed.
+- `destinations` (`:13`) and `startable` (`:15`, rows Send would start): the last answer `DestinationChoice.replacesList` let in. `destinationsComplete` (`:20`): every client answered that list, which may be the image before's.
+- `listed` (`:17`): every client has answered for this image.
+- `replyTo` (`:23`): the session this image came from. `target` (`:25`): the chosen destination.
+- `picked` (`:39`): the person chose the target. `isHandPick(_:)` reads it, and a Send to a hand pick sets the kept pick (the next machine). `carried` (`:42`): the target is the image before's and waits for this image's first deciding answer.
+- `offer` (`:125`) is derived (next machine) from `destinations` and `destinationsComplete`. `reportOffer` (`:133`) calls `onOfferChanged` only when the offer changed.
 
 A `decided` answer is one `DestinationChoice` marks as settled: complete, or any session marked by herdr.
 
 **Transitions**
 
-Events: `begin(replyTo:carryingTarget:)` (`:155`, sent by `beginDestinations` with `carryingTarget: toolbar.model.shown`, right after `annotator.prepare`, `AppDelegate.swift:116-118`); `answered(_:)` (`:175`, once per `SessionListing.deliver`); `pick(_:)` (`:195`, from the target menu a turn later, `AnnotatorToolbar+TargetPick.swift:9-22`).
+Events: `begin(replyTo:carryingTarget:)` (`:142`, sent by `beginDestinations` with `carryingTarget: toolbar.model.shown`, right after `annotator.prepare`, `AppDelegate.swift:116-118`); `answered(_:)` (`:161`, once per `SessionListing.deliver`); `pick(_:)` (`:183`, from the target menu a turn later, `AnnotatorToolbar+TargetPick.swift:9-22`).
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| any | `begin(carryingTarget: false)`, or `target == nil` | `replyTo` set; `listed`, `picked`, `carried` false; `destinations`, `startable`, `target`, `whole` cleared | — |
-| `target != nil`, not carried | `begin(carryingTarget: true)` | `carried = true`; lists, `target`, `whole` kept; `listed`, `picked` false | — |
-| carried | `answered`, not decided | lists replace; `target` refreshed from the new list if same id; stays carried (`:175-177`) | — |
+| any | `begin(carryingTarget: false)`, or `target == nil` | `replyTo` set; `listed`, `picked`, `carried`, `destinationsComplete` false; `destinations`, `startable`, `target` cleared | — |
+| `target != nil`, not carried | `begin(carryingTarget: true)` | `carried = true`; lists, `destinationsComplete`, `target` kept; `listed`, `picked` false | — |
+| any | `answered`, complete, or the lists held are not complete | lists and `destinationsComplete` replace (`DestinationChoice.replacesList`); then the rows below | — |
+| `destinationsComplete` | `answered`, not complete | lists kept; `listed` false; then the rows below | — |
+| carried | `answered`, not decided | `target` refreshed from the answer if same id (`:169`); stays carried | — |
 | carried | `answered`, decided | `carried = false`; `target = answer.pick` (may be nil) | — |
 | not picked, not carried, `target == nil` | `answered`, decided | `target = answer.pick` | — |
-| not picked, not carried, target set | `answered` | target kept, unless the answer is complete, the target is absent from it (`gone`) and the answer is decided: then `target = answer.pick` (`:181`) | — |
-| picked | `answered` | lists, `listed`, `whole` update; `target` only refreshed to the object with the same id (`:173`), never replaced | — |
+| not picked, not carried, target set | `answered` | target kept, unless the answer is complete, the target is absent from it (`gone`) and the answer is decided: then `target = answer.pick` (`:177`) | — |
+| picked | `answered` | `listed` updates, the lists as above; `target` only refreshed to the object with the same id (`:169`), never replaced | — |
 | any | `pick(d)` | `target = d`, `picked = true`, `carried = false`. No check that `d` is in a list | — |
 
 **Invariants**
@@ -40,6 +42,7 @@ Events: `begin(replyTo:carryingTarget:)` (`:155`, sent by `beginDestinations` wi
 - A pick stays even when the list no longer has it. Checked by: the same two tests.
 - A swap keeps the old target until this image's first deciding answer. Checked by: `ToolbarOfferTests.testASwapKeepsTheTargetOnTheBarUntilTheNextImagesSettles`.
 - Reply stays Send until the whole list answers. Checked by: the same test.
+- A complete list in the menu is never replaced by an incomplete answer, the image before's included. Checked by: the same test.
 - A carried target still exists. Checked by: nothing.
 
 **Late and concurrent answers**

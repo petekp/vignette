@@ -143,6 +143,7 @@ final class ToolbarOfferTests: XCTestCase {
         XCTAssertEqual(model.offer, .send(focusedMew))
         model.answered(answer([codex], complete: false))
         XCTAssertEqual(model.target?.id, "mew", "an answer that settles nothing leaves it")
+        XCTAssertEqual(model.destinations.map(\.id), ["mew"], "a partial answer leaves the image before's whole list in the menu")
         model.answered(answer([codex, session("other")], complete: false, herdr: inPane("other")))
         XCTAssertEqual(model.target?.id, "other", "this image's own focus replaces it")
 

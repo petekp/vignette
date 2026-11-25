@@ -53,6 +53,9 @@ enum SessionMenu {
         let projects: [Group]
         /// Every session on offer by project, the running ones first: what search looks through.
         let everyone: [Group]
+        /// Each session's place in the order the menu shows it, from 0, by id: the top rows as they
+        /// stand, then the rest of `everyone`. What search orders its groups by.
+        let rank: [String: Int]
         /// The rows from top to bottom, which is also live ink's Tab order after the responder.
         var topRows: [Row] { top.flatMap(\.rows) }
     }
@@ -118,7 +121,9 @@ enum SessionMenu {
         let topGroups = groups(top, filer, rows, leadFirst: targetNotFirst)
         let first = topGroups.map(\.key)
         let projects = receiving.contains { !shown.contains($0.id) } ? groups(receiving, filer, rows, headersFirst: first) : []
-        return Menu(top: topGroups, projects: projects, everyone: groups(everyone, filer, rows, headersFirst: first))
+        let shownOrder = top + everyone.filter { !shown.contains($0.id) }
+        return Menu(top: topGroups, projects: projects, everyone: groups(everyone, filer, rows, headersFirst: first),
+                    rank: Dictionary(shownOrder.enumerated().map { ($1.id, $0) }) { first, _ in first })
     }
 
     /// `destination`'s row among `listed`, as the destination control and live ink's target button
@@ -136,10 +141,14 @@ enum SessionMenu {
         return Row(destination: row.destination, title: title, details: row.details, activity: row.activity, tooltip: row.tooltip)
     }
 
-    /// The sessions every row is worded over: the active ones, and `destination` when it is not among them.
+    /// The sessions every row is worded over: the active ones, and `destination` when it is not among
+    /// them, after the running ones and, unless it starts a session too, before the rows that start one.
     private static func including(_ destination: AgentDestination?, in active: [AgentDestination]) -> [AgentDestination] {
         guard let destination, !active.contains(where: { $0.id == destination.id }) else { return active }
-        return active + [destination]
+        var everyone = active
+        let firstStart = destination.startsProcess ? nil : active.firstIndex(where: \.startsProcess)
+        everyone.insert(destination, at: firstStart ?? active.endIndex)
+        return everyone
     }
 
     /// What the sent card calls `row`'s session: the row's title, or the project of a session Send

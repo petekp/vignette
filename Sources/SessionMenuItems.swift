@@ -201,11 +201,11 @@ final class SessionMenuSearch: NSObject, NSSearchFieldDelegate {
     private func rebuild() {
         while menu.numberOfItems > start { menu.removeItem(at: start) }
         let query = field.stringValue
-        if query.trimmingCharacters(in: .whitespaces).isEmpty {
+        if SessionMenu.searchWords(in: query).isEmpty {
             SessionMenu.addAll(sessions, to: menu, make: make)
             return
         }
-        let matches = SessionMenu.matching(query, in: sessions.everyone)
+        let matches = SessionMenu.matching(query, in: sessions)
         if matches.isEmpty {
             let none = NSMenuItem(title: SessionMenu.noMatch, action: nil, keyEquivalent: "")
             none.isEnabled = false
