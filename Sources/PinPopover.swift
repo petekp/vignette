@@ -6,7 +6,7 @@ import AppKit
 /// Cmd+Return posts and finishes, and Esc posts and closes.
 @MainActor
 final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
-    static let width: CGFloat = 280
+    static var width: CGFloat { Settings.shared.data.ui.pinPopoverWidth }
     let pin: Pin.ID
     private let popover = NSPopover()
     private let controller = NSViewController()

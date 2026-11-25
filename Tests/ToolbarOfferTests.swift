@@ -68,6 +68,13 @@ final class ToolbarOfferTests: XCTestCase {
         XCTAssertEqual(model.fieldReturn, .send, "Return replies: the image names where it came from")
     }
 
+    func testThePinsButtonComesAfterTheToolsOnlyWhileThereArePins() {
+        let model = AnnotatorToolbar.Model()
+        XCTAssertFalse(model.controls.contains(.pins))
+        model.pinCount = 2
+        XCTAssertEqual(Array(model.controls.prefix(EditorCore.Tool.allCases.count + 1)), EditorCore.Tool.allCases.map { .tool($0) } + [.pins])
+    }
+
     func testReplyIsUnavailableOnlyWhileTheAgentsImageHasNothingNew() {
         let model = AnnotatorToolbar.Model()
         let mew = session("mew")

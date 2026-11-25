@@ -44,8 +44,8 @@ final class EditorCoreTests: XCTestCase {
         return nil
     }
 
-    private func copied(_ effects: [Core.Effect]) -> CopiedMarks? {
-        for case .copyMarks(let marks, _) in effects { return marks }
+    private func copied(_ effects: [Core.Effect]) -> CopiedItems? {
+        for case .copyItems(let marks, _) in effects { return marks }
         return nil
     }
 
@@ -934,10 +934,10 @@ final class EditorCoreTests: XCTestCase {
         var core = core([rect(100, 100, 100, 100)], scale: 2)
         let payload = try XCTUnwrap(copied(core.key(.character("c"), .command)))
         XCTAssertTrue(core.key(.character("v"), .command).contains(.readClipboard))
-        _ = core.reduce(.paste(.marks(payload)))
+        _ = core.reduce(.paste(.items(payload)))
         XCTAssertEqual(frame(core.drawing.marks.last), CGRect(x: 120, y: 120, width: 100, height: 100))
         XCTAssertEqual(core.selection, [core.drawing.marks[1].id])
-        _ = core.reduce(.paste(.marks(payload)))
+        _ = core.reduce(.paste(.items(payload)))
         XCTAssertEqual(frame(core.drawing.marks.last), CGRect(x: 140, y: 140, width: 100, height: 100))
         XCTAssertEqual(core.undoSteps.count, 2)
     }
@@ -947,7 +947,7 @@ final class EditorCoreTests: XCTestCase {
         core.key(.character("a"), .command)
         let effects = core.key(.character("c"), .command)
         let words = effects.compactMap { effect -> String? in
-            if case .copyMarks(_, let text) = effect { return text }
+            if case .copyItems(_, let text) = effect { return text }
             return nil
         }
         XCTAssertEqual(words, ["first\nsecond"])
@@ -958,11 +958,11 @@ final class EditorCoreTests: XCTestCase {
         let payload = try XCTUnwrap(copied(retina.key(.character("c"), .command)))
 
         var standard = core(pixels: PixelSize(width: 1000, height: 600), scale: 1)
-        _ = standard.reduce(.paste(.marks(payload)))
+        _ = standard.reduce(.paste(.items(payload)))
         XCTAssertEqual(frame(standard.drawing.marks.first), CGRect(x: 900, y: 500, width: 50, height: 50), "the same place and size in pt")
 
         var small = core(pixels: PixelSize(width: 800, height: 400), scale: 1)
-        _ = small.reduce(.paste(.marks(payload)))
+        _ = small.reduce(.paste(.items(payload)))
         XCTAssertEqual(frame(small.drawing.marks.first), CGRect(x: 750, y: 350, width: 50, height: 50), "kept inside the image")
     }
 
@@ -973,7 +973,7 @@ final class EditorCoreTests: XCTestCase {
         let payload = try XCTUnwrap(copied(full.key(.character("c"), .command)))
 
         var crop = core(pixels: PixelSize(width: 600, height: 400), scale: 1, markScale: 0.5)
-        _ = crop.reduce(.paste(.marks(payload)))
+        _ = crop.reduce(.paste(.items(payload)))
         XCTAssertEqual(frame(crop.drawing.marks.first), CGRect(x: 100, y: 100, width: 200, height: 100), "the same box around the same points of the screen")
         let pasted = try XCTUnwrap(textOf(crop.drawing.marks.last))
         XCTAssertEqual(pasted.size, 17, "in drawing pt, so drawn as the crop's own notes are")
@@ -988,7 +988,7 @@ final class EditorCoreTests: XCTestCase {
         let payload = try XCTUnwrap(copied(core.key(.character("x"), .command)))
         XCTAssertTrue(core.drawing.marks.isEmpty)
         XCTAssertEqual(core.undoSteps.count, 1)
-        _ = core.reduce(.paste(.marks(payload)))
+        _ = core.reduce(.paste(.items(payload)))
         XCTAssertEqual(core.drawing.marks.map(\.geometry), before.map(\.geometry))
         XCTAssertEqual(core.selection, Set(core.drawing.marks.map(\.id)))
     }
@@ -1011,14 +1011,14 @@ final class EditorCoreTests: XCTestCase {
         let payload = try XCTUnwrap(copied(core.key(.character("c"), .command)))
         core.click(300, 125)
         core.key(.delete)
-        _ = core.reduce(.paste(.marks(payload)))
+        _ = core.reduce(.paste(.items(payload)))
         XCTAssertEqual(core.drawing.marks.suffix(2).map(frame), [CGRect(x: 110, y: 110, width: 50, height: 50), CGRect(x: 310, y: 110, width: 50, height: 50)])
     }
 
     func testAMarkPastedTooThinToHaveAnAreaIsDropped() {
         // 5e-324 px passes the validator; from point scale 8 to 0.5 it is scaled to nothing.
         var core = core(scale: 0.5)
-        _ = core.reduce(.paste(.marks(CopiedMarks(pointScale: 8, marks: [rect(0, 100, 5e-324, 100)]))))
+        _ = core.reduce(.paste(.items(CopiedItems(pointScale: 8, marks: [rect(0, 100, 5e-324, 100)]))))
         XCTAssertTrue(core.drawing.marks.isEmpty)
         // Where its left handle would be, a drag now meets empty space.
         core.drag(from: (0, 150), to: (40, 150))

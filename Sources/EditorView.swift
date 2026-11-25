@@ -301,7 +301,7 @@ final class EditorView: NSView {
             handOverTimer?.invalidate()
             handOverTimer = nil
         case .handOver(let drawing): onHandOver?(drawing)
-        case .copyMarks(let marks, let text): write(marks, text: text)
+        case .copyItems(let marks, let text): write(marks, text: text)
         case .copyDrawing(let drawing): onCopyDrawing?(drawing)
         case .readClipboard: handle(.paste(clipboardContent()))
         case .beep: onBeep()
@@ -736,7 +736,7 @@ final class EditorView: NSView {
 
     // MARK: Clipboard and drops
 
-    private func write(_ marks: CopiedMarks, text: String?) {
+    private func write(_ marks: CopiedItems, text: String?) {
         let data: Data
         do {
             data = try marks.encoded()
@@ -745,7 +745,7 @@ final class EditorView: NSView {
             return
         }
         let item = NSPasteboardItem()
-        item.setData(data, forType: CopiedMarks.pasteboardType)
+        item.setData(data, forType: CopiedItems.pasteboardType)
         if let text { item.setString(text, forType: .string) }
         pasteboard.clearContents()
         pasteboard.writeObjects([item])
@@ -754,7 +754,7 @@ final class EditorView: NSView {
     /// What Cmd+V has to paste: copied marks, then a file (which is not text, though Finder puts its
     /// name on the clipboard as well), then text, a URL included, then an image.
     private func clipboardContent() -> EditorCore.PasteContent {
-        if let data = pasteboard.data(forType: CopiedMarks.pasteboardType), let marks = CopiedMarks(data: data) { return .marks(marks) }
+        if let data = pasteboard.data(forType: CopiedItems.pasteboardType), let items = CopiedItems(data: data) { return .items(items) }
         if pasteboard.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) { return .image }
         if let text = pasteboard.string(forType: .string) { return .text(text) }
         if let url = (pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL])?.first { return .text(url.absoluteString) }

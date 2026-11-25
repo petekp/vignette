@@ -146,6 +146,13 @@ final class AnnotationController {
         toolbar.model.onOfferChanged = { [weak self] offer in self?.offerChanged(offer) }
         toolbar.onSend = { [weak self] destination in self?.editor.send(to: destination) }
         editor.onTool = { [weak self] tool in self?.toolbar.model.tool = tool }
+        editor.pinUI.onCount = { [weak self] count in self?.toolbar.model.pinCount = count }
+        toolbar.onPins = { [weak self] rect, view in self?.editor.showPinList(from: rect, of: view) }
+        editor.pinUI.onReveal = { [weak self] rect in
+            guard let self else { return }
+            let pixels = editor.core.drawing.pixels
+            run(.reveal(rect, image: CGSize(width: pixels.width, height: pixels.height), lineRoom: false))
+        }
         editor.onChange = { [weak self] drawing in self?.drawingChanged(drawing) }
         editor.onHandOver = { [weak self] drawing in self?.handOver(drawing, reason: "saved") }
         toolbar.model.onMessageChanged = { [weak self] in self?.messageChanged() }

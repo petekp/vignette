@@ -208,14 +208,7 @@ extension EditorCore {
 
     /// `pins`, as they were, moved by `delta` and kept inside the image.
     mutating func movePins(_ pins: [Pin], by delta: CGVector) {
-        for start in pins {
-            var moved = start
-            switch start.place {
-            case .point(let point): moved.place = .point(CGPoint(x: point.x + delta.dx, y: point.y + delta.dy))
-            case .area(let frame): moved.place = .area(frame.offsetBy(dx: delta.dx, dy: delta.dy))
-            }
-            replacePin(moved.placed(in: drawing.pixels) ?? start)
-        }
+        for start in pins { replacePin(start.moved(by: delta).placed(in: drawing.pixels) ?? start) }
     }
 
     /// A handle drag on an area pin resizes its area as a rectangle's. False when `id` is no pin.
@@ -286,15 +279,14 @@ extension EditorCore {
 
     /// A teardrop's side in px at the current zoom: the size it has in the picture when the picture fits
     /// the frame, kept on screen at every zoom.
-    var pinSide: CGFloat { geometry.screen(PinTeardrop.side * drawing.pointScale * fitZoom) }
+    var pinSide: CGFloat { geometry.screen(markStyle.pin.side * drawing.pointScale * fitZoom) }
 
     /// The pins as the editor draws them now. The open pin, the selected ones and a new one never
     /// join a cluster.
     var pinPlacement: PinPlacement {
         var apart = selection
         if let composer { apart.insert(composer.pin) }
-        return PinPlacement(drawing, side: pinSide, edge: geometry.pt(markStyle.edgeWidth), apart: apart,
-                            overlap: metrics.clusterOverlap)
+        return PinPlacement(drawing, side: pinSide, edge: geometry.pt(markStyle.edgeWidth), apart: apart, style: markStyle.pin)
     }
 
     /// The pins an area's outline shows for: hovered, selected or open.

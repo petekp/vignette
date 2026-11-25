@@ -4,7 +4,7 @@ import Foundation
 
 /// Where the editor draws each pin's teardrop, at one size on screen whatever the zoom, and which
 /// pins it draws together as clusters. Two pins cluster when their bodies overlap by more than
-/// `overlap` of their width at the zoom on screen, and a cluster takes in every pin that overlaps one
+/// `PinStyle.clusterOverlap` of their width at the zoom on screen, and a cluster takes in every pin that overlaps one
 /// of its pins. A pin kept apart, such as the open or a selected one, never joins a cluster.
 struct PinPlacement: Equatable {
     /// A pin drawn on its own.
@@ -40,16 +40,16 @@ struct PinPlacement: Equatable {
 
     /// The pins of `drawing`, each teardrop `side` px across, turned by the edge rule at the size the
     /// renderer draws them, inside an edge `edge` px wide, so each faces the way it does on a card.
-    init(_ drawing: Drawing, side: CGFloat, edge: CGFloat, apart: Set<Pin.ID>, overlap: CGFloat) {
+    init(_ drawing: Drawing, side: CGFloat, edge: CGFloat, apart: Set<Pin.ID>, style: PinStyle) {
         self.side = side
-        let fitSide = PinTeardrop.side * drawing.pointScale
+        let fitSide = style.side * drawing.pointScale
         let pins = drawing.pins.sorted { $0.number < $1.number }
         let drops = pins.map { pin -> Drop in
             let orientation = PinTeardrop.facing(tip: pin.tip, side: fitSide, edge: edge, in: drawing.pixels, avoiding: drawing.pieceNumbers)
             return Drop(id: pin.id, number: pin.number, agent: pin.color == .agent, tip: pin.tip, orientation: orientation,
                         square: PinTeardrop.square(tip: pin.tip, orientation: orientation, side: side))
         }
-        let reach = side * (1 - min(max(overlap, 0), 1))
+        let reach = side * (1 - min(max(style.clusterOverlap, 0), 1))
         var group = Array(drops.indices)
         func root(_ i: Int) -> Int {
             var i = i
@@ -72,7 +72,7 @@ struct PinPlacement: Equatable {
         clusters = clustered.map { indices in
             let chosen = indices.sorted().map { drops[$0] }
             let label = Self.label(chosen.map(\.number))
-            let width = max(side, Self.width(of: label, side: side) + side * Self.labelPadding)
+            let width = max(side, Self.width(of: label, size: side * style.numberSize) + side * style.clusterPadding)
             let first = chosen[0]
             let up = first.tip.y - side - edge >= 0, right = first.tip.x + width + edge <= CGFloat(drawing.pixels.width)
             let frame = CGRect(x: right ? first.tip.x : first.tip.x - width, y: up ? first.tip.y - side : first.tip.y, width: width, height: side)
@@ -81,19 +81,15 @@ struct PinPlacement: Equatable {
         }.sorted { $0.label < $1.label }
     }
 
-    /// The room beside a cluster's label, as a share of the teardrop's side.
-    static let labelPadding: CGFloat = 0.7
-
     /// "3 · 4", or past three numbers "3 · 4 · 7 +2".
     static func label(_ numbers: [Int]) -> String {
         let shown = numbers.prefix(3).map(String.init).joined(separator: " · ")
         return numbers.count > 3 ? "\(shown) +\(numbers.count - 3)" : shown
     }
 
-    /// How wide `label` is set in a teardrop's number size.
-    static func width(of label: String, side: CGFloat) -> CGFloat {
-        let font = CTFontCreateUIFontForLanguage(.system, side * PinTeardrop.numberSize, nil)
-            ?? CTFontCreateWithName("Helvetica" as CFString, side * PinTeardrop.numberSize, nil)
+    /// How wide `label` is set at `size` px, a teardrop's number size.
+    static func width(of label: String, size: CGFloat) -> CGFloat {
+        let font = CTFontCreateUIFontForLanguage(.system, size, nil) ?? CTFontCreateWithName("Helvetica" as CFString, size, nil)
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: label, attributes: [.font: font]))
         return CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
     }

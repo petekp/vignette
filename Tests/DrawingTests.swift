@@ -103,7 +103,7 @@ final class DrawingTests: XCTestCase {
     func testAFreehandArrowRoundTripsThroughAFileAndAnOlderReaderSeesItsEnds() throws {
         let arrow = Mark(geometry: .arrow(.init(start: CGPoint(x: 10, y: 20), end: CGPoint(x: 300, y: 80),
                                                 via: [CGPoint(x: 100, y: 5.5), CGPoint(x: 200, y: 90)])))
-        let data = try CopiedMarks(pointScale: 2, marks: [arrow]).encoded()
+        let data = try CopiedItems(pointScale: 2, marks: [arrow]).encoded()
         let object = try XCTUnwrap(DrawingJSON.object(from: data) as? [String: Any])
         let item = try XCTUnwrap((object["marks"] as? [Any])?.first as? [String: Any])
         XCTAssertEqual(item["via"] as? [[Double]], [[100, 5.5], [200, 90]])
@@ -221,28 +221,46 @@ final class DrawingTests: XCTestCase {
 
     // MARK: Copied marks
 
-    func testCopiedMarksComeBackThroughTheValidator() throws {
+    func testCopiedItemsComeBackThroughTheValidator() throws {
         let marks = [
             Mark(geometry: .rectangle(CGRect(x: 1, y: 2, width: 3, height: 4))),
             Mark(geometry: .arrow(.init(start: CGPoint(x: 5, y: 6), end: CGPoint(x: 7, y: 8), bend: 12)), agent: true),
             Mark(geometry: .text(.init(origin: CGPoint(x: 9, y: 10), text: "copied", wrap: 120, size: 30))),
         ]
-        let copied = try XCTUnwrap(CopiedMarks(data: try CopiedMarks(pointScale: 2, marks: marks).encoded()))
+        let copied = try XCTUnwrap(CopiedItems(data: try CopiedItems(pointScale: 2, marks: marks).encoded()))
         XCTAssertEqual(copied.pointScale, 2)
         XCTAssertEqual(copied.markScale, 1)
-        let small = try XCTUnwrap(CopiedMarks(data: try CopiedMarks(pointScale: 1, markScale: 0.5, marks: marks).encoded()))
+        let small = try XCTUnwrap(CopiedItems(data: try CopiedItems(pointScale: 1, markScale: 0.5, marks: marks).encoded()))
         XCTAssertEqual(small.screenScale, 2)
         XCTAssertEqual(copied.marks.map(\.geometry), marks.map(\.geometry))
         XCTAssertEqual(copied.marks.map(\.agent), marks.map(\.agent))
 
         // Another app can write the type: a mark that fails is dropped and the rest are pasted.
         let written = #"{"version": 1, "pointScale": 1, "marks": [{"type": "rectangle", "x": 1e999, "y": 0, "w": 1, "h": 1, "color": "red"}, {"type": "rectangle", "x": 0, "y": 0, "w": 1, "h": 1, "color": "red"}]}"#
-        XCTAssertEqual(CopiedMarks(data: Data(written.utf8))?.marks.map(\.geometry), [.rectangle(CGRect(x: 0, y: 0, width: 1, height: 1))])
-        XCTAssertNil(CopiedMarks(data: Data(#"{"version": 3, "pointScale": 1, "marks": []}"#.utf8)), "a newer build's marks")
-        XCTAssertNil(CopiedMarks(data: Data(#"{"version": 1, "pointScale": 9, "marks": [{"type": "rectangle", "x": 0, "y": 0, "w": 1, "h": 1, "color": "red"}]}"#.utf8)))
-        XCTAssertNil(CopiedMarks(data: Data(#"{"version": 1, "pointScale": 1, "markScale": 2, "marks": [{"type": "rectangle", "x": 0, "y": 0, "w": 1, "h": 1}]}"#.utf8)))
-        XCTAssertNil(CopiedMarks(data: Data(#"{"version": 1, "pointScale": 1, "marks": []}"#.utf8)))
-        XCTAssertNil(CopiedMarks(data: Data("plain words".utf8)))
-        XCTAssertEqual(CopiedMarks.pasteboardType.rawValue, Identity.bundleID + ".marks")
+        XCTAssertEqual(CopiedItems(data: Data(written.utf8))?.marks.map(\.geometry), [.rectangle(CGRect(x: 0, y: 0, width: 1, height: 1))])
+        XCTAssertNil(CopiedItems(data: Data(#"{"version": 3, "pointScale": 1, "marks": []}"#.utf8)), "a newer build's marks")
+        XCTAssertNil(CopiedItems(data: Data(#"{"version": 1, "pointScale": 9, "marks": [{"type": "rectangle", "x": 0, "y": 0, "w": 1, "h": 1, "color": "red"}]}"#.utf8)))
+        XCTAssertNil(CopiedItems(data: Data(#"{"version": 1, "pointScale": 1, "markScale": 2, "marks": [{"type": "rectangle", "x": 0, "y": 0, "w": 1, "h": 1}]}"#.utf8)))
+        XCTAssertNil(CopiedItems(data: Data(#"{"version": 1, "pointScale": 1, "marks": []}"#.utf8)))
+        XCTAssertNil(CopiedItems(data: Data("plain words".utf8)))
+        XCTAssertEqual(CopiedItems.pasteboardType.rawValue, Identity.bundleID + ".marks")
+    }
+
+    func testCopiedPinsAreVersionTwoAndMarksAloneStayVersionOne() throws {
+        let box = Mark(geometry: .rectangle(CGRect(x: 1, y: 2, width: 3, height: 4)))
+        let pin = Pin(id: UUID(), number: 3, place: .area(CGRect(x: 10, y: 20, width: 30, height: 40)),
+                      comments: [Pin.Comment(text: "Too tight"), Pin.Comment(text: "Agreed", agent: true, agentName: "claude")])
+        func version(_ items: CopiedItems) throws -> Int? {
+            try XCTUnwrap(DrawingJSON.object(from: items.encoded()) as? [String: Any])["version"] as? Int
+        }
+        XCTAssertEqual(try version(CopiedItems(pointScale: 2, marks: [box])), 1)
+        let withPins = CopiedItems(pointScale: 2, marks: [box], pins: [pin])
+        XCTAssertEqual(try version(withPins), 2)
+        let back = try XCTUnwrap(CopiedItems(data: try withPins.encoded()))
+        XCTAssertEqual(back.marks.map(\.geometry), [box.geometry])
+        XCTAssertEqual(back.pins, [pin])
+        XCTAssertEqual(CopiedItems(data: try CopiedItems(pointScale: 2, marks: [], pins: [pin]).encoded())?.pins, [pin])
+        let written = #"{"version": 2, "pointScale": 1, "marks": [], "pins": [{"id": "\#(UUID().uuidString)", "number": 1, "x": 0, "y": 0, "comments": []}]}"#
+        XCTAssertNil(CopiedItems(data: Data(written.utf8)), "a pin with no comment is dropped, and nothing is left")
     }
 }

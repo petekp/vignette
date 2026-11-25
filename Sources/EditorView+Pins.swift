@@ -13,6 +13,11 @@ final class EditorPinUI: NSObject {
     var elements: [Pin.ID: PinElement] = [:]
     /// The order VoiceOver's Pins rotor goes through, by number.
     var rotorOrder: [Pin.ID] = []
+    /// Called with how many pins have a number, when that changes: the toolbar's Pins button shows it.
+    var onCount: ((Int) -> Void)?
+    var count = 0
+    /// Show this rect of a pin, in image px, panning a magnified picture just far enough.
+    var onReveal: ((CGRect) -> Void)?
     weak var view: EditorView?
 }
 
@@ -49,6 +54,10 @@ extension EditorView {
                                          areaScale: core.drawing.pointScale * zoom, transform: toView))
         pinUI.composer?.follow(anchor(of: pinUI.composer?.pin, in: placement))
         showPinElements(placement)
+        if pinUI.rotorOrder.count != pinUI.count {
+            pinUI.count = pinUI.rotorOrder.count
+            pinUI.onCount?(pinUI.count)
+        }
     }
 
     /// The rect in the view a popover on pin `id` hangs from: its teardrop, or its cluster's capsule.
@@ -76,11 +85,42 @@ extension EditorView {
         popover.show(from: rect, of: self)
     }
 
-    // MARK: A cluster's list
+    // MARK: A cluster's list and the toolbar's
 
     func showCluster(_ ids: [Pin.ID], at frame: CGRect) {
+        showPinList(ids.compactMap(core.pin), from: frame.applying(toView), of: self, edge: .maxY)
+    }
+
+    /// Every pin with a number, in number order, listed from `rect` in `view`: the toolbar's Pins button.
+    func showPinList(from rect: CGRect, of view: NSView) {
+        let pins = core.drawing.pins.filter { $0.number > 0 }.sorted { $0.number < $1.number }
+        showPinList(pins, from: rect, of: view, edge: view.isFlipped ? .minY : .maxY)
+    }
+
+    /// Opens pin `id` chosen in a list, first bringing its teardrop and area into view: the picture
+    /// pans to show them, or zooms to fit when they are larger than what is in view.
+    func openFromList(_ id: Pin.ID) {
+        guard let pin = core.pin(id) else { return }
+        let placement = core.pinPlacement, visible = core.visible
+        let teardrop = placement.drops.first { $0.id == id }?.square ?? placement.clusters.first { $0.pins.contains(id) }?.frame
+        let place: CGRect
+        switch pin.place {
+        case .point(let point): place = CGRect(origin: point, size: .zero)
+        case .area(let frame): place = frame
+        }
+        let shown = teardrop.map(place.union) ?? place
+        if shown.width > visible.width || shown.height > visible.height { onZoom?(.fit) } else { pinUI.onReveal?(shown) }
+        handle(.composer(.open(id)))
+    }
+
+    /// The image changed or the editor is leaving: a list open from it goes.
+    func closePinList() {
         pinUI.cluster?.close()
-        let pins = ids.compactMap(core.pin)
+        pinUI.cluster = nil
+    }
+
+    private func showPinList(_ pins: [Pin], from rect: CGRect, of view: NSView, edge: NSRectEdge) {
+        pinUI.cluster?.close()
         let list = NSStackView(views: pins.map { pin in
             let first = pin.comments.first?.text.asOneLine ?? ""
             let button = PressButton(title: "\(pin.number)  \(first)")
@@ -92,7 +132,7 @@ extension EditorView {
             let id = pin.id
             button.press = { [weak self] in
                 self?.pinUI.cluster?.close()
-                self?.handle(.composer(.open(id)))
+                self?.openFromList(id)
             }
             return button
         })
@@ -105,7 +145,7 @@ extension EditorView {
         popover.behavior = .transient
         popover.contentViewController = controller
         pinUI.cluster = popover
-        popover.show(relativeTo: frame.applying(toView), of: self, preferredEdge: .maxY)
+        popover.show(relativeTo: rect, of: view, preferredEdge: edge)
     }
 
     // MARK: VoiceOver

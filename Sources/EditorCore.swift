@@ -177,7 +177,7 @@ struct EditorCore {
     }
 
     enum PasteContent {
-        case marks(CopiedMarks)
+        case items(CopiedItems)
         case text(String)
         /// An image, or a file dropped on the editor.
         case image
@@ -206,9 +206,9 @@ struct EditorCore {
         case cancelTimer
         /// The drawing for the host to store. With no marks, the host removes its file.
         case handOver(Drawing)
-        /// The marks on the clipboard in Vignette's own type, and the words of any texts among them
-        /// as plain text.
-        case copyMarks(CopiedMarks, text: String?)
+        /// The marks and pins on the clipboard in Vignette's own type, and as plain text the words of
+        /// any texts among them and the pins' words.
+        case copyItems(CopiedItems, text: String?)
         /// The drawing's rendering on the clipboard, the same as Done's.
         case copyDrawing(Drawing)
         /// Cmd+V: read the clipboard and answer with `paste`.
@@ -610,7 +610,7 @@ struct EditorCore {
     }
 
     /// Puts a new mark on top, kept inside the image, noting it in the open edit.
-    private mutating func add(_ mark: Mark) {
+    mutating func add(_ mark: Mark) {
         guard index(of: mark.id) == nil, let placed = geometry.placedKeepingLines(mark) else { return }
         edit?.note(mark.id)
         drawing.marks.append(placed)
@@ -624,7 +624,7 @@ struct EditorCore {
     }
 
     /// Runs `change` as one undo step of its own, beside any gesture or typing session under way.
-    private mutating func step(named name: StepName, _ change: (inout EditorCore) -> Void) {
+    mutating func step(named name: StepName, _ change: (inout EditorCore) -> Void) {
         let open = edit
         edit = newEdit
         change(&self)
@@ -1372,11 +1372,10 @@ struct EditorCore {
             case .selectAll: selection = Set(drawing.marks.map(\.id) + drawing.pins.map(\.id))
             case .copy: copy()
             case .cut:
-                // Unlike Copy, Cut never falls back to the drawing, which it could not delete. It takes
-                // the marks alone, since the clipboard holds no pins.
-                guard drawing.marks.contains(where: { selection.contains($0.id) }) else { break }
+                // Unlike Copy, Cut never falls back to the drawing, which it could not delete.
+                guard drawing.marks.contains(where: { selection.contains($0.id) }) || !selectedPins.isEmpty else { break }
                 copy()
-                deleteSelection(as: .cut, pins: false)
+                deleteSelection(as: .cut)
             case .paste: emit(.readClipboard)
             case .duplicate: duplicate()
             case nil:
@@ -1460,36 +1459,14 @@ struct EditorCore {
         }
     }
 
-    private mutating func deleteSelection(as name: StepName = .delete, pins withPins: Bool = true) {
+    private mutating func deleteSelection(as name: StepName = .delete) {
         let ids = drawing.marks.map(\.id).filter { selection.contains($0) }
-        let pins = withPins ? drawing.pins.map(\.id).filter { selection.contains($0) } : []
+        let pins = drawing.pins.map(\.id).filter { selection.contains($0) }
         guard !ids.isEmpty || !pins.isEmpty else { return }
         step(named: name) { core in
             for id in ids { core.remove(id) }
             for id in pins { core.removePin(id) }
         }
-    }
-
-    /// Copies of the selection 10 pt right and down, kept inside the image, selected.
-    private mutating func duplicate() {
-        let marks = drawing.marks.filter { selection.contains($0.id) }
-        guard !marks.isEmpty else { return }
-        let offset = geometry.pt(Self.copyOffset)
-        insert(geometry.placedGroup(marks.map(Self.fresh), offset: CGVector(dx: offset, dy: offset), keepingLines: true), as: .duplicate)
-    }
-
-    /// Puts `marks` on top as one step named `name`, selected.
-    mutating func insert(_ marks: [Mark], as name: StepName = .paste) {
-        guard !marks.isEmpty else { return }
-        step(named: name) { core in
-            for mark in marks { core.add(mark) }
-            core.selection = Set(marks.map(\.id).filter { core.mark($0) != nil })
-        }
-    }
-
-    /// A mark with the same fields and a new id.
-    static func fresh(_ mark: Mark) -> Mark {
-        Mark(geometry: mark.geometry, agent: mark.agent, agentName: mark.agentName)
     }
 
     /// The open screenshot's file was renamed: the drawing is the same, under this key.

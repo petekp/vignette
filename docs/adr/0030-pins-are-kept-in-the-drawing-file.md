@@ -1,7 +1,7 @@
 # Pins are kept in the drawing file
 
-Status: accepted, 2026-11-25. Nothing is built yet. `docs/screenshot-comments-2026-11-24.md` is the
-plan it belongs to.
+Status: accepted, 2026-11-25, and built: `Pin.swift` and `DrawingFile.swift` read and write pins,
+`nextPin` and the version. `docs/screenshot-comments-2026-11-24.md` is the plan it belongs to.
 
 A screenshot's pins, the numbered points and areas that hold comments, are kept in its drawing file,
 under `pins`, beside its marks and its message. Each pin has a random `id` that never changes, a

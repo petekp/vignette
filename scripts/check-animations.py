@@ -52,7 +52,7 @@ ALLOWED = {
         "`swiftUI` gives the card slide-in the curve `ui.slideInCurve` names, and the setting "
         "offers easeOut, easeInOut and linear beside its default, spring, for a person who wants "
         "one; `reaches` finds when the eased ones arrive"),
-    "AnnotatorToolbar.swift": (4,
+    "AnnotatorToolbarView.swift": (4,
         "`words` and `nameSwap`: words giving way to others in one place fade out quickly and in a "
         "moment later"),
     "MarkLayers+Shapes.swift": (1, "`drawOn`: a mark draws itself on as a hand draws"),

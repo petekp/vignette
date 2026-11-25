@@ -30,7 +30,7 @@ enum EditorCoreTrace {
         case .timerFired: return "timer"
         case .paste(let content):
             switch content {
-            case .marks(let copied): return "paste \(copied.marks.count) marks @\(copied.pointScale)"
+            case .items(let copied): return "paste \(copied.marks.count) marks @\(copied.pointScale)"
             case .text(let text): return "paste text of \(text.count)"
             case .image: return "paste image"
             case .other: return "paste other"
@@ -49,7 +49,7 @@ enum EditorCoreTrace {
             case .done(let drawing): return "done(\(drawing.marks.count))"
             case .send(let drawing, let to): return "send(\(drawing.marks.count)\(to == nil ? "" : " to"))"
             case .copyDrawing(let drawing): return "copyDrawing(\(drawing.marks.count))"
-            case .copyMarks(let marks, _): return "copyMarks(\(marks.marks.count))"
+            case .copyItems(let marks, _): return "copyItems(\(marks.marks.count))"
             case .announce: return "announce"
             default: return "\(effect)"
             }

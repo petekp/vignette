@@ -65,12 +65,14 @@ struct DrawingRecord: Encodable {
     let pieceNumbers: [[CGFloat]]?
 }
 
-struct CopiedMarksRecord: Encodable {
+struct CopiedItemsRecord: Encodable {
     let version: Int
     let pointScale: CGFloat
     /// Left out at 1.
     let markScale: CGFloat?
     let marks: [MarkRecord]
+    /// Left out with no pins.
+    let pins: [PinRecord]?
 }
 
 /// Reading and writing the JSON that drawings and copied marks travel in.

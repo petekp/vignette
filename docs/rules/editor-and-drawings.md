@@ -54,7 +54,9 @@
   The orientation is worked out each time from the picture at the drawing's own size and is never
   stored, so every drawer agrees (`PinTeardrop.facing`). A body that would cover a stitch's piece
   number turns away from it (`Drawing.pieceNumbers`). `MarkLayers` shows pins with `PinLayer`
-  and `MarkRendering` draws them with `Pin.draw`, from the same paths.
+  and `MarkRendering` draws them with `Pin.draw`, from the same paths. `MarkLayers` clusters them as
+  `PinPlacement` does at the drawing's own size. A card's teardrops scale with its picture, so that
+  is the editor's rule at the card's size, and a flight shows the card's clusters.
 - A PNG rendering draws pins as `Drawing.renderedTeardrops` places them, since its reader cannot
   hover. It outlines every area in its pin's colour. A body that would overlap an earlier pin's
   body or a piece number tries its other orientations, then moves clear, and a line in the pin's
@@ -80,6 +82,11 @@
   the open and a new one. The core needs the fit zoom and the visible rect for that and for
   Shift+Return, and the view sends both (`viewChanged`) before each `zoomChanged`. A pin is
   selected, moved, nudged and deleted with the marks, by its `id` in `selection`.
+- A cluster's list and the toolbar's Pins button open one list (`EditorView.showPinList`). A pick
+  goes through `openFromList`: `EditorPinUI.onReveal` pans to its teardrop and area, or `onZoom(.fit)`
+  when they are larger than `EditorCore.visible`, then the composer opens. The controller closes the
+  list when another image opens or the editor leaves (`closePinList`). The bar shows the button while
+  `Model.pinCount`, which `EditorPinUI.onCount` sets, is above 0, and Tab reaches it after the tools.
 - A new pin has number 0 and is left out of every hand-over (`drawingForHost`) until its first
   comment gives it `nextPin`. The editor opens with the file's `nextPin` and `pieceNumbers` even
   when the file reads as no drawing (`AnnotationController.storedNumbering`), so a number a
@@ -97,7 +104,7 @@
   none is shown after `park()`. A text keeps at most two bitmaps, a whole and a sharper detail, the
   one on its way included. Each owner's plan caps them: the editor's at the view's size in device
   pixels, a card's at the part of the image the card shows at its rest size. The comments in
-  `MarkLayers.swift` and `MarksView.swift` say how bitmaps are shared between the editor and a
+  `MarkLayers+TextBitmaps.swift` and `MarksView.swift` say how bitmaps are shared between the editor and a
   flight, restyled, and flattened on a card.
 - Drawings are owned by the app, and every write goes through `Drawings` (`Drawings.swift`, with
   `DrawingStore` for the files): one JSON file per screenshot under

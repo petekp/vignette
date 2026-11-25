@@ -298,6 +298,7 @@ Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
 | A pin, to VoiceOver | Pin 3, area, 2 comments; Pin 1, point, 1 comment; New pin |
 | A selection with pins, to VoiceOver | 2 pins; 1 mark and 2 pins |
 | The rotor and the action | Pins; Add Pin |
+| The toolbar's button, its tooltip, and to VoiceOver (`ToolbarView.pinsButton`) | Pins, beside a badge with the count; Pins; Pins, *n* |
 
 ### A drawing, on its card ("Not saved")
 

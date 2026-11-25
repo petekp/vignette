@@ -68,7 +68,7 @@ final class EditorPins {
         let rings = CGMutablePath()
         let teardrops = what.placement.drops.map { drop in
             (drop, PinTeardrop(number: drop.number, agent: drop.agent, tip: drop.tip.applying(transform), orientation: drop.orientation,
-                               side: what.placement.side * zoom))
+                               side: what.placement.side * zoom, style: what.markStyle.pin))
         }
         let reach = 2 * (what.markStyle.edgeWidth * what.dropScale + what.outlineWidth / 2)
         for (drop, teardrop) in teardrops where what.selected.contains(drop.id) {
@@ -93,7 +93,7 @@ final class EditorPins {
         for cluster in what.placement.clusters {
             let record = clusters[cluster.pins] ?? PinLayer(scale: scale)
             record.show(PinTeardrop(label: cluster.label, agent: cluster.agent, orientation: cluster.orientation,
-                                    frame: cluster.frame.applying(transform)),
+                                    frame: cluster.frame.applying(transform), style: what.markStyle.pin),
                         color: cluster.agent ? .agent : .person, pointScale: what.dropScale, markStyle: what.markStyle)
             clusters[cluster.pins] = record
             layers.append(record.root)

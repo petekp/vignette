@@ -74,7 +74,8 @@ files it touches, and `docs/voice.md` for any new words.
    - A history step leaves out `changes` when it changed only pins, and `pins` when it changed
      only marks. A file with no pins and `nextPin` 1 keeps the `basis` it had before pins, so
      stored histories stay valid.
-   - Copied marks on the clipboard stay version 1, since they never hold pins.
+   - Copied marks on the clipboard are version 1, so a build from before pins still pastes them.
+     Copied pins make them version 2 (`CopiedItems`).
    - Reading a file with no marks and no pins gives no drawing, even when it keeps a `nextPin`
      beside a message. A write keeps the file's higher `nextPin`. Step 3 must open the editor
      with the stored `nextPin`, so a new pin's number is not one a deleted pin had.
@@ -125,9 +126,16 @@ files it touches, and `docs/voice.md` for any new words.
    - The cluster distance is `ui.clusterOverlap`, the share of a body's width two bodies overlap
      past: 0.34. The area outline's width is the marks' width, and the selection ring's is the
      editor's outline width, both settings already.
-   - The pin's size is still `PinTeardrop.side`. A setting must reach the card, the flight, every
-     rendering and the stitch, or the hand-over steps; see the step's report.
+   - Every comments number is a `ui` setting in the tweak panel's Comments section, and reaches
+     every drawer as `MarkStyle.pin` (`PinStyle`): the pin's size (24 pt), its number's size and
+     widest setting, the cluster distance and the cluster's padding, how far a rendering moves a
+     teardrop, and the rendering's list of comments. The popover's width is `ui.pinPopoverWidth`.
+     `clusterOverlap` moved there from `EditorMetrics` and keeps its key.
    - An Option-drag copies the selected marks and leaves the selected pins where they were.
+   - The toolbar's list is a Pins button after the tools, with the count, shown while a pin has a
+     number. It opens the cluster's list with every pin. A pick pans the picture to the pin, or
+     zooms to fit when its teardrop and area are larger than what is in view, since the zoom has
+     no level between.
    - A stored history leaves pin ids out of the selections it keeps, so an undo after reopening
      selects the marks it touched and no pin.
 4. Agents answer on pins (Choice 5). Its ADR is written first. Then the reply helper takes

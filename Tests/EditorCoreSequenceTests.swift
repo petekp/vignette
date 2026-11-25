@@ -24,7 +24,7 @@ private struct SequenceRun {
     var trace: [String] = []
     var clock: TimeInterval = 0
     var buttonDown = false
-    var copied: CopiedMarks?
+    var copied: CopiedItems?
     var queued: Core.Input?
     /// What each undo depth holds, as far as redo reaches.
     var states: [Depth] = []
@@ -216,7 +216,7 @@ private struct SequenceRun {
 
     mutating func pasteContent() -> Core.PasteContent {
         switch Int.random(in: 0..<5, using: &rng) {
-        case 0, 1: return copied.map { .marks($0) } ?? .text(words())
+        case 0, 1: return copied.map { .items($0) } ?? .text(words())
         case 2: return .text(words())
         case 3: return .image
         default: return .other
@@ -255,13 +255,13 @@ private struct SequenceRun {
 
         for effect in effects {
             switch effect {
-            case .copyMarks(let marks, _):
+            case .copyItems(let marks, _):
                 copied = marks
-                if CopiedMarks(data: (try? marks.encoded()) ?? Data())?.marks.count != marks.marks.count { return "copied marks do not survive the clipboard" }
+                if CopiedItems(data: (try? marks.encoded()) ?? Data())?.marks.count != marks.marks.count { return "copied marks do not survive the clipboard" }
             case .readClipboard:
                 switch Int.random(in: 0..<5, using: &rng) {
-                case 0, 1: if let copied { queued = .paste(.marks(copied)) }
-                case 2: if let copied { queued = .paste(.marks(CopiedMarks(pointScale: [1, 2, 3].randomElement(using: &rng)!, marks: copied.marks))) }
+                case 0, 1: if let copied { queued = .paste(.items(copied)) }
+                case 2: if let copied { queued = .paste(.items(CopiedItems(pointScale: [1, 2, 3].randomElement(using: &rng)!, marks: copied.marks))) }
                 case 3: queued = .paste(.text(words()))
                 default: queued = .paste(.image)
                 }

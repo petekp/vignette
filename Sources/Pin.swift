@@ -48,6 +48,16 @@ struct Pin: Equatable, Identifiable {
 
     /// Who made the pin, the writer of its first comment, which its colour says.
     var color: MarkColor { comments.first?.agent == true ? .agent : .person }
+
+    /// The pin with its place moved by `delta`, in px.
+    func moved(by delta: CGVector) -> Pin {
+        var moved = self
+        switch place {
+        case .point(let point): moved.place = .point(CGPoint(x: point.x + delta.dx, y: point.y + delta.dy))
+        case .area(let frame): moved.place = .area(frame.offsetBy(dx: delta.dx, dy: delta.dy))
+        }
+        return moved
+    }
 }
 
 // MARK: - The pins' words as text
