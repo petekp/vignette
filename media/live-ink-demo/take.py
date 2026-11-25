@@ -3,11 +3,13 @@
 
     take.py [--only BEAT,...]
 
-The stage must be up with `demo.py up --capture`. The take moves the pointer and holds ⌃⌥ for
-about three minutes, so nobody may use the Mac meanwhile. Every press checks first that the window
-under it is the stage's, and every key goes to Vignette's own process, except ⌘M, which is sent
-only while the stage's Chrome is frontmost. A take that cannot go on lets go of everything, stops
-the recording and says why. The movie and a log of the beats' times go to `out/takes/`.
+The stage must be up with `demo.py up`, which runs Vignette as the demo's copy, on a settings file
+and a screenshot folder of its own. Every look at Vignette's state checks that it is still that
+copy, so a take never drives your own Vignette. The take moves the pointer and holds ⌃⌥ for about
+three minutes, so nobody may use the Mac meanwhile. Every press checks first that the window under
+it is the stage's, and every key goes to Vignette's own process, except ⌘M, which is sent only
+while the stage's Chrome is frontmost. A take that cannot go on lets go of everything, stops the
+recording and says why. The movie and a log of the beats' times go to `out/takes/`.
 """
 import json
 import math
@@ -50,11 +52,13 @@ class Hand:
 class Take:
     def __init__(self):
         stage = demo.saved()
-        if not stage.get('desktop') or not stage.get('capture'):
-            raise TakeFailed('the stage is not up with --capture; run `demo.py up --capture` first')
-        self.app = stage['app']
+        if not stage.get('desktop'):
+            raise TakeFailed('the stage is not up; run `demo.py up` first')
+        if not stage.get('vignette') or not demo.alive(stage['vignette']):
+            raise TakeFailed("the demo's copy of Vignette is not running; run `demo.py down`, then `demo.py up`")
+        self.stage = stage
+        self.app, self.vignette = stage['app'], stage['vignette']
         self.chrome, self.textedit, self.ghostty = stage['chrome'], stage['textedit'], stage['terminal']
-        self.vignette = demo.vignette()[0]
         self.desktop = demo.pids_of(lambda c: c.endswith('out/bin/stage desktop'))
         self.hand = Hand()
         self.started = None
@@ -64,8 +68,9 @@ class Take:
 
     def live(self):
         report = demo.state(self.app)
-        if report['app']['settingsFile'] != os.path.join(demo.OUT, 'vignette', 'settings.json'):
-            raise TakeFailed(f"Vignette is on {report['app']['settingsFile']}, not the demo's copy")
+        problem = demo.isolation_problem(report, self.stage)
+        if problem:
+            raise TakeFailed(problem)
         return report['liveInk']
 
     def wait(self, test, timeout, what):
@@ -293,8 +298,8 @@ class Take:
         os.makedirs(TAKES, exist_ok=True)
         name = time.strftime('take-%Y%m%d-%H%M%S')
         movie = os.path.join(TAKES, name + '.mov')
-        demo.url(self.app, 'live-ink-clear')
         self.live()
+        demo.url(self.app, 'live-ink-clear')
         # Holding the chord starts the responder and its warm-up ask, before the camera rolls.
         self.glide(30, 300)
         self.hand('chord', 'down')

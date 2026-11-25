@@ -18,14 +18,16 @@ everything else:
 
 | Command | What it does |
 |---|---|
-| `demo.py up` | Lays out the stage. |
-| `demo.py up --capture` | Also relaunches Vignette so screen recordings and screen shares see the ink. |
+| `demo.py up` | Relaunches Vignette as the demo's copy and lays out the stage. |
 | `demo.py reset` | Erases the ink and lays the stage out again, for another take. |
-| `demo.py down` | Takes the stage down and puts Vignette back as it was. |
+| `demo.py down` | Takes the stage down and opens your own Vignette again. |
+| `take.py [--only BEAT,...]` | Performs the beats below and records them to `out/takes/`. It takes over the screen for about three minutes. |
 
-**Recording or sharing the screen needs `--capture`.** Live ink keeps its marks out of screen
-captures, so without it a recording shows the windows and no ink. `--capture` relaunches Vignette
-on a copy of the settings file, with its own screenshot folder, and `down` puts the real one back.
+**A take never runs on your own Vignette.** It presses keys and draws with the pointer, so `up`
+quits the running Vignette and opens the same app as a test launch. That copy runs on a copy of
+your settings file with live ink on, under `out/vignette/`, and watches `out/vignette/shots/`
+instead of your screenshot folder. `take.py` checks that it is talking to that copy before each
+look, and stops if it is not. `up` refuses to start while more than one Vignette is running.
 
 ## Before a take
 
