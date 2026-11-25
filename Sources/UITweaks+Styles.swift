@@ -11,7 +11,8 @@ extension UITweaks {
         EditorMetrics(dragDistance: dragDistance, hitMargin: hitMargin, cornerHitSize: cornerHitSize, edgeHitSize: edgeHitSize,
                       smallSide: smallSide, handleSize: handleSize, dotRadius: dotRadius, dotHitRadius: dotHitRadius,
                       smallestRectangle: smallestRectangle, shortestArrow: shortestArrow, textDragDelay: textDragDelay,
-                      textDragDistance: textDragDistance, newTextSize: newTextSize, selectionOutlineWidth: selectionOutlineWidth)
+                      textDragDistance: textDragDistance, newTextSize: newTextSize, selectionOutlineWidth: selectionOutlineWidth,
+                      clusterOverlap: clusterOverlap)
     }
 
     /// The style every text is set in. The system font draws only its nine named weights, whatever

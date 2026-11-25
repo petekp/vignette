@@ -1,0 +1,190 @@
+import AppKit
+
+/// What the editor keeps for its pins beside the core: their layers, the popover by the open pin, the
+/// list a cluster opens, and a VoiceOver element for each pin.
+@MainActor
+final class EditorPinUI: NSObject {
+    let pins = EditorPins()
+    /// The width in screen pt of the frame the whole picture fits, from the host, or 0 when it gives
+    /// none and the view's own size is the fit.
+    var fittedWidth: CGFloat = 0
+    var composer: PinPopover?
+    var cluster: NSPopover?
+    var elements: [Pin.ID: PinElement] = [:]
+    /// The order VoiceOver's Pins rotor goes through, by number.
+    var rotorOrder: [Pin.ID] = []
+    weak var view: EditorView?
+}
+
+extension EditorView {
+    /// The host's fitted frame's width; see `EditorPinUI.fittedWidth`.
+    var fittedWidth: CGFloat {
+        get { pinUI.fittedWidth }
+        set {
+            guard newValue != pinUI.fittedWidth else { return }
+            pinUI.fittedWidth = newValue
+            if core.isOpen { zoomChanged() }
+        }
+    }
+
+    /// The zoom at which the picture fits the frame, in screen pt per image px.
+    private var fitZoom: CGFloat {
+        let width = CGFloat(core.drawing.pixels.width), height = CGFloat(core.drawing.pixels.height)
+        guard width > 0, height > 0 else { return 0 }
+        if pinUI.fittedWidth > 0 { return pinUI.fittedWidth / width }
+        return bounds.isEmpty ? zoom : min(bounds.width / width, bounds.height / height)
+    }
+
+    /// A zoom step: the core hears where the picture sits, then the zoom, which redraws.
+    func zoomChanged() {
+        message(.viewChanged(fit: fitZoom, visible: resolution.visible))
+        handle(.zoomChanged(zoom))
+    }
+
+    func showPins() {
+        let placement = core.pinPlacement, outlined = core.outlinedPins
+        pinUI.pins.show(EditorPins.Shown(placement: placement, outlined: core.drawing.pins.filter { outlined.contains($0.id) },
+                                         selected: core.selection, markStyle: core.markStyle,
+                                         outlineWidth: core.metrics.selectionOutlineWidth, dropScale: core.drawing.pointScale * core.fitZoom,
+                                         areaScale: core.drawing.pointScale * zoom, transform: toView))
+        pinUI.composer?.follow(anchor(of: pinUI.composer?.pin, in: placement))
+        showPinElements(placement)
+    }
+
+    /// The rect in the view a popover on pin `id` hangs from: its teardrop, or its cluster's capsule.
+    private func anchor(of id: Pin.ID?, in placement: PinPlacement) -> CGRect? {
+        guard let id else { return nil }
+        if let drop = placement.drops.first(where: { $0.id == id }) { return drop.square.applying(toView) }
+        return placement.clusters.first { $0.pins.contains(id) }?.frame.applying(toView)
+    }
+
+    // MARK: The pin popover
+
+    func showComposer(_ composer: EditorCore.Composer?) {
+        guard let composer, let pin = core.pin(composer.pin), let rect = anchor(of: pin.id, in: core.pinPlacement) else {
+            pinUI.composer?.close()
+            pinUI.composer = nil
+            return
+        }
+        if let open = pinUI.composer, open.pin == pin.id {
+            open.update(pin, composer: composer)
+            return
+        }
+        pinUI.composer?.close()
+        let popover = PinPopover(pin: pin, composer: composer) { [weak self] input in self?.handle(.composer(input)) }
+        pinUI.composer = popover
+        popover.show(from: rect, of: self)
+    }
+
+    // MARK: A cluster's list
+
+    func showCluster(_ ids: [Pin.ID], at frame: CGRect) {
+        pinUI.cluster?.close()
+        let pins = ids.compactMap(core.pin)
+        let list = NSStackView(views: pins.map { pin in
+            let first = pin.comments.first?.text.asOneLine ?? ""
+            let button = PressButton(title: "\(pin.number)  \(first)")
+            button.isBordered = false
+            button.alignment = .left
+            button.lineBreakMode = .byTruncatingTail
+            button.setAccessibilityLabel(pin.spokenName)
+            button.widthAnchor.constraint(lessThanOrEqualToConstant: PinPopover.width).isActive = true
+            let id = pin.id
+            button.press = { [weak self] in
+                self?.pinUI.cluster?.close()
+                self?.handle(.composer(.open(id)))
+            }
+            return button
+        })
+        list.orientation = .vertical
+        list.alignment = .leading
+        list.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
+        let controller = NSViewController()
+        controller.view = list
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = controller
+        pinUI.cluster = popover
+        popover.show(relativeTo: frame.applying(toView), of: self, preferredEdge: .maxY)
+    }
+
+    // MARK: VoiceOver
+
+    private func showPinElements(_ placement: PinPlacement) {
+        let pins = core.drawing.pins.filter { $0.number > 0 }.sorted { $0.number < $1.number }
+        pinUI.view = self
+        pinUI.rotorOrder = pins.map(\.id)
+        let kept = Set(pinUI.rotorOrder)
+        pinUI.elements = pinUI.elements.filter { kept.contains($0.key) }
+        for pin in pins {
+            let element = pinUI.elements[pin.id] ?? PinElement()
+            element.setAccessibilityParent(self)
+            element.setAccessibilityRole(.button)
+            element.setAccessibilityLabel(pin.spokenName)
+            if let rect = anchor(of: pin.id, in: placement) { element.setAccessibilityFrameInParentSpace(rect) }
+            let id = pin.id
+            element.press = { [weak self] in self?.handle(.composer(.open(id))) }
+            pinUI.elements[pin.id] = element
+        }
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        (super.accessibilityChildren() ?? []) + pinUI.rotorOrder.compactMap { pinUI.elements[$0] }
+    }
+
+    override func accessibilityCustomRotors() -> [NSAccessibilityCustomRotor] {
+        [NSAccessibilityCustomRotor(label: "Pins", itemSearchDelegate: pinUI)]
+    }
+
+    override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
+        guard core.isOpen else { return nil }
+        return [NSAccessibilityCustomAction(name: "Add Pin") { [weak self] in
+            self?.handle(.addPin)
+            return true
+        }]
+    }
+}
+
+extension EditorPinUI: @preconcurrency NSAccessibilityCustomRotorItemSearchDelegate {
+    func rotor(_ rotor: NSAccessibilityCustomRotor, resultFor search: NSAccessibilityCustomRotor.SearchParameters)
+        -> NSAccessibilityCustomRotor.ItemResult? {
+        let order = rotorOrder.compactMap { elements[$0] }
+        guard !order.isEmpty else { return nil }
+        let current = (search.currentItem?.targetElement as? PinElement).flatMap { element in order.firstIndex { $0 === element } }
+        let next: Int
+        switch (search.searchDirection, current) {
+        case (.next, let index?): next = index + 1
+        case (.previous, let index?): next = index - 1
+        case (.next, nil): next = 0
+        default: next = order.count - 1
+        }
+        // NSAccessibilityElement takes this protocol in Objective-C, which Swift does not see.
+        guard order.indices.contains(next), let target = order[next] as AnyObject as? NSAccessibilityElementProtocol else { return nil }
+        return NSAccessibilityCustomRotor.ItemResult(targetElement: target)
+    }
+}
+
+/// A pin as VoiceOver reads it: "Pin 3, area, 2 comments". Pressing it opens the pin.
+final class PinElement: NSAccessibilityElement {
+    var press: (() -> Void)?
+
+    override func accessibilityPerformPress() -> Bool {
+        press?()
+        return press != nil
+    }
+}
+
+/// A button that runs `press` when pressed.
+final class PressButton: NSButton {
+    var press: (() -> Void)?
+
+    convenience init(title: String) {
+        self.init(frame: .zero)
+        self.title = title
+        bezelStyle = .push
+        target = self
+        action = #selector(pressed)
+    }
+
+    @objc private func pressed() { press?() }
+}

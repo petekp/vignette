@@ -76,7 +76,8 @@ extension AnnotationController {
         let ui = Settings.shared.data.ui
         // A new drawing is sized for the screen the annotator opens on: Decision 8 in docs/editor.md.
         markScaleRule = ui.markScaleRule
-        let drawing = storedDrawing?(shot.key, pixels) ?? Drawing(key: key, pixels: pixels, sizedFor: DrawingScreen(screen), rule: markScaleRule)
+        let drawing = storedDrawing?(shot.key, pixels)
+            ?? Drawing(key: key, pixels: pixels, sizedFor: DrawingScreen(screen), rule: markScaleRule).numbered(storedNumbering?(shot.key, pixels))
         let words = storedMessage?(shot.key, pixels) ?? ""
         restoreMessage(words)
         let history = storedHistory?(shot.key, pixels, drawing) ?? EditorHistory()

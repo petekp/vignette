@@ -32,8 +32,9 @@ and is named in the history by its `id`. So the history's marks step becomes a d
 holds marks and pins. `basis`, the hash that checks the history, also covers the pins and `nextPin`.
 
 A drawing with pins and no marks keeps its file, as one with only a message does. A file with no
-marks, no pins and no message is removed, whatever its `nextPin`. A screenshot whose file was
-removed starts again at pin 1.
+marks, no pins and no message is removed, whatever its `nextPin`, unless it is a stitch's and
+keeps where its pieces wear their numbers (`pieceNumbers`). A screenshot whose file was removed
+starts again at pin 1.
 
 Reversing this means teaching readers to accept a version 2 file and ignore `pins` and `nextPin`.
 Until a build does that, it cannot open any pinned drawing.

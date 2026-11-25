@@ -314,7 +314,7 @@ private struct SequenceRun {
                 if EditorCore.isBlank(mark), core.typing?.id != mark.id { return "mark \(index + 1) is a text with no words" }
             }
         }
-        if !core.selection.isSubset(of: Set(ids)) { return "the selection names a mark that is gone" }
+        if !core.selection.isSubset(of: Set(ids + core.drawing.pins.map(\.id))) { return "a selected id is gone" }
         if let typing = core.typing, core.mark(typing.id)?.kind != .text { return "typing into a mark that is not a text" }
         if case .mark(let id)? = core.hover, core.mark(id) == nil { return "hovering a mark that is gone" }
         return nil
@@ -404,8 +404,8 @@ private struct SequenceRun {
     mutating func noteEdits(_ input: Core.Input, before: Core) {
         if before.gesture?.phase == .pressed, let phase = core.gesture?.phase {
             switch phase {
-            case .drawing, .moving, .resizing, .draggingEnd, .bending: editSelection = before.selection
-            case .pressed, .wrapping, .brushing: break
+            case .drawing, .placing, .moving, .resizing, .draggingEnd, .bending: editSelection = before.selection
+            default: break
             }
         }
         if let typing = core.typing, typing.id != before.typing?.id {

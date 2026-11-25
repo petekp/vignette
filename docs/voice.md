@@ -125,6 +125,7 @@ and "Redo" when there is nothing to take.
 | A paste or a drop, on the image or in the field | Paste |
 | A cut, on the image or in the field | Cut |
 | Agents' marks joining the open drawing | *Agent*'s Marks, as in "Claude's Marks"; "Agent's Marks" without one name |
+| A comment posted on a pin; an edited one is Typing, an emptied one Delete | Comment |
 
 ### Undo and Redo in the stack and the annotator (`UndoTimeline.Name`)
 
@@ -285,6 +286,18 @@ Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
 | --- | --- |
 | One pin did not fit under the cap | 1 more pin didn't fit. You can read it in Vignette. |
 | More than one | *n* more pins didn't fit. You can read them in Vignette. |
+
+### Pins in the editor (`PinPopover`, `Pin.spokenName`, `EditorView+Pins.swift`)
+
+| Where | Words |
+| --- | --- |
+| The popover's field, empty | Add a comment |
+| The field, to VoiceOver | Comment on pin *n*; Comment on new pin |
+| A comment's row, to VoiceOver | Edit this comment |
+| A pin's first comment posted, to VoiceOver | Pin *n* added |
+| A pin, to VoiceOver | Pin 3, area, 2 comments; Pin 1, point, 1 comment; New pin |
+| A selection with pins, to VoiceOver | 2 pins; 1 mark and 2 pins |
+| The rotor and the action | Pins; Add Pin |
 
 ### A drawing, on its card ("Not saved")
 

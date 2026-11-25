@@ -86,6 +86,7 @@ final class EditorView: NSView {
 
     private let pasteboard: NSPasteboard
     private let canvas = CanvasView()
+    let pinUI = EditorPinUI()
     let picture = EditorPicture()
     let overlay = EditorOverlayLayers()
     private var placedPicture = CGRect.zero
@@ -94,9 +95,9 @@ final class EditorView: NSView {
     private var revealPending = false
     /// The text view of a typing session that ended, kept over its text until the text's bitmap is
     /// on its layer, so the words are on screen in every frame.
-    private var lingering: TypingField?
+    private(set) var lingering: TypingField?
     /// Moves the lingering text view from the lines as typed to the balanced ones (`TypingField.settle`).
-    private var settling: Tween?
+    private(set) var settling: Tween?
     /// How long that takes, in seconds, with the motion scale applied; 0 goes straight to the new lines.
     var noteSettleDuration: TimeInterval = 0
     private var handOverTimer: Timer?
@@ -119,6 +120,7 @@ final class EditorView: NSView {
         canvas.autoresizingMask = [.width, .height]
         addSubview(canvas)
         canvas.host.addSublayer(picture.layer)
+        canvas.host.addSublayer(pinUI.pins.layer)
         canvas.host.addSublayer(overlay.layer)
         picture.onTextDrawn = { [weak self] id in
             if self?.lingering?.id == id { self?.settleLingering() }
@@ -155,7 +157,7 @@ final class EditorView: NSView {
             Log.write("[editor] error open-refused \(screenshotName): pixels=\(drawing.pixels.width)x\(drawing.pixels.height) pointScale=\(drawing.pointScale)")
             return
         }
-        handle(.zoomChanged(zoom))
+        zoomChanged()
         window?.makeFirstResponder(self)
     }
 
@@ -174,7 +176,7 @@ final class EditorView: NSView {
         return parked
     }
 
-    /// The message field's `messageChanged` or `messageTypingEnded`, with nothing to redraw.
+    /// An input with nothing to redraw: the message field's `messageChanged` or `messageTypingEnded`, or where the picture sits.
     func message(_ input: EditorCore.Input) {
         for effect in core.reduce(input) { run(effect, event: nil) }
     }
@@ -205,10 +207,10 @@ final class EditorView: NSView {
     /// A tool button in the toolbar.
     func setTool(_ tool: EditorCore.Tool) { handle(.setTool(tool)) }
 
-    /// Tab or Shift+Tab came back from the toolbar. False with no marks to take it, so the toolbar
+    /// Tab or Shift+Tab came back from the toolbar. False with no marks or pins to take it, so the toolbar
     /// keeps it and goes round its own controls.
     func enterCanvas(backward: Bool) -> Bool {
-        guard core.isOpen, !core.drawing.marks.isEmpty else { return false }
+        guard core.isOpen, !core.drawing.isEmpty else { return false }
         handle(.enterCanvas(backward: backward))
         return true
     }
@@ -248,12 +250,12 @@ final class EditorView: NSView {
     // MARK: Coordinates
 
     /// Screen pt per image px.
-    private var zoom: CGFloat {
+    var zoom: CGFloat {
         let width = CGFloat(core.drawing.pixels.width)
         return width > 0 ? placedPicture.width / width : 0
     }
 
-    private var toView: CGAffineTransform {
+    var toView: CGAffineTransform {
         CGAffineTransform(a: zoom, b: 0, c: 0, d: zoom, tx: placedPicture.minX, ty: placedPicture.minY)
     }
 
@@ -267,7 +269,7 @@ final class EditorView: NSView {
     // MARK: Running the core
 
     @discardableResult
-    private func handle(_ input: EditorCore.Input, event: NSEvent? = nil) -> [EditorCore.Effect] {
+    func handle(_ input: EditorCore.Input, event: NSEvent? = nil) -> [EditorCore.Effect] {
         let effects = core.reduce(input)
         for effect in effects { run(effect, event: event) }
         if !core.holdsKey { heldKeys = [] }
@@ -276,7 +278,7 @@ final class EditorView: NSView {
     }
 
     /// Runs one effect. `event` is the press that produced it, for `passPressToText`.
-    private func run(_ effect: EditorCore.Effect, event: NSEvent?) {
+    func run(_ effect: EditorCore.Effect, event: NSEvent?) {
         switch effect {
         case .tool(let tool): onTool?(tool)
         case .cursor: showCursor()
@@ -315,6 +317,8 @@ final class EditorView: NSView {
         case .close: onClose?()
         case .done(let drawing): onDone?(drawing)
         case .send(let drawing, let to): onSend?(drawing, to)
+        case .composer(let composer): showComposer(composer)
+        case .showCluster(let ids, let frame): showCluster(ids, at: frame)
         }
     }
 
@@ -352,6 +356,7 @@ final class EditorView: NSView {
         picture.show(core.drawing, typing: core.typing?.id, covered: lingering?.id, hiding: settling == nil ? nil : lingering?.id,
                      geometry: geometry, resolution: resolution, gesture: core.gesture != nil)
         showOverlay()
+        showPins()
         placeTypingField()
         settleLingering()
         CATransaction.commit()
@@ -361,39 +366,11 @@ final class EditorView: NSView {
         overlay.show(settlingOverlay(core.overlay), drawing: core.drawing, geometry: core.geometry, transform: toView)
     }
 
-    /// While a note settles, its selection follows the tag as drawn rather than the core's layout:
-    /// each edge of the outline and its handles is moved as far as the tag's edge on that side still
-    /// has to go.
-    private func settlingOverlay(_ overlay: EditorCore.Overlay) -> EditorCore.Overlay {
-        guard settling != nil, let field = lingering, let now = field.settlingBox, overlay.selected == [field.id],
-              let mark = core.mark(field.id), case .text(let text) = mark.geometry else { return overlay }
-        let end = core.geometry.layout(text, of: mark).box
-        guard end.width > 0, end.height > 0 else { return overlay }
-        func shift(_ value: CGFloat, from low: CGFloat, _ span: CGFloat, by a: CGFloat, _ b: CGFloat) -> CGFloat {
-            let t = min(max((value - low) / span, 0), 1)
-            return value + a + (b - a) * t
-        }
-        func move(_ rect: CGRect) -> CGRect {
-            let left = shift(rect.minX, from: end.minX, end.width, by: now.minX - end.minX, now.maxX - end.maxX)
-            let right = shift(rect.maxX, from: end.minX, end.width, by: now.minX - end.minX, now.maxX - end.maxX)
-            let top = shift(rect.minY, from: end.minY, end.height, by: now.minY - end.minY, now.maxY - end.maxY)
-            let bottom = shift(rect.maxY, from: end.minY, end.height, by: now.minY - end.minY, now.maxY - end.maxY)
-            return CGRect(x: left, y: top, width: right - left, height: bottom - top)
-        }
-        var moved = overlay
-        // The frame is the text's own outline, so it is drawn once, where the tag is.
-        moved.selected = []
-        if moved.hovered == field.id { moved.hovered = nil }
-        moved.frame = overlay.frame.map(move)
-        moved.handles = overlay.handles.map { .init(mark: $0.mark, position: $0.position, square: $0.square.map(move), hitArea: move($0.hitArea)) }
-        return moved
-    }
-
     private var backingScale: CGFloat { window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2 }
 
     /// The zoom's resolution and the part of the image in view, the whole picture while the view has
     /// no size yet.
-    private var resolution: EditorPicture.Resolution {
+    var resolution: EditorPicture.Resolution {
         let shown = bounds.isEmpty ? placedPicture : bounds.intersection(placedPicture)
         var visible = CGRect.null
         if !shown.isNull, zoom > 0 {
@@ -418,7 +395,7 @@ final class EditorView: NSView {
         }
         RunLoop.main.add(timer, forMode: .common)
         restTimer = timer
-        if core.isOpen { handle(.zoomChanged(zoom)) } else { refresh() }
+        if core.isOpen { zoomChanged() } else { refresh() }
     }
 
     /// The zoom is still: the texts are drawn for it, and the hover is found again under a pointer the
@@ -444,6 +421,7 @@ final class EditorView: NSView {
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         overlay.setScale(backingScale)
+        pinUI.pins.setScale(backingScale)
         picture.setScale(backingScale)
         canvas.host.contentsScale = backingScale
         refresh()

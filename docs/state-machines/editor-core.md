@@ -11,13 +11,15 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 **States**: the properties that together form the state.
 
 - `isOpen` (`EditorCore.swift`): false until `open`, false again after `park`.
-- `gesture: Gesture?` with `Phase`: `pressed`, `drawing(id)`, `wrapping`, `brushing`, `moving(originals:copies:)`, `resizing(id, pos)`, `draggingEnd(id, kind)`, `bending(id)`.
+- `gesture: Gesture?` with `Phase`: `pressed`, `drawing(id)`, `placing(pin id)`, `wrapping`, `brushing`, `moving(originals:copies:)`, `resizing(id, pos)`, `draggingEnd(id, kind)`, `bending(id)`. A press's target can be a pin or a cluster as well as a mark.
 - `typing: Typing?` (type): the text mark being typed.
 - `edit: MarkEdit?`: the open undo step. Set while a gesture has changed marks, or while typing.
 - `undoSteps`, `redoSteps` (`[HistoryStep]`, each a drawing step, its marks by index and its pins by `id`, or a message step, with a `StepName`), `message`, `typingMessage` (the top step is the message typing that runs on), `nudging`, `heldArrows`.
 - `noteMark: NoteMark?` (type): see HeldKey below. `holdsKey` is `noteMark?.toolBefore != nil`.
 - `unsaved`: the drawing changed since the last hand-over.
-- `drawing.pins` and `drawing.nextPin`: no input adds, moves or deletes a pin yet, and only a drawing step's undo or redo changes `pins`. `nextPin` never goes down.
+- `drawing.pins` and `drawing.nextPin`: the Comment tool adds a pin with number 0; its first comment numbers it from `nextPin`, which never goes down. A pin with number 0 is in no hand-over and no undo step.
+- `composer: Composer?` (`EditorCore+Pins.swift`): the pin whose popover is open, the comment it edits or nil for a new one, and the draft. While it is open, `edit` is open on that pin. `reportedComposer` is what `settle()` last told the view.
+- `fitZoom`, `visible`: from `viewChanged`, for a teardrop's size and Shift+Return's place.
 - `selection`, `hover`, `tool`, `zoom`, `style`, `metrics`, `markStyle`.
 - `finishes`: what Return and Cmd+Return do. The host sets it from the toolbar's offer.
 - `reportedTool`, `reportedCursor`, `announcedSelection`: what `settle()` last told the view.
@@ -54,6 +56,13 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 | open, idle | `keyDown` Cmd+Z, Shift+Cmd+Z | open | `undo` or `redo`; `.announce("Undo <name>")` in place of the selection's. A drawing step sets the marks and the pins it touched, pins in number order, and calls `changed()`; a message step sets `message` and emits `.message(words)`. |
 | open | `messageChanged(words, name)` | open | Nothing when `words == message`. Typing while `typingMessage` replaces the top step's `after`; anything else pushes a message step, which clears redo. No hand-over: the host stores the message. |
 | open | `messageTypingEnded` | open | `typingMessage = false`, so the next typing in the field is a new step. |
+| `pressed` on empty space, Comment tool | release | composer open on a new pin | `placePin`: number 0, selected, `edit` opened. Beeps at 99 pins. |
+| `pressed` on empty space, Comment tool | drag past the drag distance | `placing(id)` | `placeArea` on each drag; the release keeps it as an area, or a point when smaller than the smallest rectangle, and opens the composer. Ended without a release, the edit reverts. |
+| `pressed` on a cluster | release | open | `.showCluster(ids, at:)`; a row sends `composer(.open(id))`. |
+| open | double-click a pin, `composer(.open)`, Shift or Option+Return on a lone selected pin | composer open | `openComposer` closes another open one first. |
+| composer open | `composer(.post)` | composer open, empty, or closed | A new comment is a `Comment` step, an edited one `Typing`, an emptied one `Delete`; the last comment's removal deletes the pin and closes. Return with nothing typed closes. Nothing changed, nothing is committed. |
+| composer open | `composer(.close)`, a press, a tool, Cmd+Z, `done`, `send`, `park` | composer closed | `closeComposer` posts the draft, then reverts a pin still at number 0. |
+| composer open | `composer(.finish)` | composer closed | `closeComposer`, then `finish(finishes.commandReturn)`. |
 | open, idle | `keyDown` Esc | open | `.close`. The host decides. |
 | open, idle | `keyDown` Return | open | `finish(returnKey or commandReturn)`. |
 | open, idle | `keyDown` character right after a box or arrow | see HeldKey | `startsNote`. |

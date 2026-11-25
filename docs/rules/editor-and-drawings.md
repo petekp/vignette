@@ -69,7 +69,23 @@
   and where each piece wears its number, and is written before its card appears. Its first copy
   is the rendering with the list, and the card's Copied notice waits for that rendering. A stitch
   of pieces with pins is refused when a piece could not be read or the pins number over 99, and a
-  card says why (`Stitch.refusal`). A stitch without pins has no drawing.
+  card says why (`Stitch.refusal`). A stitch without pins writes a drawing holding only its
+  `pieceNumbers`, so a pin added later turns away from them, and copies its picture as before.
+  That file counts as a drawing in `Drawings.keys`, so a rename and the sweep carry it, but it
+  reads as no drawing (`Drawing.isFiled`, `DrawingStore.readNumbering`).
+- The editor draws pins itself, above the marks, in view coordinates (`EditorPins`), so a teardrop
+  keeps the size it has at the fit zoom whatever the zoom; `EditorPicture` leaves them out of
+  `MarkLayers`. The core places them (`EditorCore.pinPlacement`, `PinPlacement`): pins whose
+  bodies overlap past `ui.clusterOverlap` of their width draw as one cluster, except the selected,
+  the open and a new one. The core needs the fit zoom and the visible rect for that and for
+  Shift+Return, and the view sends both (`viewChanged`) before each `zoomChanged`. A pin is
+  selected, moved, nudged and deleted with the marks, by its `id` in `selection`.
+- A new pin has number 0 and is left out of every hand-over (`drawingForHost`) until its first
+  comment gives it `nextPin`. The editor opens with the file's `nextPin` and `pieceNumbers` even
+  when the file reads as no drawing (`AnnotationController.storedNumbering`), so a number a
+  deleted pin had is not given again while the file lasts. The popover by a pin is an
+  `NSPopover` (`PinPopover`) that sends `ComposerInput`; the core owns its state
+  (`EditorCore.Composer`) and says when it opens, changes or closes (`.composer`).
 - `MarkLayers` is the one on-screen drawer for a drawing's marks: the editor (`EditorPicture`), a card
   (`MarksView`) and a flight, so a mark looks the same in each and nothing steps when a flight hands
   over to the editor. A text is a bitmap the renderer draws off the main thread, on
@@ -93,7 +109,7 @@
   (Copy Drawing, Stitch, a drag) asks `Drawings.current(of:)`, which answers the open drawing over
   the stored one. `Drawings` reaches the editor only through `OpenDrawing`, which `EditorView` is.
   Agents' marks arrive through `Drawings.add` (`built`, or `saved` when they join the open drawing:
-  the editor's `join` answers the joined drawing and `add` writes it). An empty drawing, with no marks and no pins (`Drawing.isEmpty`), removes its file, unless the file holds a message. The file also keeps
+  the editor's `join` answers the joined drawing and `add` writes it). An empty drawing, with no marks and no pins (`Drawing.isEmpty`), removes its file, unless the file holds a message or a stitch's `pieceNumbers`. The file also keeps
   what was last typed in the message field for the screenshot (`message`, `docs/drawing-file.md`),
   so the screenshot opens in the editor with it again: after Send, Reply, Copy, Esc, a failed send
   or a relaunch alike. The editor's hand-overs carry the field's words, and the field's own changes

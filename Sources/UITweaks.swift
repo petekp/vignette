@@ -130,6 +130,7 @@ struct UITweaks: Codable, Equatable {
     var textDragDistance = 24.0      // and the sideways travel it needs
     var newTextSize = 17.0           // pt of the drawing, not of the screen
     var selectionOutlineWidth = 3.5  // the whole outline, light edge included; it runs this far outside a mark
+    var clusterOverlap = 0.34        // pins cluster when their bodies overlap by more than this share of their width
     var noteSettleDuration = 0.25    // seconds a note takes to move to its balanced lines when typing ends
     // Marks (`MarkStyle`, `TextStyle`, `docs/mark-style-settings-2026-09-29.md`)
     var personColor = "#e03131"      // a person's marks, as #rrggbb

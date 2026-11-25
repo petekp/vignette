@@ -1,0 +1,202 @@
+import XCTest
+
+final class EditorCorePinsTests: XCTestCase {
+    typealias Core = EditorCore
+    private static let image = PixelSize(width: 1000, height: 600)
+
+    private func core(_ marks: [Mark] = [], pins: [Pin] = [], nextPin: Int = 1, zoom: CGFloat = 1) -> Core {
+        var core = Core()
+        _ = core.reduce(.open(Drawing(key: "/tmp/shot.png", pixels: Self.image, pointScale: 1, marks: marks, pins: pins, nextPin: nextPin),
+                              style: .standard, metrics: .standard, markStyle: .standard))
+        _ = core.reduce(.viewChanged(fit: 1, visible: Self.image.bounds))
+        _ = core.reduce(.zoomChanged(zoom))
+        _ = core.reduce(.setTool(.comment))
+        return core
+    }
+
+    private func pin(_ number: Int, _ x: CGFloat, _ y: CGFloat, _ text: String = "Too tight") -> Pin {
+        Pin(id: UUID(), number: number, place: .point(CGPoint(x: x, y: y)), comments: [Pin.Comment(text: text)])
+    }
+
+    private func write(_ core: inout Core, _ words: String) {
+        _ = core.reduce(.composer(.changed(words)))
+    }
+
+    func testAClickPlacesAPinWhoseFirstCommentGivesItTheNextNumber() throws {
+        var core = core(nextPin: 4)
+        let placed = core.click(500, 300)
+        let id = try XCTUnwrap(core.drawing.pins.first?.id)
+        XCTAssertTrue(placed.contains(.composer(Core.Composer(pin: id, editing: nil, draft: ""))))
+        XCTAssertEqual(core.drawing.pins.first?.number, 0)
+        XCTAssertEqual(core.drawingForHost.pins, [])
+        write(&core, "Too tight")
+        let posted = core.reduce(.composer(.post))
+        XCTAssertEqual(core.drawing.pins.map(\.number), [4])
+        XCTAssertEqual(core.drawing.nextPin, 5)
+        XCTAssertEqual(core.drawing.pins.first?.comments.map(\.text), ["Too tight"])
+        XCTAssertTrue(posted.contains(.announce("Pin 4 added")))
+        XCTAssertEqual(core.composer, Core.Composer(pin: id, editing: nil, draft: ""))
+        XCTAssertEqual(core.undoTitle, "Undo Comment")
+    }
+
+    func testReturnInAnEmptyComposerClosesItAndKeepsThePinSelected() throws {
+        var core = core()
+        core.click(500, 300)
+        write(&core, "One")
+        _ = core.reduce(.composer(.post))
+        write(&core, "Two")
+        _ = core.reduce(.composer(.post))
+        let closed = core.reduce(.composer(.post))
+        let pin = try XCTUnwrap(core.drawing.pins.first)
+        XCTAssertEqual(pin.comments.map(\.text), ["One", "Two"])
+        XCTAssertNil(core.composer)
+        XCTAssertTrue(closed.contains(.composer(nil)))
+        XCTAssertEqual(core.selection, [pin.id])
+    }
+
+    func testANewPinClosedWithNothingPostedGoesAndTakesNoNumber() {
+        var core = core()
+        core.click(500, 300)
+        write(&core, "   ")
+        _ = core.reduce(.composer(.close))
+        XCTAssertEqual(core.drawing.pins, [])
+        XCTAssertEqual(core.drawing.nextPin, 1)
+        XCTAssertEqual(core.selection, [])
+        XCTAssertEqual(core.undoTitle, "Undo")
+        core.click(500, 300)
+        core.click(100, 100)
+        XCTAssertEqual(core.drawing.pins.count, 1, "a press elsewhere closes the first new pin and places another")
+    }
+
+    func testEscPostsWhatWasTyped() {
+        var core = core()
+        core.click(500, 300)
+        write(&core, "Kept")
+        _ = core.reduce(.composer(.close))
+        XCTAssertEqual(core.drawing.pins.map { $0.comments.map(\.text) }, [["Kept"]])
+        XCTAssertNil(core.composer)
+    }
+
+    func testCmdReturnPostsThenFinishesWithThePin() {
+        var core = core()
+        core.click(500, 300)
+        write(&core, "Ship it")
+        let finished = core.reduce(.composer(.finish))
+        let done = finished.compactMap { effect -> Drawing? in
+            if case .done(let drawing) = effect { return drawing }
+            return nil
+        }
+        XCTAssertEqual(done.first?.pins.map(\.number), [1])
+        XCTAssertEqual(done.first?.pins.first?.comments.map(\.text), ["Ship it"])
+    }
+
+    func testEditingACommentReplacesItAndEmptyingTheLastOneDeletesThePin() throws {
+        var core = core(pins: [pin(1, 500, 300, "First")], nextPin: 2)
+        let id = try XCTUnwrap(core.drawing.pins.first?.id)
+        core.click(510, 290, count: 2)
+        XCTAssertEqual(core.composer?.pin, id)
+        _ = core.reduce(.composer(.edit(0)))
+        XCTAssertEqual(core.composer, Core.Composer(pin: id, editing: 0, draft: "First"))
+        write(&core, "Changed")
+        _ = core.reduce(.composer(.post))
+        XCTAssertEqual(core.drawing.pins.first?.comments.map(\.text), ["Changed"])
+        XCTAssertEqual(core.undoTitle, "Undo Typing")
+        _ = core.reduce(.composer(.edit(0)))
+        write(&core, "")
+        _ = core.reduce(.composer(.post))
+        XCTAssertEqual(core.drawing.pins, [])
+        XCTAssertNil(core.composer)
+        XCTAssertEqual(core.drawing.nextPin, 2)
+        core.key(.character("z"), .command)
+        XCTAssertEqual(core.drawing.pins.first?.comments.map(\.text), ["Changed"])
+    }
+
+    func testAfterEmptyingOneCommentAClickOnALaterOneEditsThatOneAndAnUnchangedOneReturnsToANewComment() throws {
+        let three = Pin(id: UUID(), number: 1, place: .point(CGPoint(x: 500, y: 300)),
+                        comments: ["A", "B", "C"].map { Pin.Comment(text: $0) })
+        var core = core(pins: [three], nextPin: 2)
+        _ = core.reduce(.composer(.open(three.id)))
+        _ = core.reduce(.composer(.edit(0)))
+        write(&core, "")
+        _ = core.reduce(.composer(.edit(2)))
+        XCTAssertEqual(core.drawing.pins.first?.comments.map(\.text), ["B", "C"])
+        XCTAssertEqual(core.composer, Core.Composer(pin: three.id, editing: 1, draft: "C"))
+        _ = core.reduce(.composer(.post))
+        XCTAssertEqual(core.composer, Core.Composer(pin: three.id, editing: nil, draft: ""))
+    }
+
+    func testCutTakesTheSelectedMarksAndLeavesTheSelectedPins() throws {
+        let box = Mark(geometry: .rectangle(CGRect(x: 100, y: 100, width: 100, height: 100)))
+        var core = core([box], pins: [pin(1, 500, 300)], nextPin: 2)
+        core.key(.character("a"), .command)
+        core.key(.character("x"), .command)
+        XCTAssertEqual(core.drawing.marks, [])
+        XCTAssertEqual(core.drawing.pins.count, 1)
+    }
+
+    func testAPressOnATeardropBesideAMarkSelectsThePinAndOneOnTheMarkSelectsTheMark() throws {
+        let box = Mark(geometry: .rectangle(CGRect(x: 520, y: 260, width: 200, height: 200)))
+        var core = core([box], pins: [pin(1, 500, 300)], nextPin: 2)
+        let id = try XCTUnwrap(core.drawing.pins.first?.id)
+        core.click(510, 286)
+        XCTAssertEqual(core.selection, [id])
+        XCTAssertNil(core.composer)
+        core.click(620, 260)
+        XCTAssertEqual(core.selection, [box.id])
+        XCTAssertEqual(core.drawing.pins.count, 1)
+        core.click(800, 500)
+        XCTAssertEqual(core.drawing.pins.count, 2, "the Comment tool places a pin away from marks and pins")
+    }
+
+    func testPinsClusterWhenTheirBodiesOverlapAndZoomingInPullsThemApart() {
+        let near = [pin(1, 500, 300), pin(2, 506, 300), pin(3, 300, 300), pin(4, 300, 300)]
+        var core = core(pins: near, nextPin: 5)
+        XCTAssertEqual(core.pinPlacement.clusters.map(\.label).sorted(), ["1 · 2", "3 · 4"])
+        _ = core.reduce(.zoomChanged(2))
+        XCTAssertEqual(core.pinPlacement.clusters.map(\.label).sorted(), ["1 · 2", "3 · 4"])
+        _ = core.reduce(.zoomChanged(3))
+        XCTAssertEqual(core.pinPlacement.clusters.map(\.label), ["3 · 4"])
+        _ = core.reduce(.zoomChanged(50))
+        XCTAssertEqual(core.pinPlacement.clusters.map(\.label), ["3 · 4"], "pins on one point stay a cluster")
+        XCTAssertEqual(core.pinPlacement.drops.map(\.number), [1, 2])
+    }
+
+    func testAClusterPastThreeCountsTheRestAndAClickListsItsPins() throws {
+        var core = core(pins: (1...5).map { pin($0, 400, 300) }, nextPin: 6)
+        let cluster = try XCTUnwrap(core.pinPlacement.clusters.first)
+        XCTAssertEqual(cluster.label, "1 · 2 · 3 +2")
+        let shown = core.click(cluster.frame.midX, cluster.frame.midY)
+        XCTAssertTrue(shown.contains(.showCluster(cluster.pins, at: cluster.frame)))
+        XCTAssertEqual(core.drawing.pins.count, 5)
+        _ = core.reduce(.composer(.open(cluster.pins[3])))
+        XCTAssertEqual(core.composer?.pin, cluster.pins[3])
+        XCTAssertEqual(core.pinPlacement.clusters.map(\.label), ["1 · 2 · 3 +1"], "the open pin leaves its cluster")
+    }
+
+    func testShiftReturnPlacesAPinInTheMiddleOfTheViewAndOpensASelectedOne() throws {
+        var core = core()
+        _ = core.reduce(.viewChanged(fit: 1, visible: CGRect(x: 200, y: 100, width: 400, height: 200)))
+        core.key(.returnKey, .shift)
+        XCTAssertEqual(core.drawing.pins.first?.tip, CGPoint(x: 400, y: 200))
+        write(&core, "Middle")
+        _ = core.reduce(.composer(.close))
+        core.key(.returnKey, .option)
+        XCTAssertEqual(core.composer?.pin, try XCTUnwrap(core.drawing.pins.first?.id))
+    }
+
+    func testADragWithTheCommentToolPlacesAnAreaPinThatMovesAndResizes() throws {
+        var core = core()
+        core.drag(from: (100, 100), to: (300, 200))
+        let id = try XCTUnwrap(core.drawing.pins.first?.id)
+        XCTAssertEqual(core.drawing.pins.first?.place, .area(CGRect(x: 100, y: 100, width: 200, height: 100)))
+        write(&core, "This box")
+        _ = core.reduce(.composer(.close))
+        core.drag(from: (110, 90), to: (160, 140))
+        XCTAssertEqual(core.drawing.pins.first?.place, .area(CGRect(x: 150, y: 150, width: 200, height: 100)))
+        XCTAssertEqual(core.selection, [id])
+        core.key(.right)
+        XCTAssertEqual(core.drawing.pins.first?.tip, CGPoint(x: 151, y: 150))
+        core.key(.delete)
+        XCTAssertEqual(core.drawing.pins, [])
+    }
+}

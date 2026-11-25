@@ -13,6 +13,7 @@ extension AppDelegate {
         annotator.storedHistory = { [weak self] key, pixels, drawing in
             self?.drawings.history(of: key, pixels: pixels, drawing: drawing) ?? EditorHistory()
         }
+        annotator.storedNumbering = { [weak self] key, pixels in self?.drawings.numbering(of: key, pixels: pixels) }
         annotator.storedMessage = { [weak self] key, pixels in self?.drawings.message(of: key, pixels: pixels) ?? "" }
         drawings.onWriteFailed = { [weak self] key in self?.thumbnail.showNotSaved(Screenshot(key: key)) }
     }

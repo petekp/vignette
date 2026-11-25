@@ -40,15 +40,32 @@ struct PinTeardrop {
         self.init(number: pin.number, agent: pin.color == .agent, tip: pin.tip, orientation: orientation, side: side)
     }
 
-    /// A teardrop `side` px across whose tip is at `tip`, wearing `number`.
+    /// A teardrop `side` px across whose tip is at `tip`, wearing `number`, or no number for 0.
     init(number: Int, agent: Bool, tip: CGPoint, orientation: Orientation, side: CGFloat) {
         self.orientation = orientation
         square = Self.square(tip: tip, orientation: orientation, side: side)
+        body = CGPath(ellipseIn: square, transform: nil).union(CGPath(rect: Self.corner(tip: tip, orientation: orientation, side: side), transform: nil))
+        self.number = number > 0 ? Self.letters("\(number)", centredIn: square, side: side, widest: side * Self.numberWidth, agent: agent)
+            : CGMutablePath()
+    }
+
+    /// A cluster: a teardrop widened into a capsule that fills `frame`, its tip at the corner of
+    /// `frame` the orientation points from, wearing `label`.
+    init(label: String, agent: Bool, orientation: Orientation, frame: CGRect) {
+        self.orientation = orientation
+        square = frame
+        let side = frame.height, tip = CGPoint(x: frame.minX, y: frame.minY)
+        let right = orientation == .upRight || orientation == .downRight, up = orientation == .upRight || orientation == .upLeft
+        let corner = Self.corner(tip: CGPoint(x: right ? tip.x : frame.maxX, y: up ? frame.maxY : tip.y), orientation: orientation, side: side)
+        body = CGPath(roundedRect: frame, cornerWidth: side / 2, cornerHeight: side / 2, transform: nil).union(CGPath(rect: corner, transform: nil))
+        number = Self.letters(label, centredIn: frame, side: side, widest: frame.width - side * Self.numberWidth / 2, agent: agent)
+    }
+
+    /// The quarter of the square toward the tip, which squares the round body off into a point.
+    private static func corner(tip: CGPoint, orientation: Orientation, side: CGFloat) -> CGRect {
         let right = orientation == .upRight || orientation == .downRight
         let up = orientation == .upRight || orientation == .upLeft
-        let corner = CGRect(x: right ? tip.x : tip.x - side / 2, y: up ? tip.y - side / 2 : tip.y, width: side / 2, height: side / 2)
-        body = CGPath(ellipseIn: square, transform: nil).union(CGPath(rect: corner, transform: nil))
-        self.number = Self.letters("\(number)", centredIn: square, agent: agent)
+        return CGRect(x: right ? tip.x : tip.x - side / 2, y: up ? tip.y - side / 2 : tip.y, width: side / 2, height: side / 2)
     }
 
     /// The tip: the corner of `square` the body points from.
@@ -101,18 +118,17 @@ struct PinTeardrop {
         return (system.withDesign(agent ? .monospaced : .rounded) ?? system) as CTFontDescriptor
     }
 
-    /// `words` as letter outlines, centred on the round part of the body in `square`, set no wider than
-    /// `numberWidth` of it.
-    private static func letters(_ words: String, centredIn square: CGRect, agent: Bool) -> CGPath {
+    /// `words` as letter outlines, centred in `square`, set at `numberSize` of `side` and no wider than
+    /// `widest`.
+    private static func letters(_ words: String, centredIn square: CGRect, side: CGFloat, widest: CGFloat, agent: Bool) -> CGPath {
         let face = face(agent: agent)
         func line(_ size: CGFloat) -> (line: CTLine, font: CTFont, width: CGFloat) {
             let font = CTFontCreateWithFontDescriptor(face, size, nil)
             let line = CTLineCreateWithAttributedString(NSAttributedString(string: words, attributes: [.font: font]))
             return (line, font, CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)))
         }
-        var set = line(square.width * numberSize)
-        let widest = square.width * numberWidth
-        if set.width > widest { set = line(square.width * numberSize * widest / set.width) }
+        var set = line(side * numberSize)
+        if set.width > widest { set = line(side * numberSize * widest / set.width) }
         let origin = CGPoint(x: square.midX - set.width / 2, y: square.midY + CTFontGetCapHeight(set.font) / 2)
         let path = CGMutablePath()
         for run in (CTLineGetGlyphRuns(set.line) as? [CTRun]) ?? [] {
@@ -174,10 +190,17 @@ final class PinLayer {
         let (pixels, pointScale, pieceNumbers) = (drawing.pixels, drawing.pointScale, drawing.pieceNumbers)
         if let shown, shown.pin == pin, shown.pixels == pixels, shown.pointScale == pointScale, shown.markStyle == markStyle,
            shown.pieceNumbers == pieceNumbers { return }
-        let teardrop = PinTeardrop(pin, in: pixels, pointScale: pointScale, edgeWidth: markStyle.edgeWidth, pieceNumbers: pieceNumbers)
-        drop.show(teardrop.shape, color: pin.color, pointScale: pointScale, markStyle: markStyle)
+        show(PinTeardrop(pin, in: pixels, pointScale: pointScale, edgeWidth: markStyle.edgeWidth, pieceNumbers: pieceNumbers),
+             color: pin.color, pointScale: pointScale, markStyle: markStyle)
+        shown = (pin, pixels, pointScale, markStyle, pieceNumbers)
+    }
+
+    /// Draws `teardrop`, a pin's or a cluster's wherever it is, in `color`, with its edge and shadows
+    /// for a drawing of `pointScale`.
+    func show(_ teardrop: PinTeardrop, color: MarkColor, pointScale: CGFloat, markStyle: MarkStyle) {
+        drop.show(teardrop.shape, color: color, pointScale: pointScale, markStyle: markStyle)
         number.path = teardrop.number
         number.fillColor = markStyle.wordColor.cgColor
-        shown = (pin, pixels, pointScale, markStyle, pieceNumbers)
+        shown = nil
     }
 }
