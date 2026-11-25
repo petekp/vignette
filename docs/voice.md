@@ -149,6 +149,11 @@ because the skill loads on it. The sentence after it is `sendInstructions` from 
 | A drawing | From Vignette: "*folder*/image.png". If a drawing would answer better than words, you can send one back. |
 | Words alone on the agent's own image | From Vignette: about your image "*card*" ("*its title*"), unchanged since you sent it. The reply ticket is "*folder*/ticket.json". If a drawing would answer better than words, you can send one back. |
 
+A drawing with pins puts each pin's words after the message and before the bracket, in number
+order: `Pin 1: remove extra margin. Pin 3: too narrow. / can we pulse it?` A comment's words are
+joined into one line, and one pin's comments are joined with " / ". A full stop follows the message
+and each pin's words when they end in a letter or a digit (`Pin.lineWords`, `Pin.ended`).
+
 ### Settings switches
 
 A switch's line says what changes when it is on, or what happens without it when that is the reason
@@ -271,6 +276,15 @@ Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
 | --- | --- |
 | The screenshot did not read | Vignette couldn't read the screenshot. |
 | The rendering could not be written | Vignette couldn't save the drawing. |
+| A stitch's pieces hold pins and one could not be read, on that piece's card (`Stitch.refusal`) | Vignette couldn't read this screenshot, so it made no stitch. |
+| A stitch's pieces hold more than 99 pins between them, on the first piece's card | A stitch holds up to 99 pins. These hold *n*. |
+
+### The end of a copy's comment list (`CommentList`)
+
+| When | Line |
+| --- | --- |
+| One pin did not fit under the cap | 1 more pin didn't fit. You can read it in Vignette. |
+| More than one | *n* more pins didn't fit. You can read them in Vignette. |
 
 ### A drawing, on its card ("Not saved")
 

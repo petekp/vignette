@@ -67,7 +67,7 @@
   `ui.stitchLongSide` caps the output, and `[stitch] ok` reports the composed size and that scale.
   Each piece carries its drawing, the editor's own for the image open in it and the stored one
   otherwise, and `Drawing.draw` draws it into the piece's pixels as Done does, off the main thread.
-  The stitch is a new image with no drawing of its own. `docs/stitch-2026-09-17.md` has the numbers;
+  Its pins become the stitch's live pins (`docs/rules/editor-and-drawings.md`). `docs/stitch-2026-09-17.md` has the numbers;
   separate images are better when the model has to read the text.
 - A sideways two-finger swipe over the corner moves the column with the fingers, and a release
   toward the screen's edge closes it (`StackSwipe`, a pure value, tested in

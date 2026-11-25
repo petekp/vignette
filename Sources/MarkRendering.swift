@@ -320,20 +320,6 @@ struct Arrowhead {
     }
 }
 
-// MARK: - Drawing marks
-
-extension Drawing {
-    /// Draws every mark, in order, so the newest is on top, and every pin above them. The context's
-    /// transform maps the image's px, from its top-left corner with y down, to whatever it draws on, at
-    /// any scale.
-    func draw(in ctx: CGContext, style: TextStyle, markStyle: MarkStyle) {
-        for mark in marks {
-            mark.draw(in: ctx, pointScale: pointScale, imageWidth: CGFloat(pixels.width), style: style, markStyle: markStyle)
-        }
-        for pin in pins { pin.draw(in: ctx, pixels: pixels, pointScale: pointScale, markStyle: markStyle) }
-    }
-}
-
 /// A rectangle's, an ellipse's or an arrow's drawn geometry, in px: `stroked` is stroked `lineWidth`
 /// wide with round caps and joins, and `filled` is filled, both in the mark's colour. The renderer
 /// draws these paths, and the editor shows the same ones in shape layers.

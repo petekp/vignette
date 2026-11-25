@@ -12,10 +12,18 @@ extension DrawingStore {
         let pins: [Any]
         /// The file's `nextPin`, unchecked, or nil when it has none.
         let nextPin: Any?
+        /// The file's `pieceNumbers`, unchecked against the image.
+        let pieceNumbers: [CGRect]
         /// What was typed in the message field for the screenshot, or "".
         let message: String
         /// The whole file, as parsed.
         let object: [String: Any]
+
+        /// The piece numbers that reach into an image of `pixels`, cut to it.
+        func pieceNumbers(in pixels: PixelSize) -> [CGRect] {
+            let bounds = CGRect(x: 0, y: 0, width: pixels.width, height: pixels.height)
+            return pieceNumbers.map { $0.intersection(bounds) }.filter { !$0.isEmpty }
+        }
     }
 
     enum Contents {
@@ -63,6 +71,7 @@ extension DrawingStore {
         // A file written before the message was kept has none.
         let message = (object["message"] as? String).map { String($0.prefix(MarkFields.maxTextLength)) } ?? ""
         return .stored(Stored(key: key, pixels: PixelSize(width: width, height: height), pointScale: pointScale, markScale: markScale,
-                              marks: marks, pins: pins, nextPin: object["nextPin"], message: message, object: object))
+                              marks: marks, pins: pins, nextPin: object["nextPin"], pieceNumbers: DrawingJSON.rects(object["pieceNumbers"]),
+                              message: message, object: object))
     }
 }

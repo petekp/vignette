@@ -20,9 +20,10 @@ extension PixelSize {
     }
 }
 
-/// A screenshot with its drawing's marks, as PNG: what Done, Send and Copy Drawing hand on. It is the
-/// screenshot as displayed, at its exact pixel size and in its own colour space, so every pixel the
-/// marks leave alone is the screenshot's own. Safe off the main thread.
+/// A screenshot with its drawing's marks and pins, as PNG: what Done, Send and Copy Drawing hand on. It
+/// is the screenshot as displayed, at its exact pixel size and in its own colour space, so every pixel
+/// the marks leave alone is the screenshot's own, with the pins' comments beside it in a `withComments`
+/// layout. Safe off the main thread.
 enum Rendering {
     enum Failure: Error, CustomStringConvertible {
         /// The file is not an image, or not the one the drawing was made on.
@@ -52,8 +53,8 @@ enum Rendering {
         }
     }
 
-    /// The image at `url` with `drawing` over it. Throws a `Failure`.
-    static func png(of drawing: Drawing, imageAt url: URL, style: TextStyle, markStyle: MarkStyle) throws -> Data {
+    /// The image at `url` with `drawing` over it, laid out as `layout` says. Throws a `Failure`.
+    static func png(of drawing: Drawing, imageAt url: URL, style: TextStyle, markStyle: MarkStyle, layout: Layout = .picture) throws -> Data {
         let name = url.lastPathComponent
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
@@ -64,13 +65,20 @@ enum Rendering {
         guard pixels == drawing.pixels else {
             throw Failure.unreadableImage("\(name) is \(pixels.width)x\(pixels.height); the drawing was made on \(drawing.pixels.width)x\(drawing.pixels.height)")
         }
-        guard let ctx = context(for: image, pixels: pixels) else {
-            throw Failure.writeFailed("could not make a \(pixels.width)x\(pixels.height) bitmap for \(name)")
+        var list: CommentList?
+        if case .withComments(let textSize) = layout { list = CommentList(drawing, textSize: textSize, style: style, markStyle: markStyle) }
+        let canvas = list?.canvas(for: pixels) ?? pixels
+        guard let ctx = context(for: image, pixels: canvas) else {
+            throw Failure.writeFailed("could not make a \(canvas.width)x\(canvas.height) bitmap for \(name)")
         }
         let orientation = properties[kCGImagePropertyOrientation] as? Int ?? 1
         // From here on the context's units are the image's px as displayed, from the top-left, y down.
-        ctx.translateBy(x: 0, y: CGFloat(pixels.height))
+        ctx.translateBy(x: 0, y: CGFloat(canvas.height))
         ctx.scaleBy(x: 1, y: -1)
+        if list != nil {
+            ctx.setFillColor(CommentList.background)
+            ctx.fill(CGRect(x: 0, y: 0, width: canvas.width, height: canvas.height))
+        }
 
         ctx.saveGState()
         // Each orientation turns or mirrors whole pixels onto whole pixels, so nothing is resampled.
@@ -83,10 +91,14 @@ enum Rendering {
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         ctx.restoreGState()
 
-        drawing.draw(in: ctx, style: style, markStyle: markStyle)
+        ctx.saveGState()
+        ctx.clip(to: CGRect(x: 0, y: 0, width: pixels.width, height: pixels.height))
+        drawing.draw(in: ctx, style: style, markStyle: markStyle, pins: .rendered)
+        ctx.restoreGState()
+        list?.draw(in: ctx, at: list?.origin(for: pixels) ?? .zero, pointScale: drawing.pointScale, markStyle: markStyle)
 
         guard let rendered = ctx.makeImage() else {
-            throw Failure.writeFailed("could not finish the \(pixels.width)x\(pixels.height) bitmap for \(name)")
+            throw Failure.writeFailed("could not finish the \(canvas.width)x\(canvas.height) bitmap for \(name)")
         }
         let png = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(png, "public.png" as CFString, 1, nil) else {

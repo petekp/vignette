@@ -52,8 +52,24 @@
   corner, with its body up and to the right. Where that body and its edge would cross the picture's
   top edge it goes below the tip, and where they would cross the right edge it goes to the left.
   The orientation is worked out each time from the picture at the drawing's own size and is never
-  stored, so every drawer agrees (`PinTeardrop.facing`). `MarkLayers` shows pins with `PinLayer`
+  stored, so every drawer agrees (`PinTeardrop.facing`). A body that would cover a stitch's piece
+  number turns away from it (`Drawing.pieceNumbers`). `MarkLayers` shows pins with `PinLayer`
   and `MarkRendering` draws them with `Pin.draw`, from the same paths.
+- A PNG rendering draws pins as `Drawing.renderedTeardrops` places them, since its reader cannot
+  hover. It outlines every area in its pin's colour. A body that would overlap an earlier pin's
+  body or a piece number tries its other orientations, then moves clear, and a line in the pin's
+  colour joins it to its place. Copy (Done, Cmd+C), Copy Drawing, a drag and a stitch's first copy
+  render `Rendering.Layout.withComments`. A drawing with pins then gets its comments listed below
+  a wide screenshot or right of a tall one (`CommentList`), and the clipboard's text is each path
+  followed by its pins' words (`Pin.clipboardWords`). The list's area is capped, so a rendering's
+  memory stays bounded: the pins past the cap become one line saying how many did not fit. Send
+  renders `.picture`, the screenshot's size, and its line carries the words.
+- A stitch makes its pieces' pins its own. They are renumbered from 1 in piece order and get new
+  ids, since each piece keeps its own (`Stitch.Composition.pins`). The stitch's drawing holds them
+  and where each piece wears its number, and is written before its card appears. Its first copy
+  is the rendering with the list, and the card's Copied notice waits for that rendering. A stitch
+  of pieces with pins is refused when a piece could not be read or the pins number over 99, and a
+  card says why (`Stitch.refusal`). A stitch without pins has no drawing.
 - `MarkLayers` is the one on-screen drawer for a drawing's marks: the editor (`EditorPicture`), a card
   (`MarksView`) and a flight, so a mark looks the same in each and nothing steps when a flight hands
   over to the editor. A text is a bitmap the renderer draws off the main thread, on

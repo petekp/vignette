@@ -555,13 +555,13 @@ final class ThumbnailController {
     /// The stitched file is written: the cards it was made from converge into its slot and the new
     /// card takes their place as the newest. The originals leave the stack; their files are
     /// untouched, so the next stack open has them back. False when the stack is not showing all of
-    /// them, and the caller shows the stitched card as it would any copy.
+    /// them, and the caller shows the stitched card as it would any copy. Copied waits for `copied`.
     ///
     /// The watcher reports the new file a moment later like any capture. The card is already in the
     /// column by then, so `insert` ignores it; with `annotateOnCapture` on, the same report carries
     /// it into the annotator from the slot the stitch just filled.
     @discardableResult
-    func stitched(_ pieces: [Screenshot], into key: ScreenshotKey) -> Bool {
+    func stitched(_ pieces: [Screenshot], into key: ScreenshotKey, copied: PendingRendering? = nil) -> Bool {
         guard visible, model.isStack, !run.isActive, pieces.count > 1 else { return false }
         let cards = pieces.compactMap { shot in model.cards.first { $0.shot.key == shot.key } }
         guard cards.count == pieces.count, let result = makeStitchedCard(key), let stitched = result.image else { return false }
@@ -591,9 +591,8 @@ final class ThumbnailController {
             self.model.forming.subtract(ids)
             self.model.forming.remove(result.id)
             guard self.stitchGeneration == generation else { return }
-            // The card takes the Copied notice, and comes back as the lone thumbnail if the stack has
-            // gone meanwhile, so a stitch never finishes in silence.
-            self.showCopied([result.shot])
+            // Copied comes back as the lone thumbnail if the stack has gone, so a stitch never ends in silence.
+            self.showCopied([result.shot], after: copied)
         }
         Log.write("[stack] stitched cards=\(cards.count) into=\(key.name)")
         return true

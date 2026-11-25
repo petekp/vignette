@@ -61,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     private lazy var setupLab = SetupLabController(
         callbacks: { [unowned self] in self.setupCallbacks(protectedArea: ScreenshotWatcher.protectedArea(of: self.watchFolder)) })
     let settings = Settings.shared
-    private var watchFolder: URL { settings.data.folderURL }
+    var watchFolder: URL { settings.data.folderURL }
     /// One map, so Send submits through the same connections it lists.
     static let connections: [AgentClient: any AgentConnection] = [.claude: ClaudeCodeConnection(), .codex: CodexConnection()]
     /// Sending drawings to agent sessions and taking their drawings back. See ScreenshotRequests.
@@ -433,36 +433,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         annotate([Screenshot(key: key)])
     }
 
-    /// Each piece carries its drawing as it is now into the stitch.
-    func stitch(_ shots: [Screenshot]) {
-        guard shots.count >= 2 else { Commands.error("stitch", .notEnoughFiles, "needs 2, got \(shots.count)"); return }
-        let ui = settings.data.ui, style = ui.textStyle, markStyle = ui.markStyle, limit = ui.stitchLongSide
-        let pieces = shots.map { Stitch.Piece(url: $0.url, drawing: drawings.current(of: $0.key, style: style)) }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let composed = Stitch.compose(pieces, style: style, markStyle: markStyle, longSideLimit: limit)
-            DispatchQueue.main.async { MainActor.assumeIsolated { [weak self] in self?.finishStitch(shots, composed) } }
-        }
-    }
-
-    private func finishStitch(_ shots: [Screenshot], _ composed: Stitch.Composition?) {
-        guard let composed else {
-            Commands.error("stitch", .unreadableImage, shots.map(\.url.lastPathComponent).joined(separator: ", ")); return
-        }
-        // A file that would not decode is not in the picture, and one image is not a stitch.
-        guard composed.pieces >= 2 else {
-            Commands.error("stitch", .unreadableImage, "only \(composed.pieces) of \(shots.count) images could be read"); return
-        }
-        let stamp = DateFormatter(); stamp.dateFormat = "yyyy-MM-dd 'at' h.mm.ss a"
-        let key: ScreenshotKey, name = "\(Self.stitchNamePrefix)\(stamp.string(from: Date())).png"
-        do { key = try folderWrites.writeStitch(composed.png, in: watchFolder, as: name) } catch { Commands.error("stitch", .writeFailed, "\(name): \(error.localizedDescription)"); return }
-        Clipboard.copyFiles([key.url])
-        // readerScale is what a vision model's resize leaves of the composition; see Stitch.swift.
-        Commands.ok("stitch", "\(key.url.path) from \(composed.pieces) images, \(Int(composed.size.width))x\(Int(composed.size.height)) columns=\(composed.columns) readerScale=\(String(format: "%.2f", composed.readerScale)) \(composed.png.count) bytes, copied")
-        // The cards conjoin into the new one when the stack is showing them; otherwise the new card
-        // comes up with the Copied notice.
-        if !conjoin(shots, into: key) { thumbnail.showCopied([Screenshot(key: key)]) }
-    }
-
     // MARK: Drawings
 
     lazy var drawings = Drawings(store: DrawingStore(directory: Identity.applicationSupportURL.appendingPathComponent("drawings")))
@@ -504,7 +474,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// The screen an agent's new drawing is sized for: the main screen, the best guess with no
     /// annotator open.
-    private static var newDrawingScreen: DrawingScreen { DrawingScreen(NSScreen.main ?? NSScreen.screens[0]) }
+    static var newDrawingScreen: DrawingScreen { DrawingScreen(NSScreen.main ?? NSScreen.screens[0]) }
 
     /// Agents' marks joining a screenshot's drawing: the one open in the editor, or the stored one.
     /// `done` answers once the drawing is written, with how many marks joined it. A new drawing is
@@ -529,84 +499,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         guard !shots.isEmpty else { Commands.error("open", .missingFile, "nothing selected"); return }
         for shot in shots { NSWorkspace.shared.open(shot.url) }
         Commands.ok("open", shots.map(\.url.lastPathComponent).joined(separator: ", "))
-    }
-
-    /// Copy Drawing: each card's drawing as it is now, rendered and written beside its screenshot,
-    /// and the original file for a card without one. The queue renders these in the order asked, so
-    /// once the last rendering is done every one is.
-    func copyAnnotated(_ shots: [Screenshot]) {
-        let ui = settings.data.ui, style = ui.textStyle
-        let renderings = shots.map { shot -> (shot: Screenshot, rendering: PendingRendering?) in
-            let drawing = drawings.current(of: shot.key, style: style)
-            guard let drawing, !drawing.isEmpty else { return (shot, nil) }
-            return (shot, RenderingQueue.shared.render(drawing, imageAt: shot.url, output: .file,
-                                                       style: style, markStyle: ui.markStyle))
-        }
-        if let last = renderings.compactMap(\.rendering).last {
-            last.whenDone { [weak self] _ in self?.finishCopyAnnotated(renderings) }
-        } else {
-            finishCopyAnnotated(renderings)
-        }
-    }
-
-    private func finishCopyAnnotated(_ renderings: [(shot: Screenshot, rendering: PendingRendering?)]) {
-        var urls: [URL] = []
-        for (shot, rendering) in renderings {
-            guard let rendering else { urls.append(shot.url); continue }
-            let output = rendering.wait(timeout: 0)
-            guard let file = output?.file else {
-                let failure = output?.failure ?? .writeFailed("no rendering")
-                Commands.error("copy-annotated", failure.code, "\(shot.url.lastPathComponent): \(failure)")
-                thumbnail.showNotCopied(shot, reason: failure.reason)
-                return
-            }
-            urls.append(file)
-        }
-        Clipboard.copyFiles(urls)
-        let drawn = renderings.filter { $0.rendering != nil }.count
-        Commands.ok("copy-annotated", "files=\(RenderingQueue.paths(urls)); \(drawn) with annotations")
-        thumbnail.showCopied(renderings.map(\.shot))
-    }
-
-    /// Done: the rendering goes on the clipboard at once as a promise and the card goes home; the
-    /// file is written when the rendering finishes. With nothing drawn, the original file is copied.
-    func finishAnnotation(_ shot: Screenshot, _ drawing: Drawing) {
-        copyRendering(of: drawing, shot: shot, verb: "done", in: annotator.opening)
-        // Quick annotate: the drawing was the point; nothing comes back.
-        if settings.data.quickAnnotate { Log.write("[annotate] quick close") }
-        thumbnail.annotationFinished(quick: settings.data.quickAnnotate)
-    }
-
-    /// Cmd+C in the editor with nothing selected: the same clipboard Done gives, and the editor stays open.
-    private func copyDrawing(_ drawing: Drawing, of shot: Screenshot) {
-        copyRendering(of: drawing, shot: shot, verb: "copied", in: annotator.opening)
-    }
-
-    /// The annotated file on the clipboard as a file, an image, and its path as text, so a terminal
-    /// pastes the path and a chat app pastes the image. The file is promised, so nothing waits for
-    /// the rendering but a paste that comes before it, and the rendering goes ahead of any that has
-    /// not started. `verb` names the moment in the log line.
-    private func copyRendering(of drawing: Drawing, shot: Screenshot, verb: String, in opening: Opening?) {
-        let name = shot.url.lastPathComponent
-        guard !drawing.isEmpty else {
-            Clipboard.copyFiles([shot.url])
-            Log.write("[annotate] \(verb) \(name) nothing drawn, original copied")
-            return
-        }
-        let ui = settings.data.ui
-        let rendering = RenderingQueue.shared.render(drawing, imageAt: shot.url, output: .file, style: ui.textStyle, markStyle: ui.markStyle,
-                                                     order: .first)
-        Clipboard.copyRendering(rendering)
-        rendering.whenDone { [weak self] output in
-            guard let self else { return }
-            if let failure = output.failure {
-                Log.write("[annotate] error \(failure.code.rawValue) \(name): \(failure)")
-                // The clipboard took its promise back; the card must not say otherwise.
-                thumbnail.showNotCopied(shot, reason: failure.reason, in: opening)
-            } else if let file = output.file, let png = output.png {
-                Log.write("[annotate] \(verb) files=\(RenderingQueue.paths([file])) \(png.count) bytes, copied")
-            }
-        }
     }
 
     // MARK: URL commands: vignette://<command>[?file=/path&file=/other]. See Commands.swift.

@@ -6,8 +6,9 @@ enum Clipboard {
     /// One pasteboard that works everywhere: a file URL per file (chat apps attach them all),
     /// the paths as text (terminals paste them), and the first file's image when it is one
     /// (single-image targets). A recording goes on as its file only; reading one whole to offer its
-    /// bytes would hold the video in memory for a paste target that wants the file anyway.
-    static func copyFiles(_ urls: [URL]) {
+    /// bytes would hold the video in memory for a paste target that wants the file anyway. `words`
+    /// follow a file's path in the text (`pathsText`).
+    static func copyFiles(_ urls: [URL], words: [URL: String] = [:]) {
         guard !urls.isEmpty else { return }
         let pb = NSPasteboard.general
         pb.clearContents()
@@ -19,7 +20,7 @@ enum Clipboard {
             } else {
                 item = NSPasteboardItem()
             }
-            if i == 0 { item.setString(pathsText(urls), forType: .string) }
+            if i == 0 { item.setString(pathsText(urls, words: words), forType: .string) }
             item.setString(url.absoluteString, forType: .fileURL)
             items.append(item)
         }
@@ -29,9 +30,9 @@ enum Clipboard {
     /// Done's clipboard, before its rendering exists: `renderingItem`. A rendering that fails takes
     /// the whole clipboard back, unless something else was copied since: its path names a file that
     /// never appears.
-    static func copyRendering(_ rendering: PendingRendering, to pasteboard: NSPasteboard = .general) {
+    static func copyRendering(_ rendering: PendingRendering, words: String? = nil, to pasteboard: NSPasteboard = .general) {
         pasteboard.clearContents()
-        pasteboard.writeObjects([renderingItem(rendering, loggedAs: "clipboard")])
+        pasteboard.writeObjects([renderingItem(rendering, loggedAs: "clipboard", words: words)])
         let written = pasteboard.changeCount
         rendering.whenDone { output in
             guard output.failure != nil, pasteboard.changeCount == written else { return }
@@ -44,9 +45,10 @@ enum Clipboard {
     /// file. The path goes on as text at once; the PNG, the TIFF and the file's URL are promised, so a
     /// paste or a drop that comes before the rendering finishes waits for it, and one after a
     /// rendering that failed gets none of the three. Each answer logs one `[<tag>] gave` line.
-    static func renderingItem(_ rendering: PendingRendering, loggedAs tag: String) -> NSPasteboardItem {
+    /// `words`, the drawing's pins' words, follow the path in the text.
+    static func renderingItem(_ rendering: PendingRendering, loggedAs tag: String, words: String? = nil) -> NSPasteboardItem {
         let item = NSPasteboardItem()
-        if let file = rendering.file { item.setString(pathsText([file]), forType: .string) }
+        if let file = rendering.file { item.setString(pathsText([file], words: words.map { [file: $0] } ?? [:]), forType: .string) }
         item.setDataProvider(RenderingProvider(rendering: rendering, tag: tag), forTypes: [.png, .tiff, .fileURL])
         return item
     }
@@ -57,11 +59,13 @@ enum Clipboard {
         pb.setString(text, forType: .string)
     }
 
-    /// One path per line, single-quoted when it contains spaces so it survives a shell.
-    static func pathsText(_ urls: [URL]) -> String {
+    /// One path per line, single-quoted when it contains spaces so it survives a shell, followed on
+    /// its line by a space and its `words` when it has any: a rendering's pins' words (`Pin.lineWords`).
+    static func pathsText(_ urls: [URL], words: [URL: String] = [:]) -> String {
         urls.map { url in
             let p = url.path
-            return p.contains(" ") ? "'" + p.replacingOccurrences(of: "'", with: "'\\''") + "'" : p
+            let path = p.contains(" ") ? "'" + p.replacingOccurrences(of: "'", with: "'\\''") + "'" : p
+            return words[url].map { "\(path) \($0)" } ?? path
         }.joined(separator: "\n")
     }
 

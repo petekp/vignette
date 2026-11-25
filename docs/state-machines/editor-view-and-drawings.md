@@ -129,13 +129,13 @@ Owner: `Drawings.swift`; files in `DrawingStore.swift`. Tests: `DrawingStoreTest
 
 Owner: `RenderingQueue.swift`, `PendingRendering`, `Clipboard.swift`, `RenderingProvider` (`Clipboard.swift`), `DragItems.swift`. Tests: `RenderingPromiseTests`, for the promised item and a drag's file made from kept bytes; none for the queue's ordering.
 
-Done, Cmd+C, Copy Drawing and a card drag render a drawing to a PNG on one serial queue. The clipboard holds a promise of the PNG until the rendering finishes. A card drag renders its PNG before the drag, from the hover or the press, and writes only the file when the drag begins.
+Done, Cmd+C, Copy Drawing and a card drag render a drawing to a PNG on one serial queue, with its pins' comments listed beside the picture (`Rendering.Layout.withComments`). The clipboard holds a promise of the PNG until the rendering finishes. A card drag renders its PNG before the drag, from the hover or the press, and writes only the file when the drag begins.
 
 **States**
 
 - `PendingRendering`: pending, then finished(output) once. `finish` is idempotent (`RenderingQueue.swift`). `wait(timeout:)`, `isDone` and `whenDone` read it.
 - Queue: each `render` adds one job to `firstJobs` or `jobs` under `lock` and enqueues one block. A block runs whichever job is next, `firstJobs` first. The block count always equals the job count.
-- Clipboard: `copyRendering` clears the pasteboard, writes one item (the path as text now; PNG, TIFF and file URL promised), and records `changeCount`.
+- Clipboard: `copyRendering` clears the pasteboard, writes one item (the path and its pins' words as text now; PNG, TIFF and file URL promised), and records `changeCount`.
 - `DragItems`: `kept`, the PNGs rendered for drags, newest last, finished or not, each under its key (screenshot, drawing, text style, mark style); `ahead`, the one rendering `prepare` started that has not finished; `wanted`, the first 3 cards with drawings that `prepare` named last (`preparedAhead`). `StackModel.prepareDrag` names the hovered or pressed card first, then the rest of the selection a drag from it carries.
 
 **Transitions**

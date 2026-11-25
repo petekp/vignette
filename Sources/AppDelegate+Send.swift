@@ -30,7 +30,9 @@ extension AppDelegate {
             return submit(.unchanged(card: shot.url, title: agentTitle, png: nil), of: shot, to: destination, titled: title, message: message)
         }
         let ui = settings.data.ui
-        let rendering = RenderingQueue.shared.render(carried.rendering(drawing), imageAt: shot.url, output: .bytes, style: ui.textStyle, markStyle: ui.markStyle)
+        let rendered = carried.rendering(drawing)
+        let rendering = RenderingQueue.shared.render(rendered, imageAt: shot.url, output: .bytes, style: ui.textStyle, markStyle: ui.markStyle,
+                                                     layout: .picture)
         rendering.whenDone { [weak self] output in
             guard let self else { return }
             // A rendering that answers after the opening Send was pressed in has ended belongs to no
@@ -46,7 +48,8 @@ extension AppDelegate {
                 else { annotator.sendFailed("Vignette couldn't render the drawing. The log has details.") }
                 return
             }
-            let picture: ScreenshotRequests.Picture = wordsAlone ? .unchanged(card: shot.url, title: agentTitle, png: png) : .drawing(png: png)
+            let picture: ScreenshotRequests.Picture = wordsAlone ? .unchanged(card: shot.url, title: agentTitle, png: png)
+                                                                       : .drawing(png: png, pins: rendered.pins)
             submit(picture, of: shot, to: destination, titled: title, message: message)
         }
     }

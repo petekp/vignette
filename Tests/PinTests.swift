@@ -212,10 +212,88 @@ final class PinTests: XCTestCase {
             XCTAssertTrue(drop.body.contains(tip.moved(toward: drop.square, by: 1)), "the tip is the body's corner at \(tip)")
         }
     }
+
+    @MainActor
+    func testSendsLineCarriesEachPinsWordsAfterTheMessageAndPinsJSONKeepsThem() async throws {
+        let catcher = LineCatcher()
+        let root = dir.appendingPathComponent("requests")
+        let requests = ScreenshotRequests(root: root, connections: [.claude: catcher])
+        var shimmer = pin(3, .area(CGRect(x: 10, y: 20, width: 30, height: 40)), "the shimmer effect is too narrow; needs more width and spread.")
+        shimmer.comments.append(Pin.Comment(text: "can we have the dot indicator\npulse gently with a subtle glow?"))
+        let pins = [shimmer, pin(1, .point(CGPoint(x: 5, y: 5)), "remove extra margin"), pin(2, .point(CGPoint(x: 6, y: 6)), "why such a big gap between these?")]
+        let arrived = expectation(description: "the line reached the client")
+        catcher.onSubmit = { arrived.fulfill() }
+        let record = try requests.send(.drawing(png: Data([1]), pins: pins), source: URL(fileURLWithPath: key).screenshotKey,
+                                       to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")),
+                                       message: "Tighten the session menu", instructions: "")
+        await fulfillment(of: [arrived], timeout: 3)
+        let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
+        let image = directory.appendingPathComponent("image.png").path
+        XCTAssertEqual(catcher.lines, ["Tighten the session menu. Pin 1: remove extra margin. Pin 2: why such a big gap between these? "
+            + "Pin 3: the shimmer effect is too narrow; needs more width and spread. / can we have the dot indicator pulse gently with a subtle glow? "
+            + "[From Vignette: \"\(image)\".]"])
+        XCTAssertEqual(ScreenshotRequests.requestLine(record: record, root: root, instructions: "", pins: [pins[1]]),
+                       "Pin 1: remove extra margin. [From Vignette: \"\(image)\".]")
+        XCTAssertEqual(ScreenshotRequests.requestLine(record: record, root: root, message: "check this :)", instructions: "", pins: [pins[2]]),
+                       "check this :) Pin 2: why such a big gap between these? [From Vignette: \"\(image)\".]")
+        let stored = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: directory.appendingPathComponent("pins.json"))) as? [String: Any])
+        let listed = try XCTUnwrap(stored["pins"] as? [[String: Any]])
+        XCTAssertEqual(listed.map { $0["number"] as? Int }, [1, 2, 3])
+        XCTAssertEqual(listed.first?["id"] as? String, pins[1].id.uuidString)
+        XCTAssertEqual(listed.last?["w"] as? Double, 30)
+        XCTAssertEqual((listed.last?["comments"] as? [[String: Any]])?.count, 2)
+
+        let plain = try requests.send(.drawing(png: Data([1])), source: URL(fileURLWithPath: key).screenshotKey,
+                                      to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")))
+        let plainFolder = ReplyProtocol.requestDirectory(root: root, requestID: plain.id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: plainFolder.appendingPathComponent("pins.json").path))
+    }
+
+    func testWordsAloneSendTheCardsPictureWithoutTheAgentsPins() {
+        let drawing = Drawing(key: key, pixels: pixels, pointScale: 1, marks: [Mark(geometry: .rectangle(CGRect(x: 1, y: 1, width: 9, height: 9)))],
+                              pins: [pin(1)], nextPin: 2)
+        XCTAssertTrue(ScreenshotRequests.Carried.wordsAlone.rendering(drawing).isEmpty)
+        XCTAssertEqual(ScreenshotRequests.Carried.drawing.rendering(drawing), drawing)
+    }
+
+    func testAStitchsPieceNumbersSurviveItsFileAndAreCutToTheImage() throws {
+        let inside = CGRect(x: 10, y: 10, width: 40, height: 40)
+        let drawing = Drawing(key: key, pixels: pixels, pointScale: 2, marks: [], pins: [pin(1)], nextPin: 2,
+                              pieceNumbers: [inside, CGRect(x: 780, y: 590, width: 40, height: 40), CGRect(x: 900, y: 10, width: 40, height: 40)])
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try drawing.encoded().write(to: store.url(for: key))
+        let back = try XCTUnwrap(store.read(key: key, pixels: pixels, style: .standard))
+        XCTAssertEqual(back.pieceNumbers, [inside, CGRect(x: 780, y: 590, width: 20, height: 10)])
+        XCTAssertNotNil(try file()["pieceNumbers"])
+        var plain = drawing
+        plain.pieceNumbers = []
+        try plain.encoded().write(to: store.url(for: key))
+        XCTAssertNil(try file()["pieceNumbers"])
+    }
 }
 
 private extension CGPoint {
     func moved(toward square: CGRect, by distance: CGFloat) -> CGPoint {
         CGPoint(x: x + (square.midX > x ? distance : -distance), y: y + (square.midY > y ? distance : -distance))
+    }
+}
+
+private final class LineCatcher: AgentConnection, @unchecked Sendable {
+    let client = AgentClient.claude
+    private let lock = NSLock()
+    private var sent: [String] = []
+    private var arrived: (@Sendable () -> Void)?
+
+    var onSubmit: (@Sendable () -> Void)? {
+        get { lock.lock(); defer { lock.unlock() }; return arrived }
+        set { lock.lock(); arrived = newValue; lock.unlock() }
+    }
+
+    var lines: [String] { lock.lock(); defer { lock.unlock() }; return sent }
+    func destinations() -> [AgentDestination] { [] }
+    func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome {
+        lock.lock(); sent.append(line); lock.unlock()
+        onSubmit?()
+        return .accepted(detail: "")
     }
 }

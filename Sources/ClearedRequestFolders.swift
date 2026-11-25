@@ -47,14 +47,14 @@ struct ClearedRequestFolders {
         return date
     }
 
-    /// Removes the sent image and the submissions from a cleared request's folder, unless a pass
+    /// Removes the sent image, its pins and the submissions from a cleared request's folder, unless a pass
     /// found them gone and the folder's stamp has not changed since.
     mutating func removePayloads(of id: String, now: Date = Date()) {
         let before = Stamp(rootPath + "/" + id)
         if let before, payloadsGone[id] == before { return }
         let directory = ReplyProtocol.requestDirectory(root: root, requestID: id)
         var allAbsent = true
-        for name in ["image.png", "submissions"] {
+        for name in ["image.png", "pins.json", "submissions"] {
             let url = directory.appendingPathComponent(name)
             guard FileManager.default.fileExists(atPath: url.path) else {
                 // `fileExists` is false on any failure, such as a folder that cannot be searched

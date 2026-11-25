@@ -47,7 +47,7 @@
   without the skill can read the drawing but not answer with one. Words alone on the agent's own
   image (`Record.unchanged`) name the card's file and its title instead, say it is unchanged, and
   name the ticket, since no image is beside that file. The request still stores `image.png`, the
-  card's picture without the agent's marks, as the picture a reply without its own image draws on.
+  card's picture without the agent's marks or pins, as the picture a reply without its own image draws on.
   The line never names it. The secret never travels in the
   line, because `[url]` logs every URL. Holding the ticket permits replies to that one request
   and proves nothing about which process wrote them. The helper writes its envelope where its own

@@ -54,11 +54,20 @@ enum Stitch {
         let pieces: Int
         /// What a reader's resize leaves of the original screenshots, `ui.stitchLongSide` included.
         let readerScale: CGFloat
+        /// The pins of the pieces in the picture, moved and scaled with their pieces into the
+        /// composition's px, numbered from 1 in piece order and then in each piece's number order. Each
+        /// is a new pin, with its own `id`, since the piece keeps its own.
+        let pins: [Pin]
+        /// Where each piece in the picture wears its number, in the composition's px from its top-left.
+        let badges: [CGRect]
+        /// The files given that are not in the picture, in the order given.
+        let unread: [URL]
     }
 
     /// `longSideLimit` caps the composition's long side; the app passes `ui.stitchLongSide`. Each
-    /// piece's drawing is drawn as Done draws it, scaled with the piece, so its marks sit on the
-    /// pixels they were drawn on. The app calls this off the main thread.
+    /// piece's marks are drawn as Done draws them, scaled with the piece, so they sit on the pixels
+    /// they were drawn on. Its pins are not drawn: they become the composition's `pins`. The app calls
+    /// this off the main thread.
     static func compose(_ pieces: [Piece], style: TextStyle, markStyle: MarkStyle, longSideLimit: CGFloat) -> Composition? {
         // Sizes come from the files' headers, so the layout is chosen without decoding anything and
         // only the piece being drawn is ever in memory: six 5K screenshots held at once as bitmaps
@@ -68,6 +77,7 @@ enum Stitch {
             return (piece.url, size, piece.drawing)
         }
         guard !sources.isEmpty else { return nil }
+        var unread = pieces.map(\.url).filter { url in !sources.contains { $0.url == url } }
         let sizes = sources.map(\.size)
         let plan = layout(sizes)
 
@@ -86,9 +96,9 @@ enum Stitch {
 
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
-        var drawn = 0
+        var drawn = 0, pins: [Pin] = [], badges: [CGRect] = []
         for (i, source) in sources.enumerated() {
-            guard let cg = decode(source.url) else { continue }
+            guard let cg = decode(source.url) else { unread.append(source.url); continue }
             drawn += 1
             let frame = plan.frames[i]
             // CGContext draws from the bottom left; the layout counts from the top left.
@@ -100,10 +110,16 @@ enum Stitch {
                 // The drawing's px, from the piece's top-left with y down, onto the piece's rect.
                 ctx.translateBy(x: rect.minX, y: rect.maxY)
                 ctx.scaleBy(x: rect.width / CGFloat(cg.width), y: -rect.height / CGFloat(cg.height))
-                drawing.draw(in: ctx, style: style, markStyle: markStyle)
+                drawing.draw(in: ctx, style: style, markStyle: markStyle, pins: .omitted)
                 ctx.restoreGState()
+                let placed = CGRect(x: frame.minX * scale, y: frame.minY * scale, width: rect.width, height: rect.height)
+                for pin in drawing.pins.sorted(by: { $0.number < $1.number }) {
+                    pins.append(moved(pin, number: pins.count + 1, onto: placed, from: drawing.pixels))
+                }
             }
-            drawBadge(number: i + 1, on: rect, diameter: badgeDiameter(for: sizes[i]) * scale, in: ctx)
+            let diameter = badgeDiameter(for: sizes[i]) * scale
+            drawBadge(number: i + 1, on: rect, diameter: diameter, in: ctx)
+            badges.append(CGRect(x: frame.minX * scale + diameter / 4, y: frame.minY * scale + diameter / 4, width: diameter, height: diameter))
         }
         NSGraphicsContext.restoreGraphicsState()
 
@@ -115,7 +131,34 @@ enum Stitch {
         // Reporting the second alone said a six-piece 5K stitch arrived at 0.38 when it arrived at
         // 0.29, because the cap had already taken a quarter of it.
         return Composition(png: png, size: size, columns: plan.columns, pieces: drawn,
-                           readerScale: scale * readerScale(size))
+                           readerScale: scale * readerScale(size), pins: pins, badges: badges,
+                           unread: pieces.map(\.url).filter(unread.contains))
+    }
+
+    /// Why a stitch of `pieces` is not made from `composed`, and the piece whose card says it: a piece
+    /// left out of the picture while the pieces hold pins, since its comments would be lost with it, or
+    /// more pins than a drawing holds. Nil when the stitch can be made.
+    static func refusal(_ pieces: [Piece], _ composed: Composition) -> (piece: URL, reason: String)? {
+        let holdsPins = pieces.contains { !($0.drawing?.pins.isEmpty ?? true) }
+        if holdsPins, let unread = composed.unread.first {
+            return (unread, "Vignette couldn't read this screenshot, so it made no stitch.")
+        }
+        if composed.pins.count > Pin.maxCount, let first = pieces.first {
+            return (first.url, "A stitch holds up to \(Pin.maxCount) pins. These hold \(composed.pins.count).")
+        }
+        return nil
+    }
+
+    /// `pin`, made on an image of `pixels`, as a new pin of the composition, whose piece is at `piece`.
+    private static func moved(_ pin: Pin, number: Int, onto piece: CGRect, from pixels: PixelSize) -> Pin {
+        let scale = piece.width / CGFloat(pixels.width)
+        func moved(_ point: CGPoint) -> CGPoint { CGPoint(x: piece.minX + point.x * scale, y: piece.minY + point.y * scale) }
+        let place: Pin.Place
+        switch pin.place {
+        case .point(let point): place = .point(moved(point))
+        case .area(let frame): place = .area(CGRect(origin: moved(frame.origin), size: CGSize(width: frame.width * scale, height: frame.height * scale)))
+        }
+        return Pin(id: UUID(), number: number, place: place, comments: pin.comments)
     }
 
     /// The image's size in pixels, read from its header. Nil when the file is not an image this Mac

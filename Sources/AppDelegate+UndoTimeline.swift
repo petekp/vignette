@@ -26,10 +26,11 @@ extension AppDelegate {
     }
 
     /// The cards of `shots` conjoin into the stitch `key`'s card when the stack shows them, and the
-    /// stack's Undo can take the stitch back. True when they conjoined.
-    func conjoin(_ shots: [Screenshot], into key: ScreenshotKey) -> Bool {
+    /// stack's Undo can take the stitch back. True when they conjoined. The card says Copied once
+    /// `copied`, the stitch's first copy, is done.
+    func conjoin(_ shots: [Screenshot], into key: ScreenshotKey, copied: PendingRendering? = nil) -> Bool {
         let column = thumbnail.timeline.cards.column()
-        let conjoined = thumbnail.stitched(shots, into: key)
+        let conjoined = thumbnail.stitched(shots, into: key, copied: copied)
         thumbnail.timeline.stitched(Screenshot(key: key), takenOut: conjoined ? shots : [], column: column)
         return conjoined
     }
