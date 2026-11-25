@@ -1,5 +1,7 @@
 # The annotator's toolbar
 
+Where Send starts is in `send-start.md`, and the target and its menu are in `session-menu.md`.
+
 - The annotator's window is borderless and spans the screen's visible frame. The frame inside it is
   sized to the image. Its toolbar is a native panel (`AnnotatorToolbar.swift`) placed under the
   frame (`AnnotatorToolbar+Placing.swift`), one level above the flight layer, so a flight into or
@@ -35,108 +37,8 @@
   being composed, do what they do on the image: the panel hands them to
   `AnnotationController.fieldCommand` before the field sees them (`FieldCommand`). Other Command
   keys stay with the field, Cmd+C too unless the field is empty. There is no
-  palette: a mark's colour says who drew it. Send starts on the kept pick when there is one: the
-  session the person picked in the target's menu and then sent to (`DestinationChoice.KeptPick`,
-  `AnnotationController.keptPick`). It holds for 10 minutes after the send that set it, and each
-  Send to it starts the 10 minutes again. Pete's runs of sends to one session had gaps under 6
-  minutes, and a short window drops a pick once he moves to other work. An image that opened on it
-  renews it when sent there, however long the editor stayed open (`KeptPick.after`). It comes before every rule
-  below, the Codex app's thread included, so one rule says where Send starts. It ends at the next
-  opening, send elsewhere or Reply after its 10 minutes, when a Send goes to another hand pick, which is kept instead, or when every client
-  has answered afresh without it, its agent's list holding other sessions: an agent that listed
-  none may have failed to answer, so the image starts on the usual choice and the pick stays. A session that `/clear` gave a new id is gone: no guess at the
-  same one replaces it, since no send in two weeks of Pete's log was refused as cleared. A pick that
-  is never sent keeps nothing, so a first send is never surprised. A Reply neither sets, refreshes
-  nor ends it, and a card that offers Reply still offers Reply. It is kept in memory only. Codex
-  lists only the threads used last, so a kept Codex thread is asked for by its id
-  (`SessionListing.list(including:)`). When the Codex app shows another thread, the same listing
-  reads that one by its id too, so the menu lists both. Otherwise Send starts on
-  the session you came from (`DestinationChoice`). When the app before Vignette
-  (`FocusReturn.previousApp`) was the Codex app, that is the thread it shows, or else the Codex
-  thread used last; herdr's focus is ignored then, because herdr keeps a focused pane while its
-  terminal is behind. A capture that shows another app's windows more than the Codex app's, such
-  as Herdr's inbox panel taken while the Codex app stayed in front, sets that rule aside
-  (`DestinationChoice.appRuleApplies`, `CaptureRect.owners`; `docs/send-start-2026-11-21.md`). The thread it shows comes from the app's own log (`AgentApp.shownThread`):
-  each time its window moves to another page, the app logs the page's route, and `/local/<id>` is a
-  thread. That is a log line, not an interface, so a build that drops it gives the thread used last.
-  Accessibility cannot say: the app's window has had no page in its accessibility tree since the
-  app left Electron in late September 2026 (openai/codex#25740). A thread older than the list is
-  read by its id (`thread/read`). A Codex thread is named the way the app names it
-  (`CodexConnection.name(of:)`).
-  Otherwise, when the Herdr app runs, it is the session in Herdr's focused pane, or the one agent
-  session in that pane's tab when the pane runs none. `DestinationChoice` applies Herdr's focus to
-  Claude Code sessions only (`DestinationChoice.markedByHerdr`). Else it is the session used last.
-  `HerdrFocus` reads the focus with three calls at once, each 5 to 20 ms (measured 2026-11-12):
-  `herdr-app status` names the focused pane and its tab, `herdr-app ls` places each terminal in a
-  tab and a pane, and `hc connect`'s `terminal.list` gives each terminal's foreground process and
-  labels. The status's `agent` field is never read: it named a stale terminal. The focused
-  terminal is the one in the focused pane. When the focus is on the inbox mod's panel, it is the
-  terminal whose `inbox.panel` label names that panel. A terminal's session is the listed Claude
-  Code session whose plugin inbox belongs to its foreground process, which follows `/clear`. When
-  none does, the inbox mod's `inbox.session` label names it, unless another terminal runs that
-  session. Herdr names a terminal's agent only once its program reports a status, and a Claude Code
-  that `hc` started may never report, so a terminal Herdr shows running nothing still counts when
-  its process is a listed Claude Code session. A closed Herdr window, a timeout, an
-  answer that does not parse, or a status whose tab is not the focused terminal's marks nothing,
-  and logs `[herdr] no focus: <reason>` when the reason changes, then `[herdr] focus read again`.
-  The target shows the agent's logo and the session's title, cut in the middle past 132 pt, with
-  the title, details and repository in its tooltip (`SessionMenu.row(of:among:)`). Its width is set, so it springs with the bar. Beside a message field it sits in the box's top row, rising with it out of the bar, parted from the words by a hairline where the grown box curves down, leaving a one-line tab (`targetWidth`, `FollowsFieldTop`, `FieldOutline`). There its hover shade, open-menu shade and focus ring are one rounded rectangle inset 2.5 pt, short of the hairline, concentric with the box, one line high (`TargetShade`). A
-  pick from its menu is applied a turn later, after the menu's event loop ends, since a change
-  made inside it jumped instead of animating. A pick whose image closed or was replaced while
-  the menu was open, or in that turn, is dropped and logs `[send] pick dropped` (`Model.targetMenuImage`). Its menu is `SessionMenu.menu` (`docs/session-menu-2026-10-18.md`): the
-  sessions the person sent to in the last 4 hours, newest send first, then the rest by when the agent last worked; five of them, with
-  the target always among them but not first when another session can be: it trades places with the second row, whose group
-  then leads (`targetNotFirst`), so Return in the empty search picks the likeliest other session. They are grouped under a header for each repository with Other folders last, then, after a separator, one submenu per project, titled as its header, with its count at its right and every
-  running session of that project in it, the top rows too (live ink's Tab steps through the five only).
-  The rows that start a session are in neither part unless no session is running (`docs/rules/send.md`). The menu's first row is a search field that has the keyboard: typing lists the matches, the project of the best-ranked one first, the rows that start one after the running ones (a query matches a row's details and the words at its right too; - and _ part words), Return picks the first, and Esc closes the menu (`SessionMenuSearch`). A row starts with its agent's logo, which macOS 27 shows only when the item asks for it (`SessionMenu.item`, `preferredImageVisibility`). A row's title is the name of the Herdr tab its terminal is in, unless Herdr numbered it, else
-  the session's name. A session's row is one line: its details, the worktree, the branch and the
-  inbox mod's goal (`SessionMenu.Row.details`; `InboxModStore` reads the mod's private file and may
-  find nothing), are in its tooltip, under its title. At its right the row says
-  working, after a green dot, while a turn runs, else when the session was last active
-  (`SessionMenu.Activity`). Those words, and a project's count, follow the title after a right tab
-  stop in its attributed title, with no `NSMenuItemBadge`, which has no API for its look or its
-  distance from the chevron. `SessionMenuIndicators` sets one tab stop for each menu and
-  submenu, past the widest row's text, its words and `SessionMenu.indicatorGap`, so the words end
-  in one column; the search sets it again after each rebuild. A menu that holds a view, such as
-  the search row, leaves the checkmark's column out of its width, so `SessionMenuIndicators` gives
-  it a `minimumWidth` of the width AppKit measures for its other items alone; without it, a checked
-  row's words wrap under its title on macOS 15. macOS 27 starts the title of an item
-  with no image at the menu's left but measures it from where the others' titles start, so a
-  project's row carries a clear 16 pt image (`SessionMenu.showSpace`) to end its count with the
-  rows' words, 10 pt before the chevron. A menu with a submenu keeps the chevron's column on every
-  row, so there the rows' words end that far short of the menu's right edge. The dot's centre sits on the middle of
-  the word's x-height (`IndicatorItem.dotAttachment`). As the menu's delegate it redraws the
-  highlighted row's words in `selectedMenuItemTextColor`, since they carry colours of their own. While a row says working, a soft band crosses the word letter by letter, one opacity per
-  letter, on live ink's thinking clock (`SessionMenu.shimmer`, one beat across and one at rest), and the dot's soft glow is brightest as each
-  pass starts and faintest as it ends, from
-  a timer in the common run loop modes, which include the menu's tracking; the word and the dot are still under
-  Reduce Motion or `ui.motion` 0, and the timer stops when the menu closes or no row says working. The time is
-  in the secondary label grey, as the count and working are. Headers are section headers, as
-  written, in AppKit's own section-header font, 11 pt semibold (`SessionMenu.header`). AppKit
-  draws a section header's title in the tertiary grey, which replaces any system label colour or
-  grey set on it, so the header's secondary grey is a colour of the app's own
-  (`SessionMenu.own`). A row cuts its title to `SessionMenu.titleWidth`, since a menu with little
-  room on screen wrapped a longer one and drew its first line (`SessionMenu.item`, `fitted`); the
-  tooltip keeps it whole. Live ink's row for an agent on the screen that cannot answer says why on
-  a second line, its subtitle. AppKit measures a subtitle wider than both its title and
-  about 282 pt as two lines, yet draws one, leaving a blank line and the logo below the text, so
-  `SessionMenu.setSubtitle` cuts it to fit and the tooltip keeps it whole. `SessionMenuBacking` puts the window colour behind the rows of the menu and each submenu; `QuietSearchField` has no bezel. A Claude Code session is active while the plugin's monitor runs in it,
-  and a Codex thread when it was used in the last day, since nothing says which threads the Codex
-  app has open. The target settles once, from the first answer that names a focus (herdr's comes in
-  about 60 ms, before the bar is up), or else from the whole list (`Model.answered`). With a kept
-  pick, nothing settles until an answer lists the kept session, or every client has answered afresh
-  without it. A kept Claude Code session settles with Claude Code's first answer, as herdr's focus
-  does. A kept Codex thread settles at once from the kept list when the list has it, else from the
-  fresh one. A target carried from the image before stays until then, so the bar never shows a
-  third session between the two. After that it
-  changes only when its session is gone, so it never changes under the pointer. Codex's list is kept (`AgentConnection.keepsList`, `SessionListing`): an opening editor answers
-  from the last one at once and asks for a fresh one, which comes in about 0.1 s for the five
-  threads used last (`AppServer.listLimit`), and it is asked for again at launch, on a capture and
-  when the stack opens. Claude Code's list is always asked afresh, and Herdr's focus, which
-  moves whenever you change panes, is read in the same job right after it (`HerdrFocus`), so the
-  focus comes with Claude Code's first answer. Coming from the Codex
-  app, a kept list that holds the shown thread settles the target at once; one that does not waits
-  for the fresh list, since the thread may be newer. Return copies and replies only on a card that names its session; Cmd+Return
+  palette: a mark's colour says who drew it.
+  Return copies and replies only on a card that names its session; Cmd+Return
   sends or replies (`EditorCore.finishes`). On the image, Return never sends to a session Vignette
   picked. In the message field Return sends, as in a chat app, with the target beside it. A field
   that took the keys on its own, empty or as it opened, asks nothing to send, so
@@ -175,18 +77,5 @@
   has them and takes Tab first (`ToolbarPanel.sendEvent`). `[state] annotator.toolbarFocus` names
   the focused control, and `annotator.toolbarKey` says whether the bar's panel has the keys. The
   bar draws its own tooltips (`TipSpot`, `TipLabel`): AppKit shows a window's tooltips only while
-  it is key or was the last one clicked; `allowsToolTipsWhenApplicationIsInactive` did not help. The target's menu is an `NSMenu` (`showTargetMenu`), since SwiftUI's `Menu`
-  cannot be opened from a key. A press on the target opens it at once, as on a macOS pop-up button:
-  the bar's panel opens it before SwiftUI's button, which acts on the release, sees the press (`ToolbarPanel.onPressMenu`,
-  `AnnotatorToolbar.pressTarget`), and AppKit's menu tracking then has the press. Dragging onto a
-  row and releasing picks it, and a release with no drag leaves the menu open for a second click.
-  The press reaches
-  the target where its button would take it, the box and its slop, and not while a send is under
-  way or the bar is leaving (`Model.shown`). The button's own action is left to VoiceOver. While the
-  menu is open, however it opened, the target darkens as a pop-up button does and hides its hairline (`TargetShade`).
-  Space opens it a turn later: opened inside the editor's keyDown it took no keys, and a press on its item closed the editor as a press outside. In the message field,
-  Up on the first line or Down on the last opens it the same way, as on a pop-up button, and the
-  arrows then move through it (`ToolbarPanel.onMenuKey`). Opened from the keyboard, it opens with
-  its first row highlighted, the row Return picks: once the search field has the keys, one Down key
-  goes to the menu's own window (`SessionMenuSearch.install(highlightingFirstRow:)`). A press
-  highlights nothing, as on a pop-up button. `docs/annotator-toolbar-2026-09-19.md` has the numbers.
+  it is key or was the last one clicked; `allowsToolTipsWhenApplicationIsInactive` did not help.
+  `docs/annotator-toolbar-2026-09-19.md` has the numbers.

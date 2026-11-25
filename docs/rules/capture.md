@@ -36,7 +36,7 @@
   it. `docs/capture-origin-spike-2026-10-03.md` has the measurements, and the `capture_origin`
   scenario drives it with `screencapture -i`. Once the rect is found, `CaptureOrigin` also reads
   which apps' windows the capture showed (`CaptureRect.owners`) and keeps them for Send, which
-  takes them once for that file within 30 s (`windows(of:)`, `docs/rules/annotator-toolbar.md`).
+  takes them once for that file within 30 s (`windows(of:)`, `docs/rules/send-start.md`).
   Every new image the person took, whether or not `annotateOnCapture` is on, asks `CaptureOrigin`
   once where it was taken, and logs the two clues a project label could be read from:
   `[capture] clues <file> apps=<app>:<share>%,… herdr=<pane>/<session or none> focus=<pane|tab|none> project=<repository or folder, or none>`.

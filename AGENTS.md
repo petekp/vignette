@@ -47,9 +47,10 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   `docs/rules/stack.md` for the card shadow a flight must match.
 - Before changing `AnnotationRun.swift`, `AnnotatorTransition.swift`, `AnnotationWindow.swift` or
   `DimPanel.swift`, read `docs/rules/annotator.md`.
-- Before changing `AnnotatorToolbar*.swift`, `ToolbarOffer.swift`, `SessionMenu*.swift`,
-  `DestinationChoice.swift`, `AgentApp.swift`, `InboxModStore.swift` or `HeldToolLetter.swift`, read
-  `docs/rules/annotator-toolbar.md`, and `docs/rules/send.md` for what Send does.
+- Before changing `AnnotatorToolbar*.swift`, `ToolbarOffer.swift` or `HeldToolLetter.swift`, read
+  `docs/rules/annotator-toolbar.md`. Before changing `DestinationChoice.swift`, `AgentApp.swift` or
+  where Send starts, read `docs/rules/send-start.md`; `SessionMenu*.swift`, `InboxModStore.swift` or
+  the target, `docs/rules/session-menu.md`. Read `docs/rules/send.md` for what Send does.
 - Before changing `Zoom.swift` or `AnnotatorZoom*.swift`, read `docs/rules/zoom.md`.
 - Before changing the editor, a mark, a pin or a drawing (`Editor*.swift`, `Drawing.swift`, `DrawingFile.swift`,
   `CopiedItems.swift`, `Drawings.swift`, `DrawingStore*.swift`, `Mark*.swift`, `Pin*.swift`, `MarksView.swift`, `Card.swift`,
