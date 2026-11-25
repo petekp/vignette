@@ -45,7 +45,7 @@ Side tables: `picks[askID]` (the answer a picked button was picked under, plus `
 | any present ask | `dismissed` | ended | `interrupt` only if `asking`; `finish(answer ∪ about − others ∪ aside)` |
 | under way | `cancelled` | ended, or restored | `interrupt` only if `asking`; `removeAnswer`; `reopenNote` if ink is given back, or `remove` of that ink when `sentOnRelease`; session ask: id into `withdrawn` |
 | settled | `cancelled`, `failed`, `replyCame`, `answerCame`, `packetCame` | — (ignored) | — |
-| any | `removed`, `windowGone`, `finished` | marks lose roles; settled asks with no answer mark left end (`endAnswersWithNoMarks`,); asks under way stay | — |
+| any | `removed`, `windowGone`, `finished` | marks lose roles; settled asks with no answer mark left end (`endAnswersWithNoMarks`); asks under way stay | — |
 | any | `cleared` | every ask ended | `ended(id)` for each; `picks` emptied; roles, answers, finishing dropped; `withdrawn` and `lastID` kept; no `interrupt` |
 
 **Invariants**
@@ -101,7 +101,7 @@ Runs the effects `LiveAsks` returns and keeps per-ask tables that must agree wit
 
 **Invariants**
 
-- Every ask that leaves the list releases `held`, `answerers`, `handing`, `handingTo`, ×, buttons and its tour (`release`,). Checked by: reducer-level `ended` ordering only.
+- Every ask that leaves the list releases `held`, `answerers`, `handing`, `handingTo`, ×, buttons and its tour (`release`). Checked by: reducer-level `ended` ordering only.
 - After `.send(id)`, `held[id]` and `answerers[id]` exist (comment). A miss would leave the ask `asking` forever. Checked by: nothing.
 - `sendNote` is always set in the app (`AppDelegate.swift`); `share` returns without ending the ask if it were nil (`LiveInk.swift`). Unreachable now.
 - The step advance closure only runs for a tour still held. Checked by: nothing ([asks-2](plausible-findings-requests-to-live-ink.md#asks-2)).
@@ -123,7 +123,7 @@ Runs one agent process and sends it one ask at a time. `LiveResponders` owns one
 
 **States**: these properties together form the state.
 - `state` (`State`, `LiveResponder.swift`): `stopped`, `starting`, `ready`, `asking`, `failed(reason)`.
-- `current` (ask sent), `pending` (ask not yet sent,), `interrupting` (turn of a cancelled ask not yet ended,), `restartDue`, `starts` (counter,), `held` (isolation refusal for one binary,), `askTimer`, `idleTimer`, `conversation`, `answered`, `lastSay`.
+- `current` (ask sent), `pending` (ask not yet sent), `interrupting` (turn of a cancelled ask not yet ended), `restartDue`, `starts` (counter), `held` (isolation refusal for one binary), `askTimer`, `idleTimer`, `conversation`, `answered`, `lastSay`.
 
 Valid combinations: `asking` implies `current != nil` or `interrupting`; `current != nil` implies `asking`; `pending != nil` implies not `stopped` once `ask` returns; `interrupting` implies the process is running.
 
@@ -168,7 +168,7 @@ Valid combinations: `asking` implies `current != nil` or `interrupting`; `curren
 
 - Cancel while the ask is still pending (warm-up): `pending = nil`, `guard current != nil`.
 - Cancel, then the next ask: it waits in `pending` until the interrupted turn ends (`sendNext` needs `state == .ready`), or 3 s pass and a new process starts.
-- The interrupted turn's own answer or failure is swallowed; its stream is ignored (`guard !interrupting`,).
+- The interrupted turn's own answer or failure is swallowed; its stream is ignored (`guard !interrupting`).
 - Stop during binary lookup: the `starts` check. Restart during start or interrupt waits: `restartIfIdle` guard.
 - Late events from a killed process: relay cleared (`JSONLinesProcess.swift`).
 - Codex asked to interrupt before the turn id is known: `interruptOnStart` (`CodexDriver.swift`).

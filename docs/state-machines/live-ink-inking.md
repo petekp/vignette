@@ -123,7 +123,7 @@ Derived states:
 
 **Invariants**
 
-- The tap exists only while inking. Checked by: `stopInking` → `stopTap` (`LiveInk.swift`).
+- The tap exists only while inking. Checked by: `stopInking` → `stopTap` (`LiveInk.swift`, `LiveInk+Tap.swift`).
 - Inking never covers the stack or the annotator. Checked by: the `mayInk()` gate at `.began` and `standAside()` mid-ink.
 - A chord let go mid-stroke keeps the overlays raised until the button is up. Checked by: `watchRelease`.
 - Ink no ask has been about always has its note. Checked by: nothing; cut-short inking breaks it ([hand-6](plausible-findings-requests-to-live-ink.md#hand-6)).

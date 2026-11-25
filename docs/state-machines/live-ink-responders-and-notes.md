@@ -8,11 +8,11 @@ Owner: `LiveResponders.swift`. Tests: none.
 
 Owns one `LiveResponder` per agent and remembers what picture each has been sent.
 
-**States**: `all[client]`; `conversing` (set at each `ask`, 83; reset by `stop`); `pictures[client]` = (conversation number, subject, text signature, line ids sent). `content(of:)` records the picture as sent when the ask is written (`LiveResponder.sendNext` calls `ask.content`). Hooks: `status.onCodexSignIn`, `status.onCodexSigningOut`, `willTerminate`.
+**States**: `all[client]`; `conversing` (set at each `ask`; reset by `stop`); `pictures[client]` = (conversation number, subject, text signature, line ids sent). `content(of:)` records the picture as sent when the ask is written (`LiveResponder.sendNext` calls `ask.content`). Hooks: `status.onCodexSignIn`, `status.onCodexSigningOut`, `willTerminate`.
 
 **Invariants**
 
-- A follow-up about the same window and text sends no picture, and the answer may name only lines already sent (`linesSent`,). Holds because `pictures` is keyed by the responder's `conversation` number, which changes with every new process. Checked by: nothing.
+- A follow-up about the same window and text sends no picture, and the answer may name only lines already sent (`linesSent`). Holds because `pictures` is keyed by the responder's `conversation` number, which changes with every new process. Checked by: nothing.
 - `cancel()` goes to every agent. Safe because only one ask is ever with a responder. Checked by: nothing.
 
 ### ClaudeDriver (implicit)
@@ -62,7 +62,7 @@ Runs a Codex thread through a local provider and `AppServerSession`.
 **Invariants**
 
 - Only the ask thread's `turn/completed` completes asks (`notified`, `case .ready(let thread) where onThread == thread`, `CodexDriver.swift`). Checked by: nothing.
-- `send` does nothing unless `phase == .ready` (`guard case .ready`,). `LiveResponder` only sends after `.ready`. Checked by: nothing.
+- `send` does nothing unless `phase == .ready` (`guard case .ready`). `LiveResponder` only sends after `.ready`. Checked by: nothing.
 
 **Late and concurrent answers**
 
@@ -119,7 +119,7 @@ Owner: `LiveNoteCards.swift`. Tests: none (the pure parts are tested under `Note
 
 Glue between `ScreenshotRequests` and `NoteCardGroups`. After a person sends a live-ink note to a session, it watches the session's turn, then draws the result: a look at the window again, a result card, "Done", or the session's own reply.
 
-**States**: `notes[request]` (`Note`: shot, destination, title, window, ink, `before`, `resultCard`), `waits` (`NoteCardGroups`), `timer` (0.5 s; started on `.watchTurn`, stops itself when nothing is watched), `readingTurns` (one read in flight), `hold` (`EventHold<Input>`,).
+**States**: `notes[request]` (`Note`: shot, destination, title, window, ink, `before`, `resultCard`), `waits` (`NoteCardGroups`), `timer` (0.5 s; started on `.watchTurn`, stops itself when nothing is watched), `readingTurns` (one read in flight), `hold` (`EventHold<Input>`).
 
 **Events**: `Input`: `.event(NoteCardGroups.Input)`, `.looked(...)`, `.answer(record, answer, done)`. Callbacks from `ScreenshotRequests` (wired at `AppDelegate.swift`): `released` (only for a send that had a grace), `cancelled` (Don't send, or the request cleared while held), `delivered` (once the client answered), `presentLive` (a reply with a `LiveAnswer`; replies import one at a time and `done` must be called once or the import queue stalls).
 
@@ -130,7 +130,7 @@ Glue between `ScreenshotRequests` and `NoteCardGroups`. After a person sends a l
 **Invariants**
 
 - `done` of `.answer` is called exactly once on every path (`handle`, `runNote`, `drawFresh`, `drawOnResultCard`). Checked by: nothing.
-- A note whose `.sent` is still in `hold` is not registered: `delivered` reads `waits[request]?.delivered` before the queued events, and `handle`'s prune ignores unregistered notes (`registered`,). Checked by: the guards.
+- A note whose `.sent` is still in `hold` is not registered: `delivered` reads `waits[request]?.delivered` before the queued events, and `handle`'s prune ignores unregistered notes (`registered`). Checked by: the guards.
 - A window capture held in `Note.resultCard` is released when the note is pruned, but pruning runs only at the end of `handle`, so after the last note it can stay in memory ([asks-3](plausible-findings-requests-to-live-ink.md#asks-3)). Checked by: nothing.
 - A reply that arrives while the result card is being written goes on the sent picture, not the result card ([asks-4](plausible-findings-requests-to-live-ink.md#asks-4)). Checked by: nothing.
 
@@ -220,7 +220,7 @@ Holds the waits of all sent notes and decides which note makes the result card w
 
 **States**: `held[request]` (in its grace, not yet a wait), `entries[request]` (a `NoteCardWait` plus session, window and sequence).
 
-**Events** (`Input`): `sent`, `held`, `released`, `cancelled`, `delivered`, `turns`, `looked`, `cardFailed`, `answer`. Each is routed to the entry's `NoteCardWait`. `looked` resolves one maker (the first changed, unreplied, compared member), one `makeResultCard`, or none when the look found the window in front (`inFront`: every member the card would have answered gets `windowInFront`), and a `sayDone` for each other note made quiet except the newest (`sayingDoneOnce`,). Finished entries are pruned at the end of every `handle`.
+**Events** (`Input`): `sent`, `held`, `released`, `cancelled`, `delivered`, `turns`, `looked`, `cardFailed`, `answer`. Each is routed to the entry's `NoteCardWait`. `looked` resolves one maker (the first changed, unreplied, compared member), one `makeResultCard`, or none when the look found the window in front (`inFront`: every member the card would have answered gets `windowInFront`), and a `sayDone` for each other note made quiet except the newest (`sayingDoneOnce`). Finished entries are pruned at the end of every `handle`.
 
 **Invariants**
 

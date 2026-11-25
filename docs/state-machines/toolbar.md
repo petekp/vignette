@@ -8,7 +8,7 @@ A destination is an `AgentDestination`: one agent session a line can go to. A st
 
 Owner: `AnnotatorToolbar.swift`. Tests: `ToolbarOfferTests.testTheTargetSettlesOnHerdrsFocusAndStaysWhenCodexAnswersLater`, `testWithNoFocusTheTargetIsTheSessionUsedLastAndIsReplacedOnlyWhenItIsGone`, `testASwapKeepsTheTargetOnTheBarUntilTheNextImagesSettles`.
 
-Holds which session Send goes to for the open image. `AnnotationController.beginDestinations` (`AnnotationController.swift`) and `destinationsAnswered` drive it, called from `AppDelegate.refreshDestinations` and `listDestinations` (`AppDelegate+Send.swift`).
+Holds which session Send goes to for the open image. `AnnotationController.beginDestinations` and `destinationsAnswered` (`AnnotationController+Send.swift`) drive it, called from `AppDelegate.refreshDestinations` and `listDestinations` (`AppDelegate+Send.swift`).
 
 **States**: the properties together:
 - `listing`: the last answer `DestinationChoice.replacesList` let in, which may be the image before's. Its `list` is the running sessions, its `startable` the rows Send would start, and its `sessions` both, the list every session menu and the target's words are built from. Its `complete`: every client answered it.

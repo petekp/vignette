@@ -13,7 +13,7 @@ Carries out the run's effects and keeps the stack, the dim and the keys in step 
 - `run`. `sessionCard`, the card the run has open: set in `perform(.prepare)`, nil at `.endRun`. `annotating` is `run.isActive ? sessionCard : nil`.
 - `annotationFrame`, `parkedMarks`, `captureOrigin`, `flightPress`.
 - `model.annotating` and `flights.staysUp`: flipped together at the end of `handle` when `model.annotating != run.isActive`, which sends `keys.send(.editorOpened)` or `.editorClosed(ending)` with the `ending` from this batch's `endRun`.
-- `model.outCards` holds the session card's id from `.prepare` until `returnCard` arrives (`:~915`) or `.hideAnnotator`; a card that leaves with a dismissed column keeps it until the slide-out's completion empties `outCards`.
+- `model.outCards` holds the session card's id from `.prepare` until `returnCard` arrives or `.hideAnnotator`; a card that leaves with a dismissed column keeps it until the slide-out's completion empties `outCards`.
 - `dim`: shown at `.prepare`, hidden only at `.endRun`.
 - `model.slidingOut` (set, reset and in `present`).
 
