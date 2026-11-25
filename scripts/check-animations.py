@@ -55,7 +55,7 @@ ALLOWED = {
     "AnnotatorToolbar.swift": (4,
         "`words` and `nameSwap`: words giving way to others in one place fade out quickly and in a "
         "moment later"),
-    "MarkLayers.swift": (1, "`drawOn`: a mark draws itself on as a hand draws"),
+    "MarkLayers+Shapes.swift": (1, "`drawOn`: a mark draws itself on as a hand draws"),
     "MenuBarIntro.swift": (3, "the menu bar intro's pill, its width and its sheen"),
     "LiveInkOverlay.swift": (9, "live ink's Core Animation layers"),
     "LiveInkHand.swift": (2, "live ink's Core Animation layers: a stroke's draw-on and its going away"),

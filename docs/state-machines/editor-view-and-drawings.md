@@ -91,16 +91,16 @@ Owner: `Drawings.swift:21`; files in `DrawingStore.swift:8`. Tests: `DrawingStor
 
 `Drawings` is the one writer of a screenshot's stored drawing. A `ScreenshotKey` (see `docs/glossary.md`) names the screenshot.
 
-**States**, per key: the stored file, which holds marks (`keys` `:24`), a message (`messages`), or both, on disk; `revisions[key]` (`:31`); `changedAt[key]` (`:32`); the editor's open drawing for that key (`open` `:29`, a weak `OpenDrawing`); loads in flight.
+**States**, per key: the stored file, which holds a drawing, marks or pins (`keys` `:24`), a message (`messages`), or both, on disk; `revisions[key]` (`:31`); `changedAt[key]` (`:32`); the editor's open drawing for that key (`open` `:29`, a weak `OpenDrawing`); loads in flight.
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| any | `write(d with marks)` | stored | Refused when the screenshot file is gone (`:86`). Else the file is written atomically, `keys.insert`, `revisions += 1`, `onChange(key, d)`. |
-| any | `write(d with no marks)` | no file, or a file with only a message | File removed when it holds no message, else written with no marks. If the key was known: `keys.remove`, `revisions += 1`, `onChange(key, nil)`. |
-| any | `handOver(d, message:, history:)` | stored with `message` and the editor's `history` | As `write`, which leaves the history out; a message keeps the file when `d` has no marks, and `messages` follows it. Refused when the screenshot file is gone and there is a mark or a message. |
-| any | `keepMessage(words, for: d, history:)` | the file's marks as stored, its message `words`, the editor's `history` | `DrawingStore.writeMessage`, which numbers the history by `d`'s marks; until the next hand-over writes them, a read drops the history: a file with no marks holds the words when there is none; no marks and no words remove it. `messages` follows, `changedAt` set; no `revisions` change and no `onChange`. Refused when the screenshot file is gone and `words` is not empty. |
+| any | `write(d)`, `d` not empty | stored | Refused when the screenshot file is gone (`:86`). Else the file is written atomically, `keys.insert`, `revisions += 1`, `onChange(key, d)`. |
+| any | `write(d)`, `d.isEmpty` | no file, or a file with only a message | File removed when it holds no message, whatever its `nextPin`, else written with no marks or pins. Version 2 when it holds pins, a `nextPin` over 1 or a pin step, else 1; a higher `nextPin` in the file is kept. If the key was known: `keys.remove`, `revisions += 1`, `onChange(key, nil)`. |
+| any | `handOver(d, message:, history:)` | stored with `message` and the editor's `history` | As `write`, which leaves the history out; a message keeps the file when `d` is empty, and `messages` follows it. Refused when the screenshot file is gone and there is a mark or a message. |
+| any | `keepMessage(words, for: d, history:)` | the file's marks as stored, its message `words`, the editor's `history` | `DrawingStore.writeMessage`, which numbers the history by `d`'s marks and pins (`basis`); until the next hand-over writes them, a read drops the history: a file with no drawing holds the words when there is none; no drawing and no words remove it. `messages` follows, `changedAt` set; no `revisions` change and no `onChange`. Refused when the screenshot file is gone and `words` is not empty. |
 | key in `keys` or `messages` | `remove` | no file | Only if `changedAt <= observedAt` (`:106`). Removes the file, `changed(key, nil)`. |
 | key in `keys` or `messages` | `sweep` | no file | Only with an inventory that confirms absence and `changedAt <= observedAt` (`:144`). |
 | key in `keys` or `messages`, or editor open | `rename(old, new)` (`:119`) | stored under `new` | Store rewrites under `new`, message included; then `open?.rekey`; `onChange(old, nil)`, `onChange(new, d)`. If the store throws, returns before `rekey` (`:123`), and the open editor keeps the old key, so its later writes are refused. ([editor-2](plausible-findings-run-to-toolbar.md#editor-2)) Then `revisions[old] = nil` (`:137`), which reads as 0 again. ([editor-9](plausible-findings-run-to-toolbar.md#editor-9)) |
@@ -110,7 +110,7 @@ Owner: `Drawings.swift:21`; files in `DrawingStore.swift:8`. Tests: `DrawingStor
 
 **Invariants**
 
-- `keys` mirrors the files with marks this build can read, and `messages` those with a message: the launch scan, then every write and remove. Checked by: `DrawingFileTests.testKeysListTheDrawingsThisBuildCanRead`, `testAMessageIsKeptBesideTheMarksAndWithoutThem`, `DrawingMessageTests.testAMessageFollowsARenameAndGoesWithItsScreenshot`.
+- `keys` mirrors the files with a drawing, marks or pins, this build can read, and `messages` those with a message: the launch scan, then every write and remove. Checked by: `DrawingFileTests.testKeysListTheDrawingsThisBuildCanRead`, `testAMessageIsKeptBesideTheMarksAndWithoutThem`, `DrawingMessageTests.testAMessageFollowsARenameAndGoesWithItsScreenshot`.
 - The open editor's drawing wins over the stored one for `current(of:)`. Checked by: `testTheDrawingNowIsTheOpenOneOverTheStoredOne`.
 - A load never answers older than a write. Checked by: `testALoadThatBeganBeforeAWriteDoesNotAnswer`.
 - A rename moves the stored file and the open drawing. Checked by: `testARenamedScreenshotKeepsItsDrawingUnderTheNewKey`, `testTheOpenDrawingFollowsARenameAndItsLaterWritesLandUnderTheNewKey`. A failing store is not tested. ([editor-2](plausible-findings-run-to-toolbar.md#editor-2))

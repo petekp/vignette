@@ -3,9 +3,9 @@ import AppKit
 extension ThumbnailController {
     /// The marks a flight carries: `drawing` with every text drawn at `scale` device px to a px, the
     /// larger of the flight's two ends, over the whole image, and showing the bitmaps `sources` have
-    /// until its own arrive. Nil for a drawing with no marks.
+    /// until its own arrive. Nil for an empty drawing.
     func flightMarks(_ drawing: Drawing?, scale: CGFloat, adopting sources: [MarkLayers?]) -> MarkLayers? {
-        guard let drawing, !drawing.marks.isEmpty else { return nil }
+        guard let drawing, !drawing.isEmpty else { return nil }
         let marks = MarkLayers(pixels: drawing.pixels, queue: MarkLayers.textQueue)
         marks.setScale(screen.backingScaleFactor)
         marks.show(drawing, scale: scale, bound: drawing.pixels.bounds, style: ui.textStyle, markStyle: ui.markStyle, adopting: sources.compactMap { $0 })

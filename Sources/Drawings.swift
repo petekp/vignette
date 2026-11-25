@@ -25,7 +25,7 @@ final class Drawings {
     /// The screenshots with a drawing on disk.
     private(set) var keys: Set<ScreenshotKey>
     /// The screenshots whose file holds a message: what was last typed in the editor's message field
-    /// for them. A file can hold a message and no marks.
+    /// for them. A file can hold a message and no drawing.
     private(set) var messages: Set<ScreenshotKey>
     /// A screenshot's drawing changed on disk: written, with the drawing as it is now, or removed
     /// (nil). Every write and removal calls it, whether or not the set of keys changed.
@@ -60,7 +60,7 @@ final class Drawings {
     /// for `drawing` as it was read from its file. Empty when it has no file.
     func history(of key: ScreenshotKey, pixels: PixelSize, drawing: Drawing) -> EditorHistory {
         guard keys.contains(key) || messages.contains(key) else { return EditorHistory() }
-        return store.readHistory(key: key.path, pixels: pixels, marks: drawing.marks)
+        return store.readHistory(key: key.path, pixels: pixels, marks: drawing.marks, pins: drawing.pins)
     }
 
     /// The stored drawing for the screenshot `key`, whose size as displayed is `pixels`.
@@ -102,7 +102,7 @@ final class Drawings {
         }
     }
 
-    /// Writes a drawing, or removes its file when it has no marks. `reason` names the moment in the
+    /// Writes a drawing, or removes its file when it is empty. `reason` names the moment in the
     /// log line: saved after a change, parked, or built from an agent's marks. A drawing for a file
     /// that is gone is not written: the editor can hand one over after its file was trashed.
     @discardableResult
@@ -133,7 +133,7 @@ final class Drawings {
     /// refuses is not a failure: nothing of the person's is lost.
     func handOver(_ drawing: Drawing, message: String? = nil, history: EditorHistory = EditorHistory(), reason: String) {
         do { _ = try save(drawing, message: message, history: history, reason: reason) }
-        catch DrawingStore.Refusal.newerVersion where drawing.marks.isEmpty && (message ?? "").isEmpty {
+        catch DrawingStore.Refusal.newerVersion where drawing.isEmpty && (message ?? "").isEmpty {
         } catch {
             let key = ScreenshotKey(asGiven: drawing.key)
             if open?.drawing(of: key) == nil { onWriteFailed?(key) }
@@ -158,7 +158,7 @@ final class Drawings {
 
     private func save(_ drawing: Drawing, message: String? = nil, history: EditorHistory, reason: String) throws -> Bool {
         let key = ScreenshotKey(asGiven: drawing.key), name = key.name
-        if !drawing.marks.isEmpty || message?.isEmpty == false, !FileManager.default.fileExists(atPath: drawing.key) {
+        if !drawing.isEmpty || message?.isEmpty == false, !FileManager.default.fileExists(atPath: drawing.key) {
             Log.write("[drawing] dropped \(name): its screenshot is gone")
             return false
         }
@@ -166,7 +166,7 @@ final class Drawings {
         if keepsMessage, messages.insert(key).inserted { Log.write("[drawing] message saved \(name)") }
         if !keepsMessage, messages.remove(key) != nil { Log.write("[drawing] message removed \(name)") }
         changedAt[key] = ProcessInfo.processInfo.systemUptime
-        if drawing.marks.isEmpty {
+        if drawing.isEmpty {
             guard keys.remove(key) != nil else { return true }
             Log.write("[drawing] removed \(name)")
             Log.write("[drawings] \(keys.count)")
@@ -213,7 +213,7 @@ final class Drawings {
             if !hadDrawing { Log.write("[drawing] renamed \(old.name) to \(new.name)") }
         }
         let moved = pixels != nil && hadDrawing
-        guard moved || editing?.marks.isEmpty == false else { return }
+        guard moved || editing?.isEmpty == false else { return }
         if moved {
             keys.remove(old)
             keys.insert(new)
@@ -312,7 +312,7 @@ final class Drawings {
         let added = made.enumerated().map { offset, mark in
             EditStep.Change(id: mark.id, before: nil, after: PlacedMark(mark: mark, index: drawing.marks.count + offset))
         }
-        history.record(.marks(EditStep(name: .agentMarks, changes: added, selectionBefore: [], selectionAfter: [])))
+        history.record(.drawing(EditStep(name: .agentMarks, changes: added, selectionBefore: [], selectionAfter: [])))
         drawing.marks += made
         guard write(drawing, history: history, reason: "built") else {
             throw Failure(code: .writeFailed, description: "the drawing for \(name) could not be written")

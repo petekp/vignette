@@ -56,7 +56,8 @@ struct MarkEdit {
     }
 }
 
-/// One undo step: each mark it touched before and after, and the selection that goes with each side.
+/// One undo step of the drawing: each mark and each pin it touched before and after, and the selection
+/// that goes with each side.
 struct EditStep {
     struct Change {
         let id: Mark.ID
@@ -65,10 +66,20 @@ struct EditStep {
         var after: PlacedMark?
     }
 
+    /// A pin is named by its `id`, which it keeps in the file, and has no place in an order: pins are
+    /// kept in the order of their numbers.
+    struct PinChange {
+        let id: Pin.ID
+        /// Nil when the pin did not exist on that side.
+        var before: Pin?
+        var after: Pin?
+    }
+
     let name: StepName
     var changes: [Change]
     let selectionBefore: Set<Mark.ID>
     var selectionAfter: Set<Mark.ID>
+    var pins: [PinChange] = []
 
     /// This step and `later` as one, from this one's start to `later`'s end; nil when they cancel out.
     func merged(with later: EditStep) -> EditStep? {
@@ -81,7 +92,24 @@ struct EditStep {
             }
         }
         changes.removeAll { $0.before?.mark == $0.after?.mark }
-        return changes.isEmpty ? nil : EditStep(name: name, changes: changes, selectionBefore: selectionBefore, selectionAfter: later.selectionAfter)
+        var pins = self.pins
+        for change in later.pins {
+            if let index = pins.firstIndex(where: { $0.id == change.id }) { pins[index].after = change.after } else { pins.append(change) }
+        }
+        pins.removeAll { $0.before == $0.after }
+        guard !changes.isEmpty || !pins.isEmpty else { return nil }
+        return EditStep(name: name, changes: changes, selectionBefore: selectionBefore, selectionAfter: later.selectionAfter, pins: pins)
+    }
+
+    /// `drawing` as it was before this step (`forward` false) or after it (true), for the marks and the
+    /// pins it touched; everything else is left alone.
+    func applied(to drawing: Drawing, forward: Bool) -> Drawing {
+        var drawing = drawing
+        drawing.marks = applied(to: drawing.marks, forward: forward)
+        let ids = Set(pins.map(\.id))
+        drawing.pins = (drawing.pins.filter { !ids.contains($0.id) } + pins.compactMap { forward ? $0.after : $0.before })
+            .sorted { $0.number < $1.number }
+        return drawing
     }
 
     /// `marks` as they were before this step (`forward` false) or after it (true), for the marks it
@@ -134,21 +162,22 @@ struct MessageStep: Equatable {
     var after: String
 }
 
-/// One step of the editor's history: a change to the marks, or to the message field's words.
+/// One step of the editor's history: a change to the drawing, its marks and its pins, or to the message
+/// field's words.
 enum HistoryStep {
-    case marks(EditStep)
+    case drawing(EditStep)
     case message(MessageStep)
 
     var name: StepName {
         switch self {
-        case .marks(let step): return step.name
+        case .drawing(let step): return step.name
         case .message(let step): return step.name
         }
     }
 
     /// The words after Undo or Redo. Marks from one named agent say whose they are: "Claude's Marks".
     var title: String {
-        guard case .marks(let step) = self, step.name == .agentMarks else { return name.title }
+        guard case .drawing(let step) = self, step.name == .agentMarks else { return name.title }
         let agents = Set(step.changes.map { $0.after?.mark.agentName })
         guard agents.count == 1, let agent = agents.first ?? nil else { return name.title }
         return "\(agent)'s Marks"
@@ -183,26 +212,38 @@ struct EditorHistory {
 
 /// A history as a drawing's file keeps it, under `history` (`docs/drawing-file.md`). A step names
 /// each mark it touched by a number: the mark's index in the file's `marks`, or from `marks.count` on
-/// for a mark the drawing no longer holds.
+/// for a mark the drawing no longer holds. It names each pin it touched by its `id`.
 extension EditorHistory {
     /// The most steps a file keeps, undo and redo together.
     static let maxSteps = 100
     /// The most bytes a file's history takes. A card reads the whole file to draw its marks.
     static let maxBytes = 256 * 1024
 
-    /// The marks and the message a history ends at, as a hash: a file whose marks or message no longer
-    /// hash to its `basis` was written by something other than the editor, and its history is dropped.
-    static func basis(marks: [Mark], message: String) throws -> String {
+    /// The marks, the pins, `nextPin` and the message a history ends at, as a hash: a file whose drawing
+    /// or message no longer hash to its `basis` was written by something other than the editor, and its
+    /// history is dropped. With no pins and `nextPin` 1 it is the hash of a file from before pins.
+    static func basis(marks: [Mark], pins: [Pin] = [], nextPin: Int = 1, message: String) throws -> String {
         var hasher = SHA256()
         hasher.update(data: try DrawingJSON.encode(marks.map(MarkRecord.init)))
         hasher.update(data: Data(message.utf8))
+        if !pins.isEmpty || nextPin > 1 {
+            hasher.update(data: try DrawingJSON.encode(pins.map(PinRecord.init)))
+            hasher.update(data: Data("\(nextPin)".utf8))
+        }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
-    /// The `history` object for a file holding `marks` and `message`, or nil for an empty history. The
+    /// Whether a file's `history` object holds a step about pins, which makes the file version 2.
+    static func mentionsPins(_ object: Any?) -> Bool {
+        guard let object = object as? [String: Any] else { return false }
+        return ["undo", "redo"].contains { ((object[$0] as? [[String: Any]]) ?? []).contains { $0["pins"] != nil } }
+    }
+
+    /// The `history` object for a file holding `drawing` and `message`, or nil for an empty history. The
     /// oldest undo steps go first, then the farthest redo steps, until it fits `maxSteps` and `maxBytes`.
-    func fileObject(marks: [Mark], message: String) throws -> [String: Any]? {
+    func fileObject(endingAt drawing: Drawing, message: String) throws -> [String: Any]? {
         guard !isEmpty else { return nil }
+        let marks = drawing.marks
         var numbers: [Mark.ID: Int] = [:]
         for (index, mark) in marks.enumerated() { numbers[mark.id] = index }
         var next = marks.count
@@ -216,15 +257,27 @@ extension EditorHistory {
             guard let placed else { return nil }
             return ["index": placed.index, "mark": try DrawingJSON.object(from: DrawingJSON.encode(MarkRecord(placed.mark)))]
         }
+        func pin(_ pin: Pin?) throws -> Any? {
+            try pin.map { try DrawingJSON.object(from: DrawingJSON.encode(PinRecord($0))) }
+        }
         func object(_ step: HistoryStep) throws -> (object: [String: Any], bytes: Int) {
             var object: [String: Any] = ["name": step.name.rawValue]
             switch step {
-            case .marks(let step):
-                object["changes"] = try step.changes.map { change -> [String: Any] in
+            case .drawing(let step):
+                let changes = try step.changes.map { change -> [String: Any] in
                     var item: [String: Any] = ["mark": number(change.id)]
                     item["before"] = try placed(change.before)
                     item["after"] = try placed(change.after)
                     return item
+                }
+                if !changes.isEmpty || step.pins.isEmpty { object["changes"] = changes }
+                if !step.pins.isEmpty {
+                    object["pins"] = try step.pins.map { change -> [String: Any] in
+                        var item: [String: Any] = ["id": change.id.uuidString]
+                        item["before"] = try pin(change.before)
+                        item["after"] = try pin(change.after)
+                        return item
+                    }
                 }
                 object["selectionBefore"] = step.selectionBefore.map(number).sorted()
                 object["selectionAfter"] = step.selectionAfter.map(number).sorted()
@@ -239,17 +292,18 @@ extension EditorHistory {
             if undo.isEmpty { redo.removeFirst() } else { undo.removeFirst() }
         }
         guard !undo.isEmpty || !redo.isEmpty else { return nil }
-        return ["basis": try Self.basis(marks: marks, message: message), "undo": undo.map(\.object), "redo": redo.map(\.object)]
+        let basis = try Self.basis(marks: marks, pins: drawing.pins, nextPin: drawing.nextPin, message: message)
+        return ["basis": basis, "undo": undo.map(\.object), "redo": redo.map(\.object)]
     }
 
     /// The history a file's `history` object holds, for the drawing read from that file, whose marks
-    /// are `marks` in the file's order. `basis` is `basis(marks:message:)` of the file's marks as
-    /// stored, before a read moves any into the image, and its message. Throws the one thing wrong
-    /// with it, or that the marks or the message changed since it was written.
+    /// are `marks` in the file's order. `basis` is `basis(marks:pins:nextPin:message:)` of the file's
+    /// marks and pins as stored, before a read moves any into the image, its `nextPin` and its message.
+    /// Throws the one thing wrong with it, or that the drawing or the message changed since it was written.
     init(fileObject raw: Any, marks: [Mark], basis: String) throws {
         guard let object = raw as? [String: Any] else { throw MarkProblem("the history is not an object") }
         guard object["basis"] as? String == basis else {
-            throw MarkProblem("the marks or the message changed since it was written")
+            throw MarkProblem("the drawing or the message changed since it was written")
         }
         var ids: [Int: Mark.ID] = [:]
         for (index, mark) in marks.enumerated() { ids[index] = mark.id }
@@ -281,14 +335,31 @@ extension EditorHistory {
                 }
                 return .message(MessageStep(name: name, before: before, after: after))
             }
-            guard let changes = item["changes"] as? [Any], !changes.isEmpty else { throw MarkProblem("a step needs its changes") }
-            return .marks(EditStep(name: name, changes: try changes.map { raw in
+            let changes = (item["changes"] as? [Any]) ?? [], pins = (item["pins"] as? [Any]) ?? []
+            guard !changes.isEmpty || !pins.isEmpty else { throw MarkProblem("a step needs its changes") }
+            return .drawing(EditStep(name: name, changes: try changes.map { raw in
                 guard let change = raw as? [String: Any] else { throw MarkProblem("a change is not an object") }
                 let id = try id(change["mark"])
                 let before = try placed(change["before"], id: id), after = try placed(change["after"], id: id)
                 guard before != nil || after != nil else { throw MarkProblem("a change needs a mark before or after it") }
                 return EditStep.Change(id: id, before: before, after: after)
-            }, selectionBefore: try selection(item["selectionBefore"]), selectionAfter: try selection(item["selectionAfter"])))
+            }, selectionBefore: try selection(item["selectionBefore"]), selectionAfter: try selection(item["selectionAfter"]),
+               pins: try pinChanges(pins)))
+        }
+        func pinChanges(_ list: [Any]) throws -> [EditStep.PinChange] {
+            let changes = try list.map(pinChange)
+            guard Set(changes.map(\.id)).count == changes.count else { throw MarkProblem("a step names a pin twice") }
+            return changes
+        }
+        func pinChange(_ raw: Any) throws -> EditStep.PinChange {
+            guard let change = raw as? [String: Any], let rawID = change["id"] as? String, let id = UUID(uuidString: rawID) else {
+                throw MarkProblem("a changed pin needs its id")
+            }
+            let before = try change["before"].map { try Pin(validating: $0) }, after = try change["after"].map { try Pin(validating: $0) }
+            guard before != nil || after != nil, [before, after].allSatisfy({ $0 == nil || $0?.id == id }) else {
+                throw MarkProblem("a changed pin needs itself before or after the change")
+            }
+            return EditStep.PinChange(id: id, before: before, after: after)
         }
         func steps(_ field: String) throws -> [HistoryStep] {
             guard let list = object[field] as? [Any] else { throw MarkProblem("\(field) must be a list") }

@@ -59,6 +59,25 @@ files it touches, and `docs/voice.md` for any new words.
    in. A bad pin is dropped. A teardrop at the picture's top or right edge flips inside it. A
    drawing holding only pins follows a rename, comes back with Trash undo, goes into a stitch's
    piece, and changes `Agent.fingerprint`.
+
+   Step 1 settled these points the plan left open:
+   - A comment is the type `Pin.Comment`, since it means nothing apart from its pin.
+   - A pin's colour is the writer of its first comment: indigo when an agent made the pin, red
+     otherwise.
+   - The teardrop is 24 drawing pt, `PinTeardrop.side`, and its number is SF Pro Rounded for a
+     person's pin and SF Mono for an agent's, as their notes are. The size becomes a `UITweaks`
+     setting in step 3, beside the outline's width and the cluster distance, since step 3 is
+     where it can first be seen and tuned.
+   - The edge rule counts the white edge, so a flipped teardrop's edge stays inside the picture.
+   - Until step 3, the editor draws a pin through `MarkLayers` at mark scale, as a card does.
+     Step 3 gives it one size on screen at every zoom.
+   - A history step leaves out `changes` when it changed only pins, and `pins` when it changed
+     only marks. A file with no pins and `nextPin` 1 keeps the `basis` it had before pins, so
+     stored histories stay valid.
+   - Copied marks on the clipboard stay version 1, since they never hold pins.
+   - Reading a file with no marks and no pins gives no drawing, even when it keeps a `nextPin`
+     beside a message. A write keeps the file's higher `nextPin`. Step 3 must open the editor
+     with the stored `nextPin`, so a new pin's number is not one a deleted pin had.
 2. Outputs. Copy, Copy Drawing and a drag as the picture with its list, with the clipboard's text.
    Send's image and line, and `pins.json`. Stitch's live pins, and the teardrop's flip away from a
    piece's number. Reply's change check. The skill's words. Verified by rendering tests from fixture

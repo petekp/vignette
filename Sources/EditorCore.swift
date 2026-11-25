@@ -445,7 +445,7 @@ struct EditorCore {
             guard pointScale != drawing.pointScale || markScale != drawing.markScale else { break }
             drawing.pointScale = pointScale
             drawing.markScale = markScale
-            if !drawing.marks.isEmpty { changed() }
+            if !drawing.isEmpty { changed() }
         case .typingChanged(let text): typed(text)
         case .typingEnded: endTyping()
         case .messageChanged(let words, let name): messageChanged(words, name)
@@ -497,7 +497,7 @@ struct EditorCore {
         self.style = style
         self.metrics = metrics
         self.markStyle = markStyle
-        tool = drawing.marks.isEmpty ? .rectangle : .select
+        tool = drawing.isEmpty ? .rectangle : .select
         // The newest mark the person drew, never an agent's.
         if selectsNewest, let newest = drawing.marks.last(where: { !$0.agent }) { selection = [newest.id] }
         announcedSelection = selection
@@ -600,7 +600,7 @@ struct EditorCore {
         guard let edit else { return false }
         self.edit = nil
         guard let step = edit.step(named: name, ending: drawing.marks, selection: selection) else { return false }
-        push(.marks(step))
+        push(.drawing(step))
         changed()
         return true
     }
@@ -636,8 +636,8 @@ struct EditorCore {
     private mutating func restore(_ step: HistoryStep, forward: Bool) {
         typingMessage = false
         switch step {
-        case .marks(let step):
-            drawing.marks = step.applied(to: drawing.marks, forward: forward)
+        case .drawing(let step):
+            drawing = step.applied(to: drawing, forward: forward)
             let ids = Set(drawing.marks.map(\.id))
             selection = (forward ? step.selectionAfter : step.selectionBefore).intersection(ids)
             announcedSelection = selection
@@ -1379,10 +1379,10 @@ struct EditorCore {
         }
         guard undoSteps.count > depth else { return }
         nudging = true
-        if continuing, undoSteps.count >= 2, case .marks(let later) = undoSteps[undoSteps.count - 1],
-           case .marks(let earlier) = undoSteps[undoSteps.count - 2] {
+        if continuing, undoSteps.count >= 2, case .drawing(let later) = undoSteps[undoSteps.count - 1],
+           case .drawing(let earlier) = undoSteps[undoSteps.count - 2] {
             undoSteps.removeLast(2)
-            if let merged = earlier.merged(with: later) { undoSteps.append(.marks(merged)) }
+            if let merged = earlier.merged(with: later) { undoSteps.append(.drawing(merged)) }
         }
     }
 
