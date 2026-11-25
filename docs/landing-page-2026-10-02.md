@@ -99,15 +99,24 @@ in the corner, the stack, the annotator's frame and toolbar, then the terminal a
 Claude answers. The whole screen at phone width is a quarter of its size, too small to read.
 
 Motion: springs with the app's durations and bounce (`Anim.spring`, flight bounce 0.15). Flights
-bow 15% of their path, at most 64 pt, and swell 7% at the middle. Nothing moves unless the visitor
-started it, except the trailer.
+bow 15% of their path, at most 64 pt, and swell 7% at the middle. Nothing in the two acts moves
+unless the visitor started it. The trailer plays on its own, and each feature tile plays its moment
+once when it scrolls into view. With Reduce Motion on, a tile shows its result and never moves.
 
 ## The build
 
-- `site/index.html` is the page. `site/demo/site.css` holds its styles, `site/demo/vignette.js` the
-  stage (springs, captures, the stack, flights, the annotator, marks, the phone camera),
-  `site/demo/cards.js` the screenshots, the marks and the closer's fan, and `site/demo/page.js`
-  the two acts.
+- `site/index.html` is the page. Its styles are in `site/demo/`: `site.css` holds the colours,
+  the type, the layout and `.tile`, `stage.css` the stage's Mac screen, `annotator.css` the
+  annotator's frame and toolbar, `features.css` the feature tiles, and `desk.css` the four tiles
+  under the first stage.
+- Its scripts are in `site/demo/` too. `vignette.js` is the stage (captures, the stack, flights,
+  the annotator, the phone camera), `springs.js` the springs and Reduce Motion, `marks.js` the
+  marks as the app draws them, `cards.js` the screenshots, their marks and the closer's fan, and
+  `page.js` the two acts.
+- `site/demo/features.js` builds the feature tiles' pictures once the page is idle. In
+  `site/demo/features/`, `tiles.js` plays each picture when its tile scrolls into view, `parts.js`
+  holds the parts the pictures share, and `stack.js` the column the four tiles under the first
+  stage share. Each other file there draws one tile's picture.
 - `site/og/index.html` draws the share image, `site/og.png`, from `cards.js` and the page's styles.
   Its comment says how to render it.
 - Phones get `site/trailer-small.mp4`, 960 by 600 at 60 frames a second and 3.6 MB, in place of the
