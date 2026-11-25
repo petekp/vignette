@@ -7,6 +7,12 @@
   `docs/closed-agent-loop-implementation-2026-09-20.md`. `agent-plugin/` is the plugin Claude Code
   and Codex install, which carries the skill and, for Claude Code, delivers what Send sends, and
   `Sources/AgentPlugin.swift` installs it (`docs/claude-code-without-herdr-2026-09-27.md`).
+- A listing answers in parts: a kept list at once, then each client's fresh list
+  (`SessionListing.list`). Every menu that lists sessions, the editor's target menu and live ink's
+  note, passes each answer through one rule (`DestinationChoice.replacesList`): an answer that is
+  not complete never replaces a complete list, since it lacks every session of a client still to
+  answer. The complete list stays, even when it is older, and on a swap the image before's, until
+  the next complete answer. A new menu of sessions uses the same rule.
 - Send never brings the destination's app forward. The card says what happened, and the person
   decides where to look. When they sent from the destination's app, the hand-back returns them
   there (`FocusReturn`, `docs/rules/stack.md`). `scripts/check-app-activation.py` fails a call

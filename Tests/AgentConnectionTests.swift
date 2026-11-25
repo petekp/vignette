@@ -490,24 +490,6 @@ final class AgentConnectionTests: XCTestCase {
                      "a note on the responder forces no row in")
     }
 
-    func testSearchFindsEveryWordInTheTitleTheSecondLineOrTheHeader() {
-        let now = Date()
-        var tabbed = session("a", used: 1, place: repo("vignette"), now: now)
-        tabbed.hostLabel = "Café menu"
-        tabbed.goal = "Search the sessions"
-        let list = [tabbed,
-                    session("b", used: 2, place: repo("inbox"), now: now),
-                    session("c", used: 3, place: repo("vignette"), now: now)]
-        let groups = SessionMenu.menu(list, destination: nil, now: now).everyone
-        func ids(_ query: String) -> [[String]] { SessionMenu.matching(query, in: groups).map { $0.rows.map(\.id) } }
-        XCTAssertEqual(ids("CAFE"), [["a"]], "case and accents are ignored")
-        XCTAssertEqual(ids("search sessions"), [["a"]], "every word must be found, in any order")
-        XCTAssertEqual(ids("inbox"), [["b"]], "the header counts")
-        XCTAssertEqual(ids("vignette"), [["a", "c"]], "a header matches all of its rows")
-        XCTAssertEqual(ids("  "), [["a", "c"], ["b"]], "no words, no filtering")
-        XCTAssertEqual(ids("zzz"), [])
-    }
-
     /// A repository known only by name joins the one checkout of that name; two checkouts with one name
     /// get their parent folder in the header.
     func testRepositoriesJoinByNameAndSameNamesAddTheirParentFolder() {

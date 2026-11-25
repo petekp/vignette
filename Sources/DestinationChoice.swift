@@ -1,7 +1,7 @@
 import Foundation
 
-/// Which agent session Send, or a live ink note, starts on before the person picks one, and the
-/// order Send's menu lists the sessions in. Every rule for that pick is here, so a new one changes
+/// Which agent session Send, or a live ink note, starts on before the person picks one, the order
+/// Send's menu lists the sessions in, and which answer a menu lists. Every rule for that pick is here, so a new one changes
 /// this file and its tests. It takes facts and answers the pick. Send's facts are the sessions listed
 /// so far, herdr's focus, the agent's app that was in front and the kept pick, and it marks why it
 /// starts where it does. A note's fact is its own pick, and it reads neither herdr's focus nor an agent's app.
@@ -84,6 +84,16 @@ enum DestinationChoice {
         /// The sessions Vignette can start, for projects with none running (`StartableSessions`). They
         /// are apart from `destinations`, so no rule here can pick one.
         var startable: [AgentDestination] = []
+    }
+
+    /// Whether a menu lists an answer's sessions in place of the ones it lists now. A complete answer
+    /// has every client's sessions, so it always does. One that is not complete lacks every session of
+    /// a client still to answer, so it replaces only a list that is not complete either, or none. A
+    /// complete list stays until the next complete answer, even when an incomplete answer is fresher.
+    /// The complete list may lack a session started since, or still show one that ended, while the
+    /// incomplete answer hides every session of a client.
+    static func replacesList(_ answerIsComplete: Bool, over listIsComplete: Bool) -> Bool {
+        answerIsComplete || !listIsComplete
     }
 
     /// The one client whose sessions herdr's focus marks. A focused Codex pane marks nothing, even

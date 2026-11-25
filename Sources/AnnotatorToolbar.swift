@@ -9,17 +9,15 @@ final class AnnotatorToolbar {
     final class Model: ObservableObject {
         @Published var tool: EditorCore.Tool? = nil
         @Published var shown = false     // drives the entrance and exit
-        /// The agent sessions Send can go to, the one used last first, as far as the listing has
-        /// answered for the image that is open.
+        /// The agent sessions Send can go to, the one used last first (`DestinationChoice.replacesList`).
         @Published private(set) var destinations: [AgentDestination] = [] { didSet { refreshTargetRow(); reportOffer() } }
         /// The sessions Vignette can start, which only the target's menu shows.
         @Published private(set) var startable: [AgentDestination] = [] { didSet { reportOffer() } }
         /// Every client has answered. Until then a session missing from the list may only be late.
         @Published private(set) var listed = false
-        /// The last list every client answered: this image's, or while the bar stays up for a swap,
-        /// the image before's. Whether a reply's Claude Code session has closed is read from it, so
-        /// the bar does not show Reply for a closed session until this image's list says so again.
-        @Published private(set) var whole: [AgentDestination]? { didSet { reportOffer() } }
+        /// Every client answered `destinations`. Whether a reply's Claude Code session has closed is
+        /// read from it, so the bar shows no Reply for a closed one until this image's list does.
+        @Published private(set) var destinationsComplete = false { didSet { reportOffer() } }
         /// The session the open image came from, when it names one: an agent's reply, or a push
         /// that said which session it was. The bar is Reply alone, so the target is never guessed at.
         @Published private(set) var replyTo: AgentDestination? { didSet { reportOffer() } }
@@ -125,7 +123,7 @@ final class AnnotatorToolbar {
 
 
         var offer: ToolbarOffer {
-            ToolbarOffer(replyTo: replyTo, destinations: whole ?? destinations, listed: whole != nil, target: target, startable: startable)
+            ToolbarOffer(replyTo: replyTo, destinations: destinations, listed: destinationsComplete, target: target, startable: startable)
         }
 
         /// Called with the offer each time it changes, whatever changed it: an answer, a new image or a pick.
@@ -154,7 +152,7 @@ final class AnnotatorToolbar {
             destinations = []
             startable = []
             target = nil
-            whole = nil
+            destinationsComplete = false
         }
 
         /// Another client answered. The target settles on the first answer that decides a pick
@@ -162,10 +160,12 @@ final class AnnotatorToolbar {
         /// list, so it never changes under the pointer.
         func answered(_ answer: DestinationChoice.Answer) {
             let list = answer.list
-            destinations = list
-            startable = answer.startable
+            if DestinationChoice.replacesList(answer.complete, over: destinationsComplete) {
+                destinations = list
+                startable = answer.startable
+                destinationsComplete = answer.complete
+            }
             listed = answer.complete
-            if answer.complete { whole = list }
             if let current = target, let fresh = list.first(where: { $0.id == current.id }) { target = fresh }
             guard !picked else { return }
             if carried {

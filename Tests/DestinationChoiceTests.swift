@@ -55,6 +55,19 @@ final class DestinationChoiceTests: XCTestCase {
         XCTAssertNil(note([a, b], .byHand(nil)).pick, "a hand-picked responder stays")
     }
 
+    @MainActor
+    func testALiveNoteKeepsItsWholeListAndItsTargetOverALaterPartialAnswer() {
+        let a = Self.claude("a")
+        let thread = AgentDestination(id: "t", name: "x", detail: Self.project, address: .codexThread(uuid: "t"))
+        let note = LiveNotePopover(at: PopoverPlace(anchor: nil, at: .zero, edge: .below, body: .zero, foot: .zero), target: .session(a))
+        note.setSessions(.init(destinations: [a, thread], complete: true, fresh: true))
+        note.setSessions(.init(destinations: [thread], complete: false, fresh: false))
+        XCTAssertEqual(note.sessionCount, 2, "the next listing's kept Codex list leaves Claude Code's sessions in the menu")
+        XCTAssertEqual(note.target, .session(a), "and the session it was sent to last stays its target")
+        note.setSessions(.init(destinations: [thread], complete: true, fresh: true))
+        XCTAssertEqual(note.sessionCount, 1, "a complete answer replaces the list")
+    }
+
     /// A live ink note reads neither herdr's focus nor marks its list, although Send, given the same
     /// candidates, starts on the focused session.
     func testALiveNoteIgnoresHerdrsFocus() {

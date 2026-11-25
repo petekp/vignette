@@ -108,11 +108,11 @@ final class SessionStartsTests: XCTestCase {
         let menu = SessionMenu.menu([new, running, resume, other], destination: nil, count: 1, now: now)
         XCTAssertEqual(menu.topRows.map(\.id), ["r"])
         XCTAssertEqual(menu.projects.flatMap(\.rows).map(\.id), ["r", "o"], "a project's count is its running sessions")
-        XCTAssertEqual(SessionMenu.matching("", in: menu.everyone).flatMap(\.rows).map(\.id), ["r", "o", past, "new:/site"])
+        XCTAssertEqual(SessionMenu.matching("", in: menu).flatMap(\.rows).map(\.id), ["r", "o", past, "new:/site"])
         var (inRepository, newInRepository) = (resume, new)
         inRepository.place = .repository(name: "site", root: "/site", worktree: nil, subfolder: nil)
         newInRepository.place = inRepository.place
-        let apart = SessionMenu.menu([running, inRepository, newInRepository], destination: nil, now: now).everyone
+        let apart = SessionMenu.menu([running, inRepository, newInRepository], destination: nil, now: now)
         XCTAssertEqual(SessionMenu.matching("", in: apart).first?.rows.first?.id, "r",
                        "a running session in Other folders still comes before a project's rows that start one")
         XCTAssertEqual(SessionMenu.menu([new, running, resume], destination: resume, now: now).topRows.map(\.id), ["r", past],

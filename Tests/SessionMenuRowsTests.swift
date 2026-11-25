@@ -137,8 +137,8 @@ final class SessionMenuRowsTests: XCTestCase {
             return s
         }
         let list = [session("a", hours: 5, busy: true, repo: "vignette"), session("b", hours: 3, repo: "vignette"), session("c", hours: 48, repo: "inbox")]
-        let groups = SessionMenu.menu(list, destination: nil, now: now).everyone
-        func ids(_ query: String) -> [[String]] { SessionMenu.matching(query, in: groups).map { $0.rows.map(\.id) } }
+        let menu = SessionMenu.menu(list, destination: nil, now: now)
+        func ids(_ query: String) -> [[String]] { SessionMenu.matching(query, in: menu).map { $0.rows.map(\.id) } }
         XCTAssertEqual(ids("WORKING"), [["a"]], "a busy row is found by its working badge")
         XCTAssertEqual(ids("3 hr"), [["b"]], "a time badge is found by the words it shows")
         XCTAssertEqual(ids("2 days ago"), [["c"]], "every word of the badge matches")
@@ -157,6 +157,8 @@ final class SessionMenuRowsTests: XCTestCase {
         let send = SessionMenu.menu(list, destination: list[0], targetNotFirst: true, now: now)
         XCTAssertEqual(send.topRows.map(\.id), ["b", "a", "c"], "the target gives the first row to the next session")
         XCTAssertEqual(send.top.map(\.header), ["Other folders", "vignette"], "the first row's group leads, even Other folders")
+        XCTAssertEqual(SessionMenu.matching("hr", in: send).map { $0.rows.map(\.id) }, [["b"], ["a", "c"]],
+                       "search ranks the rows as the menu shows them, so Return picks the next session there too")
         XCTAssertEqual(SessionMenu.menu(list, destination: list[2], targetNotFirst: true, now: now).topRows.map(\.id), ["a", "c", "b"],
                        "a target that is not first changes nothing")
         XCTAssertEqual(SessionMenu.menu(Array(list.prefix(1)), destination: list[0], targetNotFirst: true, now: now).topRows.map(\.id),
