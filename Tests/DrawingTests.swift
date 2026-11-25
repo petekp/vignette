@@ -198,6 +198,27 @@ final class DrawingTests: XCTestCase {
         XCTAssertEqual(scale(100, 100, rule: tiny).point, Drawing.pointScales.lowerBound, accuracy: 1e-9, "never under the files' least point scale")
     }
 
+    func testATweakRescalesTheOpenDrawingAtItsOwnBackingScaleAndANewTextSizeAloneLeavesIt() {
+        let rule = UITweaks().markScaleRule
+        let laptop = DrawingScreen(scale: 2, size: CGSize(width: 1512, height: 982))
+        let external = CGSize(width: 1920, height: 1080)
+        let drawing = Drawing(key: "Shot.png", pixels: PixelSize(width: 1280, height: 800), sizedFor: laptop, rule: rule)
+        var steeper = rule
+        steeper.power = 0.55
+        let rescaled = AnnotationController.rescale(drawing, from: rule, to: steeper, screenSize: external)
+        XCTAssertEqual(rescaled.map { $0.point / $0.mark } ?? 0, 2, accuracy: 1e-9, "the drawing was made at 2x")
+        XCTAssertEqual(rescaled?.mark ?? 0, steeper.scale(for: drawing.pixels, on: DrawingScreen(scale: 2, size: external)).mark, accuracy: 1e-9)
+        var floor = rule
+        floor.smallestNoteText = 20
+        XCTAssertNotNil(AnnotationController.rescale(drawing, from: rule, to: floor, screenSize: external))
+
+        let floorBound = Drawing(key: "Small.png", pixels: PixelSize(width: 600, height: 400), sizedFor: laptop, rule: rule)
+        var biggerText = rule
+        biggerText.newTextSize = 24
+        XCTAssertNil(AnnotationController.rescale(floorBound, from: rule, to: biggerText, screenSize: laptop.size))
+        XCTAssertNil(AnnotationController.rescale(floorBound, from: rule, to: rule, screenSize: laptop.size))
+    }
+
     // MARK: Copied marks
 
     func testCopiedMarksComeBackThroughTheValidator() throws {

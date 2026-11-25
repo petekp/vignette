@@ -211,9 +211,9 @@ final class AnnotationController {
         zoom.edge = Self.edgePull(ui)
         textStyle = ui.textStyle
         var scale: (mark: CGFloat, point: CGFloat)?
-        if ui.markScaleRule != markScaleRule, editor.core.isOpen {
+        if editor.core.isOpen {
             let screen = zoomScreen ?? NSScreen.main ?? NSScreen.screens[0]
-            scale = ui.markScaleRule.scale(for: editor.core.drawing.pixels, on: DrawingScreen(screen))
+            scale = Self.rescale(editor.core.drawing, from: markScaleRule, to: ui.markScaleRule, screenSize: screen.frame.size)
         }
         markScaleRule = ui.markScaleRule
         editor.applyTweaks(style: textStyle, metrics: ui.editorMetrics, markStyle: ui.markStyle, scale: scale)
@@ -222,6 +222,16 @@ final class AnnotationController {
         applyRing()
         measureTitleInk()
         editor.noteSettleDuration = Settings.shared.motionUI.noteSettleDuration
+    }
+
+    /// The open drawing's new scale when the tweaks change the rule from `old` to `new`, nil when they
+    /// leave it as it is. Only the rule's power and its floor rescale it: `newTextSize` sizes new notes.
+    /// The drawing keeps the backing scale of the screen it was made on, whatever screen it is on now.
+    nonisolated static func rescale(_ drawing: Drawing, from old: MarkScaleRule, to new: MarkScaleRule,
+                                    screenSize: CGSize) -> (mark: CGFloat, point: CGFloat)? {
+        let ruleChanged = new.power != old.power || new.smallestNoteText != old.smallestNoteText
+        guard ruleChanged else { return nil }
+        return new.scale(for: drawing.pixels, on: DrawingScreen(scale: drawing.screenScale, size: screenSize))
     }
 
     /// A Command key in the message field that the field has no use for does what it does on the

@@ -138,8 +138,8 @@ floor      = smallest note text / (new text size × screen scale × reader scale
   16 px by default. A 300 by 200 pt crop gets 0.47 from the floor. A capture on a 1x display has
   half as many px per side, so its crops hardly shrink.
 - The mark scale is set when the drawing is made and written into its file. A drawing keeps it when
-  its image reopens on another display and after the rule changes. A tweak that changes the rule
-  rescales the drawing open in the editor, which is not an undo step.
+  its image reopens on another display and after the rule changes. Its power or floor rescales the
+  open drawing at its own backing scale, which is not an undo step.
 - The editor fits a small crop to a larger frame, so its marks look bigger on screen than a full
   capture's. They cover the same share of the picture as in the PNG.
 
