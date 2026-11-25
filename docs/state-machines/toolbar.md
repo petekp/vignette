@@ -183,7 +183,7 @@ Owner: `Model.focus` (`AnnotatorToolbar+Model.swift`), `keyed`, `tookKeysOnOpen`
 
 Decides whether the bar's panel or the editor has the keys. Only a press on the message field or an explicit ask lets the panel take them.
 
-**States**: the panel is key or not (`panel.isKeyWindow`, mirrored by `keyed` through `didBecomeKey` and `didResignKey`). `focus` is nil, a tool, `.pins` (there while `pinCount` is above 0; Space opens the list of pins a turn later), copy, the target, an action, or `.message`. `tookKeysOnOpen` says the field got the keys without a press.
+**States**: the panel is key or not (`panel.isKeyWindow`, mirrored by `keyed` through `didBecomeKey` and `didResignKey`). `focus` is nil, a tool, `.pins` (there while `pinCount` is above 0; Space opens the list of pins a turn later, `docs/rules/annotator-toolbar.md`), copy, the target, an action, or `.message`. `tookKeysOnOpen` says the field got the keys without a press.
 
 **Transitions**
 

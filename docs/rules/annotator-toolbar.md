@@ -11,8 +11,8 @@ Where Send starts is in `send-start.md`, and the target and its menu are in `ses
   and the bar calls `setTool`, `send` and `done` on the editor, `send` through `onSend` and
   `EditorView.send(to:)`. The destination Send was pressed for travels in the editor's send effect (`EditorCore.Effect.send(_:to:)`), so a press the editor
   ignores, as while it closes, leaves nothing for the next image. A key's send carries no
-  destination and goes where the bar's filled button sends. The bar is tools, one divider, then
-  what `ToolbarOffer` says the image offers: Copy alone when there is no session to send to; Copy,
+  destination and goes where the bar's filled button sends. The bar is tools, the Pins button while
+  a pin has a number, one divider, then what `ToolbarOffer` says the image offers: Copy alone when there is no session to send to; Copy,
   the target, a message field and Send; or the message field and Reply on a card that names the
   session it came from (an agent's reply, or a push with `session=`). Reply is unavailable while
   there is no message and the drawing is exactly what the agent sent (`Model.nothingToReply`,
@@ -78,4 +78,12 @@ Where Send starts is in `send-start.md`, and the target and its menu are in `ses
   the focused control, and `annotator.toolbarKey` says whether the bar's panel has the keys. The
   bar draws its own tooltips (`TipSpot`, `TipLabel`): AppKit shows a window's tooltips only while
   it is key or was the last one clicked; `allowsToolTipsWhenApplicationIsInactive` did not help.
+- The Pins button shows how many pins have a number, in a badge beside the word, and VoiceOver
+  reads it as its value (`ToolbarView.pinsButton`). The editor reports the count through
+  `EditorPinUI.onCount`, which sets `Model.pinCount`, and the button comes and goes with the
+  count, as a control the offer adds does. Tab reaches it after the tools (`Control.pins`). A press,
+  or Space a turn later as for the target's menu, opens the list of every pin above the button
+  (`AnnotatorToolbar.showPins`, `onPins`, `EditorView.showPinList`). The controller closes the list
+  when another image opens or the editor leaves. `docs/rules/editor-and-drawings.md` says what a
+  pick does.
   `docs/annotator-toolbar-2026-09-19.md` has the numbers.
