@@ -86,6 +86,28 @@ extension EditorCore {
         insert(candidate)
     }
 
+    /// Copies of the selection 10 pt right and down, kept inside the image, selected.
+    mutating func duplicate() {
+        let marks = drawing.marks.filter { selection.contains($0.id) }
+        guard !marks.isEmpty else { return }
+        let offset = geometry.pt(Self.copyOffset)
+        insert(geometry.placedGroup(marks.map(Self.fresh), offset: CGVector(dx: offset, dy: offset), keepingLines: true), as: .duplicate)
+    }
+
+    /// Puts `marks` on top as one step named `name`, selected.
+    mutating func insert(_ marks: [Mark], as name: StepName = .paste) {
+        guard !marks.isEmpty else { return }
+        step(named: name) { core in
+            for mark in marks { core.add(mark) }
+            core.selection = Set(marks.map(\.id).filter { core.mark($0) != nil })
+        }
+    }
+
+    /// A mark with the same fields and a new id.
+    static func fresh(_ mark: Mark) -> Mark {
+        Mark(geometry: mark.geometry, agent: mark.agent, agentName: mark.agentName)
+    }
+
     private static func scaled(_ rect: CGRect, by factor: CGFloat) -> CGRect {
         CGRect(x: rect.minX * factor, y: rect.minY * factor, width: rect.width * factor, height: rect.height * factor)
     }
