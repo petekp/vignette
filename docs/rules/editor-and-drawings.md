@@ -1,12 +1,12 @@
 # The editor and drawings
 
-- The drawing editor is Swift, in `Sources/`. `Drawing.swift` is a drawing and its marks, the file
+- The drawing editor is Swift, in `Sources/`. `Drawing.swift` is a drawing, its marks and its pins (`Pin.swift`), the file
   format, and the one validator for files, pastes and agents' marks. `EditorCore.swift` is the
   editor's reducer, with `EditorGeometry.swift` and `EditorHistory.swift`. `EditorView.swift` hosts
   it in AppKit. `EditorLayers.swift` draws the picture and the overlay, `EditorTextView.swift` the
   text being typed, and `MarkLayers.swift` the marks, for the editor, the cards (`MarksView.swift`)
   and the flights. `MarkRendering.swift` is the renderer and `MarkGeometry.swift` the geometry it
-  shares; `AgentMarks.swift` turns an agent's marks into a
+  shares; `PinTeardrop.swift` is a pin's teardrop for both; `AgentMarks.swift` turns an agent's marks into a
   drawing's, `RenderingQueue.swift` runs the renderings, and `Drawings.swift` keeps the drawings on
   disk. `docs/editor.md` says how the editor behaves.
 - The editor is a pure reducer and a view that decides nothing. `EditorCore.reduce` takes one
@@ -48,6 +48,12 @@
   every line's baseline from `TextLayout` through its layout manager's delegate, so typing and the
   drawn text meet within half a point. The badge's logo comes from `AgentLogos`, which rasterizes
   `Resources/agents/<name>.svg` once so any thread can draw it.
+- A pin is drawn above every mark, as a teardrop whose tip is its point, or its area's top-left
+  corner, with its body up and to the right. Where that body and its edge would cross the picture's
+  top edge it goes below the tip, and where they would cross the right edge it goes to the left.
+  The orientation is worked out each time from the picture at the drawing's own size and is never
+  stored, so every drawer agrees (`PinTeardrop.facing`). `MarkLayers` shows pins with `PinLayer`
+  and `MarkRendering` draws them with `Pin.draw`, from the same paths.
 - `MarkLayers` is the one on-screen drawer for a drawing's marks: the editor (`EditorPicture`), a card
   (`MarksView`) and a flight, so a mark looks the same in each and nothing steps when a flight hands
   over to the editor. A text is a bitmap the renderer draws off the main thread, on
@@ -71,22 +77,22 @@
   (Copy Drawing, Stitch, a drag) asks `Drawings.current(of:)`, which answers the open drawing over
   the stored one. `Drawings` reaches the editor only through `OpenDrawing`, which `EditorView` is.
   Agents' marks arrive through `Drawings.add` (`built`, or `saved` when they join the open drawing:
-  the editor's `join` answers the joined drawing and `add` writes it). A drawing with no marks removes its file, unless the file holds a message. The file also keeps
+  the editor's `join` answers the joined drawing and `add` writes it). An empty drawing, with no marks and no pins (`Drawing.isEmpty`), removes its file, unless the file holds a message. The file also keeps
   what was last typed in the message field for the screenshot (`message`, `docs/drawing-file.md`),
   so the screenshot opens in the editor with it again: after Send, Reply, Copy, Esc, a failed send
   or a relaunch alike. The editor's hand-overs carry the field's words, and the field's own changes
   are written 0.3 s after the last one (`Drawings.keepMessage`, `[drawing] message saved` or
   `message removed`), beside the marks the file holds. `Drawings.keys` names the screenshots with
-  marks and `Drawings.messages` those with a message; a rename, a removal and the sweep move or
+  a drawing, marks or pins, and `Drawings.messages` those with a message; a rename, a removal and the sweep move or
   remove both. The field holding only those words counts as untouched until something is typed
   (`Model.messageAsOpened`, `docs/rules/annotator-toolbar.md`), since the session Vignette picked
   may not be the one they were typed for. When the field takes the keys on its own or for M or P,
-  its caret goes after the words, where AppKit would select them all. A drawing with marks whose screenshot is gone is not
+  its caret goes after the words, where AppKit would select them all. A drawing that is not empty whose screenshot is gone is not
   written (`[drawing] dropped <name>: its screenshot is gone`). The editor hands its drawing over
   through `Drawings.handOver`. When that write fails after the editor let go of the drawing, the
   card says "Not saved" (`Drawings.onWriteFailed`, `ThumbnailController.showNotSaved`), and after
   Done it lands without Copied. While the editor holds the drawing, the next hand-over writes it
-  again. An empty drawing that a newer build's file refuses is not reported, since no marks are
+  again. An empty drawing that a newer build's file refuses is not reported, since nothing drawn is
   lost. `add`, a reply's install and live ink write through `write`, which answers its caller and
   puts nothing on a card. `onChange` hands each card its
   drawing, so a write reaches the card at once. `load` takes a list and reads it in one job off the
@@ -130,7 +136,7 @@
   clipboard callers supply only the pending result. Completed files stay until the person deletes
   them. The source-name prefix respects filename and full-path limits, including the physical
   path behind directory symlinks, while keeping the full result id and `-annotated.png` suffix
-  (`docs/adr/0018-rendered-files-are-immutable-results.md`). A drawing with no marks copies the
+  (`docs/adr/0018-rendered-files-are-immutable-results.md`). An empty drawing copies the
   original file and writes nothing. Send renders even an empty drawing through the queue, to preserve displayed orientation
   and DPI, and writes no file beside the source.
 - A mark's colour says who drew it and is not stored: `Mark.color` names a person's colour or the
@@ -149,7 +155,7 @@
   image (`Stitch.readerScale`) under `ui.smallestNoteText` px. Every drawer converts through
   `pointScale` alone, so the editor, the text being typed, cards, flights, renderings and stitches
   draw the same size, and so does an older build that shares the drawings folder. The file writes
-  `markScale` only when it is under 1, and the format's version stays 1
+  `markScale` only when it is under 1, which leaves the format's version as it is
   (`docs/adr/0025-marks-are-sized-to-the-screenshot.md`). A stored drawing keeps both, so a mark
   keeps its size in the image when the drawing is opened on another screen or after the rule
   changes. A change to `ui.markScalePower` or `ui.smallestNoteText` rescales the open drawing

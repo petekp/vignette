@@ -25,7 +25,7 @@ final class DrawingsHistoryTests: XCTestCase {
         let shot = try writeTestImage(width: 300, height: 200, space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)), in: dir) { _, _ in (0xe0, 0x31, 0x31) }
         let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
         let theirs = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))
-        let drawn = EditorHistory(undo: [.marks(EditStep(name: .rectangle, changes: [EditStep.Change(id: theirs.id, before: nil, after: PlacedMark(mark: theirs, index: 0))],
+        let drawn = EditorHistory(undo: [.drawing(EditStep(name: .rectangle, changes: [EditStep.Change(id: theirs.id, before: nil, after: PlacedMark(mark: theirs, index: 0))],
                                                           selectionBefore: [], selectionAfter: [theirs.id]))])
         drawings.write(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [theirs]), history: drawn, reason: "saved")
 
@@ -45,7 +45,7 @@ final class DrawingsHistoryTests: XCTestCase {
         let shot = try writeTestImage(width: 300, height: 200, space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)), in: dir) { _, _ in (0xe0, 0x31, 0x31) }
         let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
         let mark = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))
-        let drawn = EditorHistory(undo: [.marks(EditStep(name: .rectangle, changes: [EditStep.Change(id: mark.id, before: nil, after: PlacedMark(mark: mark, index: 0))],
+        let drawn = EditorHistory(undo: [.drawing(EditStep(name: .rectangle, changes: [EditStep.Change(id: mark.id, before: nil, after: PlacedMark(mark: mark, index: 0))],
                                                           selectionBefore: [], selectionAfter: [mark.id]))])
         let drawing = Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [mark])
         drawings.write(drawing, message: "the button", history: drawn, reason: "saved")

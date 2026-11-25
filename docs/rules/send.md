@@ -82,7 +82,7 @@
   next image's toolbar never shows a send that is not its own. A list of agent sessions that
   arrives after its opening ended is dropped as well, including a close and reopen of the same
   image. Both discovery continuations compare `annotator.opening`. A rendering that fails is a
-  refusal, never a send of the bare screenshot: only a drawing with no marks sends the picture
+  refusal, never a send of the bare screenshot: only an empty drawing sends the picture
   itself, and it goes through PNG whatever the capture's own format is. Reply to the card's own
   agent session, with the drawing exactly as the agent sent it (`Agent.hasSentDrawing`), sends the
   person's words and no picture (`ScreenshotRequests.Picture.unchanged`). A PNG card needs no

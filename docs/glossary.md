@@ -85,7 +85,8 @@ The drawing surface inside the annotator: its tools, its marks and its undo hist
 _Avoid_: Canvas
 
 **Drawing**:
-All the marks on one screenshot. It is kept apart from the screenshot, which is never changed.
+All the marks and pins on one screenshot. It is kept apart from the screenshot, which is never
+changed.
 _Avoid_: Annotation, layer, overlay
 
 **Live ink**:
@@ -125,6 +126,24 @@ _Avoid_: Annotation, shape when a note is included
 **Note**:
 A mark that holds words, drawn as a tag. An agent's note carries a badge naming the agent.
 _Avoid_: Text box, label, comment
+
+**Pin**:
+A numbered place on a screenshot, a point or an area, that holds one or more comments. On the
+picture it shows as a teardrop holding its number, whose tip marks the place: red for a person's
+pin, indigo for an agent's. A pin is part of the drawing and is not a mark.
+_Avoid_: Badge, marker, comment
+
+**Comment**:
+The words one person or one agent wrote on a pin. A pin's comments are kept in the order they were
+written. Words drawn on the picture are a note, never a comment.
+
+**Pin number**:
+The number a pin shows, from 1. A deleted pin's number is never given to another pin on that
+screenshot while its drawing file exists.
+
+**Cluster**:
+Pins too close to tell apart at the current zoom, drawn as one teardrop widened to name them, such
+as "3 · 4".
 
 **Rendering**:
 A screenshot with its drawing drawn into it, as one image. Copy, Send and a drag carry it.

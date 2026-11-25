@@ -14,9 +14,10 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 - `gesture: Gesture?` with `Phase`: `pressed`, `drawing(id)`, `wrapping`, `brushing`, `moving(originals:copies:)`, `resizing(id, pos)`, `draggingEnd(id, kind)`, `bending(id)`.
 - `typing: Typing?` (type): the text mark being typed.
 - `edit: MarkEdit?`: the open undo step. Set while a gesture has changed marks, or while typing.
-- `undoSteps`, `redoSteps` (`[HistoryStep]`, each a marks step or a message step, with a `StepName`), `message`, `typingMessage` (the top step is the message typing that runs on), `nudging`, `heldArrows`.
+- `undoSteps`, `redoSteps` (`[HistoryStep]`, each a drawing step, its marks by index and its pins by `id`, or a message step, with a `StepName`), `message`, `typingMessage` (the top step is the message typing that runs on), `nudging`, `heldArrows`.
 - `noteMark: NoteMark?` (type): see HeldKey below. `holdsKey` is `noteMark?.toolBefore != nil`.
 - `unsaved`: the drawing changed since the last hand-over.
+- `drawing.pins` and `drawing.nextPin`: no input adds, moves or deletes a pin yet, and only a drawing step's undo or redo changes `pins`. `nextPin` never goes down.
 - `selection`, `hover`, `tool`, `zoom`, `style`, `metrics`, `markStyle`.
 - `finishes`: what Return and Cmd+Return do. The host sets it from the toolbar's offer.
 - `reportedTool`, `reportedCursor`, `announcedSelection`: what `settle()` last told the view.
@@ -50,7 +51,7 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 | open | `tweaksChanged` | open | Replaces `style`, `metrics`, `markStyle` only. |
 | open | `done`, `send` | open | `finishForHost`, then `.done(drawingForHost)` or `.send(drawingForHost)`. Does not cancel the timer, clear `unsaved`, or close: the host parks later. |
 | open | `park` | not open | `finishForHost`, `.cancelTimer`, `.handOver(drawingForHost)`, `unsaved = false`, `isOpen = false`; hover, pointer and `heldArrows` cleared. `noteMark`, `undoSteps`, `selection`, `finishes` stay. |
-| open, idle | `keyDown` Cmd+Z, Shift+Cmd+Z | open | `undo` or `redo`; `.announce("Undo <name>")` in place of the selection's. A marks step calls `changed()`; a message step sets `message` and emits `.message(words)`. |
+| open, idle | `keyDown` Cmd+Z, Shift+Cmd+Z | open | `undo` or `redo`; `.announce("Undo <name>")` in place of the selection's. A drawing step sets the marks and the pins it touched, pins in number order, and calls `changed()`; a message step sets `message` and emits `.message(words)`. |
 | open | `messageChanged(words, name)` | open | Nothing when `words == message`. Typing while `typingMessage` replaces the top step's `after`; anything else pushes a message step, which clears redo. No hand-over: the host stores the message. |
 | open | `messageTypingEnded` | open | `typingMessage = false`, so the next typing in the field is a new step. |
 | open, idle | `keyDown` Esc | open | `.close`. The host decides. |

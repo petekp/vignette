@@ -27,6 +27,8 @@ How the drawing editor's undo and redo behave. It is section 7 of [the drawing e
 
 - Selecting is never a step. Undo and redo put back the selection that belonged to the step.
 - Cmd+Z during a drag cancels the drag and undoes nothing more.
+- A step that changes the drawing holds its marks and its pins together, so a step that moves or
+  deletes both undoes as one. Undoing a deleted pin brings it back with its own number.
 - The message field's steps are in the one history, in order with the marks. While the field has
   the keys, Cmd+Z undoes the last step, whether it changed the marks or the words, and the keys
   stay in the field. Undoing a step of the field's words while the image has the keys changes the
@@ -44,5 +46,5 @@ How the drawing editor's undo and redo behave. It is section 7 of [the drawing e
   it is open. A drawing changed any other way outside the editor, such as by a reply's drawing
   installed, opens with no history. An image replaced by one of another size
   opens without its drawing, and so without its history. A rename keeps both. A drawing with no
-  marks and no message keeps no file, and so no history.
+  marks, no pins and no message keeps no file, and so no history.
 - A file keeps the newest 100 steps, in about 256 KB.
