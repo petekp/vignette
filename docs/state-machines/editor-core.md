@@ -123,4 +123,4 @@ A tool key pressed right after a box or arrow is drawn may be the first letter o
 
 Owner: `HeldToolLetter.swift:7`. Tests: `ToolbarOfferTests` (not covered by this area; [the toolbar section](toolbar.md#heldtoolletter-explicit) owns the field's use).
 
-The hold itself, written once: the editor's `startsNote` asks it while a box or arrow is armed, and the toolbar's message field while the field is untouched. What arms each stays with its owner. State: `toolBefore: Tool?` (`HeldToolLetter.swift:9`). `key(...)` returns `hold`, `type(restoring:)`, `pass` or `swallow`. `keepTool()` runs on a press or lost keys. `Model.begin` resets it (`AnnotatorToolbar.swift:153`).
+The hold itself, written once: the editor's `startsNote` asks it while a box or arrow is armed, and the toolbar's message field while the field is untouched. What arms each stays with its owner. State: `toolBefore: Tool?` (`HeldToolLetter.swift:9`). `key(...)` returns `hold`, `type(restoring:)`, `pass` or `swallow`. `keepTool()` runs on a press or lost keys. `Model.begin` resets it (`AnnotatorToolbar.swift:144`).

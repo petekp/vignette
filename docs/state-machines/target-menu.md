@@ -4,7 +4,7 @@ This file continues [The toolbar and destinations: the toolbar](toolbar.md), whi
 
 ### Target menu pick (implicit)
 
-Owner: `AnnotatorToolbar+TargetMenu.swift:11-21` (`pressTarget`), `:26-28` (`openTargetMenuFromKeys`), `:35-54` (`showTargetMenu`); `AnnotatorToolbar+TargetPick.swift:9-22` (`onPick`); `AnnotatorToolbar.swift:285-289` (`onMenuKey`), `:47-49` (`targetMenuImage`); `AnnotatorToolbar+Panel.swift:77` (the press), `:90` (Up or Down); `AnnotatorToolbar+Focus.swift:26` (Space). Tests: `ToolbarOfferTests.testAPickInTheTargetsMenuLandsOnlyOnTheImageWhoseMenuItCameFrom`.
+Owner: `AnnotatorToolbar+TargetMenu.swift:11-21` (`pressTarget`), `:26-28` (`openTargetMenuFromKeys`), `:35-54` (`showTargetMenu`); `AnnotatorToolbar+TargetPick.swift:9-22` (`onPick`); `AnnotatorToolbar.swift:267` (`onMenuKey`), `:43-44` (`targetMenuImage`); `AnnotatorToolbar+Panel.swift:77` (the press), `:90` (Up or Down); `AnnotatorToolbar+Focus.swift:26` (Space). Tests: `ToolbarOfferTests.testAPickInTheTargetsMenuLandsOnlyOnTheImageWhoseMenuItCameFrom`.
 
 A press opens the target menu at once and the keys open it a turn later. A pick is applied one turn later.
 
@@ -18,7 +18,7 @@ A press opens the target menu at once and the keys open it a turn later. A pick 
 | closed | a press that fails one of those guards | closed | `pressTarget` returns false and the press goes on to the bar |
 | closed | Space on the focused target, or Up on the message field's first line or Down on its last | open, one turn later | `openTargetMenuFromKeys` queues `showTargetMenu(fromKeys: true)`, which highlights the first row, the row Return picks |
 | closed | `showTargetMenu` with no target offer or `targetFrame == nil` | closed | refused (`AnnotatorToolbar+TargetMenu.swift:36`) |
-| closed | `showTargetMenu` passes its guard | open | builds an `NSMenu` from `model.destinations + model.startable`; `model.targetMenuOpened()` records `imageNumber` as `targetMenuImage`; `TargetShade.show(open: true)` darkens the target; `popUp` |
+| closed | `showTargetMenu` passes its guard | open | builds an `NSMenu` from `model.listing.sessions`; `model.targetMenuOpened()` records `imageNumber` as `targetMenuImage`; `TargetShade.show(open: true)` darkens the target; `popUp` |
 | open | item chosen | pick queued | `TargetMenuActions.pick` (`SessionMenuPicks.swift:10`) calls `onPick`, which reads `targetMenuImage` and calls `DispatchQueue.main.async` |
 | open | the menu closes, with a pick or without | closed, or pick queued | `popUp` returns and `TargetShade.show(open: false)` lightens the target |
 | pick queued | the block runs | closed | `model.pick(destination)` under `withAnimation`, if `shown` and `imageNumber` still equals the `targetMenuImage` read at the pick; else `[send] pick dropped` |
@@ -26,7 +26,7 @@ A press opens the target menu at once and the keys open it a turn later. A pick 
 **Invariants**
 
 - The keys open the menu a turn later so the menu takes keys (comment `AnnotatorToolbar+TargetMenu.swift:23-25`). Checked by: nothing.
-- A pick belongs to the image the menu opened on. Checked by: `ToolbarOfferTests.testAPickInTheTargetsMenuLandsOnlyOnTheImageWhoseMenuItCameFrom`. `targetFrame` comes from SwiftUI geometry and is never cleared (`AnnotatorToolbar.swift:270`).
+- A pick belongs to the image the menu opened on. Checked by: `ToolbarOfferTests.testAPickInTheTargetsMenuLandsOnlyOnTheImageWhoseMenuItCameFrom`. `targetFrame` comes from SwiftUI geometry and is never cleared (`AnnotatorToolbar.swift:204`).
 - The target looks pressed exactly while the menu is open, since `popUp` returns only when it closes. Checked by: nothing.
 
 **Late and concurrent answers**

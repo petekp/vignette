@@ -9,15 +9,12 @@ final class AnnotatorToolbar {
     final class Model: ObservableObject {
         @Published var tool: EditorCore.Tool? = nil
         @Published var shown = false     // drives the entrance and exit
-        /// The agent sessions Send can go to, the one used last first (`DestinationChoice.replacesList`).
-        @Published private(set) var destinations: [AgentDestination] = [] { didSet { refreshTargetRow(); reportOffer() } }
-        /// The sessions Vignette can start, which only the target shows.
-        @Published private(set) var startable: [AgentDestination] = [] { didSet { refreshTargetRow(); reportOffer() } }
+        /// The answer whose sessions the target's menu lists (`DestinationChoice.replacesList`). Whether
+        /// a reply's Claude Code session has closed is read from its `complete`, so the bar shows no
+        /// Reply for a closed one until this image's list does.
+        @Published private(set) var listing = DestinationChoice.Answer.nothingListed { didSet { refreshTargetRow(); reportOffer() } }
         /// Every client has answered. Until then a session missing from the list may only be late.
         @Published private(set) var listed = false
-        /// Every client answered `destinations`. Whether a reply's Claude Code session has closed is
-        /// read from it, so the bar shows no Reply for a closed one until this image's list does.
-        @Published private(set) var destinationsComplete = false { didSet { reportOffer() } }
         /// The session the open image came from, when it names one: an agent's reply, or a push
         /// that said which session it was. The bar is Reply alone, so the target is never guessed at.
         @Published private(set) var replyTo: AgentDestination? { didSet { reportOffer() } }
@@ -29,11 +26,11 @@ final class AnnotatorToolbar {
         /// view body that runs on every keystroke.
         func targetRow(for target: AgentDestination) -> SessionMenu.Row {
             if let cached = cachedTargetRow, cached.destination.id == target.id { return cached }
-            return SessionMenu.row(of: target, among: destinations + startable)
+            return SessionMenu.row(of: target, among: listing.sessions)
         }
 
         private func refreshTargetRow() {
-            cachedTargetRow = target.map { SessionMenu.row(of: $0, among: destinations + startable) }
+            cachedTargetRow = target.map { SessionMenu.row(of: $0, among: listing.sessions) }
         }
         /// The target was picked in the menu, so no later answer changes it.
         private var picked = false
@@ -123,7 +120,7 @@ final class AnnotatorToolbar {
 
 
         var offer: ToolbarOffer {
-            ToolbarOffer(replyTo: replyTo, destinations: destinations, listed: destinationsComplete, target: target, startable: startable)
+            ToolbarOffer(replyTo: replyTo, destinations: listing.list, listed: listing.complete, target: target, startable: listing.startable)
         }
 
         /// Called with the offer each time it changes, whatever changed it: an answer, a new image or a pick.
@@ -149,10 +146,8 @@ final class AnnotatorToolbar {
             picked = false
             carried = carryingTarget && target != nil
             guard !carried else { return }
-            destinations = []
-            startable = []
+            listing = .nothingListed
             target = nil
-            destinationsComplete = false
         }
 
         /// Another client answered. The target settles on the first answer that decides a pick
@@ -160,11 +155,7 @@ final class AnnotatorToolbar {
         /// list, so it never changes under the pointer.
         func answered(_ answer: DestinationChoice.Answer) {
             let list = answer.list
-            if DestinationChoice.replacesList(answer.complete, over: destinationsComplete) {
-                destinations = list
-                startable = answer.startable
-                destinationsComplete = answer.complete
-            }
+            if DestinationChoice.replacesList(answer.complete, over: listing.complete) { listing = answer }
             listed = answer.complete
             if let current = target, let fresh = list.first(where: { $0.id == current.id }) { target = fresh }
             guard !picked else { return }

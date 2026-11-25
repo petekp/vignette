@@ -202,8 +202,7 @@ final class LiveNotePopover: NSObject, NSTextFieldDelegate {
         guard DestinationChoice.replacesList(candidates.complete, over: self.candidates?.complete == true) else { return }
         self.candidates = candidates
         let answer = DestinationChoice.choose(candidates, for: .liveNote(ownPick))
-        // The menu lists the sessions Vignette can start after the running ones (`SessionMenu.ranked`).
-        sessions = answer.list + answer.startable
+        sessions = answer.sessions
         let found = Self.start(pick: answer.pick, handPicked: handPick?.responder, conversing: conversing, responders: responders, list: answer.list)
         guard found != target else { return }
         show(found)

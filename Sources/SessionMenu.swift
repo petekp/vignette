@@ -127,9 +127,10 @@ enum SessionMenu {
     }
 
     /// `destination`'s row among `listed`, as the destination control and live ink's target button
-    /// show it. `listed` is what their menu is built from, the rows that start a session included,
-    /// since the suffix that tells start rows apart is decided over all of them. A session that is not running is titled by its project, which its menu row leaves to
-    /// the header above it; the tooltip keeps the menu row's words.
+    /// show it. `listed` is what their menu is built from (`DestinationChoice.Answer.sessions`), the
+    /// rows that start a session included, since the main clone and the suffix that tells start rows
+    /// apart are decided over all of them. A session that is not running is titled by its project,
+    /// which its menu row leaves to the header above it; the tooltip keeps the menu row's words.
     /// When another such session would read the same, the menu row's suffix follows.
     static func row(of destination: AgentDestination, among listed: [AgentDestination], now: Date = Date()) -> Row {
         let everyone = including(destination, in: ranked(listed, now: now))
@@ -158,6 +159,14 @@ enum SessionMenu {
         let firstStart = destination.startsProcess ? nil : active.firstIndex(where: \.startsProcess)
         everyone.insert(destination, at: firstStart ?? active.endIndex)
         return everyone
+    }
+
+    /// Running session `id` as live ink's note lists `candidates`, and the title a card sent to it
+    /// shows, as the note's target words it. Nil when the note does not list it.
+    static func noteSession(_ id: String, among candidates: DestinationChoice.Candidates) -> (destination: AgentDestination, title: String)? {
+        let note = DestinationChoice.choose(candidates, for: .liveNote(.remembered(nil)))
+        guard let session = note.list.first(where: { $0.id == id }) else { return nil }
+        return (session, cardTitle(of: row(of: session, among: note.sessions)))
     }
 
     /// What the sent card calls `row`'s session: the row's title, or the project of a session Send

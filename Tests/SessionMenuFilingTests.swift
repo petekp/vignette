@@ -55,5 +55,13 @@ final class SessionMenuFilingTests: XCTestCase {
         let beside = fix("m", clone(home + "/Code/aaaa/evercars-backend", remote: "github.com/Ever-Cars/evercars-backend"), used: 3)
         XCTAssertEqual(SessionMenu.menu([a, beside], destination: nil, now: now).topRows.map(\.details), ["~/Code/ever/evercars-backend", ""],
                        "with paths of one length, the first by path is the main clone")
+
+        let startInMine = AgentDestination(id: SessionStart.newRowID(folder: mine), name: "New session", detail: "evercars-backend",
+                                           address: .claudeSession(""), lastUsed: now.addingTimeInterval(-600),
+                                           place: clone(mine, remote: "github.com/Ever-Cars/evercars-backend"), hasOwnName: false,
+                                           folder: mine, start: .new(folder: mine))
+        let offered = DestinationChoice.Candidates(destinations: [b, short], complete: true, fresh: true, startable: [startInMine])
+        XCTAssertEqual(SessionMenu.noteSession("s", among: offered)?.title, "Fix (~/.k/evercars-backend)",
+                       "live ink's note words a card's title over its start rows too, so a clone with only a start row is the main one")
     }
 }

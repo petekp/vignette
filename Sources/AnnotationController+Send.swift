@@ -44,7 +44,7 @@ extension AnnotationController {
     private func logMenuRows(of record: ScreenshotRequests.Record) {
         let model = toolbar.model
         guard model.offer.offersTarget else { return }
-        let top = SessionMenu.menu(model.destinations + model.startable, destination: model.offer.destination,
+        let top = SessionMenu.menu(model.listing.sessions, destination: model.offer.destination,
                                    targetNotFirst: true).topRows.map(\.destination)
         Log.write("[send] menu request=\(record.id) top=\(top.map(TargetMenuActions.loggedName).joined(separator: ","))")
     }

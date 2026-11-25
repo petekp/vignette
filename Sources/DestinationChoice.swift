@@ -65,9 +65,15 @@ enum DestinationChoice {
         /// The sessions Vignette can start, as the listing found them. Only a person's pick starts a
         /// process, so they are never picked and only the menus show them.
         var startable: [AgentDestination] = []
+        /// What a session menu lists, and what its rows' words are decided over
+        /// (`SessionMenu.row(of:among:)`): `list`, then `startable`.
+        var sessions: [AgentDestination] { list + startable }
         /// Every client answered afresh, and its agent listed sessions without the kept pick's, so the
         /// kept pick has ended. An agent that listed none may have failed to answer.
         var keptIsGone = false
+
+        /// Before any client has answered.
+        static let nothingListed = Answer(list: [], complete: false, decided: false, pick: nil)
     }
 
     /// What a listing has found so far: the candidate destinations and the facts that came with them.

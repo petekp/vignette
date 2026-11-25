@@ -16,7 +16,7 @@ Line references are to commit 358d988 unless a finding says otherwise. Those in 
   (`EditorCore.swift:577`), keeping only `zoom` and the pending effects, so `finishes` goes back to
   `Finishes()`, Done for both keys. The comment on `finishes` (`:367`) says opening leaves it alone.
   The host sets it only from `offerChanged` (`AnnotationController.swift:640`), and the bar reports
-  its offer only when it changes (`AnnotatorToolbar.swift:139`); a bar that carries its target
+  its offer only when it changes (`AnnotatorToolbar.swift:130`); a bar that carries its target
   (`Model.begin`'s `carryingTarget`) does not change it. Two replies from one session both offer
   `.reply(S)`, so paging between them never re-reports it. A fresh session list that differs in any
   field re-reports the offer, which hides the bug on the Send path more often than on Reply.
