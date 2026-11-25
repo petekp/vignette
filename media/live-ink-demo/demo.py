@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """Sets the live ink demo's stage: four windows on a plain desktop, each with something to ask about.
 
-    demo.py up [--capture]   lay out the stage; --capture also lets screen recordings see the ink
-    demo.py reset            erase the ink and lay the stage out again, for the next take
-    demo.py down             take the stage down and put Vignette back as it was
+    demo.py up      relaunch Vignette as the demo's copy and lay out the stage
+    demo.py reset   erase the ink and lay the stage out again, for the next take
+    demo.py down    take the stage down and open your own Vignette again
 
 The windows are an invoice and a settings page in a Chrome of the demo's own, launch notes in
 TextEdit, and a failing test in a Ghostty of its own. `docs/live-ink-demo-2026-10-05.md` has the
 beats. Everything the stage makes is under `out/`, which Git ignores.
 
-Live ink leaves its marks out of screen captures, so a recording or a screen share shows none of
-them. `--capture` relaunches the running Vignette as a demo copy that lets captures see the marks:
-it runs on a copy of the settings file and its own screenshot folder, and `down` puts the real
-instance back.
+A take presses keys and draws with the pointer, so it must never reach the Vignette you use.
+`up` quits the running Vignette and opens the same app as the demo's copy: a test launch on a copy
+of your settings file, with live ink on and a screenshot folder of its own, both under
+`out/vignette/`. `down` quits the copy and opens your own Vignette again.
 """
 import json
 import os
@@ -33,6 +33,9 @@ PROFILE = os.path.join(OUT, 'chrome')
 TERMINAL = os.path.join(HERE, 'failing-test.sh')
 NOTES = os.path.join(OUT, 'launch-notes.rtf')
 REAL_SETTINGS = os.path.expanduser('~/.config/vignette/settings.json')
+COPY = os.path.join(OUT, 'vignette')
+SETTINGS = os.path.join(COPY, 'settings.json')
+SHOTS = os.path.join(COPY, 'shots')
 LOG = os.path.expanduser('~/Library/Logs/Vignette.log')
 
 
@@ -95,12 +98,13 @@ def save(state):
 
 # MARK: Vignette
 
-def vignette():
-    """The running Vignette's pid and bundle."""
+def vignettes():
+    """Every running Vignette's pid and bundle."""
+    found = []
     for pid in pids_of(lambda c: c.endswith('.app/Contents/MacOS/Vignette')):
         command = run('ps', '-o', 'command=', '-p', str(pid)).stdout.strip()
-        return pid, command.split('/Contents/MacOS/')[0]
-    return None, None
+        found.append((pid, command.split('/Contents/MacOS/')[0]))
+    return found
 
 
 def url(app, command):
@@ -123,39 +127,85 @@ def bundle_id(app):
     return run('defaults', 'read', os.path.join(app, 'Contents', 'Info'), 'CFBundleIdentifier').stdout.strip()
 
 
-def capture_on(stage):
-    """Relaunches the running Vignette as a copy whose marks screen recordings can see."""
-    pid, app = vignette()
-    if not app:
-        sys.exit('demo: Vignette is not running')
-    folder = os.path.join(OUT, 'vignette')
-    os.makedirs(os.path.join(folder, 'shots'), exist_ok=True)
-    settings = os.path.join(folder, 'settings.json')
-    shutil.copyfile(REAL_SETTINGS, settings)
-    run('defaults', 'write', bundle_id(app) + '.screencapture', 'location', os.path.join(folder, 'shots'))
+def same_path(a, b):
+    """Whether two paths name one file, with links resolved and without case, as APFS compares names."""
+    def comparable(path):
+        return os.path.realpath(os.path.expanduser(path)).lower()
+    return comparable(a) == comparable(b)
+
+
+def isolation_problem(report, stage):
+    """Why the Vignette that wrote `report`, a `[state]` line, is not the stage's copy, or None
+    when it is. A take sends nothing to a Vignette this does not pass."""
+    app = report['app']
+    if same_path(app['settingsFile'], REAL_SETTINGS):
+        return f"Vignette is on your own settings file, {REAL_SETTINGS}, not the demo's copy"
+    if not same_path(app['settingsFile'], SETTINGS):
+        return f"Vignette is on {app['settingsFile']}, not the demo's copy {SETTINGS}"
+    if not same_path(app['watchFolder'], SHOTS):
+        return f"Vignette watches {app['watchFolder']}, not the demo's folder {SHOTS}"
+    if not stage.get('app') or not same_path(app['bundle'], stage['app']):
+        return f"the Vignette that answered is {app['bundle']}, not the stage's {stage.get('app')}"
+    if app['pid'] != stage.get('vignette'):
+        return f"the Vignette that answered is pid {app['pid']}, not the stage's copy, pid {stage.get('vignette')}"
+    return None
+
+
+def copy_settings():
+    """Writes the demo's settings file: yours, with live ink on and the demo's screenshot folder."""
+    try:
+        with open(REAL_SETTINGS) as f:
+            settings = json.load(f)
+    except (OSError, ValueError) as error:
+        sys.exit(f'demo: could not read {REAL_SETTINGS} to copy it: {error}')
+    settings.update(liveInk=True, screenshotsFolder=SHOTS)
+    os.makedirs(SHOTS, exist_ok=True)
+    with open(SETTINGS, 'w') as f:
+        json.dump(settings, f, indent=2)
+
+
+def isolate(stage):
+    """Quits the running Vignette and opens the same app as the demo's copy, a test launch on
+    `SETTINGS` that watches `SHOTS`. Saves the stage as soon as yours has quit, so `down` can open
+    it again even when the rest of `up` fails."""
+    running = vignettes()
+    if not running:
+        sys.exit('demo: Vignette is not running; open it, then run `demo.py up` again')
+    if len(running) > 1:
+        sys.exit('demo: more than one Vignette is running; quit all but one: '
+                 + ', '.join(f'{app} (pid {pid})' for pid, app in running))
+    pid, app = running[0]
+    copy_settings()
+    # A test launch reads its save location from this domain, never com.apple.screencapture.
+    run('defaults', 'write', bundle_id(app) + '.screencapture', 'location', SHOTS)
     stop(pid, timeout=10)
+    if alive(pid):
+        sys.exit(f'demo: Vignette (pid {pid}) did not quit')
+    stage['app'] = app
+    save(stage)
     claude = shutil.which('claude') or os.path.expanduser('~/.local/bin/claude')
-    run('open', '-g', '--env', f'VIGNETTE_SETTINGS={settings}', '--env', 'VIGNETTE_SHARE_LIVE_INK=1',
-        '--env', f'VIGNETTE_CLAUDE={claude}', app)
-    copy = wait_for('the demo copy of Vignette', lambda: vignette()[0])
+    run('open', '-g', '--env', f'VIGNETTE_SETTINGS={SETTINGS}', '--env', f'VIGNETTE_CLAUDE={claude}', app)
+    stage['vignette'] = wait_for("the demo's copy of Vignette", lambda: next((p for p, _ in vignettes()), None))
+    save(stage)
     time.sleep(2)
-    report = state(app)
-    if report['app']['settingsFile'] != settings:
-        sys.exit(f"demo: the copy that came up runs on {report['app']['settingsFile']}; stopping")
-    stage.update(capture=True, app=app, vignette=copy)
-    print('Vignette relaunched so recordings see the ink')
+    problem = isolation_problem(state(app), stage)
+    if problem:
+        sys.exit(f'demo: {problem}; run `demo.py down` to open your own Vignette again')
+    print(f"Vignette is the demo's copy now, on {SETTINGS}")
 
 
-def capture_off(stage):
-    """Puts the real Vignette back after `capture_on`."""
-    if not stage.get('capture'):
+def restore(stage):
+    """Quits the demo's copy and opens your own Vignette again, after `isolate`."""
+    if not stage.get('app'):
         return
     stop(stage.get('vignette'), timeout=10)
+    if stage.get('vignette') and alive(stage['vignette']):
+        sys.exit(f"demo: the demo's copy of Vignette (pid {stage['vignette']}) did not quit")
     run('open', '-g', stage['app'])
-    wait_for('Vignette', lambda: vignette()[0])
+    wait_for('Vignette', vignettes)
     time.sleep(2)
     report = state(stage['app'])
-    if report['app']['settingsFile'] != REAL_SETTINGS:
+    if not same_path(report['app']['settingsFile'], REAL_SETTINGS):
         print(f"demo: Vignette came back on {report['app']['settingsFile']}; quit it and open it again")
     else:
         print('Vignette is back on its own settings')
@@ -228,14 +278,14 @@ def ghostty(frame):
     return pid
 
 
-def up(capture=False):
+def up():
     stage = saved()
     if stage.get('desktop'):
         sys.exit('demo: the stage is up already; run `demo.py down` or `demo.py reset`')
     os.makedirs(OUT, exist_ok=True)
     build_stage_bin()
-    if capture and not stage.get('capture'):
-        capture_on(stage)
+    if not (stage.get('vignette') and alive(stage['vignette'])):
+        isolate(stage)
     stage['desktop'], screen = desktop()
     frames = layout(screen)
     stage['terminal'] = ghostty(frames['terminal'])
@@ -247,9 +297,8 @@ def up(capture=False):
 
 
 def take_down(stage):
-    _, app = vignette()
-    if app:
-        url(app, 'live-ink-clear')
+    if stage.get('vignette') and alive(stage['vignette']):
+        url(stage['app'], 'live-ink-clear')
     stop(stage.get('chrome'))
     stop(stage.get('terminal'))
     if stage.get('textedit') and not stage.get('textedit_was_running'):
@@ -268,7 +317,7 @@ def take_down(stage):
 def down():
     stage = saved()
     take_down(stage)
-    capture_off(stage)
+    restore(stage)
     if os.path.exists(PIDS):
         os.remove(PIDS)
     print('The stage is down.')
@@ -285,7 +334,7 @@ def reset():
 if __name__ == '__main__':
     command = sys.argv[1] if len(sys.argv) > 1 else ''
     if command == 'up':
-        up(capture='--capture' in sys.argv)
+        up()
     elif command == 'down':
         down()
     elif command == 'reset':
