@@ -50,7 +50,7 @@ Side tables: `picks[askID]` (the answer a picked button was picked under, plus `
 
 **Invariants**
 
-- Each ask that leaves the list says `ended` first, oldest first, but a follow-up an answer is put back in place of: its `restore` names it (`followUp`) and ends it. Checked by: `testRandomSequencesKeepTheInvariants` (`LiveAsksTests:984`).
+- Each ask that leaves the list says `ended` first, oldest first, but a follow-up an answer is put back in place of: its `restore` names it (`followUp`) and ends it. Checked by: `LiveAsksTests.testRandomSequencesKeepTheInvariants`.
 - Asks go to the responder one at a time, in order, each only when `waiting`. Checked by: the same test.
 - What comes back for an ask no longer under way changes nothing. Checked by: the same test, `testAReplyAndAnAnswerFromADismissedAskAreDropped`, `testAPacketFromAClearedAskIsDroppedAndTheNextAskTakesItsOwn`.
 - `interrupt` is emitted only for the ask the responder has. Checked by: the same test, `testEscStopsTheNewestAskFirstAndTheResponderOnlyForTheOneItHas`.
@@ -60,7 +60,7 @@ Side tables: `picks[askID]` (the answer a picked button was picked under, plus `
 - An erased mark loses its roles and its finish; asks under way are unchanged. Checked by: `testAnErasedMarkLosesItsRolesAndItsFinish`.
 - Overlapping finish timers: the first ends the marks. Checked by: `testAnOverlappingFinishIsEndedByTheFirstTimer`, `testAFinishAfterAClearDoesNothing`.
 - Ids strictly increase. Checked by: `testRandomSequencesKeepTheInvariants`.
-- Every ask ends by answer, failure, stop or clear. Checked by: `LiveResponderTests.testAnAskUnderWayWhenTheSignInGoesFailsOnce` for the sign-out (**fixed**, [asks-1](findings.md#asks-1)). The test model drops a responder-held ask only on `clear` (`LiveAsksTests:1817`), so it assumes the responder drops one no other way.
+- Every ask ends by answer, failure, stop or clear. Checked by: `LiveResponderTests.testAnAskUnderWayWhenTheSignInGoesFailsOnce` for the sign-out (**fixed**, [asks-1](findings.md#asks-1)). The test model drops a responder-held ask only on `clear` (`LiveAsksTests.testRandomSequencesKeepTheInvariants`), so it assumes the responder drops one no other way.
 - Erasing the reply mark of an ask under way: the ask keeps `say`, and the next `replyCame` draws it again. Checked by: nothing ([asks-6](plausible-findings-requests-to-live-ink.md#asks-6)).
 
 **Late and concurrent answers**

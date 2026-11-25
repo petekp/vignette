@@ -10,6 +10,7 @@ Keep them current. A change that adds a state, an event, a timer or a callback t
 machines updates its section in the same commit. A new finding goes in [Findings](state-machines/findings.md#findings) with
 its evidence and status. A map names a symbol and the file it is in, never a line number, which
 drifts with every edit. The findings and issues cite lines at the commit they name.
+`scripts/check-map-line-numbers.py`, run by `scripts/build.sh --test`, fails a map that cites a line.
 
 ## Terms
 

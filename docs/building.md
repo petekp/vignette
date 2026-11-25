@@ -7,7 +7,9 @@
 ./scripts/build.sh --test # the same build plus the unit tests
 ```
 
-Requires Xcode 27 or later and `xcodegen` (`brew install xcodegen`). The build also needs Xcode's
+Requires Xcode 27 or later and `xcodegen` (`brew install xcodegen`). `scripts/build.sh --test`
+also needs `deno` (`brew install deno`) for the site's JavaScript and `uv` (`brew install uv`) for
+pyflakes, and fails without them. The build also needs Xcode's
 Metal toolchain, for `Sources/IntroFunnel.metal`. Xcode downloads it separately:
 
 ```
