@@ -239,6 +239,11 @@ final class PinDrawingTests: XCTestCase {
         var bare = drawing
         bare.pins = []
         XCTAssertNil(Pin.clipboardWords(of: bare))
+        var shelly = drawing
+        shelly.pins = [pin(1, .point(.zero), "Too tight"), pin(2, .point(.zero), "runs $(rm -rf ~)"),
+                       pin(3, .point(.zero), "see `ls`"), pin(4, .point(.zero), "it's wide")]
+        XCTAssertEqual(Pin.clipboardWords(of: shelly),
+                       #"Pin 1: Too tight. Pin 2: 'runs $(rm -rf ~)' Pin 3: 'see `ls`' Pin 4: 'it'\''s wide.'"#)
     }
 
     func testAPinChangesTheFingerprintOfWhatTheAgentSent() throws {

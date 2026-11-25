@@ -56,17 +56,19 @@ extension Pin {
     /// The pins' words in number order, as Send's line and the clipboard's text carry them:
     /// `Pin 1: remove extra margin. Pin 3: too narrow. / can it glow?`. Each comment is put on one line
     /// (`asOneLine`), a pin's comments are joined by " / ", and a pin's words end in a full stop unless
-    /// they end in other closing punctuation.
-    static func lineWords(_ pins: [Pin]) -> String {
+    /// they end in other closing punctuation. `quoting` is applied to each pin's words after its number.
+    static func lineWords(_ pins: [Pin], quoting: (String) -> String = { $0 }) -> String {
         pins.sorted { $0.number < $1.number }
-            .map { pin in "Pin \(pin.number): " + ended(pin.comments.map(\.text.asOneLine).joined(separator: " / ")) }
+            .map { pin in "Pin \(pin.number): " + quoting(ended(pin.comments.map(\.text.asOneLine).joined(separator: " / "))) }
             .joined(separator: " ")
     }
 
     /// What a rendering's file carries as text after its path on the clipboard: the pins' words, or nil
-    /// for a drawing without pins.
+    /// for a drawing without pins. A terminal pastes this text, so a pin's words holding a character a
+    /// shell would act on are single-quoted (`Clipboard.shellWords`). Send's line is never read by a
+    /// shell, so it carries the words as typed.
     static func clipboardWords(of drawing: Drawing) -> String? {
-        drawing.pins.isEmpty ? nil : lineWords(drawing.pins)
+        drawing.pins.isEmpty ? nil : lineWords(drawing.pins, quoting: Clipboard.shellWords)
     }
 
     /// `words` with a full stop added when they end in a letter or a digit, so words that end in their
