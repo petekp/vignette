@@ -59,14 +59,34 @@ enum Clipboard {
         pb.setString(text, forType: .string)
     }
 
-    /// One path per line, single-quoted when it contains spaces so it survives a shell, followed on
-    /// its line by a space and its `words` when it has any: a rendering's pins' words (`Pin.lineWords`).
+    /// One path per line, quoted as one shell word (`shellWord`), followed on its line by a space and
+    /// its `words` when it has any: a rendering's pins' words (`Pin.clipboardWords`).
     static func pathsText(_ urls: [URL], words: [URL: String] = [:]) -> String {
         urls.map { url in
-            let p = url.path
-            let path = p.contains(" ") ? "'" + p.replacingOccurrences(of: "'", with: "'\\''") + "'" : p
+            let path = shellWord(url.path)
             return words[url].map { "\(path) \($0)" } ?? path
         }.joined(separator: "\n")
+    }
+
+    /// `text` as a shell reads one word: as it is when every character is plain, single-quoted otherwise.
+    /// Plain is a letter, a digit or one of `-_./,:+@%`. Pasted into a terminal, quoted text stays text:
+    /// a `$(…)`, a backtick, a `;` or a glob in it does nothing.
+    static func shellWord(_ text: String) -> String {
+        text.allSatisfy(isPlainInShell) ? text : shellQuoted(text)
+    }
+
+    /// `shellWord` with spaces plain too, for words after a path: a shell splitting them at their spaces
+    /// changes nothing they do.
+    static func shellWords(_ text: String) -> String {
+        text.allSatisfy { $0 == " " || isPlainInShell($0) } ? text : shellQuoted(text)
+    }
+
+    private static func isPlainInShell(_ character: Character) -> Bool {
+        character.isLetter || character.isNumber || "-_./,:+@%".contains(character)
+    }
+
+    private static func shellQuoted(_ text: String) -> String {
+        "'" + text.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
     }
 
     /// The file's bytes go on now, under the type they are: a JPEG or a HEIC capture labelled PNG
