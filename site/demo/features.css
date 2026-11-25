@@ -128,23 +128,24 @@
 /* Premium details and Several in a row (flight.js, queue.js): a card in flight is laid out at the
    editor's size and scaled, so its border ring is set against the scale to stay 0.5 pt wide. */
 .scene .flights .cardx.flying::after { box-shadow: inset 0 0 0 var(--ring, 0.5px) rgb(255 255 255 / 0.4); transition: none; }
-/* Recent (recent.js): right Shift drawn as a Mac’s key. */
+/* Recent and Front (shiftKey in parts.js): right Shift drawn as a Mac’s key. */
 .scene .kcap.shiftk { min-width: 96px; display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; padding: 7px 10px 8px; font-size: 12px; }
 .scene .shiftk span:first-child { font-size: 15px; }
 .scene .cardx.lifted::after, .scene .cardx.lifted .scircle { transition: none; }
 .scene .term-x .typed { display: inline-block; overflow: hidden; vertical-align: top; transition: width 0.25s var(--spring, ease); }
 .scene .cam { position: absolute; inset: 0; transform-origin: 0 0; }
 
-/* Agent, Front and tiles (front.js). Front's keys: right Shift tapped twice opens the stack, and Esc closes it. */
+/* Front and Recent (front.js, recent.js): the keys over the screen. In Front, right Shift tapped
+   twice opens the stack, and Esc closes it. */
 .scene .fkeys { position: absolute; z-index: 4; transform-origin: 0 0; opacity: 0; transform: scale(calc(var(--scale) * 0.92)); transition: opacity 0.15s, transform 0.3s var(--spring, ease); }
 .scene .fkeys.up { opacity: 1; transform: scale(var(--scale)); }
 .scene .fkeys .twice { color: rgb(255 255 255 / 0.8); }
 .scene .kcap.esck { min-width: 66px; display: flex; align-items: flex-end; justify-content: flex-start; padding: 7px 10px 8px; font-size: 12px; }
-/* Drag (stack.js): Claude Code keeps its prompt at the bottom of the terminal, under the
-   conversation, which runs off the top. */
+/* Drag and Agent (claudeCode in parts.js): Claude Code keeps its prompt at the bottom of the
+   terminal, under the conversation, which runs off the top. */
 .scene .term-x.claude pre { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; box-sizing: border-box; }
 
-/* Agent, Front and tiles (tiles.js): a picture that a click replays shows the pointer. */
+/* Every tile (tiles.js): a picture that a click replays shows the pointer. */
 .feature-pic.replays { cursor: pointer; }
 /* Front (front.js): the stays page ends above the window's bottom on its own background. */
 .feature-pic .window .page { background: #f5f1e8; }
