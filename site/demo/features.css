@@ -33,7 +33,6 @@
 @media (max-width: 640px) { .feature[data-scene="front"] .feature-pic { min-height: 340px; } }
 .feature-pic .scene { position: absolute; left: 0; top: 0; transform-origin: 0 0; color: var(--ink); }
 .scene svg.over { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.scene svg.over .fades { transition: opacity 0.25s; }
 .scene .pic svg.marks { transition: opacity 0.25s; }
 
 /* The lead: the top-right of a Mac screen. The stack is open and Chrome keeps the typing. */
@@ -69,7 +68,6 @@
 .scene .kcap.down { transform: translateY(2.5px); box-shadow: inset 0 -0.5px 0 var(--key-edge), 0 0 0 0.5px var(--key-edge), 0 1px 2px rgb(0 0 0 / 0.12); }
 /* Several in a row: the stack's column, which narrows while the editor is open, the selection
    strip beside it, and the editor's bar. A row or button lights while its key runs it. */
-.scene.fades { transition: opacity 0.25s; }
 .scene .qcol { position: absolute; transform-origin: 100% 100%; }
 .scene .qstrip {
   position: absolute; display: flex; flex-direction: column; gap: 4px; padding: 4px; border-radius: 12px;
@@ -100,10 +98,8 @@
 .scene .term-x pre { margin: 0; padding: 14px 16px; font: inherit; white-space: pre; }
 .scene .term-x b { font-weight: 700; color: #e6e6e6; }
 .scene .term-x .ln { transition: opacity 0.25s; }
-.scene .term-x .ln.hid { opacity: 0; }
 .scene .t-claude { color: #d97757; }
 .scene .t-dim { color: #6b7080; }
-.scene .t-hi { color: #e6e6e6; }
 /* Claude Code's dots: white before its prose, grey and blinking before a tool call that runs. */
 .scene .t-said { color: #e6e6e6; }
 .scene .t-run { color: #8b8f99; animation: blink 1s steps(1) infinite; }
@@ -116,7 +112,6 @@
 :root[data-theme="dark"] .scene .term-x { box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16), inset 0 1px 0 rgb(255 255 255 / 0.08), 0 18px 40px -16px rgb(0 0 0 / 0.7); }
 /* The tiles under the first stage: right Shift tapped twice, a stitched card with Stitch's own
    badges, and a card's drag image over Claude Code's prompt. */
-.scene .shiftk { min-width: 96px; justify-items: end; padding-right: 14px; }
 .scene .twice { position: absolute; font: 600 17px var(--sans); color: var(--ink-2); opacity: 0; transform: scale(0.6); transition: opacity 0.15s, transform 0.35s var(--spring-bouncy, ease); }
 .scene .twice.on { opacity: 1; transform: none; }
 .scene .stitched { position: absolute; background: #1a1a1a; }
@@ -134,7 +129,7 @@
    editor's size and scaled, so its border ring is set against the scale to stay 0.5 pt wide. */
 .scene .flights .cardx.flying::after { box-shadow: inset 0 0 0 var(--ring, 0.5px) rgb(255 255 255 / 0.4); transition: none; }
 /* Recent (recent.js): right Shift drawn as a Mac’s key. */
-.scene .kcap.shiftk { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; padding: 7px 10px 8px; font-size: 12px; }
+.scene .kcap.shiftk { min-width: 96px; display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; padding: 7px 10px 8px; font-size: 12px; }
 .scene .shiftk span:first-child { font-size: 15px; }
 .scene .cardx.lifted::after, .scene .cardx.lifted .scircle { transition: none; }
 .scene .term-x .typed { display: inline-block; overflow: hidden; vertical-align: top; transition: width 0.25s var(--spring, ease); }
