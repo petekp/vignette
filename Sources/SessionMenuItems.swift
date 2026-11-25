@@ -264,8 +264,8 @@ private final class QuietSearchFieldCell: NSSearchFieldCell {
     }
 }
 
-/// The view of the search row. It draws the field's fill, puts the backing in the menu's glass and
-/// gives its field the keyboard once the menu's window exists.
+/// The view of the search row. It draws the field's fill and gives its field the keyboard once the
+/// menu's window exists.
 private final class FieldHolder: NSView {
     weak var field: NSControl?
     /// Runs once, when the field has first taken the keyboard, with the menu's window.
@@ -280,8 +280,7 @@ private final class FieldHolder: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let window else { return }
-        SessionMenuBacking.install(in: window)
+        guard window != nil else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self, let field, let window = field.window, window.makeFirstResponder(field) else { return }
             let hasKeys = self.hasKeys
@@ -289,67 +288,4 @@ private final class FieldHolder: NSView {
             hasKeys?(window)
         }
     }
-}
-
-/// A fill of the window colour behind the session menu's rows, inside the menu's own glass, so the
-/// windows behind the menu show only as a faint hue. NSMenu has no API for its background, so this
-/// finds the glass in AppKit's menu window, whose views are not public. When a macOS draws the menu
-/// some other way, nothing is added and the menu keeps the system's look.
-@MainActor
-final class SessionMenuBacking: NSView {
-    /// How much of the glass the window colour covers.
-    static let opacity: CGFloat = 0.78
-
-    /// Adds a backing to `window`, a menu's window, unless Reduce Transparency already makes menus
-    /// opaque or the window has one. Logs what it found.
-    static func install(in window: NSWindow) {
-        let outcome = place(in: window)
-        Log.write("[send] session menu backing \(outcome) window=\(type(of: window))")
-    }
-
-    private static func place(in window: NSWindow) -> String {
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency { return "skipped: reduce transparency" }
-        guard #available(macOS 26.0, *) else { return "skipped: no glass before macOS 26" }
-        guard let root = window.contentView?.superview ?? window.contentView else { return "skipped: no views" }
-        guard let glass = firstGlass(in: root) else { return "skipped: no glass" }
-        guard let content = glass.contentView else { return "skipped: glass holds no view" }
-        if content.subviews.contains(where: { $0 is SessionMenuBacking }) { return "kept" }
-        let backing = SessionMenuBacking(frame: content.bounds)
-        backing.autoresizingMask = [.width, .height]
-        backing.layer?.cornerRadius = glass.cornerRadius
-        backing.layer?.cornerCurve = .continuous
-        content.addSubview(backing, positioned: .below, relativeTo: nil)
-        return "added"
-    }
-
-    @available(macOS 26.0, *)
-    private static func firstGlass(in view: NSView) -> NSGlassEffectView? {
-        if let glass = view as? NSGlassEffectView { return glass }
-        for subview in view.subviews {
-            if let glass = firstGlass(in: subview) { return glass }
-        }
-        return nil
-    }
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-    override var wantsUpdateLayer: Bool { true }
-
-    override func updateLayer() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(Self.opacity).cgColor
-        }
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        needsDisplay = true
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
