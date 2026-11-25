@@ -121,10 +121,20 @@ enum SessionPlaces {
             ? commonDirectory.deletingLastPathComponent()
             : commonDirectory.deletingLastPathComponent().appendingPathComponent(
                 commonDirectory.lastPathComponent.hasSuffix(".git") ? String(commonDirectory.lastPathComponent.dropLast(4)) : commonDirectory.lastPathComponent)
-        let codexRoot = AgentPlugin.root(of: .codex, home: URL(fileURLWithPath: home), environment: environment).path + "/worktrees/"
-        let worktree = folder.path.hasPrefix(codexRoot) ? codexWorktree : folder.lastPathComponent
+        let components = Array(folder.pathComponents.dropFirst())
+        let inCodex = codexWorktreeIndex(in: components, home: home, environment: environment).map { $0 < components.count } ?? false
+        let worktree = inCodex ? codexWorktree : folder.lastPathComponent
         return Checkout(gitDirectory: gitDirectory, commonDirectory: commonDirectory,
                         mainFolder: URL(fileURLWithPath: canonical(mainFolder.path) ?? mainFolder.path), worktree: worktree)
+    }
+
+    /// For a path in the folder Codex makes worktrees in, `worktrees` in Codex's folder or in any
+    /// `.codex`, the index of the folder below it; it may be past the path's end. Nil for any other path.
+    private static func codexWorktreeIndex(in path: [String], home: String, environment: [String: String]) -> Int? {
+        let root = AgentPlugin.root(of: .codex, home: URL(fileURLWithPath: home), environment: environment).path
+        let worktrees = Array(((canonical(root) ?? root) as NSString).pathComponents.dropFirst()) + ["worktrees"]
+        if path.starts(with: worktrees) { return worktrees.count }
+        return path.indices.first { $0 + 1 < path.count && path[$0] == ".codex" && path[$0 + 1] == "worktrees" }.map { $0 + 2 }
     }
 
     private static func resolve(_ path: String, from folder: URL) -> URL {
@@ -178,25 +188,26 @@ enum SessionPlaces {
     }
 
     /// A repository read from the shape of the path, for a folder with no `.git` above it:
-    /// `…/.codex/worktrees/<any>/<repo>/…`, `…/.claude/worktrees/<name>` below `<repo>`,
-    /// `<parent>/worktrees/<repo>/…`, and `<repo>/.worktrees/<name>/…`. The first `onDisk`
+    /// `<Codex's folder>/worktrees/<any>/<repo>/…`, `<repo>/.claude/worktrees/<name>/…`,
+    /// `<parent>/worktrees/<repo>/…`, and `<repo>/.worktrees/<name>/…`. A path in Codex's worktrees
+    /// is read as Codex's or not at all, and `<repo>` is never the home folder. The first `onDisk`
     /// components of `path` exist; the rest are gone.
     private static func shape(of path: [String], onDisk: Int, home: String, environment: [String: String]) -> Place? {
         func place(_ name: String, worktree: String, rest: ArraySlice<String>) -> Place {
             .repository(name: name, root: nil, worktree: worktree, subfolder: subfolder(Array(rest)))
         }
-        for index in path.indices {
-            if path[index] == ".codex", index + 4 < path.count, path[index + 1] == "worktrees" {
-                return place(path[index + 3], worktree: codexWorktree, rest: path[(index + 4)...])
-            }
+        if let any = codexWorktreeIndex(in: path, home: home, environment: environment) {
+            return any + 1 < path.count ? place(path[any + 1], worktree: codexWorktree, rest: path[(any + 2)...]) : nil
         }
-        for index in path.indices where path[index] == ".claude" && index > 0 && index + 2 < path.count && path[index + 1] == "worktrees" {
+        let homeFolder = Array((home as NSString).pathComponents.dropFirst())
+        func isRepository(below index: Int) -> Bool { index > 0 && Array(path[..<index]) != homeFolder }
+        for index in path.indices where path[index] == ".claude" && index + 2 < path.count && path[index + 1] == "worktrees" && isRepository(below: index) {
             return place(path[index - 1], worktree: path[index + 2], rest: path[(index + 3)...])
         }
         for index in path.indices where path[index] == "worktrees" && index + 1 < path.count {
             if let found = worktreesFolder(path, at: index, onDisk: onDisk, home: home, environment: environment) { return found }
         }
-        for index in path.indices where path[index] == ".worktrees" && index > 0 && index + 1 < path.count {
+        for index in path.indices where path[index] == ".worktrees" && index + 1 < path.count && isRepository(below: index) {
             return place(path[index - 1], worktree: path[index + 1], rest: path[(index + 2)...])
         }
         return nil

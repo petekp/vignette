@@ -23,7 +23,8 @@ enum SessionMenu {
         let destination: AgentDestination
         var id: String { destination.id }
         /// The herdr tab's label without its repository prefix, else the session's name, with a
-        /// suffix when another session in the group has the same title.
+        /// suffix when another session in the group has the same title, unless it is the one row the
+        /// suffix leaves plain.
         let title: String
         /// Worktree, branch and goal, or the path from home and goal, joined by " · ". The row does
         /// not draw them; its tooltip shows them and search looks through them.
@@ -129,16 +130,24 @@ enum SessionMenu {
     /// `destination`'s row among `listed`, as the destination control and live ink's target button
     /// show it. A session that is not running is titled by its project, which its menu row leaves to
     /// the header above it; the tooltip keeps the menu row's words.
+    /// When another such session would read the same, the menu row's suffix follows.
     static func row(of destination: AgentDestination, among listed: [AgentDestination], now: Date = Date()) -> Row {
         let everyone = including(destination, in: ranked(listed, now: now))
-        let row = Filer(everyone).rows(now: now)[destination.id]!
-        let title: String
-        switch destination.start {
-        case .resume: title = lastSession(in: destination.project)
-        case .new: title = newSession(in: destination.project)
-        case nil: return row
+        let filer = Filer(everyone)
+        let row = filer.rows(now: now)[destination.id]!
+        guard let title = startTitle(of: destination) else { return row }
+        let shared = everyone.contains { $0.id != destination.id && startTitle(of: $0)?.lowercased() == title.lowercased() }
+        let suffix = shared ? filer.titleSuffixes()[destination.id] : nil
+        return Row(destination: row.destination, title: suffix.map { "\(title) (\($0))" } ?? title, details: row.details,
+                   activity: row.activity, tooltip: row.tooltip)
+    }
+
+    private static func startTitle(of session: AgentDestination) -> String? {
+        switch session.start {
+        case .resume: return lastSession(in: session.project)
+        case .new: return newSession(in: session.project)
+        case nil: return nil
         }
-        return Row(destination: row.destination, title: title, details: row.details, activity: row.activity, tooltip: row.tooltip)
     }
 
     /// The sessions every row is worded over: the active ones, and `destination` when it is not among
@@ -182,7 +191,7 @@ enum SessionMenu {
 
     /// How every session on offer is filed and worded, decided over all of them so that a session
     /// reads the same whichever menu it is in.
-    private struct Filer {
+    struct Filer {
         let sessions: [AgentDestination]
         private let roots: [String]
         private let headers: [String: String]
@@ -223,132 +232,14 @@ enum SessionMenu {
             return ("name:\(name)", name)
         }
 
-        /// Every session's row. Sessions with equal titles in one group get a suffix.
+        /// Every session's row.
         func rows(now: Date) -> [String: Row] {
-            var byGroup: [String: [AgentDestination]] = [:]
-            for session in sessions { byGroup[filing(session).key + "\n" + Self.titleParts(of: session).title.lowercased(), default: []].append(session) }
-            var suffixes: [String: String] = [:]
-            for members in byGroup.values where members.count > 1 {
-                for (id, suffix) in Self.suffixes(for: members) { suffixes[id] = suffix }
-            }
+            let suffixes = titleSuffixes()
             var rows: [String: Row] = [:]
             for session in sessions {
                 rows[session.id] = Self.row(for: session, titleSuffix: suffixes[session.id], now: now, header: filing(session).header)
             }
             return rows
-        }
-
-        /// What tells apart sessions with one title: the first of the herdr tab, the worktree and the
-        /// branch that every one of them has and no two share; else "#1", "#2" by when they started.
-        static func suffixes(for members: [AgentDestination]) -> [String: String] {
-            let attributes: [(AgentDestination) -> String?] = [
-                { $0.hostLabel }, { if case .repository(_, _, let worktree, _) = $0.place { return worktree } else { return nil } }, { $0.branch },
-            ]
-            for attribute in attributes {
-                let values = members.map { attribute($0)?.trimmingCharacters(in: .whitespaces) }
-                guard values.allSatisfy({ $0?.isEmpty == false }),
-                      Set(values.compactMap { $0?.lowercased() }).count == members.count else { continue }
-                return Dictionary(uniqueKeysWithValues: zip(members.map(\.id), values.compactMap { $0 }))
-            }
-            let ordered = members.sorted { a, b in
-                switch (a.started, b.started) {
-                case let (x?, y?) where x != y: return x < y
-                case (_?, nil): return true
-                case (nil, _?): return false
-                default: return a.id < b.id
-                }
-            }
-            return Dictionary(uniqueKeysWithValues: ordered.enumerated().map { ($1.id, "#\($0 + 1)") })
-        }
-
-        // MARK: Words
-
-        /// The herdr tab's label without a leading "<repository>:" and the title it makes, which is
-        /// that label, else the session's name. A session that is not running is titled by what
-        /// sending to it does.
-        static func titleParts(of session: AgentDestination) -> (tab: String?, title: String) {
-            switch session.start {
-            case .resume: return (nil, SessionMenu.continueLast)
-            case .new: return (nil, SessionMenu.newSession)
-            case nil: break
-            }
-            let tab = shortTab(of: session)
-            return (tab, tab ?? session.name)
-        }
-
-        static func shortTab(of session: AgentDestination) -> String? {
-            guard var label = session.hostLabel?.trimmingCharacters(in: .whitespaces), !label.isEmpty else { return nil }
-            if case .repository(let name, _, _, _) = session.place,
-               label.lowercased().hasPrefix(name.lowercased() + ":") {
-                label = String(label.dropFirst(name.count + 1)).trimmingCharacters(in: .whitespaces)
-            }
-            return label.isEmpty ? nil : label
-        }
-
-        static func row(for session: AgentDestination, titleSuffix: String?, now: Date, header: String) -> Row {
-            let (tab, baseTitle) = titleParts(of: session)
-            let title = titleSuffix.map { "\(baseTitle) (\($0))" } ?? baseTitle
-            let named = session.hasOwnName && session.name.lowercased() != baseTitle.lowercased() ? session.name : nil
-            let purpose = session.goal ?? named
-            let lastActive = session.lastUsed.map { age(since: $0, now: now) }
-            var parts: [String?]
-            // The time at the row's right, which the tooltip keeps beside the details.
-            var tooltipAge: String?
-            if let start = session.start {
-                // Where it would run, then which session it continues.
-                parts = placeParts(session, withSubfolder: true)
-                if case .resume = start {
-                    parts.append(session.hasOwnName ? session.name : nil)
-                    tooltipAge = lastActive
-                }
-            } else if tab == nil && purpose == nil {
-                // No herdr tab and nothing from the inbox mod: the session's name leads, and its place follows.
-                parts = placeParts(session, withSubfolder: true)
-                tooltipAge = lastActive
-            } else {
-                parts = placeParts(session, withSubfolder: false)
-                parts.append(purpose)
-            }
-            let details = distinct(parts).joined(separator: " · ")
-            let tooltip = [title, distinct(parts + [tooltipAge]).joined(separator: " · "), header].filter { !$0.isEmpty }.joined(separator: "\n")
-            return Row(destination: session, title: title, details: details, activity: activity(for: session, lastActive: lastActive), tooltip: tooltip)
-        }
-
-        /// Working while the session is busy, else when it was last active. A New session row has
-        /// none: its time would be the project's last session's, not its own.
-        static func activity(for session: AgentDestination, lastActive: String?) -> Activity? {
-            if session.turn == .busy { return .working }
-            if case .new? = session.start { return nil }
-            return lastActive.map(Activity.lastActive)
-        }
-
-        /// Worktree and branch, or the path from home, with the subfolder when no herdr tab or goal
-        /// says more.
-        private static func placeParts(_ session: AgentDestination, withSubfolder: Bool) -> [String?] {
-            switch session.place {
-            case .repository(_, _, let worktree, let subfolder):
-                return [worktree] + (withSubfolder ? [subfolder] : []) + [session.branch]
-            case .folder(let path): return [path]
-            case .none: return []
-            }
-        }
-
-        /// Parts without the empty ones and without one that repeats an earlier one.
-        private static func distinct(_ parts: [String?]) -> [String] {
-            var seen: [String] = []
-            for part in parts.compactMap({ $0?.trimmingCharacters(in: .whitespaces) }) where !part.isEmpty {
-                if !seen.contains(where: { $0.lowercased() == part.lowercased() }) { seen.append(part) }
-            }
-            return seen
-        }
-
-        static func age(since date: Date, now: Date) -> String {
-            let minutes = Int(now.timeIntervalSince(date) / 60)
-            if minutes < 1 { return "now" }
-            if minutes < 60 { return "\(minutes) min ago" }
-            if minutes < 24 * 60 { return "\(minutes / 60) hr ago" }
-            let days = minutes / (24 * 60)
-            return days == 1 ? "1 day ago" : "\(days) days ago"
         }
     }
 }
