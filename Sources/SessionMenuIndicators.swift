@@ -213,7 +213,8 @@ extension SessionMenu {
 
 /// The words at the right of the session menu's rows: where they end, how they look on the
 /// highlighted row, and the shimmer on "working". It is the delegate of the menu and its submenus,
-/// and must stay alive while the menu is open.
+/// so it also has `SessionMenuBacking` fill each of their windows as it opens. It must stay alive
+/// while the menu is open.
 @MainActor
 final class SessionMenuIndicators: NSObject, NSMenuDelegate {
     private let menu: NSMenu
@@ -315,6 +316,10 @@ final class SessionMenuIndicators: NSObject, NSMenuDelegate {
             row.drawsHighlighted = row === item
             row.render()
         }
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        SessionMenuBacking.install(for: menu)
     }
 
     func menuDidClose(_ menu: NSMenu) {
