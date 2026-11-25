@@ -4,11 +4,11 @@ This file continues [The corner and the stack: the long column, older shots and 
 
 ### CardColumn built cards (implicit)
 
-Owner: `CardColumn` in `StackView.swift:307`, with `StackModel.keptBuilt` (`StackModel.swift:71`) and `StackLayout.cards(meeting:sizes:lifts:)` (`StackLayout+Slots.swift:10`). Tests: `ColumnSlotsTests`, which covers which cards meet a band and nothing of the view's building.
+Owner: `CardColumn` in `StackView.swift`, with `StackModel.keptBuilt` (`StackModel.swift`) and `StackLayout.cards(meeting:sizes:lifts:)` (`StackLayout+Slots.swift`). Tests: `ColumnSlotsTests`, which covers which cards meet a band and nothing of the view's building.
 
-The column builds a card's view only while its slot is within one viewport of the view (`StackLayout.reach`, `StackLayout+Slots.swift:5`). Every other card is an empty frame of its drawn size in the `VStack`, so each card sits where a column of built cards would put it.
+The column builds a card's view only while its slot is within one viewport of the view (`StackLayout.reach`, `StackLayout+Slots.swift`). Every other card is an empty frame of its drawn size in the `VStack`, so each card sits where a column of built cards would put it.
 
-**States**, per card: built or an empty slot. The inputs are `scroll`, `liftFraction` and `widthScale`, which `CardColumn` reads as its animatable data (`StackView.swift:315`), so SwiftUI hands it each frame's value while they spring, and `keptBuilt`. The selection strip's lift follows the first selected card's (`stripLift`, `StackView.swift:77`).
+**States**, per card: built or an empty slot. The inputs are `scroll`, `liftFraction` and `widthScale`, which `CardColumn` reads as its animatable data (`StackView.swift`), so SwiftUI hands it each frame's value while they spring, and `keptBuilt`. The selection strip's lift follows the first selected card's (`stripLift`, `StackView.swift`).
 
 **Transitions**
 
@@ -19,7 +19,7 @@ The column builds a card's view only while its slot is within one viewport of th
 | built | a frame where the slot is outside the band and the card is not in `keptBuilt` | slot | `CardView` removed with no transition, so a fade is not still running if a fling brings it back |
 | built | the card leaves `keptBuilt` while outside the band | slot | the same |
 
-`keptBuilt` holds the cards in the annotator or in a stitch (`outCards`, `forming`), those a removal carries (`carried`), the pressed, dragged, hovered, focused and entering card, the card that carries a drag-select's gesture (`sweepCard`), and every card showing a notice (`StackModel.swift:71-73`).
+`keptBuilt` holds the cards in the annotator or in a stitch (`outCards`, `forming`), those a removal carries (`carried`), the pressed, dragged, hovered, focused and entering card, the card that carries a drag-select's gesture (`sweepCard`), and every card showing a notice (`StackModel.swift`).
 
 **Invariants**
 
@@ -34,11 +34,11 @@ The column builds a card's view only while its slot is within one viewport of th
 
 ### StackModel.liftFraction (implicit)
 
-Owner: `StackModel.liftFraction` (`StackModel.swift:16`), `setLifts` (`StackModel.swift:76`), `ThumbnailController.springLifts` (`ThumbnailController.swift:1412`), read in `CardColumn` (`StackView.swift:323`). Tests: none.
+Owner: `StackModel.liftFraction` (`StackModel.swift`), `setLifts` (`StackModel.swift`), `ThumbnailController.springLifts` (`ThumbnailController.swift`), read in `CardColumn` (`StackView.swift`). Tests: none.
 
 A capture, or a column shown over another, lifts each card back to where it was drawn (`lift`, a distance below its slot) and springs the lifts to 0 on `ui.shiftUpDuration`. The lifts share one fraction. `CardColumn` draws each card its lift times the fraction below its slot, so a card the column builds in the middle of the spring is drawn where the others are.
 
-**States**: `liftFraction` (0 to 1), `lift` (per card), `ThumbnailController.shift` (`ThumbnailController.swift:1427`, when the lifts last sprang and what they were).
+**States**: `liftFraction` (0 to 1), `lift` (per card), `ThumbnailController.shift` (`ThumbnailController.swift`, when the lifts last sprang and what they were).
 
 **Transitions**
 
@@ -46,8 +46,8 @@ A capture, or a column shown over another, lifts each card back to where it was 
 |---|---|---|---|
 | any | `setLifts(lifts)` | `lift = lifts`; `liftFraction = 1`, or 0 when `lifts` is empty | set with animations off, from `shiftUp` and `present` |
 | `liftFraction == 1` | `springLifts`, next turn | `liftFraction` springs to 0 | `shift = (time, lift)`; `first()` runs before the spring and `alongside` inside it |
-| springing | `setLifts` again (a second card joins, or the column is shown again) | `liftFraction = 1`, `lift` = what is left of the old lifts plus the new rise (`liftLeft`, `ThumbnailController.swift:1463`) | the new spring replaces the old |
-| 0 | a frame | — | `CardColumn` draws no lift (`StackView.swift:323`) |
+| springing | `setLifts` again (a second card joins, or the column is shown again) | `liftFraction = 1`, `lift` = what is left of the old lifts plus the new rise (`liftLeft`, `ThumbnailController.swift`) | the new spring replaces the old |
+| 0 | a frame | — | `CardColumn` draws no lift (`StackView.swift`) |
 | any | `present` | `setLifts([:])`; then, when the cards are not the ones on screen, `setLifts(keptLift)` | `springLifts` when any lift is left |
 
 **Invariants**
@@ -59,11 +59,11 @@ A capture, or a column shown over another, lifts each card back to where it was 
 
 **Late and concurrent answers**
 
-- `springLifts` sets `shift` at once and starts the spring on the next turn (`ThumbnailController.swift:1414-1419`). Until then `liftFraction` is 1 and the lifts are drawn whole.
+- `springLifts` sets `shift` at once and starts the spring on the next turn (`ThumbnailController.swift`). Until then `liftFraction` is 1 and the lifts are drawn whole.
 
 ### StackModel.carried (implicit)
 
-Owner: `StackModel.carried` (`StackModel.swift:66`), set by `ThumbnailController.removeCards(where:)` (`ThumbnailController+Scroll.swift:18`). Tests: none.
+Owner: `StackModel.carried` (`StackModel.swift`), set by `ThumbnailController.removeCards(where:)` (`ThumbnailController+Scroll.swift`). Tests: none.
 
 Takes cards out of the visible column and keeps built every card whose slot passes through the view while the relayout runs. A removal's relayout is a layout animation, which `CardColumn` cannot read frame by frame, and the cards above the removed ones slide down by their height, which can be more than the margin the column builds past the view.
 
@@ -77,11 +77,11 @@ Takes cards out of the visible column and keeps built every card whose slot pass
 | `carried` set | the timer fires, `carried` equals the set it set | `carried = []` | — |
 | `carried` set | the timer fires, `carried` differs | — | a later removal's timer clears it |
 
-`StackModel.removeCards` has callers that do not carry, and `takeOutOfPanel` (`ThumbnailController.swift:955`) removes cards with `model.cards.removeAll`: the slide-out's `removeCards { _ in true }` (`ThumbnailController.swift:715`), `present` (`ThumbnailController.swift:1349`) and `removeOverflow`.
+`StackModel.removeCards` has callers that do not carry, and `takeOutOfPanel` (`ThumbnailController.swift`) removes cards with `model.cards.removeAll`: the slide-out's `removeCards { _ in true }` (`ThumbnailController.swift`), `present` (`ThumbnailController.swift`) and `removeOverflow`.
 
 **Invariants**
 
-- A card in `carried` is built (`keptBuilt` includes it) until the timer clears it. `carried` and `sweepCard` are not `@Published` (`StackModel.swift:63`, `:66`), so clearing them redraws nothing: the card stays built until the next published change. Checked by: nothing.
+- A card in `carried` is built (`keptBuilt` includes it) until the timer clears it. `carried` and `sweepCard` are not `@Published` (`StackModel.swift`), so clearing them redraws nothing: the card stays built until the next published change. Checked by: nothing.
 - The timer compares the set, not the removal. A second removal that carries the same cards is cleared by the first's timer, up to `2 × ui.relayoutDuration` before its own. Checked by: nothing; not run.
 
 **Late and concurrent answers**

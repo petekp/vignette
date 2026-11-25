@@ -1,7 +1,7 @@
 // The feature tiles' pictures: each shows its feature in Vignette's own UI, built from the page's
 // cards, marks and springs. A picture plays its moment once when its tile scrolls into view, then
-// holds on the result; pointing at the tile, or tapping it, plays it again. With Reduce Motion on,
-// each shows its result and never moves.
+// holds on the result; pointing at the tile, or tapping it, plays it again, and a tap on one that has
+// not played yet plays it. With Reduce Motion on, each shows its result and never moves.
 import { motion } from "../vignette.js";
 import { reducedMotion } from "../springs.js";
 import { Front } from "./front.js";
@@ -22,8 +22,11 @@ const SCENES = {
   recent: Recent, quick: Quick, stitch: Stitch, drag: Drag,
 };
 
-// A tile is in view while this much of it is on screen.
+// A tile is in view while this much of it is on screen, or, for a tile too tall for that, while it
+// fills this much of the window. The observer reports every twentieth of the tile, so the second
+// share is noticed within a twentieth of the tile's height.
 const SEEN = 0.55;
+const STEPS = Array.from({ length: 21 }, (_, i) => i / 20);
 
 class Tile {
   constructor(root) {
@@ -70,11 +73,11 @@ class Tile {
   }
   // The pointer offers a replay where a click gives one: on a picture that has played, between plays.
   showReplay() { this.slot.classList.toggle("replays", motion() > 0 && this.played && !this.playing); }
-  // `ratio` is how much of the tile is on screen. A play that ran while the tile was mostly off
+  // `seen`: enough of the tile is on screen (`SEEN`). A play that ran while the tile was mostly off
   // screen went unseen, and the tile plays again when it comes back.
-  view(ratio) {
-    this.inView = ratio >= SEEN;
-    this.offScreen = ratio === 0;
+  view(seen, onScreen) {
+    this.inView = seen;
+    this.offScreen = !onScreen;
     if (this.playing && !this.inView) this.unseen = true;
     this.settle();
   }
@@ -132,13 +135,16 @@ export function buildFeatures(section) {
   const watch = new IntersectionObserver((entries) => {
     const changed = entries.map((e) => {
       const tile = tiles.find((t) => t.root === e.target);
-      tile.view(e.isIntersecting ? e.intersectionRatio : 0);
+      const onScreen = e.isIntersecting && e.intersectionRatio > 0;
+      const windowHeight = e.rootBounds?.height ?? innerHeight;
+      const seen = onScreen && (e.intersectionRatio >= SEEN || e.intersectionRect.height >= SEEN * windowHeight);
+      tile.view(seen, onScreen);
       return tile;
     });
     changed.filter((tile) => tile.due)
       .sort((a, b) => tiles.indexOf(a) - tiles.indexOf(b))
       .forEach((tile, i) => setTimeout(() => tile.start(), 250 + i * 350));
-  }, { threshold: [0, SEEN] });
+  }, { threshold: STEPS });
   tiles.forEach((tile) => {
     watch.observe(tile.root);
     // Pointing at a tile that has played plays it again once the pointer has stayed still there for
@@ -155,8 +161,8 @@ export function buildFeatures(section) {
     tile.root.addEventListener("pointerenter", (e) => { armed = true; settle(e); });
     tile.root.addEventListener("pointermove", settle);
     tile.root.addEventListener("pointerleave", () => { armed = false; clearTimeout(rest); });
-    // A click or a tap on the picture plays it again. A scroll gesture cancels its pointer, and a
-    // drag across the copy to select it ends on the words, so neither replays.
-    tile.slot.addEventListener("pointerup", (e) => { if (e.button === 0 && tile.played) tile.run(true); });
+    // A click or a tap on the picture plays it, again once it has played. A scroll gesture cancels
+    // its pointer, and a drag across the copy to select it ends on the words, so neither plays.
+    tile.slot.addEventListener("pointerup", (e) => { if (e.button === 0) tile.run(tile.played); });
   });
 }

@@ -173,7 +173,7 @@ final class EditorViewTests: XCTestCase {
         XCTAssertEqual(joined?.marks.last?.agent, true)
         XCTAssertEqual(view.drawing(of: "/tmp/Screenshot test.png")?.marks.count, 2)
         XCTAssertNil(view.drawing(of: "/tmp/another.png"))
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: EditorCore.handOverDelay + 0.1))
+        runTimersDue(within: EditorCore.handOverDelay)
         XCTAssertTrue(handedOver.isEmpty, "the join carried the person's change too, so the timer has nothing left to hand over")
         XCTAssertNil(view.join([]), "nothing joined")
     }
@@ -585,7 +585,7 @@ final class EditorViewTests: XCTestCase {
         // Across the first H, near the top of its stems, captured once the zoom has rested and the
         // text is drawn for it. The words start inside the tag's padding.
         centre(CGPoint(x: 600 + 24 * TextStyle.standard.padSide + 6, y: 412 + 24 * TextStyle.standard.padTop))
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: EditorView.restDelay * 3))
+        runTimersDue(within: EditorView.restDelay)
         settleTexts()
         rep = try capture(nominal: false) { _ in true }
         let row = (rep.pixelsWide / 2 - 45 * scale...rep.pixelsWide / 2 + 45 * scale).map { ($0, rep.pixelsHigh / 2) }

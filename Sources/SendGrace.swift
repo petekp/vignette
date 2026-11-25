@@ -21,7 +21,7 @@ struct SendGrace: Equatable {
         case sent(request: String, line: String, grace: TimeInterval, at: TimeInterval)
         /// A timer armed by `.arm` ran.
         case due(request: String, at: TimeInterval)
-        /// Don't send, on the card or by URL: the requests sent of one screenshot.
+        /// Don't send, or the screenshot left the folder: the requests it takes back.
         case cancelled(requests: [String])
         /// A clear took the request: `requests?clear=` or the admission of a fiftyfirst.
         case cleared(request: String)

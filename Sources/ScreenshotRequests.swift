@@ -129,7 +129,7 @@ final class ScreenshotRequests {
     /// card is a way of not sending it. A deleted published reply stays deleted: publication happened,
     /// and the recovery copy is not used to put the file back.
     func fileRemoved(_ shot: Screenshot) {
-        unsend(file: shot.key)
+        unsendEverySend(of: shot.key)
         let url = shot.url.standardizedFileURL
         guard var reply = replies.values.first(where: { $0.stage == .published && !$0.deleted && $0.publishedURL == url })
         else { return }
@@ -395,20 +395,16 @@ final class ScreenshotRequests {
         return record
     }
 
-    /// Don't send: cancels every send of `file` still in its grace, clears their requests and tells
-    /// the cards, and takes every line of it a session's queue holds back out. Answers the requests it
-    /// cancelled or is taking back, and nothing when none was waiting: the session has the line
-    /// already, or there was no send.
-    @discardableResult
-    func unsend(file: ScreenshotKey) -> [Record] {
-        let sent = requests.values.filter { sourceKey(of: $0) == file }.sorted { $0.created < $1.created }.map(\.id)
-        let effects = sendGrace.handle(.cancelled(requests: sent))
+    /// Cancels the sends among `ids` still in their grace, clears their requests and tells the cards.
+    /// Answers the requests it cancelled.
+    func cancelInGrace(_ ids: [String]) -> [Record] {
+        let effects = sendGrace.handle(.cancelled(requests: ids))
         let cancelled = effects.compactMap { effect -> Record? in
             if case .discard(let id) = effect { return requests[id] }
             return nil
         }
         run(effects)
-        return cancelled + sent.compactMap(withdraw)
+        return cancelled
     }
 
     /// The deadline, in `now`'s clock, and length of a send still in its grace; nil once it was

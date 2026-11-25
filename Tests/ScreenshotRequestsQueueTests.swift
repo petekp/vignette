@@ -129,6 +129,57 @@ final class ScreenshotRequestsQueueTests: XCTestCase {
         XCTAssertNil(Agent.sent(of: source), "the card's tab no longer says it was sent")
     }
 
+    func testDontSendTakesOutOnlyTheLineOfTheSendTheCardShows() async throws {
+        let events = GraceEvents()
+        let first = try await queue(.queued(detail: "", reason: "r", line: line), events: events)
+        first.connection.outcome = .queued(detail: "", reason: "r", line: QueuedLine(id: "q2", thread: "t2"))
+        let second = try requests.send(png: try Data(contentsOf: first.source), source: first.source.screenshotKey,
+                                       to: AgentDestination(id: "s2", name: "Another session", address: .claudeSession("session-2")), grace: 0)
+        try await first.answers.wait(for: 2)
+        XCTAssertEqual(requests.unsend(file: first.source.screenshotKey).map(\.id), [second.id])
+        try await events.wait(for: "withdraw q2")
+        try await events.wait(for: "queue changed")
+        XCTAssertFalse(events.all.contains("withdraw q1"))
+        XCTAssertEqual(try stored(second).status, .cleared)
+        XCTAssertEqual(try stored(first.record).status, .submitted)
+        XCTAssertEqual(requests.queued(first.record.id), "r", "the earlier send's line is still watched")
+        XCTAssertEqual(Agent.sent(of: first.source)?.address, first.record.address, "the tab goes back to the earlier send")
+        XCTAssertEqual(requests.queuedRequest(of: first.source.screenshotKey)?.id, first.record.id)
+
+        XCTAssertEqual(requests.unsend(request: first.record.id)?.id, first.record.id)
+        try await events.wait(for: "withdraw q1")
+    }
+
+    func testDontSendTakesOutTheLineOfTheSessionTheTabNamesWhenAnswersCameBackOutOfOrder() async throws {
+        let events = GraceEvents()
+        let first = try await queue(.queued(detail: "", reason: "r", line: line), events: events)
+        first.connection.outcome = .queued(detail: "", reason: "r", line: QueuedLine(id: "q2", thread: "t2"))
+        let second = try requests.send(png: try Data(contentsOf: first.source), source: first.source.screenshotKey,
+                                       to: AgentDestination(id: "s2", name: "Another session", address: .claudeSession("session-2")), grace: 0)
+        try await first.answers.wait(for: 2)
+        Agent.record(sent: first.record.sent, on: first.source)
+        XCTAssertEqual(requests.unsend(file: first.source.screenshotKey).map(\.id), [first.record.id])
+        try await events.wait(for: "withdraw q1")
+        try await events.wait(for: "queue changed")
+        XCTAssertFalse(events.all.contains("withdraw q2"))
+        XCTAssertEqual(requests.queued(second.id), "r")
+        XCTAssertEqual(Agent.sent(of: first.source)?.address, second.address)
+    }
+
+    func testDontSendOnASendInItsGraceLeavesAnEarlierQueuedLineAndDeletingTheFileTakesItOut() async throws {
+        let events = GraceEvents()
+        let first = try await queue(.queued(detail: "", reason: "r", line: line), events: events)
+        let second = try requests.send(png: try Data(contentsOf: first.source), source: first.source.screenshotKey,
+                                       to: AgentDestination(id: "s2", name: "Another session", address: .claudeSession("session-2")), grace: 60)
+        XCTAssertEqual(requests.unsend(file: first.source.screenshotKey).map(\.id), [second.id])
+        XCTAssertEqual(try stored(second).status, .cleared)
+        XCTAssertFalse(events.all.contains("withdrawing"))
+        XCTAssertEqual(requests.queued(first.record.id), "r")
+
+        requests.fileRemoved(Screenshot(key: first.source.screenshotKey))
+        try await events.wait(for: "withdraw q1")
+    }
+
     func testDontSendOnALineTheSessionAlreadyTookOrCouldNotRemoveKeepsTheRequest() async throws {
         let events = GraceEvents()
         let first = try await queue(.queued(detail: "", reason: "r", line: line), events: events)

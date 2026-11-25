@@ -199,8 +199,9 @@ dragged card, and what Copy, Send and Copy Drawing render. Widths are in points 
 | `badgeOverlap` | 0.2 | How far the badge overlaps the tag's top edge, from 0 to 1.36, its height |
 
 - `markScalePower` and `smallestNoteText` set a drawing's mark scale when it is made
-  (`docs/editor.md`, section 1's Size). A change rescales the drawing open in the editor. A stored
-  drawing keeps the scale it was made with.
+  (`docs/editor.md`, section 1's Size). A change to either rescales the drawing open in the editor,
+  at the backing scale it was made at, and `newTextSize` does not. A stored drawing keeps the scale
+  it was made with.
 - A colour is `#rrggbb`.
 - A font is `rounded`, `monospaced`, `serif` or `default`, which pick one of the system font's
   designs, or the name of an installed font family, such as `Avenir Next`.

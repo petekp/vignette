@@ -1,6 +1,6 @@
 # Marks sized to the screenshot (2026-10-27)
 
-Status: built on branch `mark-scale` (commit 570360e), not merged. Pete asked for it on 2026-10-27:
+Status: merged to main in 03a09d9. Pete asked for it on 2026-10-27:
 on a small screenshot a note covered so much of the picture that it hid the interface it pointed
 at.
 

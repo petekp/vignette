@@ -140,7 +140,8 @@
   deadline, and a Don't send button, the only part of the overlay that takes presses. The ring is
   drawn from the clock and is the one animation not scaled by the motion setting. The button
   and `vignette://unsend` both run the `unsend` action, which cancels every send of that file
-  still waiting and clears the request. An editor card keeps its screenshot and goes back to no
+  still waiting and clears the request: the card shows only the newest, and an older one would go
+  out unseen. An editor card keeps its screenshot and goes back to no
   notice. A live ink note card is Vignette's own file, so it is discarded with its drawing
   (`FolderWrites.discard`). `docs/send-grace-2026-10-10.md` has the reasons and the checks.
 - A Codex send's line is watched in the thread's queue until Codex takes it (`QueueWatch` in
@@ -161,10 +162,15 @@
   turns the clock into Don't send, whose help is the reason. The Queued state comes from the live
   watch, never the `Agent.Sent` attribute, so after a relaunch the tab says Sent as before. Don't
   send on a queued line runs the same `unsend` action: it takes the overlay down at once and asks for
-  `thread/queue/delete`. Removed clears the request and the attribute, and the card says nothing,
-  as for a send in its grace. Already taken says "Codex had already started on it." under Sent, and
+  `thread/queue/delete`. Removed clears the request, and the card says nothing, as for a send in
+  its grace. The attribute goes back to the newest other send of the file that reached its client,
+  so the tab still names an earlier queued line, or it goes. Already taken says "Codex had already started on it." under Sent, and
   a refusal says "Vignette couldn't remove it. You can delete it in Codex." under Queued
-  (`Callbacks.laterAnswer`), with the watch going on. A line the person deletes in Codex clears the
-  request and the attribute without a word. A thread Codex can no longer find ends the watch with a
+  (`Callbacks.laterAnswer`), with the watch going on. Don't send takes out only the line of the newest send
+  to the session the tab names, since answers can come back out of order, and only when no send of the file in its grace is newer, so an earlier send's line,
+  to this session or another, stays (`ScreenshotRequests.unsend(file:)`). A live ink note takes back
+  its own request. Deleting the file takes back every send of it: those in their grace, and every
+  line of it a queue holds. A line the person deletes in Codex clears the
+  request and puts the attribute back the same way, without a word. A thread Codex can no longer find ends the watch with a
   failure on the card. A clear stops the watch and leaves the line in the queue.
   `docs/codex-queued-sends-2026-11-16.md` has the live runs behind each reading.

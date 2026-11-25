@@ -296,8 +296,6 @@ h2 {
 @media (prefers-reduced-motion: reduce) { .halo { animation: none; } .hint .busy { animation-duration: 2.4s; } }
 
 .also { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 72px; }
-.also h3 { margin: 0; font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; }
-.also p { margin: 6px 0 0; color: var(--ink-2); text-wrap: pretty; }
 @media (max-width: 800px) { .also { grid-template-columns: 1fr; } }
 
 .details { margin-top: clamp(112px, 15vw, 200px); }
