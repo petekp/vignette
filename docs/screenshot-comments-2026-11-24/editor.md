@@ -4,18 +4,12 @@ Part of [the screenshot comments plan](../screenshot-comments-2026-11-24.md).
 
 ## How pins and marks live together
 
-**Question 1: keep today's marks?** Pete asked whether the old way should stay, for a quick drawn
-screenshot.
+**Choice 1, decided 2026-11-25: keep today's tools and add Comment.** Pete's words: "Keep all, add
+Comment". A box with a short note stays the fastest way to point at one thing someone will see at a
+glance. Pins are for many things in one area, or for words too long to sit on the picture. Replacing
+the Text tool, or keeping pins only, would have lost the quick drawn screenshot.
 
-- (a) Keep every tool, and add Comment as a fifth. **Recommended.** A box and a short note is still
-  the fastest way to say one thing someone will see at a glance. Pins are for many things in one
-  area, or for words too long to sit on the picture.
-- (b) Replace the Text tool with Comment, and keep Rectangle and Arrow. There are fewer tools, but a
-  quick screenshot can then show words only through the copy.
-- (c) Pins only. This is the simplest editor, and it loses the quick drawn screenshot Pete wants to
-  keep.
-
-With (a), the editor works like this:
+The editor works like this:
 
 - The tools are Select, Rectangle, Arrow, Text and Comment. Comment's key is C and its symbol is
   `text.bubble`. C is free today: the tool keys are V, R, A and T, and M and P go to the message
@@ -61,44 +55,54 @@ spell-check, autocorrect or replacements, holds plain text, and lets an input me
 
 ### Where an open pin's comments show
 
-**Question 2 (mock 1).**
+**Choice 2, decided 2026-11-25: a popover beside the pin.** Pete's words: "Popover by the pin".
 
-- (a) A popover beside the pin. It points at the pin, flips to whichever side has room, and holds
-  the comments above the composer. **Recommended.** The picture keeps its full size, and the
-  comments sit next to what they are about. It is built on the popover live ink's notes already use
-  (`HangingPopover`, `PopoverPlace`, `LiveNoteContent`). AppKit moves a popover in one frame when
-  its anchor moves, and closes it in one frame when its window hides. `HangingPopover` slides it on
-  a spring instead, and shows it again where it was. A pin moves at every zoom and pan step, so a
-  popover that jumped would show at each one. The popover fades with the pin before the annotator
-  hides at park.
-- (b) A panel beside the annotator's frame, listing every pin, with the open one expanded. The
-  picture stays uncovered. It takes room from the picture on every screenshot with pins, and the eye
-  travels between a place and its words.
-- (c) The open pin's comments drawn as note tags beside its area, with the composer as the last tag.
-  It looks like the notes people already write, and collapses back to the number when closed. In a
-  dense area the open tags cover the things they are about.
-
-With (a), the list of every pin is a button on the toolbar, after the tools, showing how many pins
-there are. It opens a popover listing each pin's number and the start of its first comment. The
-button slides in on a spring with the first pin and out with the last.
+- The popover points at the pin's body, flips to whichever side has room, and holds the comments
+  above the composer. The picture keeps its full size, and the comments sit next to what they are
+  about.
+- It is built on the popover live ink's notes already use (`HangingPopover`, `PopoverPlace`,
+  `LiveNoteContent`). AppKit moves a popover in one frame when its anchor moves, and closes it in
+  one frame when its window hides. `HangingPopover` slides it on a spring instead, and shows it
+  again where it was. A pin moves at every zoom and pan step, so a popover that jumped would show at
+  each one.
+- The popover fades with the pin before the annotator hides at park.
+- The list of every pin is a button on the toolbar, after the tools, showing how many pins there
+  are. It opens a popover listing each pin's number and the start of its first comment. The button
+  slides in on a spring with the first pin and out with the last.
 
 ### What a pin looks like
 
-**Question 3 (mock 2).**
+**Choice 3, decided 2026-11-25: a teardrop.** Pete's words: "Teardrop". He chose it over the circle
+at the area's corner that this plan recommended. A teardrop points at its place, so the place is
+exact for a point pin, and Figma users already read the shape.
 
-- (a) A filled circle in the person's red with the white number, at an area pin's top-left corner.
-  The area's outline fades in while the pin is hovered, selected or open. **Recommended.** It is the
-  note tag's look at its smallest, with the same red, white 1.5 pt edge, shadows and SF Pro Rounded.
-  Hiding the outline keeps a dense area clear.
-- (b) A teardrop that points at the place, as Figma's pins do. The tip is exact for a point pin. For
-  an area, the tip sits on a corner and the shape stands taller over the picture.
-- (c) The area always outlined in a thin line, with the number on a small tab at its corner. Every
-  area shows at once, which helps when the areas themselves matter. A dense area becomes a mesh of
-  lines.
+- The teardrop is a 24 pt circle with one quarter squared off into a point, the tip. The tip is the
+  corner of the 24 pt square the shape fits in. Its number sits in the middle of the round part,
+  which this plan calls the body.
+- It has the note tag's look at its smallest: the person's red, a 1.5 pt white edge, the tag's
+  shadows, and a white number in SF Pro Rounded. An agent's pin is indigo with its number in SF
+  Mono, as an agent's note is.
+- A point pin's tip sits on its point. An area pin's tip sits on the area's top-left corner, and its
+  body rises up and to the right, outside the area, so the pin covers nothing the area holds.
+- The body has four orientations, with the tip at its bottom-left, bottom-right, top-left or
+  top-right. Bottom-left is the default. When the body would cross the picture's top edge, it flips
+  below the tip. When it would cross the right edge, it flips to the left of the tip. For an area
+  pin at the top edge, the flip puts the body inside the area's corner.
+- The orientation is worked out from the picture's edges at the size the picture fits the frame, so
+  the editor, the card, the flight and the PNG agree. It is not stored. It changes only when a move
+  or a resize crosses an edge, and the body turns about the tip on a spring.
+- An area's outline fades in while its pin is hovered, selected or open. A selected or open pin also
+  gets a 2 pt ring in the selection blue, following the teardrop's outline.
+- A press hits a pin when it lands on the teardrop or within 4 screen pt of it, the same band a
+  stroke has. A pin is always on top, so it beats every mark's stroke and every note's tag. A
+  selected pin's handles beat the pin, as a selected mark's handles do.
+- An area pin's outline is a hit only while it shows, by the rectangle's rule for a stroke. The
+  inside of an area is never a hit, so a person can still draw a box or a note inside it.
+- Dragging the teardrop moves the pin and its area. A selected area pin has a rectangle's corner and
+  edge handles on its outline.
 
-In every option an agent's pin is indigo, as its marks are. The pin's size, its outline's width and
-the cluster distance are tuning settings in `UITweaks` and `TweakCatalog`, as
-`docs/rules/settings.md` asks of any number a person might tune.
+The pin's size, its outline's width and the cluster distance are tuning settings in `UITweaks` and
+`TweakCatalog`, as `docs/rules/settings.md` asks of any number a person might tune.
 
 ## Size and zoom
 
@@ -114,9 +118,13 @@ the cluster distance are tuning settings in `UITweaks` and `TweakCatalog`, as
 
 ## Dense areas
 
-- Two pins whose circles overlap by more than a third of their width, at the zoom on screen, form a
-  cluster. A cluster is one circle naming its pins, such as "3 · 4". When the zoom pulls them apart,
-  the pins slide out of the cluster on a spring, and slide back in when it pushes them together.
+- Two pins form a cluster when their teardrops' bodies overlap by more than a third of their width,
+  at the zoom on screen.
+- A cluster is a teardrop widened into a capsule that names its pins in number order, such as "3 ·
+  4". Past three it names three and counts the rest, as in "3 · 4 · 7 +2". Its tip sits at the tip
+  of its lowest-numbered pin, and its orientation follows the same edge rule.
+- When the zoom pulls the pins apart, they slide out of the cluster on a spring, and the capsule
+  narrows back into each teardrop. They slide back in when the zoom pushes them together.
 - The open pin and a selected pin never join a cluster, so the popover's anchor and the selection
   handles never vanish. A pin that is closed or deselected joins its cluster then, on a spring.
 - A click on a cluster opens a popover listing its pins, each with its number and the start of its
@@ -128,7 +136,8 @@ the cluster distance are tuning settings in `UITweaks` and `TweakCatalog`, as
   the view.
 - Tab and Shift+Tab move through marks and pins in reading order, as they move through marks today.
   A pin inside a cluster is reached that way too.
-- Renderings never draw clusters. They move colliding numbers apart with short leader lines.
+- Renderings never draw clusters. Copy and Send place each teardrop on its own (see [Copy, Send,
+  Stitch and Reply](outputs.md)).
 
 ## Keyboard
 

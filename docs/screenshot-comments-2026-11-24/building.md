@@ -35,14 +35,14 @@ Each change updates its file in `docs/state-machines/` in the same commit, as th
 | EditorCore | editor-core | `Tool.comment`. A gesture phase for a pin's area. Typing becomes a note or a comment, one at a time. Selection holds marks and pins. The drawing step kind. `nextPin`. Cmd+Return from the composer. |
 | HeldKey and HeldToolLetter | editor-core | C is a tool letter, so a C typed right after a box is held like V, R, A and T |
 | EditorView session | editor-view-and-drawings | The composer's lifecycle beside `TypingField`, its popover, and its late answers after park |
-| MarkLayers | editor-view-and-drawings | Pin and cluster layers, and their springs into and out of clusters |
+| MarkLayers | editor-view-and-drawings | Teardrop and cluster layers, each teardrop's orientation, and their springs into and out of clusters |
 | Drawings and DrawingStore | editor-view-and-drawings | `Drawing.isEmpty`, `keys` meaning "has a drawing", version 2 writes, `basis` |
 | Rendering and the clipboard promise | editor-view-and-drawings | The list's layout, a larger output, and the clipboard's text |
 | AnnotatorZoom, `fitBeforeHide` and `hideWindows` | zoom-and-panels | Scrolling to a pin from a list, a popover open while zooming, and the popover leaving before the windows hide |
 | AnnotationController session | annotation-run-effects | Park and a screenshot swap while the composer is open |
 | AnnotatorToolbar.Model | toolbar | The Comment tool, the pins list button, and who has the keys while the composer is open |
-| Stitch converge, UndoTimeline | stack | With Question 6 (a): the stitch's drawing written before its card, unstitch and restitch carrying it, Trash undo bringing pins back |
-| CardNotices | corner | With Question 6 (a): the stitch's Copied notice waiting on its rendering |
+| Stitch converge, UndoTimeline | stack | For Choice 6: the stitch's drawing written before its card, unstitch and restitch carrying it, Trash undo bringing pins back |
+| CardNotices | corner | For Choice 6: the stitch's Copied notice waiting on its rendering |
 | Screenshot requests | requests-and-replies | `pins.json` and the line's pins, and in step 4 a reply's comments |
 
 ## Build steps
@@ -52,29 +52,34 @@ files it touches, and `docs/voice.md` for any new words.
 
 1. Pins in the drawing. `Pin` and `Comment` beside `Mark`. `Drawing.isEmpty` and every
    `marks.isEmpty` site moved to it. The file keys, version 2 writes, the validator, `basis`,
-   `nextPin`, and the drawing step kind. The renderer draws pins on cards, flights and PNGs. Nothing
-   makes a pin yet. The glossary gets the four words and the new meaning of Drawing. Unit tests
-   check each of these. A pinned file round-trips. A file holding pins, a `nextPin` or a pin step is
-   written as version 2. A pin outside the image is moved in. A bad pin is dropped. A drawing
-   holding only pins follows a rename, comes back with Trash undo, goes into a stitch's piece, and
-   changes `Agent.fingerprint`.
-2. Outputs. Copy, Copy Drawing and a drag in the chosen format, with the clipboard's text. Send's
-   image and line, and `pins.json`. Stitch by Question 6. Reply's change check. The skill's words.
-   Verified by rendering tests from fixture drawings for each output, and a test of the line. Then
-   one send each to a Claude Code session and a Codex thread in the VM, measuring the longest line
-   each takes whole.
-3. The Comment tool and dense areas. The tool and its gestures. The composer in the chosen
-   placement. Posting, editing and deleting comments. Moving and resizing pins, undo, and the keys
-   in [Pins in the editor](editor.md), Shift+Return placement included. Pins at one size on screen,
-   and the flight hand-over. Clusters in the editor and on cards, the cluster popover, and the
-   toolbar's list of pins. The pin elements, the Pins rotor and Add Pin for VoiceOver. Clusters ship
-   with the tool because a crowded area is the case Pete asked about. Verified by editor-core tests
-   of the composer's keys and of the cluster rule at several zooms, including pins on one point.
-   Then Pete checks by eye on his build, with ten pins on a dense screenshot, their comments, Copy
-   and Send. VoiceOver is checked by hand.
-4. Agents answer on pins (if Pete says yes to Question 5). Its ADR is written first. Then the reply
-   helper takes `--comments`, `ReplyProtocol.version` goes up, the reply card holds the person's
-   pins with the answers, and the skill says how. Verified by protocol tests and one live round in
-   the VM with each agent client.
+   `nextPin`, and the drawing step kind. The renderer draws pins as teardrops on cards, flights and
+   PNGs, with the orientation rule. Nothing makes a pin yet. The glossary gets the four words and
+   the new meaning of Drawing. Unit tests check each of these. A pinned file round-trips. A file
+   holding pins, a `nextPin` or a pin step is written as version 2. A pin outside the image is moved
+   in. A bad pin is dropped. A teardrop at the picture's top or right edge flips inside it. A
+   drawing holding only pins follows a rename, comes back with Trash undo, goes into a stitch's
+   piece, and changes `Agent.fingerprint`.
+2. Outputs. Copy, Copy Drawing and a drag as the picture with its list, with the clipboard's text.
+   Send's image and line, and `pins.json`. Stitch's live pins, and the teardrop's flip away from a
+   piece's number. Reply's change check. The skill's words. Verified by rendering tests from fixture
+   drawings for each output, and a test of the line. Then one send each to a Claude Code session and
+   a Codex thread in the VM, measuring the longest line each takes whole.
+3. The Comment tool and dense areas. The tool and its gestures. The composer in its popover.
+   Posting, editing and deleting comments. Moving and resizing pins, undo, and the keys in [Pins in
+   the editor](editor.md), Shift+Return placement included. Teardrops at one size on screen, their
+   hit area, and the flight hand-over. Clusters in the editor and on cards, the cluster popover, and
+   the toolbar's list of pins. The pin elements, the Pins rotor and Add Pin for VoiceOver. Clusters
+   ship with the tool because a crowded area is the case Pete asked about. Verified by editor-core
+   tests of the composer's keys, of a press on a teardrop beside a mark, and of the cluster rule at
+   several zooms, including pins on one point. Then Pete checks by eye on his build. He checks ten
+   pins on a dense screenshot with their comments, Copy and Send. Someone who did not write a copy
+   pastes it into a chat and an issue, and matches every comment to its place. He repeats that after
+   deleting an earlier pin, and with long comments on a small screenshot. He checks a copy of a
+   drawing with one arrow, a terminal paste, reopening, Stitch, and a reply of marks only, in Claude
+   Code and in Codex. He checks VoiceOver by hand.
+4. Agents answer on pins (Choice 5). Its ADR is written first. Then the reply helper takes
+   `--comments`, `ReplyProtocol.version` goes up, a request stores `base.png`, the reply card holds
+   the person's pins with the answers, and the skill says how. Verified by protocol tests and one
+   live round in the VM with each agent client.
 
 Steps 1 and 2 show nothing new on their own. Step 3 is the first a person sees.

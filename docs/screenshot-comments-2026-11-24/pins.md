@@ -8,7 +8,7 @@ A pin belongs to one drawing, beside its marks. It is not a mark.
 |---|---|
 | `id` | A random id that never changes. A request's `pins.json` and an agent's answer name a pin by it. |
 | `number` | Its pin number, from 1 |
-| `x`, `y` | A point pin's point, or an area pin's top-left corner, in px of the screenshot |
+| `x`, `y` | A point pin's point, or an area pin's top-left corner, in px of the screenshot, the space marks use |
 | `w`, `h` | An area pin's size in px. A point pin has neither. |
 | `comments` | One or more comments, oldest first |
 
@@ -80,6 +80,8 @@ A drawing with pins adds two keys to the file in `docs/drawing-file.md`:
 - The validator that reads files, pastes and agents' marks checks pins. A pin outside the image is
   moved in. A pin with no comment, a repeated number or `id`, or a comment over the limit is
   dropped, with a log line. `nextPin` is raised past the highest number kept.
+- A pin stores its place and never how its teardrop is drawn. Its orientation is worked out each
+  time it is drawn, so a change to the pin's look needs no change to the file.
 - Old drawings need no migration, since a file without `pins` has none. Vignette does not keep
   drawings from an earlier build readable, so no reader for an older shape is added.
 
@@ -93,4 +95,4 @@ A drawing with pins adds two keys to the file in `docs/drawing-file.md`:
   says "3" keeps meaning pin 3.
 - A pin pasted with Cmd+V takes a new number and a new `id`, since its original may still be on the
   screenshot.
-- Stitch is the one place numbers change (Question 6).
+- Stitch is the one place numbers change (Choice 6).

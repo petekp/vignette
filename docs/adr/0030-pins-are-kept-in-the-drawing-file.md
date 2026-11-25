@@ -1,6 +1,6 @@
 # Pins are kept in the drawing file
 
-Status: proposed, 2026-11-24. Nothing is built yet. `docs/screenshot-comments-2026-11-24.md` is the
+Status: accepted, 2026-11-25. Nothing is built yet. `docs/screenshot-comments-2026-11-24.md` is the
 plan it belongs to.
 
 A screenshot's pins, the numbered points and areas that hold comments, are kept in its drawing file,
@@ -19,6 +19,9 @@ One loss is accepted. An older build never lists a newer file, so it cannot foll
 pinned screenshot. The drawing stays under the old name, and the newer build's launch sweep removes
 it. That needs an older build to rename a pinned screenshot, which only happens while several builds
 share the folder.
+
+A pin stores its place, never how it is drawn. Its teardrop's orientation is worked out each time it
+is drawn, so a change to the pin's look needs no change to the file.
 
 A drawing with pins is a drawing everywhere. Today "no drawing" means "no marks" in 33 places.
 `Drawing.isEmpty` covers marks and pins, and those places move to it.
