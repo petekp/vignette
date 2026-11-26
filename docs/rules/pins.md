@@ -61,13 +61,30 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   Return does, and works only while the field holds words. A press on a handle of the open pin's
   area resizes it with the popover open (`keepsComposer`); the resize is its own undo step, the
   composer's edit begins again after it (`resumeComposerEdit`), and the field takes the keys back.
+- The popover's comments are in the system's face, an agent's as a person's. Each shows its writer's
+  avatar, the one the hover card shows (`PinHoverCard.paint`, `Pin.Comment.writer`), then their name
+  in the label colour, "You" or the agent's capitalized, and under it the words. The popover's content
+  sits on the window background material, since the popover's own glass let the page behind show
+  through the words. The field's placeholder is in the secondary label colour.
+- Each comment in the popover has its own Delete, for the person's and an agent's alike: a trash
+  button at its trailing edge, shown while the pointer is on the comment, Delete Comment in its
+  contextual menu, the Delete key on the comment when Full Keyboard Access focuses it, and a
+  VoiceOver action (`CommentRow`). It sends `ComposerInput.delete`, which empties the comment as an
+  edit would, so it is one "Delete" undo step and the pin goes with its only comment.
+- When the editor lands on a screenshot with numbered pins, the lowest-numbered pin's popover opens
+  (`ComposerInput.openFirst`, from `AnnotationController.landed`), unless a popover, a drag or
+  typing is under way. It does not select the pin, and it opens without the keys
+  (`Composer.takesKeys` false; `PinPopover.show` gives the key back to the editor's window). So
+  the tool letters, Delete and the arrows act on the drawing as they would with no popover. The
+  field takes the keys when the person clicks into it. Esc closes an open popover before it closes
+  the editor.
 - An agent's pins come with `pins=` on `add` and `show` (`AgentPins.swift`, format in `docs/commands.md`),
   as its marks come with `marks=`: new pins, or answers added to the person's pins as the agent's
   comments. `AgentPin.join` turns them into the pins as they will be: new ones placed in px inside
   the image and numbered from `nextPin`, answers found by number or `id` among the numbered pins.
   Each comment holds the time of the call (`Pin.Comment.at`). `AgentPin.problem` refuses a list
   that names a pin the drawing lacks or overflows 99, before anything is shown or written. With
-  `show`, the preview drawn on top holds the new pins only, and answers show once kept.
+  `show` as with `add`, they join the drawing at once, as one undo step with the marks.
 - Who wrote a pin's first comment is its maker (`Pin.maker`, `PinMaker`), and decides its colour
   everywhere, renderings included. A person's pin is in `ui.personColor`. An agent's is in its
   brand's colour (`Agent.brandColors`): Claude's is the fill of `claude.svg`, `#d97757`, and

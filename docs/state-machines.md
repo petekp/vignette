@@ -68,7 +68,7 @@ This file is the index. Each file below is under `docs/state-machines/`; the tab
 | Panel visibility and dismissal in ThumbnailController | `ThumbnailController` | [corner](state-machines/corner.md) |
 | Lone thumbnail timer, `leaveTimer` | `ThumbnailController` | [corner](state-machines/corner.md) |
 | CardNotices and its posting timers | `CardNotices`, `StackModel`, `ThumbnailController` | [corner](state-machines/corner.md) |
-| Shown state and the waiting `show` calls | `StackModel`, `ThumbnailController`, `ShowQueue`, `PendingMarks` | [corner](state-machines/corner.md) |
+| Shown state and the waiting `show` calls | `StackModel`, `ThumbnailController`, `ShowQueue` | [corner](state-machines/corner.md) |
 | Stack selection, focus and hover | `StackModel` | [stack](state-machines/stack.md) |
 | Stitch converge | `ThumbnailController` | [stack](state-machines/stack.md) |
 | UndoTimeline | `UndoTimeline`, `ThumbnailController`, `FolderWrites` | [stack](state-machines/stack.md) |

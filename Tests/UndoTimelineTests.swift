@@ -14,9 +14,6 @@ final class UndoTimelineTests: XCTestCase {
     private var corner = true
     var steps: [String: (undo: Int, redo: Int)] = [:]
     private var changed: Set<String> = []
-    var onTop: [String: PendingMarks.Entry] = [:]
-    var joined: [String: Int] = [:]
-    var redrawn: Set<String> = []
 
     private func shot(_ name: String) -> Screenshot { Screenshot(key: key(name)) }
     func key(_ name: String) -> ScreenshotKey { ScreenshotKey(folder: URL(fileURLWithPath: "/shots"), name: name) }
@@ -64,38 +61,6 @@ final class UndoTimelineTests: XCTestCase {
                 steps[name] = counts
             },
             title: { $0 ? "Redo Arrow" : "Undo Arrow" })
-        timeline.marks = UndoTimeline.MarksOnTop(
-            onTop: { [unowned self] in onTop[$0.name] },
-            setOnTop: { [unowned self] entry, key in onTop[key.name] = entry },
-            drawn: { [unowned self] key in
-                let name = key.name
-                return "\(joined[name] ?? 0) \(redrawn.contains(name)) \(editorOpen == name ? steps[name]?.undo ?? 0 : 0)"
-            },
-            takeBack: { [unowned self] key in
-                let name = key.name
-                let step = EditStep(name: .agentMarks, changes: [], selectionBefore: [], selectionAfter: [])
-                if editorOpen == name {
-                    guard var counts = steps[name], counts.undo > 0 else { return nil }
-                    let redo = [HistoryStep](repeating: .drawing(step), count: counts.redo)
-                    counts.undo -= 1
-                    counts.redo = 0
-                    steps[name] = counts
-                    return TakenBackMarks(step: step, redo: redo)
-                }
-                guard let count = joined[name], count > 0 else { return nil }
-                joined[name] = count - 1
-                return TakenBackMarks(step: step, redo: [])
-            },
-            putBack: { [unowned self] taken, key in
-                let name = key.name
-                if editorOpen == name {
-                    steps[name, default: (0, 0)].undo += 1
-                    steps[name, default: (0, 0)].redo += taken.redo.count
-                } else {
-                    joined[name, default: 0] += 1
-                }
-                return true
-            })
     }
 
     func open(_ name: String) {

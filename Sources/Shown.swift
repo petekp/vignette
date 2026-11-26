@@ -41,60 +41,6 @@ struct Shown: Equatable {
     }
 }
 
-/// An agent's marks that `show` brought, drawn on top of a screenshot in the agent's colour and
-/// apart from the person's drawing, until the person keeps them or clears them. The file and its
-/// drawing are untouched until Keep, which joins them to the drawing as one undo step. In memory only.
-@MainActor
-final class PendingMarks {
-    struct Entry {
-        /// Tells these marks from others the same agent or another put on the same screenshot later.
-        let id = UUID()
-        let agent: String
-        /// The session that showed them, and its name as `Shown.sender` has it.
-        let session: AgentAddress?
-        var sender: String?
-        /// As `marks=` gave them, for Keep, which adds them as `add` does.
-        let marks: [AgentMark]
-        /// The same marks in px on the screenshot, and the new pins numbered as they would be now, in a
-        /// drawing of their own, for drawing on top.
-        let drawing: Drawing
-        /// As `pins=` gave them, for Keep, which numbers the new pins then and adds the answers.
-        var pins: [AgentPin] = []
-        /// When `show` brought them, the time their comments keep.
-        var at = Date()
-
-        /// Keep's additions to the drawing, as `add` takes them.
-        var additions: AgentAdditions { AgentAdditions(marks: marks, pins: pins, agent: agent, at: at) }
-    }
-
-    private(set) var entries: [ScreenshotKey: Entry] = [:]
-    /// Called after each change, with the file it was on.
-    var changed: (ScreenshotKey) -> Void = { _ in }
-
-    subscript(key: ScreenshotKey) -> Entry? { entries[key] }
-
-    func set(_ entry: Entry?, on key: ScreenshotKey) {
-        entries[key] = entry
-        changed(key)
-    }
-
-    /// The session list named `session`: the marks it showed that have no name yet say whose they are.
-    func name(_ sender: String, of session: AgentAddress) {
-        for (key, entry) in entries where entry.session == session && entry.sender == nil {
-            var named = entry
-            named.sender = sender
-            set(named, on: key)
-        }
-    }
-
-    func rename(from old: ScreenshotKey, to new: ScreenshotKey) {
-        guard let entry = entries.removeValue(forKey: old) else { return }
-        entries[new] = entry
-        changed(old)
-        changed(new)
-    }
-}
-
 /// The `show` calls waiting for the person's hand to leave the corner, first in, first out.
 struct ShowQueue<Call> {
     private(set) var waiting: [Call] = []

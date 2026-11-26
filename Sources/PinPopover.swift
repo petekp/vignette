@@ -1,7 +1,7 @@
 import AppKit
 
 /// The popover beside an open pin: its comments, oldest first, each one a click away from being
-/// edited, and under them the composer, the field a comment is written in, with its post button. Its keys are the composer's
+/// edited and with a Delete of its own, and under them the composer, the field a comment is written in, with its post button. Its keys are the composer's
 /// (`EditorCore.ComposerInput`): Return posts, Shift+Return or Option+Return breaks the line,
 /// Cmd+Return posts and finishes, and Esc posts and closes.
 @MainActor
@@ -20,12 +20,16 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     private var anchor = CGRect.null
     /// Closed by the core, so the popover's own close says nothing back.
     private var closing = false
+    /// The window that keeps the keys while the popover the editor opened on its own comes up.
+    private weak var keepsKeys: NSWindow?
 
     init(pin: Pin, composer: EditorCore.Composer, send: @escaping (EditorCore.ComposerInput) -> Void) {
         self.pin = pin.id
         self.send = send
         super.init()
-        field.placeholderString = "Add a comment"
+        field.placeholderAttributedString = NSAttributedString(string: "Add a comment", attributes: [
+            .font: NSFont.preferredFont(forTextStyle: .body), .foregroundColor: NSColor.secondaryLabelColor,
+        ])
         field.isBezeled = false
         field.isBordered = false
         field.drawsBackground = false
@@ -66,7 +70,18 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         field.widthAnchor.constraint(equalToConstant: Self.fieldWidth).isActive = true
         post.widthAnchor.constraint(equalToConstant: size).isActive = true
         post.heightAnchor.constraint(equalToConstant: size).isActive = true
-        controller.view = list
+        // The popover's own glass let the page behind show through the words: the window's material is thick enough.
+        let backing = NSVisualEffectView()
+        backing.material = .windowBackground
+        backing.blendingMode = .behindWindow
+        backing.state = .active
+        list.translatesAutoresizingMaskIntoConstraints = false
+        backing.addSubview(list)
+        for constraint in [list.leadingAnchor.constraint(equalTo: backing.leadingAnchor), list.trailingAnchor.constraint(equalTo: backing.trailingAnchor),
+                           list.topAnchor.constraint(equalTo: backing.topAnchor), list.bottomAnchor.constraint(equalTo: backing.bottomAnchor)] {
+            constraint.isActive = true
+        }
+        controller.view = backing
         popover.contentViewController = controller
         popover.behavior = .applicationDefined
         popover.delegate = self
@@ -79,12 +94,23 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         return width - 2 * inset - ui.pinPostSize - ui.pinPopoverSpacing
     }
 
-    /// Opens to the right of the pin, or to its left when the screen has no room there.
-    func show(from rect: CGRect, of view: NSView) {
+    /// Opens to the right of the pin, or to its left when the screen has no room there. With
+    /// `takesKeys` false the keys stay with `view`'s window until the person clicks into the popover.
+    func show(from rect: CGRect, of view: NSView, takesKeys: Bool) {
         anchor = rect
         popover.show(relativeTo: rect, of: view, preferredEdge: .maxX)
         field.window?.autorecalculatesKeyViewLoop = true
+        guard takesKeys else {
+            keepsKeys = view.window
+            keepsKeys?.makeKey()
+            return
+        }
         field.window?.makeFirstResponder(field)
+    }
+
+    func popoverDidShow(_ notification: Notification) {
+        keepsKeys?.makeKey()
+        keepsKeys = nil
     }
 
     /// A press on the picture took the keys, as a resize does: they come back to the field.
@@ -111,7 +137,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
             }
             comments.isHidden = comments.arrangedSubviews.isEmpty
             // A row pressed from the keyboard had the focus, and went with the rows.
-            if let window = field.window, field.currentEditor() == nil { window.makeFirstResponder(field) }
+            if let window = field.window, window.isKeyWindow, field.currentEditor() == nil { window.makeFirstResponder(field) }
         }
         if field.stringValue != composer.draft { field.stringValue = composer.draft }
         showPostable()
@@ -131,25 +157,33 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         popover.close()
     }
 
-    /// A comment: who wrote it, in the system's red for a person or indigo for an agent, then its
-    /// words, an agent's in the system's monospaced face, as an agent's pin number is. Pressing it edits it.
+    /// A comment: the writer's avatar, as the pin's hover card shows it, then their name, "You" or the
+    /// agent's as "Claude", and under it their words, all in the system's face. Pressing it edits it, and
+    /// its Delete, which shows while the pointer is on it, deletes it.
     private func row(_ comment: Pin.Comment, index: Int) -> NSView {
-        let body = NSFont.preferredFont(forTextStyle: .body), small = NSFont.preferredFont(forTextStyle: .subheadline)
-        let author = comment.agent ? comment.agentName ?? "Agent" : "You"
-        let words = NSMutableAttributedString(string: author + "\n", attributes: [
-            .font: NSFont.systemFont(ofSize: small.pointSize, weight: .semibold),
-            .foregroundColor: comment.agent ? NSColor.systemIndigo : NSColor.systemRed,
-        ])
-        words.append(NSAttributedString(string: comment.text, attributes: [
-            .font: comment.agent ? NSFont.monospacedSystemFont(ofSize: body.pointSize, weight: .regular) : body,
-            .foregroundColor: NSColor.labelColor,
-        ]))
-        let label = NSTextField(wrappingLabelWithString: "")
-        label.attributedStringValue = words
-        label.preferredMaxLayoutWidth = Self.width - 2 * Self.inset
-        label.isSelectable = false
-        let row = CommentRow(label)
+        let ui = Settings.shared.data.ui
+        let author = PinHoverCard.Words.writer(comment, capitalized: true)
+        let avatar = NSImageView()
+        avatar.imageScaling = .scaleProportionallyUpOrDown
+        avatar.wantsLayer = true
+        avatar.layer?.cornerRadius = ui.pinAvatarSize / 2
+        avatar.layer?.masksToBounds = true
+        PinHoverCard.paint(avatar, as: comment.writer)
+        let small = NSFont.preferredFont(forTextStyle: .subheadline)
+        let name = NSTextField(labelWithString: author)
+        name.font = .systemFont(ofSize: small.pointSize, weight: .semibold)
+        name.textColor = .labelColor
+        name.lineBreakMode = .byTruncatingTail
+        let words = NSTextField(wrappingLabelWithString: comment.text)
+        words.font = .preferredFont(forTextStyle: .body)
+        words.textColor = .labelColor
+        words.isSelectable = false
+        words.preferredMaxLayoutWidth = Self.width - 2 * Self.inset - ui.pinAvatarSize - ui.pinDeleteSize - 2 * ui.pinPopoverSpacing
+        let row = CommentRow(avatar: avatar, name: name, words: words, avatarSize: ui.pinAvatarSize, deleteSize: ui.pinDeleteSize,
+                             gap: ui.pinPopoverSpacing)
+        row.widthAnchor.constraint(equalToConstant: Self.width - 2 * Self.inset).isActive = true
         row.press = { [weak self] in self?.send(.edit(index)) }
+        row.delete = { [weak self] in self?.send(.delete(index)) }
         row.setAccessibilityLabel("\(author): \(comment.text)")
         return row
     }
@@ -200,22 +234,55 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     }
 }
 
-/// A comment in the popover, which a click edits. With Full Keyboard Access on, Tab reaches it and
-/// Space or Return edits it, as a button.
+/// A comment in the popover, which a click edits. A trash button at its trailing edge, shown while
+/// the pointer is on the comment, deletes it, as Delete Comment in its contextual menu, the Delete key
+/// on it and VoiceOver's Delete comment action do. With Full Keyboard Access on, Tab reaches it and Space or
+/// Return edits it, as a button.
 private final class CommentRow: NSView {
     var press: (() -> Void)?
+    var delete: (() -> Void)?
+    private let trash = NSButton()
 
-    init(_ label: NSTextField) {
+    init(avatar: NSImageView, name: NSTextField, words: NSTextField, avatarSize: CGFloat, deleteSize: CGFloat, gap: CGFloat) {
         super.init(frame: .zero)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(label)
-        for constraint in [label.leadingAnchor.constraint(equalTo: leadingAnchor), label.trailingAnchor.constraint(equalTo: trailingAnchor),
-                           label.topAnchor.constraint(equalTo: topAnchor), label.bottomAnchor.constraint(equalTo: bottomAnchor)] {
+        trash.isBordered = false
+        trash.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "Delete comment")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: deleteSize * 0.75, weight: .regular))
+        trash.imageScaling = .scaleProportionallyDown
+        trash.contentTintColor = .secondaryLabelColor
+        trash.toolTip = "Delete comment"
+        trash.target = self
+        trash.action = #selector(deletePressed)
+        // The row takes Delete from the keyboard itself, so Tab never stops on a button that is not shown.
+        trash.refusesFirstResponder = true
+        trash.alphaValue = 0
+        for view in [avatar, name, words, trash] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(view)
+        }
+        name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        for constraint in [avatar.leadingAnchor.constraint(equalTo: leadingAnchor), avatar.topAnchor.constraint(equalTo: topAnchor),
+                           avatar.widthAnchor.constraint(equalToConstant: avatarSize), avatar.heightAnchor.constraint(equalToConstant: avatarSize),
+                           avatar.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor),
+                           name.leadingAnchor.constraint(equalTo: avatar.trailingAnchor, constant: gap),
+                           name.centerYAnchor.constraint(equalTo: avatar.centerYAnchor),
+                           name.trailingAnchor.constraint(lessThanOrEqualTo: trash.leadingAnchor, constant: -gap),
+                           words.leadingAnchor.constraint(equalTo: name.leadingAnchor),
+                           words.topAnchor.constraint(equalTo: avatar.bottomAnchor, constant: 2),
+                           words.trailingAnchor.constraint(equalTo: trash.leadingAnchor, constant: -gap),
+                           words.bottomAnchor.constraint(equalTo: bottomAnchor),
+                           trash.trailingAnchor.constraint(equalTo: trailingAnchor), trash.centerYAnchor.constraint(equalTo: avatar.centerYAnchor),
+                           trash.widthAnchor.constraint(equalToConstant: deleteSize), trash.heightAnchor.constraint(equalToConstant: deleteSize)] {
             constraint.isActive = true
         }
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         setAccessibilityHelp("Edit this comment")
+        setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Delete comment") { [weak self] in
+            self?.delete?()
+            return self?.delete != nil
+        }])
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -225,6 +292,9 @@ private final class CommentRow: NSView {
     override var focusRingMaskBounds: NSRect { bounds }
     override func drawFocusRingMask() { bounds.fill() }
 
+    override func mouseEntered(with event: NSEvent) { trash.alphaValue = 1 }
+    override func mouseExited(with event: NSEvent) { trash.alphaValue = 0 }
+
     override func mouseDown(with event: NSEvent) {}
 
     /// As a button: the press counts where it is let go inside.
@@ -233,8 +303,18 @@ private final class CommentRow: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.charactersIgnoringModifiers == " " || [36, 76].contains(event.keyCode) { press?() } else { super.keyDown(with: event) }
+        if event.charactersIgnoringModifiers == " " || [36, 76].contains(event.keyCode) { press?() }
+        else if [51, 117].contains(event.keyCode) { delete?() }
+        else { super.keyDown(with: event) }
     }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Delete Comment", action: #selector(deletePressed), keyEquivalent: "").target = self
+        return menu
+    }
+
+    @objc private func deletePressed() { delete?() }
 
     override func accessibilityPerformPress() -> Bool {
         press?()

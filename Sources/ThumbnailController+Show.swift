@@ -9,11 +9,12 @@ extension ThumbnailController {
         let shots: [Screenshot]
         /// Nil for a call with neither `agent=` nor marks: the cards come up as `last` brings them.
         var shown: Shown?
-        var marks: [ScreenshotKey: PendingMarks.Entry]
         /// `agent=` and the session as the answer logs them.
         let agent: String?
         let tag: String?
         let asked: CFTimeInterval
+        /// How many of its marks and comments joined the first file's drawing.
+        var joined = Drawings.Joined()
     }
 
     /// What the person's hand is doing in the corner, which a `show` waits for. Nil when it is free.
@@ -52,7 +53,6 @@ extension ThumbnailController {
     }
 
     private func place(_ call: ShowCall) {
-        for (key, entry) in call.marks { pendingMarks.set(entry, on: key) }
         var joined: [Card] = [], inColumn: [Card] = [], inEditor = 0
         for shot in call.shots {
             if run.key == shot.key { inEditor += 1 }
@@ -86,22 +86,20 @@ extension ThumbnailController {
         if let agent = call.agent { detail += " agent=\(agent)" }
         if let session = call.shown?.session { detail += " session=\(session.id)" }
         detail += " joined=\(joined.count) inColumn=\(inColumn.count) inEditor=\(inEditor)"
-        detail += " marks=\(call.marks.values.map(\.drawing.marks.count).reduce(0, +))"
-        let pins = call.marks.values.map(\.pins.count).reduce(0, +)
-        if pins > 0 { detail += " pins=\(pins)" }
+        detail += " marks=\(call.joined.marks)"
+        if call.joined.pins > 0 { detail += " pins=\(call.joined.pins)" }
         detail += " after=\(Int((CACurrentMediaTime() - call.asked) * 1000))ms"
         if let tag = call.tag { detail += " tag=\(tag)" }
         Commands.ok("show", detail)
     }
 
     /// The session list named `session`, after its `show` came: its calls still waiting, the cards it
-    /// showed, their notices and the marks it brought say the name, where they have none yet.
+    /// showed and their notices say the name, where they have none yet.
     func named(_ sender: String, of session: AgentAddress) {
         showQueue.update { call in
             guard var shown = call.shown, shown.session == session, shown.sender == nil else { return }
             shown.sender = sender
             call.shown = shown
-            for (key, entry) in call.marks where entry.session == session && entry.sender == nil { call.marks[key]?.sender = sender }
         }
         for (id, shown) in model.shown where shown.session == session && shown.sender == nil {
             var named = shown
@@ -109,7 +107,6 @@ extension ThumbnailController {
             model.shown[id] = named
         }
         model.notices.name(sender, of: session)
-        pendingMarks.name(sender, of: session)
     }
 
     /// A keyed stack showing none of `cards` scrolls to the first of them, as a focus move does.
@@ -138,22 +135,6 @@ extension ThumbnailController {
 
     func shownCard(of shot: Screenshot) -> Card? {
         model.cards.first { $0.shot.key == shot.key && model.shown[$0.id] != nil }
-    }
-
-    /// The agent's marks for `key` drawn over a card `size` across, nil when it has none.
-    func agentMarkLayers(for key: ScreenshotKey, size: NSSize) -> Card.AgentMarksDrawn? {
-        guard let entry = pendingMarks[key] else { return nil }
-        let layers = MarkLayers(pixels: entry.drawing.pixels, queue: MarkLayers.cardQueue)
-        layers.setScale(screen.backingScaleFactor)
-        layers.show(entry.drawing, filling: size, backingScale: screen.backingScaleFactor, style: ui.textStyle, markStyle: ui.markStyle)
-        return Card.AgentMarksDrawn(agent: entry.agent, sender: entry.sender, layers: layers)
-    }
-
-    /// The agent's marks on `key` came, were kept or were cleared: its card draws what is left.
-    func agentMarksChanged(_ key: ScreenshotKey) {
-        guard let index = model.cards.firstIndex(where: { $0.shot.key == key }) else { return }
-        model.cards[index].agentMarks?.layers.clear()
-        model.cards[index].agentMarks = agentMarkLayers(for: key, size: model.cards[index].size)
     }
 
     nonisolated static func shownJSON(_ shown: Shown) -> [String: Any] {

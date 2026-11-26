@@ -76,16 +76,13 @@ open -g "vignette://show?file=$a&file=$b&message=$message&agent=codex&session=$C
 
 - `show` brings each card to the corner in the order you name the files, or marks it where it
   already is, and dims the others. The card says "From <your session's name>", or "From Claude"
-  when the name is unknown, with your message under it. It changes no file and takes no keys from
-  the user.
+  when the name is unknown, with your message under it. It takes no keys from the user.
 - `&from=<name>` is your session's name, as for `add`.
 - `&message=<text>` is one line of up to 60 characters. Longer text is cut at a word, and `[show]`
   still answers `ok` with a warning. Percent-encode it, as you do the paths.
-- `&marks=` takes marks in the format under "Draw on it yourself", for the first file. They sit on
-  top of the user's drawing, on the card and in the editor, until the user presses Keep or Clear.
-  Nothing is written unless they keep them.
-- `&pins=` takes pins as under "Leave comment pins", for the first file. They wait with your
-  marks for Keep or Clear.
+- `&marks=` takes marks in the format under "Draw on it yourself", for the first file. They join the
+  user's drawing at once, as one step the user can undo, as with `add`.
+- `&pins=` takes pins as under "Leave comment pins", for the first file. They join with your marks.
 - `&session=<id>` names your session, as for `add`. Send on a card you showed then starts on your
   session.
 - Name at most as many files as the user's column keeps (`app.recentCount` in `[state]`, 30 by

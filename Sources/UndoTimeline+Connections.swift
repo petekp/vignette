@@ -8,8 +8,6 @@ extension UndoTimeline {
         case stitch = "Stitch"
         case openDrawing = "Open Drawing"
         case closeDrawing = "Close Drawing"
-        case keepMarks = "Keep Marks"
-        case clearMarks = "Clear Marks"
     }
 
     /// Where a card for `key` goes among the cards `now`, newest first, given the column it was in:
@@ -47,21 +45,6 @@ extension UndoTimeline {
         var draw: (ScreenshotKey?) -> Bool = { _ in false }
         /// The corner is the stack, which keeps the keys once the annotator closes.
         var isStack: () -> Bool = { true }
-    }
-
-    /// An agent's marks on top of a screenshot (`PendingMarks`), and the drawing Keep joins them to:
-    /// `ThumbnailController.pendingMarks` and `Drawings` in the app.
-    struct MarksOnTop {
-        /// The marks on top of a screenshot, nil when it has none.
-        var onTop: (ScreenshotKey) -> PendingMarks.Entry? = { _ in nil }
-        /// Puts marks on top of a screenshot, or with nil takes them off.
-        var setOnTop: (PendingMarks.Entry?, ScreenshotKey) -> Void = { _, _ in }
-        /// The screenshot's marks and pins as they are now, as a hash (`Drawings.drawn`).
-        var drawn: (ScreenshotKey) -> String? = { _ in nil }
-        /// Takes the marks a Keep joined back out of the screenshot's drawing (`Drawings.takeBackAgentMarks`).
-        var takeBack: (ScreenshotKey) -> TakenBackMarks? = { _ in nil }
-        /// Puts what `takeBack` answered back on the screenshot's drawing. False when it could not be written.
-        var putBack: (TakenBackMarks, ScreenshotKey) -> Bool = { _, _ in false }
     }
 
     /// The editor in the annotator: `AnnotationController` in the app.

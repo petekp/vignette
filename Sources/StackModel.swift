@@ -120,8 +120,6 @@ final class StackModel: ObservableObject {
     var onSweep: (CGFloat) -> Void = { _ in }       // y from the column top, during a drag from a circle
     var onSweepEnd: () -> Void = {}
     var onClickImage: (Card) -> Void = { _ in }
-    /// Keep (true) or Clear on the agent's marks a shown card carries.
-    var onAgentMarks: (Card, _ keep: Bool) -> Void = { _, _ in }
     /// What the cards a drag out of the stack drop. Each card's file when there is none.
     var drags: DragItems?
     var onHover: (UUID?) -> Void = { _ in }
@@ -135,7 +133,6 @@ final class StackModel: ObservableObject {
     func removeCards(where leaves: (Card) -> Bool) {
         for card in cards where leaves(card) {
             card.marks?.clear()
-            card.agentMarks?.layers.clear()
             if shown.removeValue(forKey: card.id) != nil {
                 _ = notices.post(.unshown, on: card.shot.key, seen: false, noticeHold: 0)
                 Log.write("[show] ended \(card.shot.url.lastPathComponent) by=left")

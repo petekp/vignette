@@ -100,6 +100,7 @@ extension AnnotationController {
     /// in the same run loop turn the flight drops its own, so it is never drawn twice or missing.
     func landed() {
         run(.landed)
+        editor.openFirstPin()
         frameView?.layer?.shadowOpacity = Float(TransitionLayer.Look.annotator(Settings.shared.data.ui).shadowOpacity)
         revealTitle(.landed(at: CACurrentMediaTime()))
     }

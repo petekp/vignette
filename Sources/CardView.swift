@@ -85,7 +85,6 @@ struct CardView: View, Equatable {
                                    onClick: { model.onClickImage(card) },
                                    marks: card.marks, picture: card.image?.size, corner: ui.cardCornerRadius, restSize: card.size)
                     )
-                    .marks(card.agentMarks?.layers, picture: card.image?.size, corner: ui.cardCornerRadius)
                     // The image itself never fades: a card landing from the annotator takes over
                     // from its flight in one frame, and what is drawn over it is what animates.
                     .transition(.identity)
@@ -218,7 +217,6 @@ struct CardView: View, Equatable {
         // carries only the image and its border.
         .landing(inSlot, landing, leaving: leaving)
         .animation(Anim.spring((notice == nil ? 0.4 : 0.15) * motion), value: notice?.kind)
-        .animation(Anim.spring(0.15 * motion), value: card.agentMarks == nil)
         .scaleEffect(pressed || state.dragged ? ui.pressScale : (showsHover ? ui.hoverScale : 1))
         .animation(Anim.spring(0.25 * motion, bounce: 0.3), value: pressed)
         // A card coming back from a drag settles without the press's bounce.
@@ -237,9 +235,8 @@ struct CardView: View, Equatable {
     /// The ring a selected or focused card wears over its resting border. It is 0 wide on any other card.
     private var ringColor: Color { selected ? .accentColor : .white.opacity(0.9) }
     @ViewBuilder private var agentBand: some View {
-        if let band = AgentBand.of(notice: notice, marksFrom: card.agentMarks.map { ($0.agent, $0.sender) }) {
-            ShownOverlay(band: band, corner: ui.cardCornerRadius, onMarks: { model.onAgentMarks(card, $0) },
-                         onOverControl: { model.overControl = $0 })
+        if let band = AgentBand.of(notice: notice) {
+            ShownOverlay(band: band, corner: ui.cardCornerRadius)
         }
     }
 

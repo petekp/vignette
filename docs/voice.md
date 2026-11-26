@@ -143,8 +143,6 @@ the editor's own step names come first (the table above).
 | Stitch | Stitch |
 | A screenshot opened in the annotator, or another opened in its place | Open Drawing |
 | The annotator closed | Close Drawing |
-| Keep on an agent's marks, on a card or in the editor | Keep Marks |
-| Clear on an agent's marks, on a card or in the editor | Clear Marks |
 
 ### The line an agent receives (`ScreenshotRequests.requestLine`)
 
@@ -256,7 +254,10 @@ Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
 | The popover's field, empty | Add a comment |
 | The post button beside it, its tooltip and to VoiceOver | Post comment |
 | The field, to VoiceOver | Comment on pin *n*; Comment on new pin |
-| Who wrote a comment, above its words | You; the agent's name, or Agent |
+| A comment's trash button, its tooltip and to VoiceOver, and the comment's VoiceOver action | Delete comment |
+| A comment's contextual menu | Delete Comment |
+| A comment, to VoiceOver, as a hint | Edit this comment |
+| Who wrote a comment, beside their avatar and above their words (`PinHoverCard.Words.writer`) | You; Claude, the agent's name capitalized; An agent |
 | A comment's row, to VoiceOver | You: *words*, then Edit this comment |
 | A pin's first comment posted, to VoiceOver | Pin *n* added |
 | A pin, to VoiceOver | Pin 3, area, 2 comments; Pin 1, point, 1 comment; New pin |
@@ -268,7 +269,7 @@ Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
 | Beside the writer | Pin 3 · 1 min. ago, in `RelativeDateTimeFormatter`'s abbreviated style; Pin 3 for a comment that kept no time |
 | Under the first comment's first line, on a pin with replies | 1 reply from Claude; 2 replies from you; 3 replies, from more than one writer |
 
-### An agent showing a screenshot (`ShownOverlay`, `AgentMarksBar`, `Shown`)
+### An agent showing a screenshot (`ShownOverlay`, `Shown`)
 
 A card an agent showed with `vignette://show` says who showed it, in the tab's own words, and the
 agent's line under them. While the notice says the tab's words, the tab gives way, so a card never
@@ -280,11 +281,6 @@ says the same words twice.
 | The notice's second line | The agent's `message=`, at most 60 characters, cut at a word with an ellipsis |
 | The notice, to VoiceOver | From *sender*: *message*, else From *Agent*: *message* |
 | VoiceOver, once per call | *sender* showed you a screenshot; *sender* showed you 3 screenshots, with *Agent* when `from=` gave no name ("An agent" with no name) |
-| The buttons, wherever the agent's marks are on top | Clear, Keep |
-| Clear's help | Take the agent's marks off |
-| Keep's help | Add the agent's marks to your drawing |
-| The editor's bar, and the band on a card whose shown state ended while the marks are still on top | Marks from *sender*, else Marks from *Agent* ("Marks from an agent" with no name) |
-| "Not saved", when Keep could not write the marks | Vignette couldn't add the marks. You can keep them again. |
 
 ### A drawing, on its card ("Not saved")
 

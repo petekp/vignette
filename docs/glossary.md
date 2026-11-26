@@ -71,12 +71,6 @@ shown again. Its *shown state* is what Vignette keeps about that: the agent, the
 and when, in memory only.
 _Avoid_: Highlighted, spotlighted, pinned (a pin is a point on a drawing)
 
-**Pending marks**:
-An agent's marks that `show` brought, drawn on top of the person's drawing on the card and in the
-editor until the person keeps or clears them. The file holds none of them until Keep, which adds
-them to the drawing as one undo step.
-_Avoid_: Preview, suggestion, overlay
-
 **Tab**:
 The white capsule in a card's top-right corner. It says which agent session the card is from, by the
 session's name when Vignette knows it and by the agent's otherwise, which session

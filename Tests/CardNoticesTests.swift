@@ -45,22 +45,6 @@ final class CardNoticesTests: XCTestCase {
         XCTAssertEqual(notices.notice(on: file), .copied(label: "Copied"))
     }
 
-    /// Catches a card that still draws an agent's marks with no Keep and Clear once its shown notice is gone.
-    func testKeepAndClearFollowTheAgentsMarksAfterTheShownNoticeEnds() {
-        var notices = CardNotices()
-        let shown = Shown(agent: "claude", session: nil, message: nil, at: Date())
-        post(&notices, .shown(shown))
-        XCTAssertEqual(AgentBand.of(notice: notices.notice(on: file), marksFrom: ("claude", nil))?.offersMarks, true)
-        XCTAssertEqual(AgentBand.of(notice: notices.notice(on: file), marksFrom: nil)?.offersMarks, false)
-        post(&notices, .unshown)
-        let band = AgentBand.of(notice: notices.notice(on: file), marksFrom: ("claude", nil))
-        XCTAssertEqual(band?.agent, "claude")
-        XCTAssertEqual(band?.offersMarks, true)
-        XCTAssertNil(AgentBand.of(notice: notices.notice(on: file), marksFrom: nil))
-        post(&notices, .copied(label: "Copied"))
-        XCTAssertNil(AgentBand.of(notice: notices.notice(on: file), marksFrom: ("claude", nil)), "one notice at a time: Copied holds the card")
-    }
-
     func testASessionNamedAfterItsShowRenamesItsNoticeInPlace() throws {
         var notices = CardNotices()
         let session = AgentAddress.claudeSession("e011fff1-c791-4934-9e61-9307d840a5eb")
@@ -68,11 +52,10 @@ final class CardNoticesTests: XCTestCase {
         let other: ScreenshotKey = "/tmp/other.png"
         _ = notices.post(.shown(Shown(agent: "claude", session: nil, message: nil, at: Date())), on: other, seen: true, noticeHold: 1)
         notices.name("vignette", of: session)
-        XCTAssertEqual(AgentBand.of(notice: notices.notice(on: file), marksFrom: nil)?.headline, "From vignette")
-        XCTAssertEqual(AgentBand.of(notice: notices.notice(on: other), marksFrom: nil)?.headline, "From Claude")
+        XCTAssertEqual(AgentBand.of(notice: notices.notice(on: file))?.headline, "From vignette")
+        XCTAssertEqual(AgentBand.of(notice: notices.notice(on: other))?.headline, "From Claude")
         notices.name("another", of: session)
-        XCTAssertEqual(AgentBand.of(notice: notices.notice(on: file), marksFrom: nil)?.headline, "From vignette")
-        XCTAssertEqual(AgentBand.of(notice: nil, marksFrom: ("claude", "vignette"))?.headline, "Marks from vignette")
+        XCTAssertEqual(AgentBand.of(notice: notices.notice(on: file))?.headline, "From vignette")
         notices.expire(posted.id)
         XCTAssertNil(notices.notice(on: file), "the renamed notice keeps the id its post returned")
     }

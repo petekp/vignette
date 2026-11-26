@@ -91,8 +91,7 @@ final class ThumbnailController {
     private var parkedMarks: MarkLayers?
     /// Where a press on a flying card goes.
     var flightPress = FlightPress()
-    /// The agent's marks `show` brought, drawn on top until kept or cleared, and the calls waiting for the hand.
-    let pendingMarks = PendingMarks()
+    /// The `show` calls waiting for the hand.
     var showQueue = ShowQueue<ShowCall>()
     var showWait: Timer?, dimTimer: Timer?
     /// Cards made in this turn whose stored drawings are still to be read. A stack opening makes
@@ -220,9 +219,7 @@ final class ThumbnailController {
                             "kind": card.shot.kind == .recording ? "recording" : "image",
                             "copied": notice?.kind == .copied,
                             "notCopied": notCopied as Any, "notSaved": notice?.kind == .notSaved,
-                             "shown": model.shown[card.id].map(Self.shownJSON) as Any,
-                             "agentMarks": pendingMarks[card.shot.key]?.drawing.marks.count ?? 0,
-                             "agentPins": pendingMarks[card.shot.key]?.pins.count ?? 0]
+                             "shown": model.shown[card.id].map(Self.shownJSON) as Any]
                 },
                 "selected": model.selectedCards().map(\.shot.key.path),
                 "queue": run.queue.map(\.path), "showsWaiting": showQueue.waiting.count, "dimsUnshown": model.dimsUnshown,
@@ -544,7 +541,6 @@ final class ThumbnailController {
             flightImages.rename(from: old, to: new)
             drawingReads = drawingReads.map { $0 == old ? new : $0 }
             flightPress.rename(from: old, to: new)
-            pendingMarks.rename(from: old, to: new)
             send(.renamed(from: old, to: new))
             if let opening = run.opening, opening.key == new { onAnnotatorRenamed?(shot, opening) }
         }
@@ -1163,7 +1159,6 @@ final class ThumbnailController {
         let space = screenSpace
         let card = Card(id: UUID(), shot: shot, image: Thumbnailer.cached(at: shot.url, maxPixel: maxPixel, space: space),
                         pointSize: header.size, size: size, agent: Agent.of(shot.url), sender: Agent.sender(of: shot.url), duration: header.duration,
-                        agentMarks: agentMarkLayers(for: shot.key, size: size),
                         sent: sent(of: shot.url))
         if card.image == nil {
             Thumbnailer.loadCard(at: shot.url, maxPixel: maxPixel, space: space, caches: caches) { [weak self] image, kept in

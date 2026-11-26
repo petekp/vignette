@@ -1,6 +1,7 @@
 # `show` points an agent at screenshots already in the folder, and `add` refuses the person's own
 
-Status: accepted, 2026-11-25, and built: `AppDelegate+Show.swift`, `ThumbnailController+Show.swift`,
+Status: accepted, 2026-11-25, and partly superseded by ADR 0033 (2026-11-26): `show` now joins its
+marks and pins to the drawing at once, and Keep and Clear are gone. Built: `AppDelegate+Show.swift`, `ThumbnailController+Show.swift`,
 `Shown.swift` and the refusal in `FolderWrites.add`. `docs/agent-single-out-api-2026-11-25.md` is
 the spec, with Pete's answers to its open choices.
 

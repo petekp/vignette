@@ -67,68 +67,17 @@ extension Drawings {
         return joined.pins
     }
 
-    /// The marks and pins of the screenshot `key`'s drawing as they are now, the editor's when it is
-    /// open there, as a hash: two that match hold the same marks and pins. Nil with no drawing.
-    func drawn(of key: ScreenshotKey, style: TextStyle) -> String? {
-        guard let drawing = current(of: key, style: style) else { return nil }
-        return try? EditorHistory.basis(marks: drawing.marks, pins: drawing.pins, nextPin: drawing.nextPin, message: "")
-    }
-
-    /// Takes the agents' marks that a Keep or an `add` joined to the screenshot `key` back out of its
-    /// drawing, when their step is still its newest undo step: in the editor when it is open there,
-    /// else in the stored drawing and its history. The redo steps leave with it, so nothing but the
-    /// caller can put the marks back. Answers what it took once the editor or the file holds the
-    /// drawing without them, or nil.
-    func takeBackAgentMarks(of key: ScreenshotKey, style: TextStyle) -> TakenBackMarks? {
-        if let open, open.drawing(of: key) != nil {
-            guard let (taken, drawing) = open.takeBackAgentMarks() else { return nil }
-            // While the editor holds the drawing, its next hand-over writes it again.
-            write(drawing, history: open.history(of: key) ?? EditorHistory(), reason: "saved")
-            return taken
-        }
-        guard let pixels = PixelSize(imageAt: key.url), var drawing = read(key, pixels: pixels, style: style) else { return nil }
-        var history = history(of: key, pixels: pixels, drawing: drawing)
-        guard case .drawing(let step)? = history.undo.last, step.joinsAgentMarks else { return nil }
-        let taken = TakenBackMarks(step: step, redo: history.redo)
-        history.undo.removeLast()
-        history.redo = []
-        drawing = step.applied(to: drawing, forward: false)
-        return write(drawing, history: history, reason: "saved") ? taken : nil
-    }
-
-    /// Puts back on the screenshot `key`'s drawing what `takeBackAgentMarks` took: the step as its
-    /// newest undo step, and its redo steps under any the history holds now. In the editor when it is
-    /// open there, else in the stored drawing, or a new one sized for `newScreen`. False when neither
-    /// the editor nor the file holds them.
-    func putBackAgentMarks(_ taken: TakenBackMarks, on key: ScreenshotKey, style: TextStyle, newScreen: DrawingScreen, rule: MarkScaleRule) -> Bool {
-        if let open, open.drawing(of: key) != nil {
-            guard let drawing = open.putBackAgentMarks(taken) else { return false }
-            write(drawing, history: open.history(of: key) ?? EditorHistory(), reason: "saved")
-            return true
-        }
-        guard let pixels = PixelSize(imageAt: key.url) else { return false }
-        var drawing = read(key, pixels: pixels, style: style)
-            ?? Drawing(key: key.path, pixels: pixels, sizedFor: newScreen, rule: rule).numbered(numbering(of: key, pixels: pixels))
-        var history = history(of: key, pixels: pixels, drawing: drawing)
-        history.undo.append(.drawing(taken.step))
-        history.redo = taken.redo + history.redo
-        drawing = taken.step.applied(to: drawing, forward: true)
-        return write(drawing, history: history, reason: "built")
-    }
-
-    /// `add`'s marks and new pins alone, in a drawing of their own, writing nothing, with the drawing
-    /// they would join. The new pins hold the numbers they would take now. Nil when the image does not
-    /// read.
-    func preview(_ additions: AgentAdditions, to key: ScreenshotKey, style: TextStyle,
-                 newScreen: DrawingScreen, rule: MarkScaleRule) -> (preview: Drawing, onto: Drawing)? {
+    /// The drawing `add`'s marks and pins would join on the screenshot `key` now, the editor's when it is
+    /// open there, and how many of the marks can be drawn on it, writing nothing. Nil when the image
+    /// does not read.
+    func joining(_ additions: AgentAdditions, to key: ScreenshotKey, style: TextStyle, newScreen: DrawingScreen,
+                 rule: MarkScaleRule) -> (onto: Drawing, drawable: Int)? {
         let px = PixelSize(imageAt: key.url)
         guard let onto = open?.drawing(of: key) ?? px.map({ read(key, pixels: $0, style: style)
             ?? Drawing(key: key.path, pixels: $0, sizedFor: newScreen, rule: rule).numbered(numbering(of: key, pixels: $0)) }) else { return nil }
-        var preview = onto
-        preview.marks = marks(additions.marks, from: additions.agent, in: onto.pixels, pointScale: onto.pointScale, style: style, rule: rule, name: key.name)
-        let newPins = additions.pins.filter { !$0.isAnswer }
-        preview.pins = AgentPin.join(newPins, from: additions.agent, at: additions.at, onto: onto).pins
-        return (preview, onto)
+        let drawable = AgentMark.marks(additions.marks, from: additions.agent, in: onto.pixels, pointScale: onto.pointScale, style: style,
+                                       smallestText: rule.smallestNoteText).marks.count
+        return (onto, drawable)
     }
 
     /// `AgentMark.marks`, with its one line for texts that do not fit, and one for colours named.
