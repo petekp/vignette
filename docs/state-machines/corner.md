@@ -199,8 +199,7 @@ Events (`post`): `copied`, `notCopied`, `notSaved`, `shown`, `unshown`, `sending
 ### Shown state and the waiting `show` calls (implicit)
 
 Owner: `ThumbnailController+Show.swift`, with the state in `StackModel.shown`, `StackModel.dimsUnshown`
-and `StackModel.openedShown`, the waiting calls in `ShowQueue` (`Shown.swift`) and the agent's marks
-in `PendingMarks`. Tests: `StackModelTests.testTheOverflowKeepsTheCardsInTheEditorInAStitchAndShownByAnAgent`,
+and `StackModel.openedShown`, the waiting calls in `ShowQueue` (`Shown.swift`). Tests: `StackModelTests.testTheOverflowKeepsTheCardsInTheEditorInAStitchAndShownByAnAgent`,
 `testACardThatLeavesTakesItsShownNoticeAndTheDimWithIt`, `CardNoticesTests.testAShownNoticeStaysUntilItsShownStateEndsAndTheEndTakesNoNewerNotice`.
 
 `vignette://show` points the person at screenshots already in the folder. Each card it names gets a
@@ -208,7 +207,7 @@ shown state and the `shown` notice, and the corner's other cards dim.
 
 **States**: per card, `shown[card.id]` set or nil. `dimsUnshown`, with `dimTimer`. `openedShown`,
 the opening and the session that showed its card. `showQueue`, the calls waiting, with `showWait`,
-a 0.1 s timer that looks again. Per file, `pendingMarks[key]` set or nil.
+a 0.1 s timer that looks again. Marks and pins a call brings are written before it is placed (`AppDelegate.show`).
 
 **Transitions**
 
@@ -221,13 +220,10 @@ a 0.1 s timer that looks again. Per file, `pendingMarks[key]` set or nil.
 | card's `shown` set | `removeCards` takes the card | `shown` nil; `dimsUnshown` false when none is left | `unshown` posted; `[show] ended … by=left` |
 | card's `shown` set | `perform(.prepare)` opens the card | `shown` nil; `openedShown` set when it named a session | `unshown` posted; `[show] ended … by=opened` |
 | `dimsUnshown` true | `dimTimer` fires | `dimsUnshown` false | the dim fades out |
-| `pendingMarks[key]` set | Keep | nil | `Drawings.add` joins the marks; on failure set again, "Not saved"; else a Keep Marks step |
-| `pendingMarks[key]` set | Clear | nil | the layers go; a Clear Marks step |
-| `pendingMarks[key]` nil | Undo of either step | the entry; nil on Redo | UndoTimeline in `stack.md` |
 
 **Invariants**
 
 - A `shown` notice never outlives its card's shown state: every end posts `unshown`, and `unshown` takes only a `shown` notice. Checked by: `CardNoticesTests.testAShownNoticeStaysUntilItsShownStateEndsAndTheEndTakesNoNewerNotice`, `StackModelTests.testACardThatLeavesTakesItsShownNoticeAndTheDimWithIt`.
 - The overflow never removes a shown card. Checked by: `StackModelTests.testTheOverflowKeepsTheCardsInTheEditorInAStitchAndShownByAnAgent`.
 - No call is placed while the hand is in the corner, and calls run in the order they came. Checked by: nothing beyond `ShowQueue.take`, which returns all or none.
-- Pending marks live in memory only and are not cleared when their card leaves the corner, so a later card or opening of the file shows them again. Keep and Clear follow the marks: the `shown` notice offers them, a card with no notice offers them on a band of its own (`AgentBand.of`), and the editor's bar offers them. Another notice holds the card for its own time first. Checked by: `CardNoticesTests.testKeepAndClearFollowTheAgentsMarksAfterTheShownNoticeEnds`.
+

@@ -36,8 +36,6 @@ enum EditorCoreTrace {
             case .other: return "paste other"
             }
         case .agentMarks(let marks, let pins, _, _): return "agent marks \(marks.count) pins \(pins.count)"
-        case .takeBackAgentMarks: return "take back agent marks"
-        case .putBackAgentMarks(let taken): return "put back agent marks \(taken.step.changes.count)"
         case .done: return "done"
         case .send: return "send"
         case .park: return "park"

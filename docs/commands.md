@@ -19,7 +19,7 @@ open -g "vignette://trash?file=~/Dropbox/Screenshots/x.png"
 open -g "vignette://unsend?file=~/Dropbox/Screenshots/x.png"  # cancel a send still in its grace period, as Don't send on its card does: [unsend] ok request=<ids> <name>, or error nothing-to-unsend. Without file= it acts on the newest screenshot
 open -g "vignette://stitch?file=~/Dropbox/Screenshots/a.png&file=~/Dropbox/Screenshots/b.png"
 open -g vignette://last                       # show the newest screenshot or recording as a lone thumbnail
-open -g "vignette://show?file=~/Dropbox/Screenshots/a.png&file=~/Dropbox/Screenshots/b.png&agent=claude&session=$CLAUDE_CODE_SESSION_ID&message=Is%20this%20the%20bug%3F"  # point the user at screenshots already in the folder: the cards come up, or are marked in place, with "From Claude" and the message; &marks=<json> draws on the first one until the user keeps or clears the marks; changes no file
+open -g "vignette://show?file=~/Dropbox/Screenshots/a.png&file=~/Dropbox/Screenshots/b.png&agent=claude&session=$CLAUDE_CODE_SESSION_ID&message=Is%20this%20the%20bug%3F"  # point the user at screenshots already in the folder: the cards come up, or are marked in place, with "From Claude" and the message; &marks=<json> and &pins=<json> join the first one's drawing as one undo step, as add's do
 open -g "vignette://add?file=/tmp/agent/x.png" # copy an image in from anywhere and show its thumbnail; &annotate opens the editor
 open -g "vignette://add?file=/tmp/agent/x.png&agent=claude"  # the same, with a tab naming the agent
 open -g "vignette://add?file=/tmp/agent/x.png&agent=claude&session=$CLAUDE_CODE_SESSION_ID"  # the same, and Reply on the card goes back to that Claude Code session
@@ -132,10 +132,8 @@ comment, so the person's pin an agent answers stays the person's colour. A list 
 screenshot does not hold, or brings more new pins than it has room for answers `invalid-pins`,
 naming the comment by its place in the list. A file outside the watch folder holds no pins to
 answer. With `add`, the pins join the drawing with the marks as one undo step, and `[add] ok`
-counts the comments that joined as `pins=<n>`. With `show`, they wait with the marks until the
-person keeps or clears them, and the new pins sit on top with the marks. Answers are not drawn
-until they are kept. Keep numbers the new pins then and adds the answers; an answer whose
-pin was removed meanwhile is left out with a `[pins] dropped pin=<n>` line.
+counts the comments that joined as `pins=<n>`. With `show` it is the same: the marks and pins
+join the drawing before the cards come up, and `[show] ok` counts them as `marks=<n>` and `pins=<n>`.
 
 ## The log
 
@@ -151,8 +149,7 @@ menu bar opens it. The codes are fixed:
 marks=<n> [pins=<n>] after=<ms> tag=<tag>` once its cards are up. `files=` is a JSON array, since names hold
 spaces. While the person's hand is in the corner it first logs `[show] waits for
 <press|drag|sweep|swipe|stitch|slide-out>`, and `after=` counts the wait. A shown state that ends
-logs `[show] ended <name> by=left|opened|replaced`, and Keep and Clear log `[show] kept marks=<n>
-[pins=<n>] <name>` and `[show] cleared marks=<n> [pins=<n>] <name>`. `add` of the person's own screenshot in the folder
+logs `[show] ended <name> by=left|opened|replaced`. `add` of the person's own screenshot in the folder
 answers `unsupported-type` and names `show`.
 
 Where Send starts is logged too. `[send] target <address> project=<detail> focus=<why> role=<role> [reply] [capture=<app>:<percent>,…]`

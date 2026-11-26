@@ -11,6 +11,9 @@ extension EditorCore {
         var editing: Int?
         /// The composer's words as typed.
         var draft: String
+        /// The popover takes the keys as it opens. False for the one the editor opens on its own, which
+        /// leaves them with the editor until the person clicks into it.
+        var takesKeys = true
     }
 
     enum ComposerInput: Equatable {
@@ -26,6 +29,11 @@ extension EditorCore {
         case edit(Int)
         /// A pin chosen in the toolbar's list or a cluster's: its popover opens on it.
         case open(Pin.ID)
+        /// A comment's Delete: it goes, and its pin with it when it was the only one, as one undo step.
+        case delete(Int)
+        /// The editor came up on its screenshot: the popover opens on the pin with the lowest number,
+        /// leaving the keys and the selection as they are.
+        case openFirst
     }
 
     func pin(_ id: Pin.ID) -> Pin? { drawing.pins.first { $0.id == id } }
@@ -108,6 +116,16 @@ extension EditorCore {
             if self.composer != nil { openComposer(on: composer.pin, editing: shifted) }
         case .open(let id):
             openComposer(on: id)
+        case .delete(let index):
+            composerInput(.edit(index))
+            guard composer?.editing != nil else { return }
+            composer?.draft = ""
+            post()
+        case .openFirst:
+            guard composer == nil, gesture == nil, typing == nil,
+                  let first = drawing.pins.filter({ $0.number > 0 }).min(by: { $0.number < $1.number }) else { return }
+            edit = newEdit
+            composer = Composer(pin: first.id, draft: "", takesKeys: false)
         }
     }
 
@@ -204,6 +222,13 @@ extension EditorCore {
 
     /// Posts what was typed and closes the popover. The pin stays selected; a new one with nothing
     /// posted goes, and took no number.
+    /// Tells the view when the pin popover opens, changes or closes.
+    mutating func reportComposer() {
+        guard composer != reportedComposer else { return }
+        reportedComposer = composer
+        emit(.composer(composer))
+    }
+
     mutating func closeComposer() {
         guard let open = composer else { return }
         if gesture != nil { cancelGesture() }
@@ -366,27 +391,6 @@ extension EditorCore {
     mutating func showCluster(_ ids: [Pin.ID]) {
         guard let cluster = pinPlacement.clusters.first(where: { $0.pins == ids }) else { return }
         emit(.showCluster(ids, at: cluster.frame))
-    }
-}
-
-extension Pin {
-    /// Where the pin is, as a rect in px: its area, or a point's empty rect.
-    var extent: CGRect {
-        switch place {
-        case .point(let point): return CGRect(origin: point, size: .zero)
-        case .area(let frame, _): return frame
-        }
-    }
-
-    /// What VoiceOver calls the pin: "Pin 3, area, 2 comments".
-    var spokenName: String {
-        guard number > 0 else { return "New pin" }
-        let kind: String
-        switch place {
-        case .point: kind = "point"
-        case .area: kind = "area"
-        }
-        return "Pin \(number), \(kind), \(comments.count == 1 ? "1 comment" : "\(comments.count) comments")"
     }
 }
 

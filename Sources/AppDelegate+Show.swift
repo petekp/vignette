@@ -46,23 +46,32 @@ extension AppDelegate {
         if from.cut { Log.write("[show] warning \(name): its from= is longer than \(Agent.maxSenderLength) characters and was cut") }
         // Marks and pins need someone to come from: with no `agent=` they are an agent's with no name.
         let agent = request.agent ?? (agentMarks.isEmpty && agentPins.isEmpty ? nil : "")
-        var marks: [ScreenshotKey: PendingMarks.Entry] = [:]
-        if let agent, !agentMarks.isEmpty || !agentPins.isEmpty {
-            let additions = AgentAdditions(marks: agentMarks, pins: agentPins, agent: agent)
-            guard first.kind == .image, let preview = drawings.preview(additions, to: first.key, style: settings.data.ui.textStyle,
-                                                                     newScreen: Self.newDrawingScreen, rule: settings.data.ui.markScaleRule) else {
-                Commands.error(cmd, agentMarks.isEmpty ? .invalidPins : .invalidMarks, "\(name): it is not an image its marks or pins can go on"); return
-            }
-            guard agentMarks.isEmpty || !preview.preview.marks.isEmpty else {
-                Commands.error(cmd, .invalidMarks, "\(name): none of its marks can be drawn on it"); return
-            }
-            if let problem = AgentPin.problem(agentPins, on: preview.onto, name: name) { Commands.error(cmd, .invalidPins, problem); return }
-            marks[first.key] = PendingMarks.Entry(agent: agent, session: session, sender: from.name, marks: agentMarks, drawing: preview.preview,
-                                                  pins: agentPins, at: additions.at)
-        }
         let shown = agent.map { Shown(agent: $0, session: session, message: message.text, at: Date(), sender: from.name) }
-        thumbnail.show(.init(shots: shots, shown: shown, marks: marks, agent: request.agent, tag: request.tag, asked: asked))
-        if shown != nil, from.name == nil, let session { nameSender(of: session, asked: asked) }
+        var call = ThumbnailController.ShowCall(shots: shots, shown: shown, agent: request.agent, tag: request.tag, asked: asked)
+        func bringUp() {
+            thumbnail.show(call)
+            if shown != nil, from.name == nil, let session { nameSender(of: session, asked: asked) }
+        }
+        guard let agent, !agentMarks.isEmpty || !agentPins.isEmpty else { return bringUp() }
+        let additions = AgentAdditions(marks: agentMarks, pins: agentPins, agent: agent), ui = settings.data.ui
+        guard first.kind == .image, let joining = drawings.joining(additions, to: first.key, style: ui.textStyle,
+                                                                 newScreen: Self.newDrawingScreen, rule: ui.markScaleRule) else {
+            Commands.error(cmd, agentMarks.isEmpty ? .invalidPins : .invalidMarks, "\(name): it is not an image its marks or pins can go on"); return
+        }
+        guard agentMarks.isEmpty || joining.drawable > 0 else {
+            Commands.error(cmd, .invalidMarks, "\(name): none of its marks can be drawn on it"); return
+        }
+        if let problem = AgentPin.problem(agentPins, on: joining.onto, name: name) { Commands.error(cmd, .invalidPins, problem); return }
+        // The marks and pins join the drawing as `add`'s do, as one undo step, before the cards come up.
+        addMarks(additions, to: first.key, rule: ui.markScaleRule) { result in
+            switch result {
+            case .success(let joined):
+                call.joined = joined
+                bringUp()
+            case .failure(let failure):
+                Commands.error(cmd, failure.code, failure.description)
+            }
+        }
     }
 
     /// The session's name, for a `show` that did not give one with `from=`: the cards come up at
@@ -73,52 +82,6 @@ extension AppDelegate {
             guard let sender = Agent.cleanSender(sender).name else { Log.write("[show] sender not found session=\(session.id) \(after)"); return }
             Log.write("[show] sender found session=\(session.id) \(after)")
             self?.thumbnail.named(sender, of: session)
-        }
-    }
-
-    /// The corner and the editor draw an agent's marks from one store, and Keep and Clear in either
-    /// one settle them.
-    func connectAgentMarks() {
-        thumbnail.pendingMarks.changed = { [weak self] key in
-            self?.thumbnail.agentMarksChanged(key)
-            self?.annotator.agentMarksChanged(key)
-        }
-        annotator.pendingMarks = { [weak self] key in self?.thumbnail.pendingMarks[key] }
-        annotator.onAgentMarks = { [weak self] key, keep in self?.settleAgentMarks(on: key, keep: keep) }
-        thumbnail.model.onAgentMarks = { [weak self] card, keep in self?.settleAgentMarks(on: card.shot.key, keep: keep) }
-        thumbnail.timeline.marks = UndoTimeline.MarksOnTop(
-            onTop: { [unowned self] in thumbnail.pendingMarks[$0] },
-            setOnTop: { [unowned self] in thumbnail.pendingMarks.set($0, on: $1) },
-            drawn: { [unowned self] in drawings.drawn(of: $0, style: settings.data.ui.textStyle) },
-            takeBack: { [unowned self] in drawings.takeBackAgentMarks(of: $0, style: settings.data.ui.textStyle) },
-            putBack: { [unowned self] in
-                drawings.putBackAgentMarks($0, on: $1, style: settings.data.ui.textStyle, newScreen: Self.newDrawingScreen,
-                                           rule: settings.data.ui.markScaleRule)
-            })
-    }
-
-    /// Keep joins the agent's marks to the drawing as one undo step, through `add`'s own path;
-    /// Clear lets them go. Either way they leave the top, as a step of the undo timeline. Marks that
-    /// could not be written go back on top, and the card says why.
-    func settleAgentMarks(on key: ScreenshotKey, keep: Bool) {
-        guard let entry = thumbnail.pendingMarks[key] else { return }
-        thumbnail.pendingMarks.set(nil, on: key)
-        guard keep else {
-            thumbnail.timeline.cleared(entry, on: key)
-            Log.write("[show] cleared marks=\(entry.drawing.marks.count)\(entry.pins.isEmpty ? "" : " pins=\(entry.pins.count)") \(key.name)")
-            return
-        }
-        addMarks(entry.additions, to: key, rule: settings.data.ui.markScaleRule) { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .success(let joined):
-                if !joined.isEmpty { thumbnail.timeline.kept(entry, on: key) }
-                Log.write("[show] kept marks=\(joined.marks)\(entry.pins.isEmpty ? "" : " pins=\(joined.pins)") \(key.name)")
-            case .failure(let failure):
-                thumbnail.pendingMarks.set(entry, on: key)
-                Log.write("[show] error \(failure.code.rawValue) \(key.name): its marks were not kept: \(failure)")
-                thumbnail.post(.notSaved(reason: "Vignette couldn't add the marks. You can keep them again."), on: Screenshot(key: key), comesUp: false)
-            }
         }
     }
 }

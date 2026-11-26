@@ -269,3 +269,24 @@ struct PinRecord: Encodable {
         }
     }
 }
+
+extension Pin {
+    /// Where the pin is, as a rect in px: its area, or a point's empty rect.
+    var extent: CGRect {
+        switch place {
+        case .point(let point): return CGRect(origin: point, size: .zero)
+        case .area(let frame, _): return frame
+        }
+    }
+
+    /// What VoiceOver calls the pin: "Pin 3, area, 2 comments".
+    var spokenName: String {
+        guard number > 0 else { return "New pin" }
+        let kind: String
+        switch place {
+        case .point: kind = "point"
+        case .area: kind = "area"
+        }
+        return "Pin \(number), \(kind), \(comments.count == 1 ? "1 comment" : "\(comments.count) comments")"
+    }
+}

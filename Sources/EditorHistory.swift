@@ -32,12 +32,6 @@ struct EditStep {
     var selectionAfter: Set<Mark.ID>
     var pins: [PinChange] = []
 
-    /// Agents' marks and pins joining a drawing and nothing else, as a Keep or an `add` makes it: marks
-    /// and pins added, and comments added to pins.
-    var joinsAgentMarks: Bool {
-        name == .agentMarks && changes.allSatisfy { $0.before == nil } && pins.allSatisfy { $0.after != nil }
-    }
-
     /// This step and `later` as one, from this one's start to `later`'s end; nil when they cancel out.
     func merged(with later: EditStep) -> EditStep? {
         var changes = self.changes
@@ -85,14 +79,6 @@ struct EditStep {
         }
         return result
     }
-}
-
-/// A Keep's step taken back off a drawing's history (`Drawings.takeBackAgentMarks`), with the redo
-/// steps the history held then. A redo step can hold one of the step's marks, which redoing it would
-/// put back in the drawing while the marks are on top, so they leave with it and come back with it.
-struct TakenBackMarks {
-    let step: EditStep
-    let redo: [HistoryStep]
 }
 
 /// What one undo step did, in the words Undo and Redo give it: "Undo Arrow", "Redo Typing". The raw

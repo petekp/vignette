@@ -77,6 +77,19 @@ final class EditorCorePinsTests: XCTestCase {
         XCTAssertNil(core.composer)
     }
 
+    func testParkingPostsTheDraftAndClosesThePopover() throws {
+        var core = core()
+        core.click(500, 300)
+        write(&core, "Too tight")
+        let parked = core.reduce(.park)
+        XCTAssertTrue(parked.contains(.composer(nil)))
+        XCTAssertNil(core.composer)
+        let handed = parked.compactMap { effect -> Drawing? in
+            if case .handOver(let drawing) = effect { return drawing } else { return nil }
+        }
+        XCTAssertEqual(try XCTUnwrap(handed.first).pins.first?.comments.map(\.text), ["Too tight"])
+    }
+
     func testCmdReturnPostsThenFinishesWithThePin() {
         var core = core()
         core.click(500, 300)
@@ -109,6 +122,41 @@ final class EditorCorePinsTests: XCTestCase {
         XCTAssertEqual(core.drawing.nextPin, 2)
         core.key(.character("z"), .command)
         XCTAssertEqual(core.drawing.pins.first?.comments.map(\.text), ["Changed"])
+    }
+
+    func testDeleteTakesAnAgentsCommentAsOneStepAndTheOnlyCommentLeftTakesThePinWithIt() throws {
+        let answered = Pin(id: UUID(), number: 1, place: .point(CGPoint(x: 500, y: 300)),
+                           comments: [Pin.Comment(text: "Too tight"), Pin.Comment(text: "Fixed", agent: true, agentName: "claude")])
+        var core = core(pins: [answered], nextPin: 2)
+        _ = core.reduce(.composer(.open(answered.id)))
+        _ = core.reduce(.composer(.delete(1)))
+        XCTAssertEqual(core.drawing.pins.first?.comments.map(\.text), ["Too tight"])
+        XCTAssertEqual(core.composer, Core.Composer(pin: answered.id, editing: nil, draft: ""))
+        XCTAssertEqual(core.undoTitle, "Undo Delete")
+        _ = core.reduce(.composer(.delete(0)))
+        XCTAssertEqual(core.drawing.pins, [])
+        XCTAssertNil(core.composer)
+        XCTAssertEqual(core.drawing.nextPin, 2)
+        core.key(.character("z"), .command)
+        XCTAssertEqual(core.drawing.pins.first?.comments.map(\.text), ["Too tight"])
+        core.key(.character("z"), .command)
+        XCTAssertEqual(core.drawing.pins, [answered])
+    }
+
+    func testTheFirstPinsPopoverOpensWithoutTheKeysOrTheSelectionAndEscClosesItBeforeTheEditor() {
+        let mark = Mark(geometry: .rectangle(CGRect(x: 100, y: 100, width: 200, height: 100)))
+        let second = pin(2, 700, 400), first = pin(1, 500, 300)
+        var core = core([mark], pins: [second, first], nextPin: 3)
+        _ = core.reduce(.setTool(.select))
+        core.selection = [mark.id]
+        _ = core.reduce(.composer(.openFirst))
+        XCTAssertEqual(core.composer, Core.Composer(pin: first.id, draft: "", takesKeys: false))
+        XCTAssertEqual(core.selection, [mark.id])
+        XCTAssertFalse(core.key(.escape).contains(.close))
+        XCTAssertNil(core.composer)
+        XCTAssertEqual(core.drawing.pins, [second, first])
+        XCTAssertEqual(core.undoTitle, "Undo")
+        XCTAssertTrue(core.key(.escape).contains(.close))
     }
 
     func testAfterEmptyingOneCommentAClickOnALaterOneEditsThatOneAndAnUnchangedOneReturnsToANewComment() throws {

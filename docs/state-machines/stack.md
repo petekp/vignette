@@ -91,14 +91,12 @@ Inserts a card into the open stack without animating the layout change; the new 
 
 Owner: `UndoTimeline.swift`, `UndoTimeline+Connections.swift`; `ThumbnailController.putBack` places the cards, `ThumbnailController+Timeline.swift` feeds it the run's effects and opens or closes the annotator for it. Tests: `UndoTimelineTests`, `AnnotationRunTests.testUndoingTheOpeningEndsTheRunWithNoHandSoTheKeysStayWithTheStack`, `FolderWritesTests.testAFilePutBackFromTheTrashIsNoCaptureAndHoldsBackOlderRemovals`.
 
-Cmd+Z and Shift+Cmd+Z while the stack or the editor has the keys (`docs/rules/undo-timeline.md`). **States**: `undoSteps` and `redoSteps`, each step a `Name`, an `Action` (`putBack`, `trashAgain`, `unstitch`, `restitch`, `draw`, `unkeep`, `rekeep`, `unclear`, `reclear`), `editor` (the screenshot in the editor while the step is next, with its history's depth and its file's identity) and `then` (the same once it has run); `leaving`, the screenshot the run took out of the editor until it opens another or ends; `asked`, an opening or a close an Undo or Redo is waiting for; `seen`, the editor's step counts when last read; `inEditor`, the screenshot it saw open; `leftAt`, each screenshot's depth when it left; `renamed`.
+Cmd+Z and Shift+Cmd+Z while the stack or the editor has the keys (`docs/rules/undo-timeline.md`). **States**: `undoSteps` and `redoSteps`, each step a `Name`, an `Action` (`putBack`, `trashAgain`, `unstitch`, `restitch`, `draw`), `editor` (the screenshot in the editor while the step is next, with its history's depth and its file's identity) and `then` (the same once it has run); `leaving`, the screenshot the run took out of the editor until it opens another or ends; `asked`, an opening or a close an Undo or Redo is waiting for; `seen`, the editor's step counts when last read; `inEditor`, the screenshot it saw open; `leftAt`, each screenshot's depth when it left; `renamed`.
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | any | `trash` (Delete) with a file trashed | `putBack` on the undo list, redo list cleared | files to the Trash, cards leave |
 | any | `stitched` | `unstitch` on the undo list, redo list cleared | — |
-| any | `kept` (Keep wrote the agent's marks) | `unkeep` on the undo list, with the drawing's hash; redo cleared. Kept in the editor, its `editor` depth is the join's and its `then` one below | — |
-| any | `cleared` (Clear) | `unclear` on the undo list, redo cleared | — |
 | `asked` nil | `editorOpened` (`prepare`), `leaving` nil | Open Drawing on the undo list, from nothing; redo cleared | — |
 | `asked` nil | `editorLeft` (`park`, `abandon`) then `editorOpened` | Open Drawing from the screenshot that left | — |
 | `asked` nil | `editorLeft` then `editorEnded` (`endRun`), its file still there | Close Drawing on the undo list | — |
@@ -107,10 +105,6 @@ Cmd+Z and Shift+Cmd+Z while the stack or the editor has the keys (`docs/rules/un
 | a screenshot open, its depth below the next redo step's | Shift+Cmd+Z, the editor can redo | — | the editor's own Redo |
 | `putBack` on top | Cmd+Z, a file came back | `trashAgain` on the redo list | files back, `putBack` cards, the screenshot that was in the editor opens again, VoiceOver hears "Undo Move to Trash" |
 | `unstitch` on top | Cmd+Z, the stitch trashed | `restitch` on the redo list | pieces' cards back first, then the stitch to the Trash |
-| `unkeep` on top | Cmd+Z, nothing on top of the screenshot, its drawing still hashes as Keep left it, its newest step the join | `rekeep` on the redo list, with that step | the join's step leaves the drawing with its redo steps (`Drawings.takeBackAgentMarks`), the marks go back on top; on a screenshot not open, `leftAt` one lower |
-| `rekeep` on top | Shift+Cmd+Z, the same marks on top | `unkeep` on the undo list | the step and its redo steps go back on the drawing, the marks leave the top; on a screenshot not open, `leftAt` one higher |
-| `unclear` on top | Cmd+Z, nothing on top of the screenshot | `reclear` on the redo list | the marks go back on top |
-| `reclear` on top | Shift+Cmd+Z, the same marks on top | `unclear` on the undo list | the marks leave the top |
 | `draw` on top | Cmd+Z, `then` names a screenshot | `asked` = its opening, the opposite `draw` on the redo list | `annotate`: its flights |
 | `draw` on top | Cmd+Z, `then` nil, the corner the stack | `asked` = close | `.undo` |
 | `draw` on top, `then` nil, a screenshot open | Cmd+Z over lone thumbnails | — | beep |
@@ -129,7 +123,6 @@ Cmd+Z and Shift+Cmd+Z while the stack or the editor has the keys (`docs/rules/un
 - A step that runs leaves its opposite on the other list, and one that cannot leaves nothing. Checked by: `UndoTimelineTests`.
 - Cmd+Z walks back through Delete, the opening, the editor's steps, the close and Stitch in the order they were made, and Shift+Cmd+Z forward the same way. Checked by: `UndoTimelineTests.testUndoWalksBackThroughDeleteOpenMarksCloseAndStitchInTheOrderTheyWereMade`.
 - An opening stops Cmd+Z at its own start. Checked by: `UndoTimelineTests.testASecondOpeningOfAnImageStopsAtItsOwnStartAndItsEarlierStepsWaitAtTheirPlace`.
-- An Undo of Keep never leaves the agent's marks both on top and in the drawing, nor on top and in the editor's redo. Checked by: `UndoTimelineTests.testKeepInTheEditorSitsAboveItsJoinSoTheStepsDrawnAfterItAreUndoneFirst`, `EditorCoreUndoTests.testKeptMarksTakenBackTakeTheRedoStepsWithThemAndPuttingThemBackBringsThoseBack`, `DrawingsHistoryTests.testKeptMarksTakenBackOffAStoredDrawingLeaveTheStepsBeforeThemAndGoBackAsTheNewestStep`.
 - A card comes back before the older card still in the column that followed it. Checked by: `UndoTimelineTests.testACardGoesBackBeforeTheOlderCardThatIsStillThereElseAfterTheNewerOne`.
 
 **Late and concurrent answers**

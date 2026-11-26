@@ -15,7 +15,6 @@ final class UndoTimeline {
     var files = Files()
     var cards = Cards()
     var editor = Editor()
-    var marks = MarksOnTop()
     private let beep: () -> Void
     /// Tells VoiceOver what an Undo or a Redo just did, in the Edit menu's words.
     var announce: (String) -> Void = { _ in }
@@ -195,13 +194,6 @@ final class UndoTimeline {
         case restitch(trashed: Gone, pieces: [Screenshot], column: [ScreenshotKey])
         /// Opens, closes or swaps the screenshot in the annotator, to what `then` says.
         case draw
-        /// Puts kept marks back on top, out of a drawing that still hashes to `drawn`.
-        case unkeep(key: ScreenshotKey, entry: PendingMarks.Entry, drawn: String?)
-        /// Keeps them again: `taken` back on the drawing, the marks off the top.
-        case rekeep(key: ScreenshotKey, entry: PendingMarks.Entry, taken: TakenBackMarks)
-        /// Puts cleared marks back on top.
-        case unclear(key: ScreenshotKey, entry: PendingMarks.Entry)
-        case reclear(key: ScreenshotKey, entry: PendingMarks.Entry)
     }
 
     /// A file a step moved to the Trash, with its drawing, message and history as they were then.
@@ -283,8 +275,6 @@ final class UndoTimeline {
         case .unstitch(let stitch, let pieces, let column): unstitch(stitch, pieces: pieces, column: column)
         case .restitch(let trashed, let pieces, let column): restitch(trashed, pieces: pieces, column: column)
         case .draw: return draw(step)
-        // The marks follow the screenshot wherever it is, so these never open it in the editor.
-        case .unkeep, .rekeep, .unclear, .reclear: return runMarks(step.action)
         }
         // A Delete that took the screenshot in the editor away brings it back there when undone.
         guard !refused, let then = step.then, editor.open()?.key != current(then.key) else { return }

@@ -26,10 +26,4 @@ extension EditorCore {
         handOver()
     }
 
-    /// The newest undo step when it is agents' marks and pins joining the drawing and nothing else, as
-    /// a Keep or an `add` leaves it. Nil while a gesture, a typing session or the composer is under way.
-    var newestAgentMarks: EditStep? {
-        guard gesture == nil, typing == nil, composer == nil, case .drawing(let step)? = undoSteps.last, step.joinsAgentMarks else { return nil }
-        return step
-    }
 }

@@ -15,11 +15,6 @@ protocol OpenDrawing: AnyObject {
     func rekey(_ old: ScreenshotKey, to new: ScreenshotKey)
     /// The undo and redo history open for `key`, or nil when that screenshot is not open.
     func history(of key: ScreenshotKey) -> EditorHistory?
-    /// Takes the newest undo step back out when it is agents' marks joining the drawing, with the redo
-    /// steps. Answers them with the drawing to store, or nil when the newest step is another.
-    func takeBackAgentMarks() -> (taken: TakenBackMarks, drawing: Drawing)?
-    /// Puts back what `takeBackAgentMarks` answered. Answers the drawing to store.
-    func putBackAgentMarks(_ taken: TakenBackMarks) -> Drawing?
 }
 
 /// The app's drawings: the store on disk, the screenshots that have one, and every change a drawing

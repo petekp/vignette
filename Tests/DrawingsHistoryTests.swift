@@ -4,8 +4,6 @@ private let retinaScreen = DrawingScreen(scale: 2, size: CGSize(width: 1512, hei
 
 extension FakeEditor {
     func history(of key: ScreenshotKey) -> EditorHistory? { nil }
-    func takeBackAgentMarks() -> (taken: TakenBackMarks, drawing: Drawing)? { nil }
-    func putBackAgentMarks(_ taken: TakenBackMarks) -> Drawing? { nil }
 }
 
 @MainActor
@@ -43,7 +41,7 @@ final class DrawingsHistoryTests: XCTestCase {
         XCTAssertEqual(reopened.undoTitle, "Undo Rectangle")
     }
 
-    func testAnAgentsNewPinAndAnswerJoinAStoredDrawingAsOneStepThatTakingBackUndoes() throws {
+    func testAnAgentsNewPinAndAnswerJoinAStoredDrawingAsOneStepThatUndoes() throws {
         let shot = try writeTestImage(width: 300, height: 200, space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)), in: dir) { _, _ in (0xe0, 0x31, 0x31) }
         let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
         let mine = Pin(id: UUID(), number: 1, place: .point(CGPoint(x: 20, y: 20)), comments: [Pin.Comment(text: "Too tight")])
@@ -60,52 +58,12 @@ final class DrawingsHistoryTests: XCTestCase {
         XCTAssertEqual(stored.pins[1].place, .point(CGPoint(x: 150, y: 100)))
         XCTAssertEqual(stored.nextPin, 3)
 
-        XCTAssertNotNil(drawings.takeBackAgentMarks(of: shot.screenshotKey, style: .standard))
-        let taken = try XCTUnwrap(drawings.read(shot.screenshotKey, pixels: pixels, style: .standard))
-        XCTAssertEqual(taken.pins, [mine], "the new pin goes and the answer leaves the person's pin")
-        XCTAssertEqual(taken.nextPin, 3, "a number once given is not given again")
-    }
-
-    func testKeptMarksTakenBackOffAStoredDrawingLeaveTheStepsBeforeThemAndGoBackAsTheNewestStep() throws {
-        let shot = try writeTestImage(width: 300, height: 200, space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)), in: dir) { _, _ in (0xe0, 0x31, 0x31) }
-        let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
-        let theirs = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))
-        let drawn = EditorHistory(undo: [.drawing(EditStep(name: .rectangle, changes: [EditStep.Change(id: theirs.id, before: nil, after: PlacedMark(mark: theirs, index: 0))],
-                                                          selectionBefore: [], selectionAfter: [theirs.id]))])
-        drawings.write(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [theirs]), history: drawn, reason: "saved")
-        let pushed = [AgentMark(type: .rectangle, x: 0.1, y: 0.1, w: 0.5, h: 0.5)]
-        XCTAssertEqual(try drawings.add(AgentAdditions(marks: pushed, agent: "Claude"), to: shot.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule).marks, 1)
-        let kept = try XCTUnwrap(drawings.drawn(of: shot.screenshotKey, style: .standard))
-
-        let takenBack = try XCTUnwrap(drawings.takeBackAgentMarks(of: shot.screenshotKey, style: .standard))
-        let taken = try XCTUnwrap(drawings.read(shot.screenshotKey, pixels: pixels, style: .standard))
-        XCTAssertEqual(taken.marks.map(\.geometry), [theirs.geometry])
-        let left = drawings.history(of: shot.screenshotKey, pixels: pixels, drawing: taken)
-        XCTAssertEqual(left.undo.map(\.name), [.rectangle])
-        XCTAssertTrue(left.redo.isEmpty, "nothing but Redo Keep Marks can put them back")
-        XCTAssertNil(drawings.takeBackAgentMarks(of: shot.screenshotKey, style: .standard), "the newest step is the person's rectangle")
-
-        XCTAssertTrue(drawings.putBackAgentMarks(takenBack, on: shot.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule))
-        XCTAssertEqual(drawings.drawn(of: shot.screenshotKey, style: .standard), kept)
-        let stored = try XCTUnwrap(drawings.read(shot.screenshotKey, pixels: pixels, style: .standard))
         var reopened = EditorCore()
         _ = reopened.reduce(.open(stored, style: .standard, metrics: .standard, markStyle: .standard,
                                   history: drawings.history(of: shot.screenshotKey, pixels: pixels, drawing: stored)))
-        XCTAssertEqual(reopened.undoTitle, "Undo Claude's Marks")
-    }
-
-    func testTakingBackTheOnlyMarksRemovesTheDrawingAndPuttingThemBackWritesItAgain() throws {
-        let shot = try writeTestImage(width: 300, height: 200, space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)), in: dir) { _, _ in (0xe0, 0x31, 0x31) }
-        let pushed = [AgentMark(type: .ellipse, x: 0.2, y: 0.2, w: 0.3, h: 0.3)]
-        XCTAssertEqual(try drawings.add(AgentAdditions(marks: pushed, agent: "Claude"), to: shot.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule).marks, 1)
-
-        let takenBack = try XCTUnwrap(drawings.takeBackAgentMarks(of: shot.screenshotKey, style: .standard))
-        XCTAssertFalse(drawings.keys.contains(shot.screenshotKey))
-
-        XCTAssertTrue(drawings.putBackAgentMarks(takenBack, on: shot.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule))
-        XCTAssertTrue(drawings.keys.contains(shot.screenshotKey))
-        let pixels = try XCTUnwrap(PixelSize(imageAt: shot))
-        XCTAssertEqual(drawings.read(shot.screenshotKey, pixels: pixels, style: .standard)?.marks.map(\.agent), [true])
+        reopened.key(.character("z"), .command)
+        XCTAssertEqual(reopened.drawing.pins, [mine], "the new pin goes and the answer leaves the person's pin")
+        XCTAssertEqual(reopened.drawing.nextPin, 3, "a number once given is not given again")
     }
 
     func testADrawingWrittenBackFromWhatWasSavedKeepsItsMessageAndItsHistory() throws {

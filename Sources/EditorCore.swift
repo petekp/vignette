@@ -69,10 +69,6 @@ struct EditorCore {
         /// Agents' marks joining the open drawing, already in px and kept inside the image, and their
         /// pins, new or answering one, from `agent` and written `at`.
         case agentMarks([Mark], pins: [AgentPin] = [], from: String? = nil, at: Date = Date())
-        /// An Undo of Keep: `newestAgentMarks` and the redo steps leave the history, with no redo left.
-        case takeBackAgentMarks
-        /// A Redo of Keep: what `takeBackAgentMarks` took comes back, its redo steps under any made since.
-        case putBackAgentMarks(TakenBackMarks)
         /// Done in the toolbar.
         case done
         /// Send in the toolbar, to the destination it chose.
@@ -219,7 +215,7 @@ struct EditorCore {
     /// The pin whose popover is open.
     var composer: Composer?
     var composerSelectionBefore: Set<Mark.ID>?
-    private var reportedComposer: Composer?
+    var reportedComposer: Composer?
     /// The changes an open gesture or typing session has made so far.
     var edit: MarkEdit?
     private(set) var pointer: CGPoint?
@@ -398,8 +394,6 @@ struct EditorCore {
         case .timerFired: timerFired()
         case .paste(let content): paste(content)
         case .agentMarks(let marks, let pins, let agent, let at): join(marks, pins: pins, from: agent, at: at)
-        case .takeBackAgentMarks: takeBackAgentMarks()
-        case .putBackAgentMarks(let step): putBackAgentMarks(step)
         case .done: finish(.done)
         case .send(let destination): finish(.send, to: destination)
         case .park: park()
@@ -410,10 +404,7 @@ struct EditorCore {
     /// selection for VoiceOver.
     private mutating func settle() {
         if let hovered = hover, !exists(hovered) { hover = nil }
-        if composer != reportedComposer {
-            reportedComposer = composer
-            emit(.composer(composer))
-        }
+        reportComposer()
         if tool != reportedTool {
             reportedTool = tool
             emit(.tool(tool))
@@ -473,6 +464,8 @@ struct EditorCore {
 
     private mutating func park() {
         finishForHost()
+        // A parked core reports nothing more, so the closed popover is reported here.
+        reportComposer()
         emit(.cancelTimer)
         emit(.handOver(drawingForHost))
         unsaved = false
@@ -1260,7 +1253,8 @@ struct EditorCore {
         }
         switch key {
         case .escape:
-            emit(.close)
+            // The popover the editor opened on its own leaves the keys here, and Esc closes it first.
+            if composer != nil { closeComposer() } else { emit(.close) }
         case .returnKey:
             if modifiers.isDisjoint(with: [.shift, .option]) {
                 finish(command ? finishes.commandReturn : finishes.returnKey)
@@ -1393,26 +1387,6 @@ struct EditorCore {
     /// The open screenshot's file was renamed: the drawing is the same, under this key.
     mutating func rekey(to key: String) {
         if isOpen { drawing.key = key }
-    }
-
-    // MARK: Agents' marks
-
-    private mutating func takeBackAgentMarks() {
-        guard let step = newestAgentMarks else { return }
-        undoSteps.removeLast()
-        redoSteps = []
-        typingMessage = false
-        drawing = step.applied(to: drawing, forward: false)
-        selection.subtract(step.changes.map(\.id) + step.pins.filter { $0.before == nil }.map(\.id))
-        handOver()
-    }
-
-    private mutating func putBackAgentMarks(_ taken: TakenBackMarks) {
-        undoSteps.append(.drawing(taken.step))
-        redoSteps = taken.redo + redoSteps
-        typingMessage = false
-        drawing = taken.step.applied(to: drawing, forward: true)
-        handOver()
     }
 }
 

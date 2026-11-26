@@ -112,7 +112,12 @@ extension EditorView {
         pinUI.composer?.close()
         let popover = PinPopover(pin: pin, composer: composer) { [weak self] input in self?.handle(.composer(input)) }
         pinUI.composer = popover
-        popover.show(from: rect, of: self)
+        popover.show(from: rect, of: self, takesKeys: composer.takesKeys)
+    }
+
+    /// The editor came up on its screenshot: the first pin's popover opens, leaving the keys here.
+    func openFirstPin() {
+        handle(.composer(.openFirst))
     }
 
     // MARK: A cluster's list and the toolbar's
