@@ -30,7 +30,9 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
 - `pins` holds the drawing's pins, in number order, and is left out when there are none. A pin has
   a random `id` in UUID form, which never changes, a `number` from 1, `x` and `y` in px, and
   `comments`, a list of at least one, oldest first. A point pin's `x` and `y` are its point. An
-  area pin adds `w` and `h`, and its `x` and `y` are the area's top-left corner. A comment has
+  area pin adds `w` and `h`, and its `x` and `y` are the area's top-left corner. It also adds
+  `corner`, the corner its teardrop's tip sits on: `topLeft`, `topRight`, `bottomLeft` or
+  `bottomRight`. A file without it reads as `topLeft`. A comment has
   `text`, at most 2,000 characters, and `agent` and `agentName` as a mark has them, left out for
   a person's. A file holds at most 99 pins.
 - `pieceNumbers` is a stitch's: where each piece wears its number, as `[x, y, w, h]` in px, so a

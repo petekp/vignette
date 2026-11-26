@@ -223,18 +223,42 @@ final class EditorCorePinsTests: XCTestCase {
         XCTAssertEqual(core.composer?.pin, try XCTUnwrap(core.drawing.pins.first?.id))
     }
 
+    func testAHandleResizesTheOpenPinsAreaWithItsPopoverOpenAndANewPinStillGoesWhenClosedEmpty() throws {
+        var core = core()
+        core.drag(from: (300, 200), to: (100, 100))
+        let id = try XCTUnwrap(core.composer?.pin)
+        XCTAssertEqual(core.drawing.pins.first?.place, .area(CGRect(x: 100, y: 100, width: 200, height: 100), tip: .topLeft))
+        XCTAssertEqual(core.marchingPins, [id])
+        core.drag(from: (300, 200), to: (340, 230))
+        XCTAssertEqual(core.composer?.pin, id)
+        XCTAssertEqual(core.drawing.pins.first?.place, .area(CGRect(x: 100, y: 100, width: 240, height: 130), tip: .topLeft))
+        _ = core.reduce(.composer(.close))
+        XCTAssertEqual(core.drawing.pins, [])
+        XCTAssertEqual(core.undoTitle, "Undo")
+
+        core.drag(from: (300, 200), to: (100, 100))
+        core.drag(from: (300, 200), to: (340, 230))
+        write(&core, "Wider")
+        _ = core.reduce(.composer(.close))
+        XCTAssertEqual(core.drawing.pins.first?.place, .area(CGRect(x: 100, y: 100, width: 240, height: 130), tip: .topLeft))
+        XCTAssertEqual(core.undoTitle, "Undo Comment")
+
+        core.drag(from: (340, 230), to: (60, 60))
+        XCTAssertEqual(core.drawing.pins.first?.place, .area(CGRect(x: 60, y: 60, width: 40, height: 40), tip: .bottomRight))
+    }
+
     func testADragWithTheCommentToolPlacesAnAreaPinThatMovesAndResizes() throws {
         var core = core()
         core.drag(from: (100, 100), to: (300, 200))
         let id = try XCTUnwrap(core.drawing.pins.first?.id)
-        XCTAssertEqual(core.drawing.pins.first?.place, .area(CGRect(x: 100, y: 100, width: 200, height: 100)))
+        XCTAssertEqual(core.drawing.pins.first?.place, .area(CGRect(x: 100, y: 100, width: 200, height: 100), tip: .bottomRight))
         write(&core, "This box")
         _ = core.reduce(.composer(.close))
-        core.drag(from: (110, 90), to: (160, 140))
-        XCTAssertEqual(core.drawing.pins.first?.place, .area(CGRect(x: 150, y: 150, width: 200, height: 100)))
+        core.drag(from: (310, 190), to: (360, 240))
+        XCTAssertEqual(core.drawing.pins.first?.place, .area(CGRect(x: 150, y: 150, width: 200, height: 100), tip: .bottomRight))
         XCTAssertEqual(core.selection, [id])
         core.key(.right)
-        XCTAssertEqual(core.drawing.pins.first?.tip, CGPoint(x: 151, y: 150))
+        XCTAssertEqual(core.drawing.pins.first?.tip, CGPoint(x: 351, y: 250))
         core.key(.delete)
         XCTAssertEqual(core.drawing.pins, [])
     }

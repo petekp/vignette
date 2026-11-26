@@ -29,7 +29,8 @@ struct PinTeardrop {
     /// from `pieceNumbers` where it can be.
     init(_ pin: Pin, in pixels: PixelSize, pointScale: CGFloat, markStyle: MarkStyle, pieceNumbers: [CGRect] = []) {
         let side = markStyle.pin.side * pointScale
-        let orientation = Self.facing(tip: pin.tip, side: side, edge: markStyle.edgeWidth * pointScale, in: pixels, avoiding: pieceNumbers)
+        let orientation = Self.facing(tip: pin.tip, side: side, edge: markStyle.edgeWidth * pointScale, in: pixels, avoiding: pieceNumbers,
+                                      area: pin.area, leftward: pin.leansLeft)
         self.init(number: pin.number, agent: pin.color == .agent, tip: pin.tip, orientation: orientation, side: side, style: markStyle.pin)
     }
 
@@ -75,24 +76,30 @@ struct PinTeardrop {
     }
 
     /// The orientation of a teardrop `side` px across, inside an edge `edge` px wide, whose tip is at
-    /// `tip`: up and right, unless that crosses the picture's top edge, when the body goes below the
-    /// tip, or its right edge, when the body goes to the left of it. A body that would then cover one of
-    /// `avoiding` turns to the first other orientation that covers none and stays inside the picture:
-    /// flipped up or down, then left or right, then both. When none does, the edges decide.
-    static func facing(tip: CGPoint, side: CGFloat, edge: CGFloat, in pixels: PixelSize, avoiding: [CGRect] = []) -> Orientation {
+    /// `tip`: up and right, or up and left when `leftward`, unless that crosses the picture's top edge,
+    /// when the body goes below the tip, or its side edge, when the body goes to the other side. A body that would then cover one of
+    /// `avoiding`, or lie over `area` past its rim, turns to the first other orientation that does neither and stays inside the
+    /// picture: flipped up or down, then left or right, then both. When none does, the edges decide.
+    static func facing(tip: CGPoint, side: CGFloat, edge: CGFloat, in pixels: PixelSize, avoiding: [CGRect] = [],
+                       area: CGRect? = nil, leftward: Bool = false) -> Orientation {
         let reach = side + edge
-        let up = tip.y - reach >= 0, right = tip.x + reach <= CGFloat(pixels.width)
+        let up = tip.y - reach >= 0, right = leftward ? tip.x - reach < 0 : tip.x + reach <= CGFloat(pixels.width)
         let byEdges = orientation(up: up, right: right)
         func covers(_ orientation: Orientation) -> Bool {
-            let drawn = square(tip: tip, orientation: orientation, side: side).insetBy(dx: -edge, dy: -edge)
-            return avoiding.contains { $0.intersects(drawn) }
+            let body = square(tip: tip, orientation: orientation, side: side)
+            let overArea = area.map { body.intersects($0.insetBy(dx: 1, dy: 1)) } ?? false
+            return overArea || avoiding.contains { $0.intersects(body.insetBy(dx: -edge, dy: -edge)) }
         }
         guard covers(byEdges) else { return byEdges }
-        let picture = CGRect(x: 0, y: 0, width: pixels.width, height: pixels.height)
+        // Inside the picture as the edge rule above has it: the body and its edge clear the picture's sides it reaches toward.
+        func fits(_ orientation: Orientation) -> Bool {
+            let body = square(tip: tip, orientation: orientation, side: side)
+            let x = body.minX < tip.x ? body.minX - edge >= 0 : body.maxX + edge <= CGFloat(pixels.width)
+            let y = body.minY < tip.y ? body.minY - edge >= 0 : body.maxY + edge <= CGFloat(pixels.height)
+            return x && y
+        }
         let others = [orientation(up: !up, right: right), orientation(up: up, right: !right), orientation(up: !up, right: !right)]
-        return others.first { other in
-            picture.contains(square(tip: tip, orientation: other, side: side).insetBy(dx: -edge, dy: -edge)) && !covers(other)
-        } ?? byEdges
+        return others.first { fits($0) && !covers($0) } ?? byEdges
     }
 
     static func orientation(up: Bool, right: Bool) -> Orientation {

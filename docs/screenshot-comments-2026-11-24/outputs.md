@@ -91,7 +91,7 @@ their words.
   size from the piece's top-left corner (`Stitch.drawBadge`). Pins are the same red. The teardrop's
   shape and its tip tell a pin from a piece's number, and the line calls each one "Pin".
 - A teardrop whose body would overlap a piece's number flips away from it, as it flips away from the
-  picture's edge. An area pin anchored at a piece's top-left corner is the common case. The stitch's
+  picture's edge. An area pin whose tip sits on a piece's corner is the common case. The stitch's
   drawing keeps where each number is (`pieceNumbers`). When no orientation clears both, the edges
   win on a card. A rendering moves the body clear, and its line stops at the number's edge.
 

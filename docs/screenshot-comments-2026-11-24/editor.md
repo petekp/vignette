@@ -82,12 +82,15 @@ exact for a point pin, and Figma users already read the shape.
 - It has the note tag's look at its smallest: the person's red, a 1.5 pt white edge, the tag's
   shadows, and a white number in SF Pro Rounded. An agent's pin is indigo with its number in SF
   Mono, as an agent's note is.
-- A point pin's tip sits on its point. An area pin's tip sits on the area's top-left corner, and its
-  body rises up and to the right, outside the area, so the pin covers nothing the area holds.
+- A point pin's tip sits on its point. An area pin's tip sits on the corner where the drag that made
+  it ended, so a drag from top left to bottom right puts it at the bottom right. A resize that takes
+  a side past the opposite one moves the tip with it. The body rises up and to the right, or up and
+  to the left from a bottom-left corner, outside the area, so the pin covers nothing the area holds.
 - The body has four orientations, with the tip at its bottom-left, bottom-right, top-left or
   top-right. Bottom-left is the default. When the body would cross the picture's top edge, it flips
-  below the tip. When it would cross the right edge, it flips to the left of the tip. For an area
-  pin at the top edge, the flip puts the body inside the area's corner.
+  below the tip. When it would cross the right edge, it flips to the left of the tip. When a flip
+  would put an area pin's body inside its area, the body turns the first other way that keeps it
+  outside and fits in the picture.
 - The orientation is worked out from the picture's edges at the size the picture fits the frame, so
   the editor, the card, the flight and the PNG agree. It is not stored. It changes only when a move
   or a resize crosses an edge, and the body turns about the tip on a spring.
@@ -113,8 +116,9 @@ The pin's size, its outline's width and the cluster distance are tuning settings
 - On a card, in a flight and in every rendering, a pin is drawn in the picture at the drawing's mark
   scale, as a note is, by the one renderer (ADR 0010). `MarkLayers` draws pins for the editor, the
   cards and the flights, and `MarkRendering` for the PNGs.
-- An area pin's outline is a mark's stroke at mark scale, so it grows with the zoom like a
-  rectangle.
+- In the editor an area pin's outline is dashed, one width on screen at every zoom, and its dashes
+  march while the pin is being placed or is open. A rendering draws it as a rectangle in the pin's
+  colour.
 
 ## Dense areas
 

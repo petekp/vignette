@@ -9,6 +9,8 @@ final class EditorPinUI: NSObject {
     /// none and the view's own size is the fit.
     var fittedWidth: CGFloat = 0
     var composer: PinPopover?
+    /// A drag runs with the popover open: a resize of its pin's area, which took the keys from its field.
+    var resizingOpenPin = false
     /// The menu of pins a cluster or the toolbar's Pins button opened, from its asking until it closes.
     var list: NSMenu?
     let listActions = PinListActions()
@@ -51,10 +53,13 @@ extension EditorView {
     func showPins() {
         let placement = core.pinPlacement, outlined = core.outlinedPins
         pinUI.pins.show(EditorPins.Shown(placement: placement, outlined: core.drawing.pins.filter { outlined.contains($0.id) },
-                                         selected: core.selection, markStyle: core.markStyle,
+                                         marching: core.marchingPins, selected: core.selection, markStyle: core.markStyle,
                                          outlineWidth: core.metrics.selectionOutlineWidth, dropScale: core.drawing.pointScale * core.fitZoom,
-                                         areaScale: core.drawing.pointScale * zoom, transform: toView))
+                                         marchSpeed: core.markStyle.pin.areaSpeed * Settings.shared.motionScale, transform: toView))
         pinUI.composer?.follow(anchor(of: pinUI.composer?.pin, in: placement))
+        let resizing = core.composer != nil && core.gesture != nil
+        if pinUI.resizingOpenPin, !resizing { pinUI.composer?.takeKeys() }
+        pinUI.resizingOpenPin = resizing
         showPinElements(placement)
         if pinUI.rotorOrder.count != pinUI.count {
             pinUI.count = pinUI.rotorOrder.count
@@ -108,7 +113,7 @@ extension EditorView {
         let place: CGRect
         switch pin.place {
         case .point(let point): place = CGRect(origin: point, size: .zero)
-        case .area(let frame): place = frame
+        case .area(let frame, _): place = frame
         }
         let shown = teardrop.map(place.union) ?? place
         if shown.width > visible.width || shown.height > visible.height { onZoom?(.fit) } else { pinUI.onReveal?(shown) }

@@ -55,18 +55,22 @@ extension EditorCore {
         composer = Composer(pin: pin.id, draft: "")
     }
 
-    /// A new point pin at the middle of the part of the picture in view.
+    /// A new point pin at the middle of the part of the picture in view, once a drag, typing or another
+    /// pin's popover is put away.
     mutating func placePinInView() {
+        if gesture != nil { cancelGesture() }
+        if typing != nil { endTyping() }
+        if composer != nil { closeComposer() }
         let room = visible.isNull ? geometry.image : visible
         placePin(at: CGPoint(x: room.midX, y: room.midY))
     }
 
     /// A Comment tool drag: the new pin's area runs from the press to the pointer, by the Rectangle
-    /// tool's rules for Shift, Option and the image's edges.
+    /// tool's rules for Shift, Option and the image's edges, and its teardrop's tip follows the pointer's corner.
     mutating func placeArea(_ id: Pin.ID, from start: CGPoint, to pointer: CGPoint) {
         let frame = geometry.newRectangle(from: geometry.inside(start), to: pointer, square: modifiers.contains(.shift),
                                           centred: modifiers.contains(.option))
-        let pin = Pin(id: id, number: 0, place: .area(frame), comments: [])
+        let pin = Pin(id: id, number: 0, place: .area(frame, tip: Pin.Corner(from: start, to: pointer)), comments: [])
         if let index = drawing.pins.firstIndex(where: { $0.id == id }) { drawing.pins[index] = pin } else { drawing.pins.append(pin) }
     }
 
@@ -74,7 +78,7 @@ extension EditorCore {
     /// park, Done or Send rather than a release, the pin goes.
     mutating func finishPlacing(_ id: Pin.ID, at press: CGPoint, released: Bool) {
         guard released, var pin = pin(id) else { return revertEdit() }
-        if case .area(let frame) = pin.place, min(frame.width, frame.height) * zoom < metrics.smallestRectangle {
+        if case .area(let frame, _) = pin.place, min(frame.width, frame.height) * zoom < metrics.smallestRectangle {
             pin.place = .point(geometry.inside(press))
             replacePin(pin)
         }
@@ -166,10 +170,43 @@ extension EditorCore {
         composer = Composer(pin: pin.id, draft: "")
     }
 
+    /// A press on a handle of the open pin's area resizes it with the popover still open.
+    func keepsComposer(at point: CGPoint) -> Bool {
+        guard let open = composer?.pin, case .handle(let id, _)? = target(at: point) else { return false }
+        return id == open
+    }
+
+    /// A press opens no edit until it drags, so a press put back with the popover open leaves the
+    /// composer's edit as it is.
+    mutating func revertGestureEdit(_ phase: Phase) {
+        let editIsTheComposers = phase == .pressed && composer != nil
+        guard !editIsTheComposers else { return }
+        revertEdit()
+        resumeComposerEdit()
+    }
+
+    /// The edit a resize opens. The open popover's edit gives way to it, and the selection that edit
+    /// began from is kept for when it begins again.
+    mutating func resizeEdit() -> MarkEdit {
+        if composer != nil { composerSelectionBefore = edit?.selectionBefore }
+        return newEdit
+    }
+
+    /// A resize with the popover open ended or was put back: the composer's edit begins again from
+    /// the drawing as it is now. A new pin is left out of it, as no step holds a pin before its first
+    /// comment, so closing it with nothing posted still takes it away.
+    mutating func resumeComposerEdit() {
+        guard composer != nil else { return }
+        edit = MarkEdit(marks: drawing.marks, pins: drawing.pins.filter { $0.number > 0 },
+                        selectionBefore: composerSelectionBefore ?? selection)
+        composerSelectionBefore = nil
+    }
+
     /// Posts what was typed and closes the popover. The pin stays selected; a new one with nothing
     /// posted goes, and took no number.
     mutating func closeComposer() {
         guard let open = composer else { return }
+        if gesture != nil { cancelGesture() }
         post()
         composer = nil
         if let pin = pin(open.pin), pin.number == 0 {
@@ -214,10 +251,19 @@ extension EditorCore {
     /// A handle drag on an area pin resizes its area as a rectangle's. False when `id` is no pin.
     mutating func resizePin(_ id: Pin.ID, by position: HandlePosition, delta: CGVector) -> Bool {
         guard let start = edit?.startPins.first(where: { $0.id == id }) else { return false }
-        guard case .area(let frame) = start.place else { return true }
+        guard case .area(let frame, let corner) = start.place else { return true }
+        let fromCenter = modifiers.contains(.option)
+        let resized = geometry.resized(frame, by: position, delta: delta, proportional: modifiers.contains(.shift), fromCenter: fromCenter)
+        // A side dragged past the opposite one, or past the centre with `fromCenter`, swaps the area's corners on its axis.
+        func flips(_ side: Int, _ low: CGFloat, _ high: CGFloat, _ newLow: CGFloat, _ newHigh: CGFloat, _ move: CGFloat) -> Bool {
+            guard side != 0 else { return false }
+            if fromCenter { return side > 0 ? move < -(high - low) / 2 : move > (high - low) / 2 }
+            return side > 0 ? newLow < low : newHigh > high
+        }
+        let tip = corner.mirrored(x: flips(position.xSide, frame.minX, frame.maxX, resized.minX, resized.maxX, delta.dx),
+                                  y: flips(position.ySide, frame.minY, frame.maxY, resized.minY, resized.maxY, delta.dy))
         var pin = start
-        pin.place = .area(geometry.resized(frame, by: position, delta: delta, proportional: modifiers.contains(.shift),
-                                           fromCenter: modifiers.contains(.option)))
+        pin.place = .area(resized, tip: tip)
         replacePin(pin.placed(in: drawing.pixels) ?? start)
         return true
     }
@@ -238,7 +284,7 @@ extension EditorCore {
         drawing.pins.filter { pin in
             switch pin.place {
             case .point(let point): return brush.contains(point)
-            case .area(let frame): return brush.intersects(frame)
+            case .area(let frame, _): return brush.intersects(frame)
             }
         }.map(\.id)
     }
@@ -251,7 +297,7 @@ extension EditorCore {
 
     /// A lone selected area pin's handles, on its area's outline.
     var areaPinHandles: [Handle] {
-        guard selection.count == 1, let id = selection.first, case .area(let frame)? = pin(id)?.place else { return [] }
+        guard selection.count == 1, let id = selection.first, case .area(let frame, _)? = pin(id)?.place else { return [] }
         return geometry.handles(around: frame, of: id, markSize: frame.size)
     }
 
@@ -289,11 +335,18 @@ extension EditorCore {
         return PinPlacement(drawing, side: pinSide, edge: geometry.pt(markStyle.edgeWidth), apart: apart, style: markStyle.pin)
     }
 
-    /// The pins an area's outline shows for: hovered, selected or open.
+    /// The pins an area's outline shows for: hovered, selected, being placed or open.
     var outlinedPins: Set<Pin.ID> {
-        var ids = Set(drawing.pins.map(\.id)).intersection(selection)
-        if let composer { ids.insert(composer.pin) }
+        var ids = Set(drawing.pins.map(\.id)).intersection(selection).union(marchingPins)
         if case .pin(let id)? = hover { ids.insert(id) }
+        return ids
+    }
+
+    /// The pins whose area's dashes march: the one being placed and the open one.
+    var marchingPins: Set<Pin.ID> {
+        var ids = Set<Pin.ID>()
+        if case .placing(let id)? = gesture?.phase { ids.insert(id) }
+        if let composer { ids.insert(composer.pin) }
         return ids
     }
 
@@ -303,7 +356,7 @@ extension EditorCore {
         let band = geometry.screen(metrics.hitMargin)
         if let hit = pinPlacement.hit(at: point, band: band) { return hit }
         for id in outlinedPins {
-            guard case .area(let frame)? = pin(id)?.place else { continue }
+            guard case .area(let frame, _)? = pin(id)?.place else { continue }
             if geometry.hit(Mark(id: id, geometry: .rectangle(frame)), at: point, insideCounts: false) != nil { return .pin(id) }
         }
         return nil
@@ -321,7 +374,7 @@ extension Pin {
     var extent: CGRect {
         switch place {
         case .point(let point): return CGRect(origin: point, size: .zero)
-        case .area(let frame): return frame
+        case .area(let frame, _): return frame
         }
     }
 

@@ -71,6 +71,13 @@ struct PinStyle: Equatable, Sendable {
     var shadowRadius: CGFloat
     var shadowOffset: CGFloat
     var shadowOpacity: CGFloat
+    /// An area's dashed outline in the editor (`EditorPins`), in screen pt at every zoom: the line's
+    /// width, its dashes and the gaps between them, and how fast the dashes march, in pt a second,
+    /// while the pin is being placed or is open.
+    var areaWidth: CGFloat
+    var areaDash: CGFloat
+    var areaGap: CGFloat
+    var areaSpeed: CGFloat
 }
 
 /// A colour in sRGB, from settings.json's `#rrggbb`.

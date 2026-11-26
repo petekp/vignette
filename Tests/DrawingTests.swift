@@ -248,7 +248,7 @@ final class DrawingTests: XCTestCase {
 
     func testCopiedPinsAreVersionTwoAndMarksAloneStayVersionOne() throws {
         let box = Mark(geometry: .rectangle(CGRect(x: 1, y: 2, width: 3, height: 4)))
-        let pin = Pin(id: UUID(), number: 3, place: .area(CGRect(x: 10, y: 20, width: 30, height: 40)),
+        let pin = Pin(id: UUID(), number: 3, place: .area(CGRect(x: 10, y: 20, width: 30, height: 40), tip: .topLeft),
                       comments: [Pin.Comment(text: "Too tight"), Pin.Comment(text: "Agreed", agent: true, agentName: "claude")])
         func version(_ items: CopiedItems) throws -> Int? {
             try XCTUnwrap(DrawingJSON.object(from: items.encoded()) as? [String: Any])["version"] as? Int

@@ -57,7 +57,7 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
 - Before changing the editor, a mark, a pin or a drawing (`Editor*.swift`, `Drawing.swift`, `DrawingFile.swift`,
   `CopiedItems.swift`, `Drawings*.swift`, `DrawingStore*.swift`, `Mark*.swift`, `Pin*.swift`, `MarksView.swift`, `Card.swift`,
   `AgentMarks.swift`, `RenderingQueue.swift`, `Clipboard.swift`, `DragItems.swift`,
-  `CanvasView.swift`, `Leftovers.swift`), read `docs/rules/editor-and-drawings.md`.
+  `CanvasView.swift`, `Leftovers.swift`), read `docs/rules/editor-and-drawings.md` and `pins.md`.
   `docs/editor.md` is how the editor behaves.
 - Before changing code that decodes or holds an image, read `docs/rules/memory.md`.
 - Before changing Send, a send's notice on its card, or a session list (`CardNotices.swift`,
@@ -205,7 +205,7 @@ Before you drive the app:
   the panel that holds an answer's buttons (`LiveAnswerActions`), the note's target and return key
   moving to their row (`LiveNoteContent.layOut`), the toolbar's words giving way
   (`AnnotatorToolbar.words`, `nameSwap`), a mark's draw-on (`MarkLayers.drawOn`), the menu bar
-  intro, the menu bar icon's crossfade (`setIcon`), and the card slide-in's eased choices for
+  intro, the menu bar icon's crossfade (`setIcon`), `AreaOutline`'s dashes, and the card slide-in's eased choices for
   `ui.slideInCurve` (`Anim.swiftUI`). `scripts/check-animations.py`,
   run by `build.sh --test`, fails any other eased curve (`docs/rules/flights-and-presses.md`). `Tween.spring` is the closed form of
   a critically damped spring, so a late tick lands where the spring really is by then. Do not step

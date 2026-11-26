@@ -217,6 +217,7 @@ struct EditorCore {
     private(set) var visible = CGRect.null
     /// The pin whose popover is open.
     var composer: Composer?
+    var composerSelectionBefore: Set<Mark.ID>?
     private var reportedComposer: Composer?
     /// The changes an open gesture or typing session has made so far.
     var edit: MarkEdit?
@@ -379,11 +380,7 @@ struct EditorCore {
             if fit > 0, fit.isFinite { fitZoom = fit }
             self.visible = visible
         case .composer(let input): composerInput(input)
-        case .addPin:
-            if gesture != nil { cancelGesture() }
-            if typing != nil { endTyping() }
-            if composer != nil { closeComposer() }
-            placePinInView()
+        case .addPin: placePinInView()
         case .tweaksChanged(let style, let metrics, let markStyle):
             self.style = style
             self.metrics = metrics
@@ -663,7 +660,7 @@ struct EditorCore {
             }
             endTyping()
         }
-        if composer != nil { closeComposer() }
+        if composer != nil, !keepsComposer(at: at) { closeComposer() }
         let before = selection
         func press(_ target: PressTarget) {
             gesture = Gesture(press: Press(location: at, time: event.time, target: target, selectionBefore: before), phase: .pressed, pointer: at)
@@ -771,7 +768,7 @@ struct EditorCore {
             edit = newEdit
             for id in originals { edit?.note(id) }
         case .resizing(let id, _):
-            edit = newEdit
+            edit = resizeEdit()
             edit?.note(id)
         case .draggingEnd(let id, let kind):
             edit = newEdit
@@ -981,6 +978,7 @@ struct EditorCore {
             commitEdit(named: copies.contains { mark($0) != nil } ? .duplicate : .move)
         case .resizing:
             commitEdit(named: .resize)
+            resumeComposerEdit()
         case .draggingEnd:
             commitEdit(named: .arrowEnd)
         case .bending:
@@ -1002,8 +1000,8 @@ struct EditorCore {
     mutating func cancelGesture() {
         guard let gesture else { return }
         self.gesture = nil
-        revertEdit()
         selection = gesture.press.selectionBefore
+        revertGestureEdit(gesture.phase)
     }
 
     // MARK: Hit testing

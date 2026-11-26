@@ -156,7 +156,8 @@ enum Stitch {
         let place: Pin.Place
         switch pin.place {
         case .point(let point): place = .point(moved(point))
-        case .area(let frame): place = .area(CGRect(origin: moved(frame.origin), size: CGSize(width: frame.width * scale, height: frame.height * scale)))
+        case .area(let frame, let corner):
+            place = .area(CGRect(origin: moved(frame.origin), size: CGSize(width: frame.width * scale, height: frame.height * scale)), tip: corner)
         }
         return Pin(id: UUID(), number: number, place: place, comments: pin.comments)
     }

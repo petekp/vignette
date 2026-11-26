@@ -45,7 +45,7 @@ final class PinTests: XCTestCase {
     func testAPinnedFileRoundTripsAsVersion2() throws {
         let point = Pin(id: UUID(), number: 1, place: .point(CGPoint(x: 120.5, y: 80)),
                         comments: [Pin.Comment(text: "Too tight"), Pin.Comment(text: "Agreed", agent: true, agentName: "Claude")])
-        let area = Pin(id: UUID(), number: 3, place: .area(CGRect(x: 300, y: 200, width: 150, height: 90)),
+        let area = Pin(id: UUID(), number: 3, place: .area(CGRect(x: 300, y: 200, width: 150, height: 90), tip: .bottomRight),
                        comments: [Pin.Comment(text: "Whole card", agent: true, agentName: "Codex")])
         let drawing = Drawing(key: key, pixels: pixels, pointScale: 2, marks: [Mark(geometry: .ellipse(CGRect(x: 10, y: 10, width: 40, height: 40)))],
                               pins: [point, area], nextPin: 5)
@@ -60,7 +60,9 @@ final class PinTests: XCTestCase {
         XCTAssertEqual(object["nextPin"] as? Int, 5)
         let pins = try XCTUnwrap(object["pins"] as? [[String: Any]])
         XCTAssertEqual(Set(pins[0].keys), ["id", "number", "x", "y", "comments"])
-        XCTAssertEqual(Set(pins[1].keys), ["id", "number", "x", "y", "w", "h", "comments"])
+        XCTAssertEqual(Set(pins[1].keys), ["id", "number", "x", "y", "w", "h", "corner", "comments"])
+        XCTAssertEqual(pins[1]["x"] as? Double, 300)
+        XCTAssertEqual(pins[1]["corner"] as? String, "bottomRight")
     }
 
     func testOnlyAFileHoldingPinsANextPinOrAPinStepIsVersion2() throws {
@@ -110,7 +112,7 @@ final class PinTests: XCTestCase {
         let drawing = try XCTUnwrap(written([item(1, x: 900, y: -20),
                                              ["id": UUID().uuidString, "number": 2, "x": 700, "y": 550, "w": 300, "h": 200, "comments": [["text": "a"]]]]))
         XCTAssertEqual(drawing.pins.map(\.tip), [CGPoint(x: 800, y: 0), CGPoint(x: 500, y: 400)])
-        guard case .area(let frame) = drawing.pins[1].place else { return XCTFail("the area pin became a point") }
+        guard case .area(let frame, _) = drawing.pins[1].place else { return XCTFail("the area pin became a point") }
         XCTAssertEqual(frame.size, CGSize(width: 300, height: 200))
         XCTAssertEqual(lines.all.filter { $0.hasPrefix("[drawing] moved pin=") }.count, 2, "\(lines.all)")
     }
@@ -218,7 +220,7 @@ final class PinTests: XCTestCase {
         let catcher = LineCatcher()
         let root = dir.appendingPathComponent("requests")
         let requests = ScreenshotRequests(root: root, connections: [.claude: catcher])
-        var shimmer = pin(3, .area(CGRect(x: 10, y: 20, width: 30, height: 40)), "the shimmer effect is too narrow; needs more width and spread.")
+        var shimmer = pin(3, .area(CGRect(x: 10, y: 20, width: 30, height: 40), tip: .topLeft), "the shimmer effect is too narrow; needs more width and spread.")
         shimmer.comments.append(Pin.Comment(text: "can we have the dot indicator\npulse gently with a subtle glow?"))
         let pins = [shimmer, pin(1, .point(CGPoint(x: 5, y: 5)), "remove extra margin"), pin(2, .point(CGPoint(x: 6, y: 6)), "why such a big gap between these?")]
         let arrived = expectation(description: "the line reached the client")

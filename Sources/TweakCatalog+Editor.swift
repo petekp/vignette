@@ -44,7 +44,14 @@ extension TweakCatalog {
                 .number("pinPopoverSpacing", "Popover spacing", \.pinPopoverSpacing, 0...32, step: 1, unit: "pt", safe: 0...200),
                 .number("pinListImageSize", "List pin size", \.pinListImageSize, 10...32, step: 1, unit: "pt", safe: 4...200),
                 .number("pinListTitleWidth", "List text width", \.pinListTitleWidth, 120...600, step: 10, unit: "pt", safe: 40...2000),
-            ], caption: { _ in "In screen points. The popover by a pin has its width, its inset from the edge, and the spacing between comments. The menus a cluster and the toolbar's Pins button open show each pin at the list's pin size, and cut its first comment at the text width." }),
+                .number("pinPostSize", "Post button", \.pinPostSize, 12...32, step: 1, unit: "pt", safe: 6...200),
+            ], caption: { _ in "In screen points. The popover by a pin has its width, its inset from the edge, the spacing between comments, and its post button's size. The menus a cluster and the toolbar's Pins button open show each pin at the list's pin size, and cut its first comment at the text width." }),
+            TweakGroup("Area outline", [
+                .number("pinAreaWidth", "Line width", \.pinAreaWidth, 0.5...4, step: 0.25, unit: "pt", safe: 0.1...100),
+                .number("pinAreaDash", "Dash", \.pinAreaDash, 1...16, step: 0.5, unit: "pt", safe: 0.5...200),
+                .number("pinAreaGap", "Gap", \.pinAreaGap, 1...16, step: 0.5, unit: "pt", safe: 0.5...200),
+                .number("pinAreaSpeed", "March speed", \.pinAreaSpeed, 0...60, step: 1, unit: "pt/s", safe: 0...1000),
+            ], caption: { _ in "In screen points at every zoom. In the editor an area's outline is dashed, and its dashes march at this speed while the pin is being placed or is open. The motion setting slows them, and Reduce Motion stops them." }),
             TweakGroup("Renderings", [
                 .number("pinFarthestMove", "Farthest move", \.pinFarthestMove, 0...12, step: 0.5, safe: 0...24),
                 .number("commentListNarrowest", "Narrowest list", \.commentListNarrowest, 4...40, step: 0.5, safe: 1...1000),

@@ -73,7 +73,7 @@ extension EditorCore {
             var pin = Self.fresh(pin)
             switch pin.place {
             case .point(let point): pin.place = .point(CGPoint(x: point.x * factor, y: point.y * factor))
-            case .area(let frame): pin.place = .area(Self.scaled(frame, by: factor))
+            case .area(let frame, let corner): pin.place = .area(Self.scaled(frame, by: factor), tip: corner)
             }
             return pin
         }
