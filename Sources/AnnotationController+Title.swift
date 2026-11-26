@@ -24,7 +24,7 @@ extension AnnotationController {
     /// means light windows. An answer for a block that has moved since, or an image that has gone,
     /// is dropped.
     func measureTitleInk() {
-        guard titleView.title != nil, current != nil, let win = window else { inkSource = nil; return }
+        guard titleView.content != nil, current != nil, let win = window else { inkSource = nil; return }
         inkMeasurement += 1
         let measurement = inkMeasurement
         guard CGPreflightScreenCaptureAccess() else {
@@ -56,6 +56,16 @@ extension AnnotationController {
         inkSource = source
         Log.write("[annotate] title ink=\(ink.rawValue) source=\(source) \(detail)")
         revealTitle(.inkKnown(at: CACurrentMediaTime()))
+    }
+
+    /// The file's sender changed after it opened: the session list answered late, or a push named
+    /// another. The sender's line says it in place, so the block keeps its height and the frame stays.
+    func refreshSender(of shot: Screenshot) {
+        guard current?.url == shot.url, var content = titleView.content else { return }
+        content.sender = .of(shot.url)
+        guard content != titleView.content else { return }
+        titleView.set(content, ui: Settings.shared.data.ui)
+        if let frame = frameOnScreen { placeTitle(frame: frame) }
     }
 
     func revealTitle(_ input: TitleReveal.Input) {

@@ -7,6 +7,9 @@ struct Card: Identifiable, Equatable {
     let pointSize: NSSize     // the screenshot in points, for the annotator frame
     let size: NSSize          // the card on screen
     let agent: String?        // the agent that added the file (see Agent); nil for a capture
+    /// The name of the session that pushed the file, which its tab says (`Agent.sender(of:)`). Nil
+    /// until the session list answers, and for a push whose session has no name.
+    var sender: String? = nil
     var duration: TimeInterval? = nil   // a recording's length, for its badge; nil for an image
     /// The drawing's marks, drawn over the thumbnail; nil for a screenshot with no drawing.
     var marks: MarkLayers? = nil
@@ -33,13 +36,14 @@ struct Card: Identifiable, Equatable {
         }
     }
 
-    /// Why the session's queue holds the line, and whether Don't send is taking it out.
-    /// The agent whose marks are on top, and their layers.
+    /// The agent whose marks are on top, the session's name when it is known, and their layers.
     struct AgentMarksDrawn: Equatable {
         let agent: String
+        let sender: String?
         let layers: MarkLayers
     }
 
+    /// Why the session's queue holds the line, and whether Don't send is taking it out.
     struct Queued: Equatable {
         let reason: String
         let withdrawing: Bool
@@ -47,13 +51,13 @@ struct Card: Identifiable, Equatable {
 
     func with(image: NSImage?) -> Card { var card = self; card.image = image; return card }
     func with(shot: Screenshot) -> Card {
-        Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration, marks: marks, sent: sent)
+        Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, sender: sender, duration: duration, marks: marks, sent: sent)
     }
     func with(size: NSSize) -> Card {
-        Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration, marks: marks, sent: sent)
+        Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, sender: sender, duration: duration, marks: marks, sent: sent)
     }
     func with(pointSize: NSSize, size: NSSize, duration: TimeInterval?) -> Card {
-        Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, duration: duration, marks: marks, sent: sent)
+        Card(id: id, shot: shot, image: image, pointSize: pointSize, size: size, agent: agent, sender: sender, duration: duration, marks: marks, sent: sent)
     }
 }
 

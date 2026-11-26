@@ -131,6 +131,11 @@ extension AppDelegate {
     /// in a queue, and a queued send's later changes reach the card.
     func connectSendsToCards() {
         thumbnail.origin = { [unowned self] in requests.origin(of: $0) }
+        folderWrites.callbacks.senderName = { [weak self] address, answer in self?.sessions.senderName(of: address, answer) }
+        folderWrites.callbacks.senderRecorded = { [weak self] shot in
+            self?.thumbnail.refreshSender(of: shot)
+            self?.annotator.refreshSender(of: shot)
+        }
         thumbnail.queuedSend = { [unowned self] in requests.queuedSend(of: ScreenshotKey(asGiven: $0.path)) }
         requests.callbacks.withdrawing = { [weak self] record in
             guard let self else { return }

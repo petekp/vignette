@@ -24,7 +24,7 @@ extension AnnotationController {
         CATransaction.setDisableActions(true)
         editor.picture.layer.addSublayer(layers.layer)
         CATransaction.commit()
-        let bar = NSHostingView(rootView: AgentMarksBar(agent: entry.agent) { [weak self] keep in self?.onAgentMarks?(key, keep) })
+        let bar = NSHostingView(rootView: AgentMarksBar(agent: entry.agent, sender: entry.sender) { [weak self] keep in self?.onAgentMarks?(key, keep) })
         bar.setFrameSize(bar.fittingSize)
         bar.setFrameOrigin(NSPoint(x: (container.bounds.width - bar.frame.width) / 2, y: container.bounds.height - bar.frame.height - Self.agentMarksBarInset))
         bar.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin]
@@ -46,6 +46,7 @@ extension AnnotationController {
 /// capsule of the system's material, as a toolbar's overlay is.
 struct AgentMarksBar: View {
     let agent: String
+    let sender: String?
     let onMarks: (_ keep: Bool) -> Void
 
     var body: some View {
@@ -53,7 +54,7 @@ struct AgentMarksBar: View {
             if let image = Agent.logo(for: agent) {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(width: 14, height: 14)
             }
-            Text(Self.title(agent)).font(.system(size: 12, weight: .medium))
+            Text(Self.title(agent, sender: sender)).font(.system(size: 12, weight: .medium))
             AgentMarksButtons(onMarks: onMarks)
         }
         .padding(.leading, 12)
@@ -65,9 +66,9 @@ struct AgentMarksBar: View {
         .fixedSize()
     }
 
-    /// "Marks from Claude", from the words of an agent's tab.
-    static func title(_ agent: String) -> String {
-        let from = Agent.label(for: agent)
+    /// "Marks from vignette" or "Marks from Claude", from the words of an agent's tab.
+    static func title(_ agent: String, sender: String?) -> String {
+        let from = Agent.label(for: agent, sender: sender)
         return "Marks " + from.prefix(1).lowercased() + from.dropFirst()
     }
 }

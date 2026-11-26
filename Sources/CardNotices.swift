@@ -193,6 +193,16 @@ struct CardNotices {
 
     func notice(on file: ScreenshotKey) -> Notice? { shown[file]?.notice }
 
+    /// The session list named `session`: every shown notice from it that has no name yet says it, in
+    /// place, so the notice neither comes up again nor starts over.
+    mutating func name(_ sender: String, of session: AgentAddress) {
+        for (file, current) in shown {
+            guard case .shown(var what) = current.notice, what.session == session, what.sender == nil else { continue }
+            what.sender = sender
+            shown[file] = (current.id, .shown(what))
+        }
+    }
+
     /// A send on one of `files` is still waiting for its answer.
     func awaitsAnswer(on files: some Sequence<ScreenshotKey>) -> Bool {
         files.contains { awaitingAnswer[$0] != nil }

@@ -2,8 +2,8 @@
 
 - Cmd+Z undoes what Vignette last did to a screenshot, and Shift+Cmd+Z redoes it, as Finder's Undo
   does. One timeline holds every step in the order it was made (`UndoTimeline`): Delete, Stitch,
-  opening a screenshot in the annotator and closing it, and between those the editor's own steps
-  on the screenshot open then. Delete and Stitch make a step whatever asked for them: the stack's
+  opening a screenshot in the annotator and closing it, Keep and Clear on an agent's marks, and
+  between those the editor's own steps on the screenshot open then. Delete and Stitch make a step whatever asked for them: the stack's
   hand, or a `vignette://trash` or `vignette://stitch` from a script. Undoing Delete puts each file
   back from the Trash with its drawing, its message and its history, which the Trash does not keep, and its card back where it
   was in the column. Its agent, its title and its Sent tab are extended attributes, so they travel
@@ -26,6 +26,31 @@
 - The timeline's steps last while the app runs, through the stack closing and opening again, and
   not across a relaunch, as Finder's do. Each screenshot's own steps are kept in its drawing file
   (ADR 0028), so after a relaunch a screenshot opened again still undoes them.
+
+## An agent's marks on top
+
+- An agent's marks that `vignette://show` put on top of a screenshot (`PendingMarks`) are kept or
+  cleared by the person, on the card's band or in the editor's bar. Each is a step of the timeline
+  wherever it was pressed: "Keep Marks" and "Clear Marks". The marks on top live in memory, as the
+  timeline does, so one step's life is the other's.
+- Undoing Clear puts the same marks back on top, with Keep and Clear. Redoing it takes them off
+  again.
+- Undoing Keep takes the marks out of the drawing and puts them back on top. Keep joined them as
+  one step of the drawing's history, `Agent's Marks` (`Drawings.add`). The undo takes that step
+  off the history (`Drawings.takeBackAgentMarks`): in the editor when the screenshot is open there,
+  else in the stored drawing. The drawing's redo steps leave with it. A redo step can hold one of the
+  agent's marks, moved or recolored, and redoing it would put that mark in the drawing while the
+  marks are on top. Redoing Keep takes the marks off the top, puts the same step back as the
+  drawing's newest, and puts its redo steps back under any made since.
+- Kept in the editor, the Keep step sits just above its join. The editor's steps made after it are
+  undone first, then Keep, then the steps before it.
+- A step whose marks have moved on is used up with a beep and an `[undo] can't …` line: other marks
+  are on top (a later `show`), the drawing no longer hashes to what Keep left (an `add` since), or
+  the drawing's newest step is no longer the join.
+- Undo puts the marks back on top whether or not their card is on screen. A card or an opening of
+  the screenshot draws them when it next shows it, as it does any marks on top.
+- After a relaunch nothing is on top and the timeline is empty. Kept marks stay in the drawing, and
+  the editor's Undo takes them off as the stored "Claude's Marks" step. Cleared marks are gone.
 
 ## Opening and closing a screenshot
 

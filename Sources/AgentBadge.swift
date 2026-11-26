@@ -71,8 +71,10 @@ struct AgentBadgeFit {
 struct AgentBadge: View {
     /// The vendor whose logo the tab shows.
     let agent: String
-    /// "From Claude", "Sent to vignette", "From Claude · Replied".
+    /// "From vignette", "From Claude", "Sent to vignette", "From Claude · Replied".
     let label: String
+    /// The words the tab says on a card too narrow for `label`, before it folds to the logo.
+    var shorterLabel: String? = nil
     /// An SF Symbol the folded tab keeps beside the logo: a paper plane for sent, a check for replied.
     var glyph: String? = nil
     let size: CGFloat
@@ -85,20 +87,35 @@ struct AgentBadge: View {
     var queued: Card.Queued? = nil
     var onUnsend: () -> Void = {}
     var onOverControl: (Bool) -> Void = { _ in }
-    @State private var wasFolded = false
+    /// Which of `labels` the tab showed last, nil while it was folded.
+    @State private var shownWords: Int? = 0
     @State private var hovered = false
 
-    var body: some View {
-        let words = AgentBadgeFit.of(label, size: size)
+    private var labels: [String] { [label] + (shorterLabel.map { [$0] } ?? []) }
+
+    /// The fit of `words`, with room for the clock beside them while the send is queued.
+    private func fit(of words: String) -> AgentBadgeFit {
+        let measured = AgentBadgeFit.of(words, size: size)
         // The clock takes the room a folded tab's glyph takes, beside the words or the logo alone.
-        let fit = queued == nil ? words
-            : AgentBadgeFit(size: size, textWidth: words.textWidth + size * (AgentBadgeFit.glyphGap + AgentBadgeFit.glyphSide))
-        let folded = fit.folds(cardWidth: cardWidth, wasFolded: wasFolded)
+        return queued == nil ? measured
+            : AgentBadgeFit(size: size, textWidth: measured.textWidth + size * (AgentBadgeFit.glyphGap + AgentBadgeFit.glyphSide))
+    }
+
+    var body: some View {
+        // The longest words that fit. Words longer than the ones shown wait for room to spare, as an
+        // unfold does.
+        // Clamped, since the labels can lose their longer words while the tab shows them.
+        let shown = shownWords.map { min($0, labels.count - 1) }
+        let words = labels.indices.first { index in
+            !fit(of: labels[index]).folds(cardWidth: cardWidth, wasFolded: shown.map { $0 > index } ?? true)
+        }
+        let folded = words == nil
+        let fit = fit(of: labels[words ?? labels.count - 1])
         let showsGlyph = folded && glyph != nil && fit.keepsGlyph(cardWidth: cardWidth)
         let showsQueued = queued != nil && (!folded || fit.keepsGlyph(cardWidth: cardWidth))
         HStack(spacing: folded ? 0 : size * AgentBadgeFit.gap) {
             logo.frame(width: size * AgentBadgeFit.logoSide, height: size * AgentBadgeFit.logoSide)
-            Text(label).font(.system(size: AgentBadgeFit.textSize(size), weight: .semibold))
+            Text(labels[words ?? labels.count - 1]).font(.system(size: AgentBadgeFit.textSize(size), weight: .semibold))
                 .foregroundStyle(.black.opacity(0.85)).lineLimit(1).fixedSize()
                 .frame(width: folded ? 0 : nil, alignment: .trailing)
                 .clipped()
@@ -130,12 +147,12 @@ struct AgentBadge: View {
         // A fold that comes with the stack's own spring rides it, so the capsule and the card move in
         // step and the capsule stays inside the card all the way. A zoom sets the width with
         // animations disabled, and the fold brings its own spring.
-        .transaction(value: folded) { transaction in
+        .transaction(value: words) { transaction in
             guard transaction.animation == nil || transaction.disablesAnimations else { return }
             transaction.disablesAnimations = false
             transaction.animation = Anim.spring(foldDuration)
         }
-        .onChange(of: folded, initial: true) { _, now in wasFolded = now }
+        .onChange(of: words, initial: true) { _, now in shownWords = now }
     }
 
     @ViewBuilder private var logo: some View {
@@ -188,6 +205,9 @@ private struct QueuedMark: View {
 struct CardTab: Equatable {
     let agent: String
     let label: String
+    /// The words for a card too narrow for `label`, before the tab folds: "From Claude" on a tab
+    /// that names its session. Nil when there are no shorter words.
+    var shorterLabel: String? = nil
     let glyph: String?
     /// Set while the session holds the send's line in its queue: the tab offers Don't send.
     var queued: Card.Queued? = nil
@@ -196,9 +216,11 @@ struct CardTab: Equatable {
     init?(_ card: Card) {
         switch (card.agent, card.sent) {
         case (let agent?, .replied?):
-            (self.agent, label, glyph) = (agent, Agent.label(for: agent) + " · Replied", "checkmark")
+            (self.agent, label, glyph) = (agent, Agent.label(for: agent, sender: card.sender) + " · Replied", "checkmark")
+            if card.sender != nil { shorterLabel = Agent.label(for: agent, sender: nil) + " · Replied" }
         case (let agent?, _):
-            (self.agent, label, glyph) = (agent, Agent.label(for: agent), nil)
+            (self.agent, label, glyph) = (agent, Agent.label(for: agent, sender: card.sender), nil)
+            if card.sender != nil { shorterLabel = Agent.label(for: agent, sender: nil) }
         case (nil, .to(let client, let title)?):
             (self.agent, label, glyph) = (client.rawValue, "Sent to " + title, "paperplane.fill")
         case (nil, .queued(let client, let title, let queued)?):

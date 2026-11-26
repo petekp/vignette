@@ -67,10 +67,14 @@ the person deletes in Codex also says nothing, since they did it there.
 
 | Card | Tab | Folded on a narrow card |
 | --- | --- | --- |
-| An agent pushed it | From *Agent* ("From an agent" with no name) | The logo |
+| An agent pushed it | From *sender*, else From *Agent* ("From an agent" with no name). A card too narrow for From *sender* says From *Agent* | The logo |
 | A person's screenshot that was sent | Sent to *session* | The logo and a paper plane |
 | A person's screenshot whose line Codex still holds in its queue | Queued for *session*; on hover the clock is a Don't send button whose help is the queued reason | The logo and a clock |
-| An agent's card sent back to the session it came from | From *Agent* · Replied | The logo and a check |
+| An agent's card sent back to the session it came from | From *sender* · Replied, else From *Agent* · Replied | The logo and a check |
+
+*sender* is the name of the session that pushed the card: the agent's `from=`, else the session's Herdr tab label or its own name, as its session menu row says it without a suffix. The card says From *Agent* until Vignette has the name.
+
+The editor says the same words, From *sender*, else From *Agent*, in the line above an agent's title, with the logo before them. It never says Replied: the line names who the picture is from.
 
 *session* is the title the send's notice showed, as above. A newer send replaces it. The tab
 names the last send that reached its client: a send that failed, went unconfirmed or was
@@ -139,6 +143,8 @@ the editor's own step names come first (the table above).
 | Stitch | Stitch |
 | A screenshot opened in the annotator, or another opened in its place | Open Drawing |
 | The annotator closed | Close Drawing |
+| Keep on an agent's marks, on a card or in the editor | Keep Marks |
+| Clear on an agent's marks, on a card or in the editor | Clear Marks |
 
 ### The line an agent receives (`ScreenshotRequests.requestLine`)
 
@@ -267,14 +273,14 @@ says the same words twice.
 
 | Where | Words |
 | --- | --- |
-| The notice's headline | From *Agent* ("From an agent" with no name) |
+| The notice's headline | From *sender*, else From *Agent* ("From an agent" with no name) |
 | The notice's second line | The agent's `message=`, at most 60 characters, cut at a word with an ellipsis |
-| The notice, to VoiceOver | From *Agent*: *message* |
-| VoiceOver, once per call | *Agent* showed you a screenshot; *Agent* showed you 3 screenshots ("An agent" with no name) |
+| The notice, to VoiceOver | From *sender*: *message*, else From *Agent*: *message* |
+| VoiceOver, once per call | *sender* showed you a screenshot; *sender* showed you 3 screenshots, with *Agent* when `from=` gave no name ("An agent" with no name) |
 | The buttons, wherever the agent's marks are on top | Clear, Keep |
 | Clear's help | Take the agent's marks off |
 | Keep's help | Add the agent's marks to your drawing |
-| The editor's bar, and the band on a card whose shown state ended while the marks are still on top | Marks from *Agent* ("Marks from an agent" with no name) |
+| The editor's bar, and the band on a card whose shown state ended while the marks are still on top | Marks from *sender*, else Marks from *Agent* ("Marks from an agent" with no name) |
 | "Not saved", when Keep could not write the marks | Vignette couldn't add the marks. You can keep them again. |
 
 ### A drawing, on its card ("Not saved")

@@ -53,6 +53,9 @@ struct CommandRequest: Equatable {
     /// shows. `AgentTitle.validated` reads them.
     var title: String? = nil
     var description: String? = nil
+    /// `from=` from the query, read as a form encodes it: the name of the agent session pushing or
+    /// showing the image, which the card says ("From vignette"). `Agent.cleanSender` reads it.
+    var from: String? = nil
     /// `root=` from the query: the one directory `install-skill` writes into instead of the agent
     /// directories. Needs `debug`, so a live check points it at a scratch directory.
     let root: URL?
@@ -81,8 +84,8 @@ enum Commands {
         Fixed(name: "help", summary: "list every command and action in the log"),
         Fixed(name: "state", summary: "dump app state to the log; &section=<name> reports only that section and app"),
         Fixed(name: "last", summary: "show the thumbnail for the newest screenshot"),
-        Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; &agent=<name> marks the card as an agent's; &session=<id> names the Claude Code session it came from, which Reply on the card goes back to; &marks=<json file> draws on it, as marks the user can edit; &title=<text> and &description=<text> say what it shows, above the image in the annotator (at most \(AgentTitle.maxTitle) and \(AgentTitle.maxDescription) characters); ignores copyOnCapture and annotateOnCapture"),
-        Fixed(name: "show", summary: "point the user at screenshots already in the watch folder: brings each file=<path> to the corner, in the order named, and marks its card as shown by &agent=<name>; &session=<id> is the session showing them, where Send on the card starts; &message=<text> is one line under the notice (at most \(Shown.messageLimit) characters); &marks=<json file> draws on the first file, on top of the user's drawing until they keep or clear them; at most recentCount files; changes no file"),
+        Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; &agent=<name> marks the card as an agent's; &session=<id> names the Claude Code session it came from, which Reply on the card goes back to; &marks=<json file> draws on it, as marks the user can edit; &title=<text> and &description=<text> say what it shows, above the image in the annotator (at most \(AgentTitle.maxTitle) and \(AgentTitle.maxDescription) characters); &from=<name> is the name of the session pushing it, which the card's tab says (at most \(Agent.maxSenderLength) characters; without it, Vignette looks up the name of the session that session= names); ignores copyOnCapture and annotateOnCapture"),
+        Fixed(name: "show", summary: "point the user at screenshots already in the watch folder: brings each file=<path> to the corner, in the order named, and marks its card as shown by &agent=<name>; &session=<id> is the session showing them, where Send on the card starts; &from=<name> is that session's name, which the notice says (at most \(Agent.maxSenderLength) characters; without it, Vignette looks up the name of the session that session= names); &message=<text> is one line under the notice (at most \(Shown.messageLimit) characters); &marks=<json file> draws on the first file, on top of the user's drawing until they keep or clear them; at most recentCount files; changes no file"),
         Fixed(name: "recent", summary: "toggle the recent stack"),
         Fixed(name: "dismiss", summary: "close the thumbnail or the stack"),
         Fixed(name: "cancel", summary: "close the annotator without copying, as Esc would"),
@@ -115,6 +118,7 @@ enum Commands {
                               marks: items.first { $0.name == "marks" }?.value,
                               title: text("title", in: url),
                               description: text("description", in: url),
+                              from: text("from", in: url),
                               root: items.first { $0.name == "root" }?.value.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) },
                               clear: items.first { $0.name == "clear" }?.value,
                               points: items.first { $0.name == "points" }?.value,
