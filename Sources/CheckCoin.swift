@@ -8,6 +8,8 @@ import SwiftUI
 /// it does not spin (docs/check-lab-2026-10-11.md).
 struct CheckCoin: View {
     let diameter: CGFloat
+    /// False holds the coin face on from the start, where something around it already animates it in.
+    var spins = true
     @ObservedObject private var settings = Settings.shared
     /// The Check Lab's hold on the spin; nil runs it once from when the check appears.
     @Environment(\.checkSpinPlace) private var heldPlace
@@ -19,7 +21,7 @@ struct CheckCoin: View {
         let ui = settings.motionUI
         let spin = CheckSpin(ui)
         // A held place is a still, so the lab shows it with motion off too.
-        let spins = spin.turns > 0 && (heldPlace != nil || (settings.motionScale > 0 && !settled))
+        let spins = self.spins && spin.turns > 0 && (heldPlace != nil || (settings.motionScale > 0 && !settled))
         Group {
             if spins {
                 TimelineView(.animation(paused: heldPlace != nil)) { context in

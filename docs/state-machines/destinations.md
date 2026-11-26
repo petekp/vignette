@@ -221,7 +221,7 @@ Owner: `SendOverlay.swift`. Tests: none (needs SwiftUI `@State`).
 
 Plays a send notice's states on a card in order. The notice's own state comes from outside (`SendNotice`).
 
-**States**: `@State` `landed`, `shown: SendNotice.State?`, `since`, `logoArrived`.
+**States**: `@State` `landed`, `shown: SendNotice.State?`, `since`, `badgeMayShow`.
 
 **Transitions**
 

@@ -30,6 +30,9 @@ extension UITweaks {
         var checkBloom = 0.73            // 0 to 2: the bloom; 0 turns it off
         var checkBloomRadius = 0.49
         var checkBloomThreshold = 0.24   // 0 to 1: how bright a reflection must be to bloom
+        // The badge at the corner of a send's logo (SendOverlay), which grows in once the send has answered
+        var sendBadgeStartScale = 0.25   // the size it grows from, a fraction of its own
+        var sendBadgeDelay = 0.12        // seconds after the logo appears before it may grow in
         var introDuration = 0.95         // setup's window flying into the menu bar icon, once per Mac
         var introFunnel = 1.0            // 0 flies that window as one piece, up to 1 pours it into the icon (docs/intro-funnel-2026-09-30.md)
         var introFunnelSmoothing = 1.0   // 0 starts and stops each row of the pour abruptly, 1 eases both, so its sides curve without corners
