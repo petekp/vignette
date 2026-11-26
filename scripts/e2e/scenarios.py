@@ -720,7 +720,7 @@ def send_grace(app):
 def capture_sent_card(app, path, name):
     """The card that was sent, with its mark, into the report: the lone thumbnail comes back to say
     what happened, and its mark is up once it has landed."""
-    s = app.wait_state(lambda s: any(c['file'] == path and not c['out'] for c in s['stack']['cards']), 'the sent card back')
+    app.wait_state(lambda s: any(c['file'] == path and not c['out'] for c in s['stack']['cards']), 'the sent card back')
     time.sleep(1)
     card = next(c for c in app.state()['stack']['cards'] if c['file'] == path)
     x, y, w, h = card['frame']
@@ -766,7 +766,7 @@ def send_then_reply(app, session, delivered, keep_alive=lambda: None):
     if result.returncode != 0:
         raise Failed(f'the reply was not accepted: exit {result.returncode} {result.stdout} {result.stderr}')
     app.report.step('the reply was accepted', detail=result.stdout.strip()[:120])
-    s = app.wait_state(lambda s: any('Agent reply' in c['file'] for c in s['stack']['cards']), 'the reply card', timeout=15)
+    app.wait_state(lambda s: any('Agent reply' in c['file'] for c in s['stack']['cards']), 'the reply card', timeout=15)
     app.report.step('the reply is a card')
 
 

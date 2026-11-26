@@ -2,7 +2,8 @@
 # Regenerates the Xcode project and builds the app.
 # `--test` first runs scripts/check-agent-folders.py, scripts/check-app-data-paths.py and
 # scripts/check-display-links.py, scripts/check-screen-stores.py, scripts/check-app-activation.py,
-# scripts/check-animations.py, scripts/check-agents-map.py,
+# scripts/check-animations.py, scripts/check-agents-map.py, scripts/check-map-line-numbers.py,
+# scripts/check-site-js.py (needs deno) and scripts/check-python-unused.py (needs pyflakes or uvx),
 # then the VignetteTests unit tests
 # after the build, and names any that fail or were skipped.
 set -e
@@ -14,7 +15,7 @@ for arg in "$@"; do
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
-if $run_tests; then python3 scripts/check-agent-folders.py; python3 scripts/check-app-data-paths.py; python3 scripts/check-display-links.py; python3 scripts/check-screen-stores.py; python3 scripts/check-app-activation.py; python3 scripts/check-animations.py; python3 scripts/check-agents-map.py; fi
+if $run_tests; then python3 scripts/check-agent-folders.py; python3 scripts/check-app-data-paths.py; python3 scripts/check-display-links.py; python3 scripts/check-screen-stores.py; python3 scripts/check-app-activation.py; python3 scripts/check-animations.py; python3 scripts/check-agents-map.py; python3 scripts/check-map-line-numbers.py; python3 scripts/check-site-js.py; python3 scripts/check-python-unused.py; fi
 scheme=$(sed -n 's/^name: *//p' project.yml)
 xcodegen generate >/dev/null   # also writes Info.plist
 # The git stamp (CFBundleVersion, VignetteBuild) is a build phase in project.yml.
