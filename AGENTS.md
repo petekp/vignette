@@ -55,8 +55,8 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   the target, `docs/rules/session-menu.md`. Read `docs/rules/send.md` for what Send does.
 - Before changing `Zoom.swift` or `AnnotatorZoom*.swift`, read `docs/rules/zoom.md`.
 - Before changing the editor, a mark, a pin or a drawing (`Editor*.swift`, `Drawing.swift`, `DrawingFile.swift`,
-  `CopiedItems.swift`, `Drawings*.swift`, `DrawingStore*.swift`, `Mark*.swift`, `Pin*.swift`, `MarksView.swift`, `Card.swift`,
-  `AgentMarks.swift`, `RenderingQueue.swift`, `Clipboard.swift`, `DragItems.swift`,
+  `CopiedItems.swift`, `Drawings*.swift`, `DrawingStore*.swift`, `Mark*.swift`, `Pin*.swift`, `Card.swift`,
+  `AgentMarks.swift`, `AgentPins.swift`, `RenderingQueue.swift`, `Clipboard.swift`, `DragItems.swift`,
   `CanvasView.swift`, `Leftovers.swift`), read `docs/rules/editor-and-drawings.md` and `pins.md`.
   `docs/editor.md` is how the editor behaves.
 - Before changing code that decodes or holds an image, read `docs/rules/memory.md`.
@@ -69,7 +69,7 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   Read it before changing anything that talks to Codex, and add to it what you find or fix.
 - Before changing `ScreenshotRequests*.swift`, read `docs/rules/send.md` and
   `docs/rules/replies.md`. Before changing a reply (`ScreenshotRequestRecords.swift`, `ClearedRequestFolders.swift`,
-  `ReplyProtocol.swift`, `ReplyCommand.swift`, `skills/vignette/scripts/reply`), read
+  `ReplyProtocol*.swift`, `ReplyCommand*.swift`, `skills/vignette/scripts/reply`), read
   `docs/rules/replies.md`, and `docs/rules/agent-push.md` for a reply's title.
 - Before changing the `add` command, `Agent.swift`, `AgentBadge.swift`, `AgentTitle.swift`,
   `AgentTitleView.swift`, `TitleBackdrop.swift` or `FlightCaption.swift`, read

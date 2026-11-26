@@ -105,7 +105,7 @@ Owner: `Drawings.swift`; files in `DrawingStore.swift`. Tests: `DrawingStoreTest
 | key in `keys` or `messages` | `sweep` | no file | Only with an inventory that confirms absence and `changedAt <= observedAt`. |
 | key in `keys` or `messages`, or editor open | `rename(old, new)` | stored under `new` | Store rewrites under `new`, message included; then `open?.rekey`; `onChange(old, nil)`, `onChange(new, d)`. If the store throws, returns before `rekey`, and the open editor keeps the old key, so its later writes are refused. ([editor-2](plausible-findings-run-to-toolbar.md#editor-2)) Then `revisions[old] = nil`, which reads as 0 again. ([editor-9](plausible-findings-run-to-toolbar.md#editor-9)) |
 | editor open for key | `add` | stored, open drawing joined | `open.join(made)` returns the joined drawing; `write(joined, history: open.history(of:), "saved")`. Throws `writeFailed` if the write is refused. |
-| no editor | `add` | stored, its history one step longer | Read the stored drawing (or a new one) and its history, append, record one `agentMarks` step, `write(.., history:, "built")`. Checked by: `testAgentsMarksJoinTheStoredDrawing`. |
+| no editor | `add` | stored, its history one step longer | Read the stored drawing (or a new one) and its history, append the marks, take the pins (`Drawing.taking`), record one `agentMarks` step holding both, `write(.., history:, "built")`. Checked by: `testAgentsMarksJoinTheStoredDrawing`. |
 | any | `load(keys)` | — | Records `revisions` now; reads on `loads`; on the main thread, drops each key whose revision changed. |
 
 **Invariants**

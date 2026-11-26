@@ -58,7 +58,32 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   Return does, and works only while the field holds words. A press on a handle of the open pin's
   area resizes it with the popover open (`keepsComposer`); the resize is its own undo step, the
   composer's edit begins again after it (`resumeComposerEdit`), and the field takes the keys back.
+- An agent's pins come with `pins=` on `add` and `show` (`AgentPins.swift`, format in `docs/commands.md`),
+  as its marks come with `marks=`: new pins, or answers added to the person's pins as the agent's
+  comments. `AgentPin.join` turns them into the pins as they will be: new ones placed in px inside
+  the image and numbered from `nextPin`, answers found by number or `id` among the numbered pins.
+  Each comment holds the time of the call (`Pin.Comment.at`). `AgentPin.problem` refuses a list
+  that names a pin the drawing lacks or overflows 99, before anything is shown or written. With
+  `show`, the preview drawn on top holds the new pins only, and answers show once kept.
+- Who wrote a pin's first comment is its maker (`Pin.maker`, `PinMaker`), and decides its colour
+  everywhere, renderings included. A person's pin is in `ui.personColor`. An agent's is in its
+  brand's colour (`Agent.brandColors`): Claude's is the fill of `claude.svg`, `#d97757`, and
+  Codex's is black, as its one-colour logo is. Another agent's pin is in `ui.agentColor`.
+  `MarkStyle.painting` swaps the brand in for the agents' colour, so every drawer keeps taking
+  `.agent`. On screen (`PinFace`), a person's pin wears its number. An agent's pin wears its logo
+  in the words' colour, or the first letter of its name when the bundle has no logo for it, or
+  `Agent.fallbackSymbol` when it gave no name. A person's pin an agent answered also wears a dot
+  in that agent's colour with its logo, on the rim across from the tip (`Pin.answeringAgent`).
+  Copy, Send and Stitch draw a number on every pin and no dot, so the picture matches the "Pin 3:"
+  in the words beside it. A pin's row in a menu shows no dot either. A cluster keeps its numbers, in its pins' one maker's colour.
+- In the editor, the pointer resting on a pin with a number grows it into a card (`PinHoverCard`),
+  while no popover, menu or drag is under way. The card grows from the teardrop's tip, which stays
+  its square corner, with the writer's avatar where the body was. It shows the name, "Pin 3" and
+  how long ago, the first comment's first line, and the replies. It takes no clicks, and VoiceOver
+  reads the pin instead. Its width is `ui.pinHoverWidth` and it grows over
+  `ui.pinHoverDuration`, which the motion setting scales.
 - In the editor an area's outline is dashed in its pin's colour inside a white edge, one width on
-  screen at every zoom (`AreaOutline`). Its dashes march while the pin is being placed or is open
+  screen at every zoom (`AreaOutline`). It shows only while its pin is hovered, selected, being
+  placed or open (`EditorCore.outlinedPins`), and a closed area pin draws none at rest. Its dashes march while the pin is being placed or is open
   (`EditorCore.marchingPins`), at `ui.pinAreaSpeed` times the motion setting, so Reduce Motion
   stills them. A rendering draws the area as a solid rectangle mark.

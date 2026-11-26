@@ -36,6 +36,13 @@ marks, no pins and no message is removed, whatever its `nextPin`, unless it is a
 keeps where its pieces wear their numbers (`pieceNumbers`). A screenshot whose file was removed
 starts again at pin 1.
 
+Each comment keeps when it was written, `at`, in ISO 8601 in UTC to the second, so a pin can say
+how long ago its comment was written. An edit gives the comment a new time. An agent's comment takes
+the time of the `show` or `add` call that brought it, since that is when the agent wrote it. The
+field is optional and does not raise the version. A build from before it reads the comment and
+drops the time at its next write. It also opens such a file without its undo history, since the
+hash it computes for the pins leaves the times out.
+
 Reversing this means teaching readers to accept a version 2 file and ignore `pins` and `nextPin`.
 Until a build does that, it cannot open any pinned drawing.
 

@@ -114,9 +114,9 @@ final class SentDrawingTests: XCTestCase {
         let writes = FolderWrites(trash: { $0 }, now: { 10 })
         writes.callbacks = FolderWrites.Callbacks(
             folder: { [unowned self] in self.folder },
-            joinMarks: { [unowned self] _, _, key, done in
+            joinMarks: { [unowned self] _, key, done in
                 stored[key] = agentDrawing(at: key.url)
-                done(.success(2))
+                done(.success(Drawings.Joined(marks: 2)))
             },
             storedDrawing: { stored[$0] })
         func push(_ name: String, session: String?, marks: String?) throws -> URL {
@@ -290,7 +290,7 @@ final class SentDrawingTests: XCTestCase {
         var presented: [URL] = []
         var installed: Drawing?
         requests.callbacks = ScreenshotRequests.Callbacks(
-            installDrawing: { shot, _, _, _, done in
+            installDrawing: { shot, _, _, _, _, done in
                 installed = self.agentDrawing(at: shot.url)
                 done(nil)
             },

@@ -48,7 +48,7 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 | typing | `setTool`, `enterCanvas`, `paste`, `done`, `send`, `park` | not typing | `endTyping` first. |
 | typing | `agentMarks` | typing | `join` is its own undo step beside the open typing edit. The hand-over carries the typed text unless it is blank. |
 | open | `timerFired` | open | If a gesture is held: `.scheduleTimer` again. Else if `unsaved`: `.handOver(drawingForHost)` and `unsaved = false`. |
-| open | `agentMarks` | open | `join`: marks placed and added as one step, then `handOver()` at once. `unsaved = false`. `noteMark` cleared (`keepsNoteMark` is false for it). |
+| open | `agentMarks` | open | `join`: marks placed and added, and pins put in place of those with their `id` (`Drawing.taking`), as one step, then `handOver()` at once. `unsaved = false`. `noteMark` cleared (`keepsNoteMark` is false for it). |
 | open | `rescaled(p, m)` | open | No change if equal. Sets `drawing.pointScale` and `markScale`; `changed()` when marks exist. Gesture and typing continue. |
 | open | `tweaksChanged` | open | Replaces `style`, `metrics`, `markStyle` only. |
 | open | `done`, `send` | open | `finishForHost`, then `.done(drawingForHost)` or `.send(drawingForHost)`. Does not cancel the timer, clear `unsaved`, or close: the host parks later. |

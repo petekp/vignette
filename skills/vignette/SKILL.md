@@ -3,7 +3,7 @@ name: vignette
 description: >-
   Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "32"
+  version: "34"
 ---
 
 # Vignette
@@ -84,14 +84,16 @@ open -g "vignette://show?file=$a&file=$b&message=$message&agent=codex&session=$C
 - `&marks=` takes marks in the format under "Draw on it yourself", for the first file. They sit on
   top of the user's drawing, on the card and in the editor, until the user presses Keep or Clear.
   Nothing is written unless they keep them.
+- `&pins=` takes pins as under "Leave comment pins", for the first file. They wait with your
+  marks for Keep or Clear.
 - `&session=<id>` names your session, as for `add`. Send on a card you showed then starts on your
   session.
 - Name at most as many files as the user's column keeps (`app.recentCount` in `[state]`, 30 by
   default). More answers `too-many-files`.
 - Wait for `[show] ok files=[…] … joined=<n> inColumn=<n> inEditor=<n>`. While the user's hand is in
   the corner, the call waits (`[show] waits for drag`), so the answer can come a few seconds late.
-  Errors end with `missing-file`, `outside-watch-folder`, `unreadable-image`, `too-many-files` or
-  `invalid-marks`.
+  Errors end with `missing-file`, `outside-watch-folder`, `unreadable-image`, `too-many-files`,
+  `invalid-marks` or `invalid-pins`.
 
 ## Draw on it yourself
 
@@ -111,17 +113,34 @@ its size, `x2`,`y2` an arrow's head.
   `[marks] dropped` line.
 - A text mark's `w` is the box its words wrap in, and it is optional. Without it the words wrap at
   about a quarter of the image's width, as a person's note does, or sooner when the right edge is
-  nearer, but never narrower than 15% of the width. Write the sentence you mean; it is sized for the
-  image, wrapped, widened until the words fit the image's height, and moved inside it.
+  nearer, but never narrower than 15% of the width. Write the sentence you mean; it is sized,
+  wrapped and moved to fit the image.
 - A sentence too long to fit even across the whole picture **is cut off at the edge**, and `[add]`
   still answers `ok`. The log says which one: `[marks] text too long for <name>: mark N is cut off
-  at its edge`. Short marks on a wide image are the safe case; a paragraph on a short one is
-  not. Keep a pushed text to a sentence, and check the log if it mattered.
+  at its edge`. Keep a pushed text to a sentence, and check the log if it mattered.
 - Your marks are drawn in indigo, the agent colour, and the user's are red. There is no choice of
   colour: a `color` field is ignored. So on a drawing the user sends you, the red marks are theirs
   and the indigo ones are yours or another agent's.
 - In `[add] ok <name> … marks=<n>`, `n` counts the marks that joined the drawing. Dropped marks are
   not counted. `invalid-marks` names the mark and the field.
+
+## Leave comment pins
+
+`&pins=` on `add` or `show` leaves comment pins, like the user's, or answers theirs. It
+takes a JSON file's path, or the JSON itself, in the fractions `&marks=` uses:
+
+```json
+[{"x": 0.42, "y": 0.18, "text": "This label wraps at 390 px"},
+ {"x": 0.10, "y": 0.55, "w": 0.30, "h": 0.12, "text": "These rows should line up"},
+ {"pin": 2, "text": "Fixed: the margin is 8 pt now"}]
+```
+
+- `x`,`y` is a pin at a point. With `w`,`h` it is about that area, its teardrop at the
+  bottom-right corner or the one `corner` names (`topLeft`, `topRight`, `bottomLeft`).
+- `pin` answers the user's pin by its number ("Pin 2") or its `id` from `pins.json`, with no place.
+- New pins take the next numbers, in the agent colour. At most 99 per call and 2,000 characters
+  each. `ok` counts them as `pins=<n>`; `invalid-pins` names the comment and what is wrong.
+- Answer on the user's own screenshot with `show`.
 
 ## When the user sends you a drawing
 
@@ -154,7 +173,7 @@ by pin: `Pin 1: remove extra margin. Pin 3: too narrow. / can it pulse?` "Pin 3"
 numbered 3 on the image. Its pointed tip marks the place the comment is about, and a pin about an
 area has that area outlined in its colour. A teardrop that would cover another sits a little
 away, joined to its place by a short line. One pin's comments are joined with " / ", oldest
-first. Answer each pin by its number.
+first. Answer a pin in words, or on the pin itself with `--comments` (below).
 
 When the user answers an image you sent with words alone, and left your marks as they were, the
 line names that image and sends no new picture:
@@ -181,9 +200,10 @@ sh "<this skill's folder>/scripts/reply" --ticket "<folder>/ticket.json" --marks
 ```
 
 - The marks are the same format as `&marks=` above, with the same limits.
-- `--image <your image>` puts them on a picture of your own instead of the one you were sent. It
-  is sent as a PNG, so a JPEG or any other image macOS reads works too. With a picture, the marks
-  may be `[]`.
+- `--image <your image>` puts them on a picture of your own instead of the one you were sent. A
+  JPEG or any image macOS reads works too. With a picture, the marks may be `[]`.
+- `--comments '{"3": "Widened the band"}'` answers the user's pins by number. Each answer joins its
+  pin on the new card, under the user's words. It needs no `--marks` and does not go with `--image`.
 - `--title <text>` and `--description <text>` say what your reply shows, as `&title=` and
   `&description=` do for `add`, with the same limits. The JSON line names a part that was cut under
   `cut`. Neither goes with `--answer`.

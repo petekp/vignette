@@ -29,14 +29,15 @@
 
 ## An agent's marks on top
 
-- An agent's marks that `vignette://show` put on top of a screenshot (`PendingMarks`) are kept or
-  cleared by the person, on the card's band or in the editor's bar. Each is a step of the timeline
+- An agent's marks that `vignette://show` put on top of a screenshot (`PendingMarks`), with its
+  pins and answers from `pins=`, are kept or cleared by the person together, on the card's band or in the editor's bar. Each is a step of the timeline
   wherever it was pressed: "Keep Marks" and "Clear Marks". The marks on top live in memory, as the
   timeline does, so one step's life is the other's.
 - Undoing Clear puts the same marks back on top, with Keep and Clear. Redoing it takes them off
   again.
 - Undoing Keep takes the marks out of the drawing and puts them back on top. Keep joined them as
-  one step of the drawing's history, `Agent's Marks` (`Drawings.add`). The undo takes that step
+  one step of the drawing's history, `Agent's Marks` (`Drawings.add`), which holds the new pins and
+the answered pins as well (`EditStep.joinsAgentMarks`). The undo takes that step
   off the history (`Drawings.takeBackAgentMarks`): in the editor when the screenshot is open there,
   else in the stored drawing. The drawing's redo steps leave with it. A redo step can hold one of the
   agent's marks, moved or recolored, and redoing it would put that mark in the drawing while the

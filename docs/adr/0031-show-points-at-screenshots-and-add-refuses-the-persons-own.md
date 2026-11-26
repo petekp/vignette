@@ -11,20 +11,23 @@ fingerprint Reply uses. That turned the person's own capture into "From Claude".
 
 ## The new command
 
-`vignette://show?file=<path>[&file=…]&agent=<name>&session=<id>&message=<text>&marks=<json>&tag=<tag>`
+`vignette://show?file=<path>[&file=…]&agent=<name>&session=<id>&message=<text>&marks=<json>&pins=<json>&tag=<tag>`
 is a new URL command, and its names are a contract scripts rely on:
 
 - the parameters above, with `message=` read as a form encodes it, at most 60 characters, and
-  `marks=` in `add`'s format;
-- the answer `[show] ok files=[…] agent= session= joined= inColumn= inEditor= marks= after=<ms> tag=`,
+  `marks=` and `pins=` in `add`'s format;
+- the answer `[show] ok files=[…] agent= session= joined= inColumn= inEditor= marks= [pins=] after=<ms> tag=`,
   or `[show] error <code> …` with the codes the actions use and one new one, `too-many-files`;
 - the lines `[show] waits for <reason>`, `[show] warning …`, `[show] ended <name> by=left|opened|replaced`,
-  `[show] kept marks=<n> <name>` and `[show] cleared marks=<n> <name>`;
+  `[show] kept marks=<n> [pins=<n>] <name>` and `[show] cleared marks=<n> [pins=<n>] <name>`;
 - in `[state]`, each card's `shown` and `agentMarks`, and the stack's `showsWaiting` and `dimsUnshown`.
 
-`show` writes nothing. What it sets, the shown state and the agent's marks on top, lives in memory.
-The marks reach the drawing file only when the person presses Keep, and then through `add`'s own
-path, as one undo step.
+`show` writes nothing. What it sets, the shown state and the agent's marks and pins, lives in
+memory, with the marks and new pins drawn on top. They reach the drawing file only when the person presses Keep, and then through `add`'s own
+path, as one undo step. The new pins take their numbers then, so a pin the person made meanwhile
+does not share one. An answer on a pin goes in with them, and one whose pin is gone by then is left
+out with a `[pins] dropped` line. A `pins=` list that names a pin the screenshot does not hold, or
+more new pins than it has room for, answers `invalid-pins` and shows nothing.
 
 ## The change to `add`
 

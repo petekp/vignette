@@ -31,6 +31,8 @@ enum CommandError: String, CaseIterable {
     case nothingToUnsend = "nothing-to-unsend"
     /// `show` named more files than the corner's column keeps (`recentCount`).
     case tooManyFiles = "too-many-files"
+    /// `pins=` did not parse, or names a pin the screenshot does not hold, or more pins than it has room for.
+    case invalidPins = "invalid-pins"
 }
 
 /// A `vignette://<name>?file=…&file=…` URL, decoded once.
@@ -49,6 +51,8 @@ struct CommandRequest: Equatable {
     var session: String? = nil
     /// `marks=` from the query, as given: a path to a JSON file, or the JSON itself. See `AgentMark.parse`.
     let marks: String?
+    /// `pins=` from the query, as given: a path to a JSON file, or the JSON itself. See `AgentPin.parse`.
+    var pins: String? = nil
     /// `title=` and `description=` from the query, as given: what the pushing agent says the image
     /// shows. `AgentTitle.validated` reads them.
     var title: String? = nil
@@ -84,8 +88,8 @@ enum Commands {
         Fixed(name: "help", summary: "list every command and action in the log"),
         Fixed(name: "state", summary: "dump app state to the log; &section=<name> reports only that section and app"),
         Fixed(name: "last", summary: "show the thumbnail for the newest screenshot"),
-        Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; &agent=<name> marks the card as an agent's; &session=<id> names the Claude Code session it came from, which Reply on the card goes back to; &marks=<json file> draws on it, as marks the user can edit; &title=<text> and &description=<text> say what it shows, above the image in the annotator (at most \(AgentTitle.maxTitle) and \(AgentTitle.maxDescription) characters); &from=<name> is the name of the session pushing it, which the card's tab says (at most \(Agent.maxSenderLength) characters; without it, Vignette looks up the name of the session that session= names); ignores copyOnCapture and annotateOnCapture"),
-        Fixed(name: "show", summary: "point the user at screenshots already in the watch folder: brings each file=<path> to the corner, in the order named, and marks its card as shown by &agent=<name>; &session=<id> is the session showing them, where Send on the card starts; &from=<name> is that session's name, which the notice says (at most \(Agent.maxSenderLength) characters; without it, Vignette looks up the name of the session that session= names); &message=<text> is one line under the notice (at most \(Shown.messageLimit) characters); &marks=<json file> draws on the first file, on top of the user's drawing until they keep or clear them; at most recentCount files; changes no file"),
+        Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; &agent=<name> marks the card as an agent's; &session=<id> names the Claude Code session it came from, which Reply on the card goes back to; &marks=<json file> draws on it, as marks the user can edit; &pins=<json file> leaves comments on it, as pins the user can edit, or answers on its pins; &title=<text> and &description=<text> say what it shows, above the image in the annotator (at most \(AgentTitle.maxTitle) and \(AgentTitle.maxDescription) characters); &from=<name> is the name of the session pushing it, which the card's tab says (at most \(Agent.maxSenderLength) characters; without it, Vignette looks up the name of the session that session= names); ignores copyOnCapture and annotateOnCapture"),
+        Fixed(name: "show", summary: "point the user at screenshots already in the watch folder: brings each file=<path> to the corner, in the order named, and marks its card as shown by &agent=<name>; &session=<id> is the session showing them, where Send on the card starts; &from=<name> is that session's name, which the notice says (at most \(Agent.maxSenderLength) characters; without it, Vignette looks up the name of the session that session= names); &message=<text> is one line under the notice (at most \(Shown.messageLimit) characters); &marks=<json file> draws on the first file and &pins=<json file> leaves comments on it or answers on its pins, on top of the user's drawing until they keep or clear them; at most recentCount files; changes no file"),
         Fixed(name: "recent", summary: "toggle the recent stack"),
         Fixed(name: "dismiss", summary: "close the thumbnail or the stack"),
         Fixed(name: "cancel", summary: "close the annotator without copying, as Esc would"),
@@ -116,6 +120,7 @@ enum Commands {
                               agent: Agent.clean(items.first { $0.name == "agent" }.map { $0.value ?? "" }),
                               session: items.first { $0.name == "session" }?.value,
                               marks: items.first { $0.name == "marks" }?.value,
+                              pins: items.first { $0.name == "pins" }?.value,
                               title: text("title", in: url),
                               description: text("description", in: url),
                               from: text("from", in: url),

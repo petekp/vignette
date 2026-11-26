@@ -2,6 +2,40 @@ import AppKit
 import XCTest
 
 final class AgentMarksTests: XCTestCase {
+    func testPinsParseAsPointsAreasAndAnswersAndRefuseAnAnswerWithAPlace() throws {
+        let id = UUID()
+        let pins = try AgentPin.parse(#"[{"x":0.1,"y":0.2,"text":"a"},{"x":0.1,"y":0.2,"w":0.3,"h":0.1,"text":"b"},"#
+                                      + #"{"x":0.5,"y":0.5,"w":0.1,"h":0.1,"corner":"topLeft","text":"c"},{"pin":3,"text":"d"},{"pin":"\#(id.uuidString)","text":"e"}]"#)
+        XCTAssertEqual(pins.map(\.target), [.point(x: 0.1, y: 0.2), .area(x: 0.1, y: 0.2, w: 0.3, h: 0.1, tip: .bottomRight),
+                                            .area(x: 0.5, y: 0.5, w: 0.1, h: 0.1, tip: .topLeft), .number(3), .id(id)])
+        XCTAssertThrowsError(try AgentPin.parse(#"[{"pin":3,"x":0.1,"text":"d"}]"#)) { XCTAssertEqual("\($0)", "pin 1: pin names a pin to answer, so it takes no x, y, w, h or corner") }
+        XCTAssertThrowsError(try AgentPin.parse(#"[{"x":120,"y":0.2,"text":"px"}]"#)) { XCTAssertEqual("\($0)", "pin 1: x must be a number from 0 to 1, a fraction of the image") }
+        XCTAssertThrowsError(try AgentPin.parse(#"[{"x":0.1,"y":0.2,"text":"a"},{"pin":0,"text":"b"}]"#)) {
+            XCTAssertEqual("\($0)", "pin 2: pin must be a pin's number from 1, or its id from pins.json")
+        }
+    }
+
+    func testAgentPinsNumberFromNextPinAnswerByNumberOrIdAndLeaveOutWhatCannotJoin() throws {
+        let pixels = PixelSize(width: 1000, height: 500)
+        let mine = Pin(id: UUID(), number: 4, place: .point(CGPoint(x: 10, y: 10)), comments: [Pin.Comment(text: "Too tight")])
+        let full = (1...97).map { Pin(id: UUID(), number: $0 + 10, place: .point(CGPoint(x: 10, y: 10)), comments: [Pin.Comment(text: "x")]) }
+        let drawing = Drawing(key: "/shots/a.png", pixels: pixels, pointScale: 1, marks: [], pins: [mine] + full, nextPin: 108)
+        let at = Date(timeIntervalSince1970: 1_795_000_000)
+        let list = try AgentPin.parse(#"[{"x":0.5,"y":0.5,"w":0.2,"h":0.2,"text":"new"},{"pin":4,"text":"Fixed"},{"x":0.1,"y":0.1,"text":"no room"},"#
+                                      + #"{"pin":"\#(mine.id.uuidString)","text":"And here"},{"pin":9,"text":"gone"}]"#)
+        let joined = AgentPin.join(list, from: "claude", at: at, onto: drawing)
+
+        XCTAssertEqual(joined.dropped, [3, 5])
+        XCTAssertEqual(joined.pins.map(\.number), [108, 4])
+        XCTAssertEqual(joined.pins[0].place, .area(CGRect(x: 500, y: 250, width: 200, height: 100), tip: .bottomRight))
+        XCTAssertEqual(joined.pins[0].color, .agent)
+        XCTAssertEqual(joined.pins[1].comments, [Pin.Comment(text: "Too tight"), Pin.Comment(text: "Fixed", agent: true, agentName: "claude", at: at),
+                                                 Pin.Comment(text: "And here", agent: true, agentName: "claude", at: at)])
+        XCTAssertEqual(drawing.taking(joined.pins).nextPin, 109)
+        XCTAssertEqual(AgentPin.problem(list, on: drawing, name: "a.png"), "pin 3: a.png holds at most 99 pins")
+        XCTAssertEqual(AgentPin.problem([list[1]], on: nil, name: "a.png"), "pin 1: a.png has no pin 4", "a file new to the folder has no pin to answer")
+    }
+
     private let sentence = "The strip sits 16 pt from the card now, which reads as one group. Is that enough room, or should it breathe more?"
 
     private func texts(_ marks: [Mark]) -> [Mark.Text] {

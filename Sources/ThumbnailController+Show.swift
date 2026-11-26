@@ -87,6 +87,8 @@ extension ThumbnailController {
         if let session = call.shown?.session { detail += " session=\(session.id)" }
         detail += " joined=\(joined.count) inColumn=\(inColumn.count) inEditor=\(inEditor)"
         detail += " marks=\(call.marks.values.map(\.drawing.marks.count).reduce(0, +))"
+        let pins = call.marks.values.map(\.pins.count).reduce(0, +)
+        if pins > 0 { detail += " pins=\(pins)" }
         detail += " after=\(Int((CACurrentMediaTime() - call.asked) * 1000))ms"
         if let tag = call.tag { detail += " tag=\(tag)" }
         Commands.ok("show", detail)

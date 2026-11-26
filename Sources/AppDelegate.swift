@@ -78,7 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         folder: folderWrites, drawings: drawings, requests: requests, cards: thumbnail, connections: AppDelegate.connections,
         addMarks: { [weak self] marks, agent, url, done in
             guard let self else { return }
-            addMarks(marks, from: agent, to: url, rule: settings.data.ui.liveInkMarkScaleRule, done: done)
+            addMarks(AgentAdditions(marks: marks, agent: agent), to: url, rule: settings.data.ui.liveInkMarkScaleRule) { done($0.map(\.marks)) }
         })
     private var watcherGeneration = 0
 
@@ -444,11 +444,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             folder: { [weak self] in self?.watchFolder ?? FileManager.default.temporaryDirectory },
             present: { [weak self] shot, annotate in self?.present(shot, annotate: annotate, from: annotate ? self?.capturedRect(of: shot) : nil) },
             showCard: { [weak self] in self?.thumbnail.show($0) },
-            joinMarks: { [weak self] marks, agent, key, done in
+            joinMarks: { [weak self] additions, key, done in
                 guard let self else { return }
-                addMarks(marks, from: agent, to: key, rule: settings.data.ui.markScaleRule, done: done)
+                addMarks(additions, to: key, rule: settings.data.ui.markScaleRule, done: done)
             },
             storedDrawing: { [weak self] in self?.storedDrawing($0) },
+            currentDrawing: { [weak self] key in self?.drawings.current(of: key) { self?.storedDrawing(key) } },
             removeCards: { [weak self] in self?.thumbnail.remove($0) },
             removeDrawings: { [weak self] keys, observedAt in self?.drawings.remove(keys, observedAt: observedAt) },
             fileRemoved: { [weak self] in self?.requests.fileRemoved($0) },
@@ -471,29 +472,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             rescan: { [weak self] in self?.watcher?.rescan(reason: $0) })
         return writes
     }()
-
-    /// The screen an agent's new drawing is sized for: the main screen, the best guess with no
-    /// annotator open.
-    static var newDrawingScreen: DrawingScreen { DrawingScreen(NSScreen.main ?? NSScreen.screens[0]) }
-
-    /// Agents' marks joining a screenshot's drawing: the one open in the editor, or the stored one.
-    /// `done` answers once the drawing is written, with how many marks joined it. A new drawing is
-    /// sized for the main screen, the best guess with no annotator open, by `rule`. `agent` names the
-    /// agent they are from.
-    func addMarks(_ marks: [AgentMark], from agent: String?, to key: ScreenshotKey, rule: MarkScaleRule,
-                          done: @escaping (Result<Int, Drawings.Failure>) -> Void) {
-        // A turn later, so callers can set their own state after asking.
-        Task {
-            do {
-                done(.success(try drawings.add(marks, from: agent, to: key, style: settings.data.ui.textStyle,
-                                               newScreen: Self.newDrawingScreen, rule: rule)))
-            } catch let failure as Drawings.Failure {
-                done(.failure(failure))
-            } catch {
-                done(.failure(Drawings.Failure(code: .writeFailed, description: "\(error)")))
-            }
-        }
-    }
 
     func open(_ shots: [Screenshot]) {
         guard !shots.isEmpty else { Commands.error("open", .missingFile, "nothing selected"); return }
@@ -985,20 +963,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// sends over as it quits (`ScreenshotRequests.load`).
     private func startRequests(clearingUnsent: Bool) {
         requests.callbacks = ScreenshotRequests.Callbacks(
-            installDrawing: { [weak self] shot, marks, agent, answersLiveInk, done in
+            installDrawing: { [weak self] shot, marks, pins, agent, answersLiveInk, done in
                 guard let self else { return done(Drawings.Failure(code: .writeFailed, description: "the app is gone")) }
-                Task {
-                    do {
-                        let ui = self.settings.data.ui
-                        try self.drawings.installReply(marks, from: agent, at: shot.key, style: ui.textStyle, newScreen: Self.newDrawingScreen,
-                                                       rule: answersLiveInk ? ui.liveInkMarkScaleRule : ui.markScaleRule)
-                        done(nil)
-                    } catch let failure as Drawings.Failure {
-                        done(failure)
-                    } catch {
-                        done(Drawings.Failure(code: .writeFailed, description: "\(error)"))
-                    }
-                }
+                installReply(marks, pins: pins, from: agent, at: shot, answersLiveInk: answersLiveInk, done: done)
             },
             cardCanvas: { [weak self] url, agent in
                 guard let self, let pixels = PixelSize(imageAt: url) else { return nil }

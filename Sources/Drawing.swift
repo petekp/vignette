@@ -381,22 +381,7 @@ struct AgentMark: Codable, Equatable {
     /// otherwise carry. Numbers are fractions of the image, so a pixel coordinate is caught here.
     /// `allowingEmpty` accepts `[]`, for a reply that brings its own image and no marks.
     static func parse(_ value: String, allowingEmpty: Bool = false) throws -> [AgentMark] {
-        let data: Data
-        if value.hasPrefix("[") || value.hasPrefix("{") {
-            guard value.utf8.count <= maxBytes else { throw MarkProblem(tooBig(value.utf8.count)) }
-            data = Data(value.utf8)
-        } else {
-            let url = URL(fileURLWithPath: (value as NSString).expandingTildeInPath)
-            // Nil for a directory or anything that is not a regular file, which is also the answer
-            // for a pipe or a device that `Data(contentsOf:)` would read until it blocked.
-            guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
-                throw MarkProblem("cannot read \(url.path)")
-            }
-            guard size <= maxBytes else { throw MarkProblem(tooBig(size)) }
-            guard let read = try? Data(contentsOf: url) else { throw MarkProblem("cannot read \(url.path)") }
-            data = read
-        }
-        guard let list = (try? DrawingJSON.object(from: data)) as? [[String: Any]] else {
+        guard let list = try json(value, of: "marks") as? [[String: Any]] else {
             throw MarkProblem("expected a JSON array of marks")
         }
         guard !list.isEmpty || allowingEmpty else { throw MarkProblem("no marks in it") }
@@ -407,9 +392,6 @@ struct AgentMark: Codable, Equatable {
         }
     }
 
-    private static func tooBig(_ bytes: Int) -> String {
-        "\(bytes / 1024) KB of marks; at most \(maxBytes / 1024) KB"
-    }
 }
 
 extension AgentMark {

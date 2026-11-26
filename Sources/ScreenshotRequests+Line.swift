@@ -8,8 +8,9 @@ extension ScreenshotRequests {
     /// What a send carries to the agent.
     enum Picture {
         /// The drawing, rendered, and its pins, whose words the line carries and `pins.json` keeps. The
-        /// line names the image, and the agent opens it.
-        case drawing(png: Data, pins: [Pin] = [])
+        /// line names the image, and the agent opens it. `base` is the drawing rendered without its
+        /// pins, which a reply goes on (`ReplyProtocol.baseImageURL`); nil when it has none.
+        case drawing(png: Data, pins: [Pin] = [], base: Data? = nil)
         /// The agent's own image, with the drawing exactly as the agent sent it, and the person's
         /// words. The line names the card's file and its title, and no picture travels. A drawing in
         /// answer still needs a picture to go on, so the request keeps the card's own picture,
@@ -27,15 +28,16 @@ extension ScreenshotRequests {
         func store(in directory: URL) throws {
             let image = directory.appendingPathComponent("image.png")
             switch self {
-            case .drawing(let png, _), .unchanged(_, _, let png?): try png.write(to: image, options: .atomic)
+            case .drawing(let png, _, _), .unchanged(_, _, let png?): try png.write(to: image, options: .atomic)
             case .unchanged(let card, _, nil): try FileManager.default.copyItem(at: card, to: image)
             }
             guard !pins.isEmpty else { return }
+            if case .drawing(_, _, let base?) = self { try base.write(to: ReplyProtocol.baseImageURL(in: directory), options: .atomic) }
             try DrawingJSON.encode(["pins": pins.map(PinRecord.init)]).write(to: directory.appendingPathComponent("pins.json"), options: .atomic)
         }
 
         var pins: [Pin] {
-            if case .drawing(_, let pins) = self { return pins.sorted { $0.number < $1.number } }
+            if case .drawing(_, let pins, _) = self { return pins.sorted { $0.number < $1.number } }
             return []
         }
 
@@ -48,7 +50,7 @@ extension ScreenshotRequests {
         /// For the `[send] prepared` line.
         var logged: String {
             switch self {
-            case .drawing(let png, let pins): return "\(png.count) bytes" + (pins.isEmpty ? "" : " pins=\(pins.count)")
+            case .drawing(let png, let pins, _): return "\(png.count) bytes" + (pins.isEmpty ? "" : " pins=\(pins.count)")
             case .unchanged: return "unchanged, no picture sent"
             }
         }

@@ -17,4 +17,43 @@ extension AppDelegate {
         annotator.storedMessage = { [weak self] key, pixels in self?.drawings.message(of: key, pixels: pixels) ?? "" }
         drawings.onWriteFailed = { [weak self] key in self?.thumbnail.showNotSaved(Screenshot(key: key)) }
     }
+
+    /// The screen an agent's new drawing is sized for: the main screen, the best guess with no
+    /// annotator open.
+    static var newDrawingScreen: DrawingScreen { DrawingScreen(NSScreen.main ?? NSScreen.screens[0]) }
+
+    /// Agents' marks and pins joining a screenshot's drawing: the one open in the editor, or the stored
+    /// one. `done` answers once the drawing is written, with how many joined it. A new drawing is
+    /// sized for the main screen, the best guess with no annotator open, by `rule`.
+    func addMarks(_ additions: AgentAdditions, to key: ScreenshotKey, rule: MarkScaleRule,
+                  done: @escaping (Result<Drawings.Joined, Drawings.Failure>) -> Void) {
+        // A turn later, so callers can set their own state after asking.
+        Task {
+            do {
+                done(.success(try drawings.add(additions, to: key, style: settings.data.ui.textStyle,
+                                               newScreen: Self.newDrawingScreen, rule: rule)))
+            } catch let failure as Drawings.Failure {
+                done(.failure(failure))
+            } catch {
+                done(.failure(Drawings.Failure(code: .writeFailed, description: "\(error)")))
+            }
+        }
+    }
+
+    /// A reply's marks and pins, stored as its card's drawing before the card appears.
+    func installReply(_ marks: [AgentMark], pins: [Pin], from agent: String?, at shot: Screenshot, answersLiveInk: Bool,
+                      done: @escaping (Drawings.Failure?) -> Void) {
+        Task {
+            do {
+                let ui = settings.data.ui
+                try drawings.installReply(marks, pins: pins, from: agent, at: shot.key, style: ui.textStyle, newScreen: Self.newDrawingScreen,
+                                          rule: answersLiveInk ? ui.liveInkMarkScaleRule : ui.markScaleRule)
+                done(nil)
+            } catch let failure as Drawings.Failure {
+                done(failure)
+            } catch {
+                done(Drawings.Failure(code: .writeFailed, description: "\(error)"))
+            }
+        }
+    }
 }

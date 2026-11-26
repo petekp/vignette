@@ -68,7 +68,8 @@
    of the session that pushed it or null, `kind`, `copied`,
    `notCopied`, the reason a copy failed or null, `notSaved`, whether the card says its drawing was
    not saved, `shown`, the agent that showed it with `vignette://show` and its session, message and
-   time, and its `sender` once named, or null, `agentMarks`, how many of that agent's marks sit on top; `selected`,
+   time, and its `sender` once named, or null, `agentMarks`, how many of that agent's marks sit on top, and `agentPins`, how many of its
+   pins and answers wait with them; `selected`,
    `focused`, `hovered`, `queue`, the files waiting for the annotator, `showsWaiting`, the `show` calls
    waiting for the hand to leave the corner, `dimsUnshown`, whether the other cards are dimmed, `visible`, `key`, `isStack`,
    `scroll`, `viewport`, `safeBottom`, the room the Dock keeps under the column, panel,

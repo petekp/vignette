@@ -63,6 +63,13 @@
   digest is acknowledged from its record and makes no second card; with a different digest it is
   refused and the first is untouched. Raise `ReplyProtocol.version` with any change to what either
   side writes: a skill copy from before 2026-09-26 carries a Python helper that still answers.
+- A reply answers the person's pins with `comments`, each the agent's words on one pin, named by
+  its id (ADR 0032). The helper's `--comments` takes numbers too and turns them into ids from the
+  request's `pins.json`. `ReplyProtocol.check` refuses a pin the request did not send when the
+  reply is accepted. A reply without its own image goes on the request's `base.png` when it has
+  one, and its card holds the request's pins, each answer added as the agent's comment and timed
+  by `Reply.accepted`, so a rebuilt card says the same. A request without `base.png` takes no
+  comments, and its replies go on `image.png` with no pins.
 - The reply helper is the app's own binary. `AppDelegate.main` hands `<binary> reply …` to
   `ReplyCommand` before an `NSApplication` exists, and it exits, so the app never starts. The
   skill's `scripts/reply` is a shell script, so the skill needs nothing a Mac does not ship:

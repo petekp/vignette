@@ -11,9 +11,9 @@ struct PinShading {
     let rim: CGFloat, rimColor: CGColor
     let shadowRadius: CGFloat, shadowOffset: CGFloat, shadowOpacity: Float
 
-    /// A pin in `color` on a drawing of `pointScale`.
-    init(_ color: MarkColor, pointScale: CGFloat, markStyle: MarkStyle) {
-        let base = color == .agent ? markStyle.agentColor : markStyle.personColor, style = markStyle.pin
+    /// A pin `maker` made, in its colour, on a drawing of `pointScale`.
+    init(_ maker: PinMaker, pointScale: CGFloat, markStyle: MarkStyle) {
+        let base = maker.isAgent ? markStyle.painting(maker).agentColor : markStyle.personColor, style = markStyle.pin
         top = Self.mix(base, toward: 1, style.gradient)
         bottom = Self.mix(base, toward: 0, style.bottomShade)
         rim = style.rimWidth * pointScale
@@ -32,10 +32,10 @@ struct PinShading {
 }
 
 extension PinTeardrop {
-    /// Draws the teardrop as it looks on screen but with no shadow, as a menu's row shows it, in a
-    /// context whose y runs down.
-    func drawFlat(in ctx: CGContext, color: MarkColor, pointScale: CGFloat, markStyle: MarkStyle) {
-        let shading = PinShading(color, pointScale: pointScale, markStyle: markStyle)
+    /// Draws the teardrop of a pin `maker` made as it looks on screen, wearing `face`, but with no
+    /// shadow, as a menu's row shows it, in a context whose y runs down.
+    func drawFlat(in ctx: CGContext, maker: PinMaker, face: PinFace, pointScale: CGFloat, markStyle: MarkStyle) {
+        let shading = PinShading(maker, pointScale: pointScale, markStyle: markStyle)
         let box = body.boundingBoxOfPath
         ctx.setLineJoin(.round)
         ctx.setLineWidth(2 * shading.rim)
@@ -50,14 +50,47 @@ extension PinTeardrop {
             ctx.drawLinearGradient(gradient, start: CGPoint(x: box.midX, y: box.minY), end: CGPoint(x: box.midX, y: box.maxY), options: [])
         }
         ctx.restoreGState()
-        ctx.setFillColor(markStyle.wordColor.cgColor)
-        ctx.addPath(number)
+        let words = markStyle.wordColor.cgColor
+        if case .logo(let name) = face, let image = AgentLogos.shared.image(for: name) {
+            let logo = logoFrame(style: markStyle.pin)
+            ctx.saveGState()
+            // An image is drawn with its top at its rect's greatest y; here y runs down.
+            ctx.translateBy(x: logo.minX, y: logo.maxY)
+            ctx.scaleBy(x: 1, y: -1)
+            let box = CGRect(origin: .zero, size: logo.size)
+            ctx.beginTransparencyLayer(in: box, auxiliaryInfo: nil)
+            ctx.draw(image, in: box)
+            ctx.setBlendMode(.sourceIn)
+            ctx.setFillColor(words)
+            ctx.fill(box)
+            ctx.endTransparencyLayer()
+            ctx.restoreGState()
+            return
+        }
+        ctx.setFillColor(words)
+        ctx.addPath(lettering(face, style: markStyle.pin))
         ctx.fillPath()
+    }
+
+    /// Where an agent's logo sits: a square `PinStyle.logoSize` of the teardrop's side, in the middle
+    /// of the body.
+    func logoFrame(style: PinStyle) -> CGRect {
+        let side = square.height * style.logoSize
+        return CGRect(x: square.midX - side / 2, y: square.midY - side / 2, width: side, height: side)
+    }
+
+    /// The circle of an answering agent's dot, `PinStyle.answerSize` of the teardrop's side across,
+    /// centred on the body's rim across from the tip.
+    func answerDot(style: PinStyle) -> CGRect {
+        let centre = CGPoint(x: square.midX, y: square.midY), away = CGVector(dx: centre.x - tip.x, dy: centre.y - tip.y)
+        let length = max(hypot(away.dx, away.dy), 1), radius = square.height / 2, side = square.height * style.answerSize
+        let at = CGPoint(x: centre.x + away.dx / length * radius, y: centre.y + away.dy / length * radius)
+        return CGRect(x: at.x - side / 2, y: at.y - side / 2, width: side, height: side)
     }
 }
 
 /// A pin's layers, in its look on screen (`PinShading`): the hairline, which casts the shadow, the
-/// teardrop's fill over it, and its number.
+/// teardrop's fill over it, and what it wears (`PinFace`), then the dot of an agent that answered it.
 @MainActor
 final class PinLayer {
     let root = CALayer()
@@ -65,22 +98,28 @@ final class PinLayer {
     private let fill = CAGradientLayer()
     private let fillShape = CAShapeLayer()
     private let number = CAShapeLayer()
+    private let logo = CALayer(), logoShape = CALayer()
+    private let dot = CAShapeLayer(), dotLogo = CALayer(), dotLogoShape = CALayer()
     private var shown: (pin: Pin, pixels: PixelSize, pointScale: CGFloat, markStyle: MarkStyle, pieceNumbers: [CGRect])?
 
     init(scale: CGFloat) {
-        for layer in [root, rim, fill, fillShape, number] { layer.anchorPoint = .zero }
+        for layer in [root, rim, fill, fillShape, number, logo, logoShape, dot, dotLogo, dotLogoShape] { layer.anchorPoint = .zero }
         fill.mask = fillShape
+        logo.mask = logoShape
+        dotLogo.mask = dotLogoShape
+        for shape in [logoShape, dotLogoShape] { shape.contentsGravity = .resizeAspect }
+        dot.shadowColor = CGColor(gray: 0, alpha: 1)
         // The layers' y runs down, as the drawing's does, so the gradient's 0 is its top.
         fill.startPoint = CGPoint(x: 0.5, y: 0)
         fill.endPoint = CGPoint(x: 0.5, y: 1)
         rim.shadowColor = CGColor(gray: 0, alpha: 1)
         rim.lineJoin = .round
-        for layer in [rim, fill, number] { root.addSublayer(layer) }
+        for layer in [rim, fill, number, logo, dot, dotLogo] { root.addSublayer(layer) }
         setScale(scale)
     }
 
     func setScale(_ scale: CGFloat) {
-        for layer in [rim, fill, fillShape, number] { layer.contentsScale = scale }
+        for layer in [rim, fill, fillShape, number, logo, logoShape, dot, dotLogo, dotLogoShape] { layer.contentsScale = scale }
     }
 
     /// Draws `pin` of `drawing`, unless it is drawn already as it is, on this image, at this scale, among
@@ -90,13 +129,15 @@ final class PinLayer {
         if let shown, shown.pin == pin, shown.pixels == pixels, shown.pointScale == pointScale, shown.markStyle == markStyle,
            shown.pieceNumbers == pieceNumbers { return }
         show(PinTeardrop(pin, in: pixels, pointScale: pointScale, markStyle: markStyle, pieceNumbers: pieceNumbers),
-             color: pin.color, pointScale: pointScale, markStyle: markStyle)
+             maker: pin.maker, face: PinFace(pin.maker), answeringAgent: pin.answeringAgent, pointScale: pointScale, markStyle: markStyle)
         shown = (pin, pixels, pointScale, markStyle, pieceNumbers)
     }
 
-    /// Draws `teardrop`, a pin's or a cluster's wherever it is, in `color`, for a drawing of `pointScale`.
-    func show(_ teardrop: PinTeardrop, color: MarkColor, pointScale: CGFloat, markStyle: MarkStyle) {
-        let shading = PinShading(color, pointScale: pointScale, markStyle: markStyle)
+    /// Draws `teardrop`, a pin's or a cluster's wherever it is, in the colour of `maker`, wearing `face`,
+    /// with `answeringAgent`'s dot, for a drawing of `pointScale`.
+    func show(_ teardrop: PinTeardrop, maker: PinMaker, face: PinFace = .number, answeringAgent: PinMaker? = nil,
+              pointScale: CGFloat, markStyle: MarkStyle) {
+        let shading = PinShading(maker, pointScale: pointScale, markStyle: markStyle)
         let box = teardrop.body.boundingBoxOfPath
         var toBox = CGAffineTransform(translationX: -box.minX, y: -box.minY)
         CATransaction.begin()
@@ -112,9 +153,44 @@ final class PinLayer {
         fill.frame = box
         fill.colors = [shading.top, shading.bottom]
         fillShape.path = teardrop.body.copy(using: &toBox)
-        number.path = teardrop.number
-        number.fillColor = markStyle.wordColor.cgColor
+        let words = markStyle.wordColor.cgColor, logoImage = face.logo.flatMap(AgentLogos.shared.image(for:))
+        number.path = logoImage == nil ? teardrop.lettering(face, style: markStyle.pin) : nil
+        number.fillColor = words
+        Self.wear(logoImage, on: logo, shape: logoShape, in: teardrop.logoFrame(style: markStyle.pin), color: words)
+        let answer = answeringAgent.map { (agent: $0, circle: teardrop.answerDot(style: markStyle.pin)) }
+        dot.isHidden = answer == nil
+        if let answer {
+            let agentShading = PinShading(answer.agent, pointScale: pointScale, markStyle: markStyle)
+            dot.path = CGPath(ellipseIn: answer.circle, transform: nil)
+            dot.fillColor = agentShading.top
+            dot.strokeColor = shading.rimColor
+            dot.lineWidth = 2 * shading.rim
+            dot.shadowOpacity = shading.shadowOpacity
+            dot.shadowRadius = shading.shadowRadius
+            dot.shadowOffset = CGSize(width: 0, height: shading.shadowOffset)
+            let side = answer.circle.width * markStyle.pin.logoSize
+            Self.wear(PinFace(answer.agent).logo.flatMap(AgentLogos.shared.image(for:)), on: dotLogo, shape: dotLogoShape,
+                      in: CGRect(x: answer.circle.midX - side / 2, y: answer.circle.midY - side / 2, width: side, height: side), color: words)
+        } else {
+            dotLogo.isHidden = true
+        }
         CATransaction.commit()
         shown = nil
+    }
+
+    /// Shows `image` as a shape in `color` filling `frame`, or hides `layer` for no image.
+    private static func wear(_ image: CGImage?, on layer: CALayer, shape: CALayer, in frame: CGRect, color: CGColor) {
+        layer.isHidden = image == nil
+        layer.frame = frame
+        layer.backgroundColor = color
+        shape.frame = CGRect(origin: .zero, size: frame.size)
+        shape.contents = image
+    }
+}
+
+extension PinFace {
+    var logo: String? {
+        if case .logo(let name) = self { return name }
+        return nil
     }
 }

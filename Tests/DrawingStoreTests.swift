@@ -262,7 +262,7 @@ final class DrawingsTests: XCTestCase {
         let theirs = Mark(geometry: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 40)))
         drawings.write(Drawing(key: shot.path, pixels: pixels, pointScale: 1, marks: [theirs]), reason: "saved")
 
-        let added = try drawings.add(pushed, from: nil, to: shot.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule)
+        let added = try drawings.add(AgentAdditions(marks: pushed, agent: nil), to: shot.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule).marks
         XCTAssertEqual(added, 2)
         let stored = try XCTUnwrap(drawings.read(shot.screenshotKey, pixels: pixels, style: .standard))
         XCTAssertEqual(stored.pointScale, 1, "a stored drawing keeps its own scale")
@@ -272,7 +272,7 @@ final class DrawingsTests: XCTestCase {
         XCTAssertEqual(stored.marks.dropFirst().map(\.color), [.agent, .agent], "a colour the agent names is ignored")
 
         let fresh = try redShot()
-        XCTAssertEqual(try drawings.add(pushed, from: nil, to: fresh.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule), 2)
+        XCTAssertEqual(try drawings.add(AgentAdditions(marks: pushed, agent: nil), to: fresh.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule).marks, 2)
         let made = try XCTUnwrap(drawings.read(fresh.screenshotKey, pixels: pixels, style: .standard))
         XCTAssertEqual(made.markScale, 16.0 / 34, accuracy: 1e-9, "300 by 200 px is small enough for the floor: a 17 pt note at 2x reaches 16 px")
         XCTAssertEqual(made.pointScale, 2 * made.markScale, accuracy: 1e-9)
@@ -386,14 +386,14 @@ final class DrawingsTests: XCTestCase {
         var written: [Drawing?] = []
         drawings.onChange = { _, drawing in written.append(drawing) }
 
-        XCTAssertEqual(try drawings.add(pushed, from: nil, to: shot.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule), 2)
+        XCTAssertEqual(try drawings.add(AgentAdditions(marks: pushed, agent: nil), to: shot.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule).marks, 2)
         XCTAssertEqual(editor.drawing.marks.dropFirst().map(\.agent), [true, true], "the marks join the open drawing")
         XCTAssertEqual(written.map { $0?.marks.count }, [3], "one write, of the joined drawing")
         XCTAssertEqual(drawings.read(shot.screenshotKey, pixels: pixels, style: .standard)?.marks.count, 3)
 
         // The push answers from the write, not from the marks having joined.
         try FileManager.default.removeItem(at: shot)
-        XCTAssertThrowsError(try drawings.add(pushed, from: nil, to: shot.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule)) { error in
+        XCTAssertThrowsError(try drawings.add(AgentAdditions(marks: pushed, agent: nil), to: shot.screenshotKey, style: .standard, newScreen: retinaScreen, rule: UITweaks().markScaleRule)) { error in
             XCTAssertEqual((error as? Drawings.Failure)?.code, .writeFailed)
         }
     }
@@ -492,26 +492,5 @@ final class DrawingsTests: XCTestCase {
         drawings.sweep(inventory)
         XCTAssertEqual(Drawings(store: drawings.store).keys, [alias.screenshotKey])
         XCTAssertEqual(drawings.current(of: alias.screenshotKey, style: .standard)?.marks.map(\.geometry), [mark.geometry])
-    }
-}
-
-/// The editor's open drawing, without a window: a join adds the marks and answers the drawing.
-@MainActor
-final class FakeEditor: OpenDrawing {
-    var drawing: Drawing
-    var isOpen = true
-
-    init(_ drawing: Drawing) { self.drawing = drawing }
-
-    func drawing(of key: ScreenshotKey) -> Drawing? { isOpen && drawing.key == key.path ? drawing : nil }
-
-    func rekey(_ old: ScreenshotKey, to new: ScreenshotKey) {
-        if drawing.key == old.path { drawing.key = new.path }
-    }
-
-    func join(_ marks: [Mark]) -> Drawing? {
-        guard !marks.isEmpty else { return nil }
-        drawing.marks += marks
-        return drawing
     }
 }

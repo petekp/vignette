@@ -247,6 +247,33 @@ final class EditorCorePinsTests: XCTestCase {
         XCTAssertEqual(core.drawing.pins.first?.place, .area(CGRect(x: 60, y: 60, width: 40, height: 40), tip: .bottomRight))
     }
 
+    func testAnAgentsPinsJoiningWhileThePersonPlacesOrMovesAPinStayAndUndoApart() throws {
+        let area = Pin.Place.area(CGRect(x: 100, y: 100, width: 200, height: 100), tip: .bottomRight)
+        let mine = Pin(id: UUID(), number: 1, place: area, comments: [Pin.Comment(text: "This box")])
+        var core = core(pins: [mine], nextPin: 2)
+        core.click(700, 400)
+        _ = core.reduce(.agentMarks([], pins: try AgentPin.parse(#"[{"x":0.8,"y":0.2,"text":"Here"},{"pin":1,"text":"Fixed"}]"#), from: "claude"))
+        _ = core.reduce(.composer(.close))
+        XCTAssertEqual(core.drawing.pins.map(\.number), [1, 2], "closing the person's empty new pin leaves the agent's")
+        XCTAssertEqual(core.drawing.pins.first?.comments.map(\.text), ["This box", "Fixed"])
+
+        core.press(310, 190)
+        core.dragTo(360, 240)
+        _ = core.reduce(.agentMarks([], pins: try AgentPin.parse(#"[{"pin":1,"text":"And here"}]"#), from: "claude"))
+        XCTAssertEqual(core.drawingForHost.pins.first?.place, area, "the host gets the answer on the pin as it was before the drag")
+        XCTAssertEqual(core.drawingForHost.pins.first?.comments.count, 3)
+        core.release(360, 240)
+        XCTAssertEqual(core.drawing.pins.first?.place, .area(CGRect(x: 150, y: 150, width: 200, height: 100), tip: .bottomRight))
+        XCTAssertEqual(core.undoTitle, "Undo Move")
+        core.key(.character("z"), .command)
+        XCTAssertEqual(core.drawing.pins.first?.place, area)
+        XCTAssertEqual(core.drawing.pins.first?.comments.count, 3, "undoing the move leaves the answer")
+        XCTAssertEqual(core.undoTitle, "Undo claude's Marks")
+        core.key(.character("z"), .command)
+        XCTAssertEqual(core.drawing.pins.first?.comments.map(\.text), ["This box", "Fixed"])
+        XCTAssertEqual(core.drawing.pins.first?.place, area)
+    }
+
     func testADragWithTheCommentToolPlacesAnAreaPinThatMovesAndResizes() throws {
         var core = core()
         core.drag(from: (100, 100), to: (300, 200))

@@ -64,9 +64,18 @@ final class FolderWrites {
             // Checked before anything is copied: a push with bad marks is one error line and no file.
             do { marks = try AgentMark.parse(value) } catch { Commands.error("add", .invalidMarks, "\(error)"); return }
         }
+        var pins: [AgentPin] = []
+        if let value = request.pins {
+            do { pins = try AgentPin.parse(value) } catch { Commands.error("add", .invalidPins, "\(error)"); return }
+        }
         let inFolder = Commands.policyError(for: source, watchFolder: watchFolder, debug: false) == nil
         guard !inFolder || Agent.of(source) != nil else {
             Commands.error("add", .unsupportedType, "\(source.lastPathComponent) is the user's own screenshot; vignette://show points them at it"); return
+        }
+        // An answer needs a pin to answer, which only a file already in the folder can hold.
+        let current = inFolder ? ScreenshotKey(resolving: source, in: watchFolder).flatMap(callbacks.currentDrawing) : nil
+        if let problem = AgentPin.problem(pins, on: current, name: source.lastPathComponent) {
+            Commands.error("add", .invalidPins, problem); return
         }
         var destination = source
         if !inFolder {
@@ -84,7 +93,7 @@ final class FolderWrites {
         // A file already in the folder may be in a subfolder of it, which its name alone would drop.
         let key = ScreenshotKey(resolving: destination, in: watchFolder) ?? ScreenshotKey(folder: watchFolder, name: name)
         // Already in the folder means no watcher report is coming, so the file itself waits here.
-        pendingAdds[key] = PendingAdd(annotate: request.annotate, addingMarks: !marks.isEmpty,
+        pendingAdds[key] = PendingAdd(annotate: request.annotate, addingMarks: !marks.isEmpty || !pins.isEmpty,
                                        waiting: inFolder ? Screenshot(key: key) : nil)
         if !inFolder {
             do {
@@ -99,18 +108,18 @@ final class FolderWrites {
         let title = recordAgent(of: request, origin: origin, on: key, at: destination)
         // The agent saw the drawing only when the file had none before this push.
         let agentsDrawing = origin != nil && (callbacks.storedDrawing(key)?.isEmpty ?? true)
-        guard !marks.isEmpty else {
+        guard !marks.isEmpty || !pins.isEmpty else {
             recordSentDrawing(of: key, at: destination, agentsDrawing)
             presentAdd(key)
             Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request, origin, titled: title.value != nil))")
             return
         }
-        callbacks.joinMarks(marks, request.agent, key) { [weak self] result in
+        callbacks.joinMarks(AgentAdditions(marks: marks, pins: pins, agent: request.agent, at: Date()), key) { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let joined):
                 recordSentDrawing(of: key, at: destination, agentsDrawing)
-                Commands.ok("add", "\(name)\(detail(request, origin, titled: title.value != nil)) marks=\(joined)")
+                Commands.ok("add", "\(name)\(detail(request, origin, titled: title.value != nil)) marks=\(joined.marks)\(pins.isEmpty ? "" : " pins=\(joined.pins)")")
             case .failure(let failure):
                 Agent.forgetSentDrawing(on: destination)
                 Commands.error("add", failure.code, "\(name): the image is in the folder, its marks are not: \(failure)")

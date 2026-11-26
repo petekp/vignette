@@ -138,12 +138,12 @@ extension EditorCore {
                 pin.comments.remove(at: editing)
                 name = .delete
             } else if words != pin.comments[editing].text {
-                // The words are the person's now, as with an agent's note.
-                pin.comments[editing] = Pin.Comment(text: words)
+                // The words are the person's now, as with an agent's note, and written now.
+                pin.comments[editing] = Pin.Comment(text: words, at: Date())
                 name = .typing
             }
         } else if !words.isEmpty {
-            pin.comments.append(Pin.Comment(text: words))
+            pin.comments.append(Pin.Comment(text: words, at: Date()))
         }
         guard pin != drawing.pins[index] else {
             composer = Composer(pin: pin.id, draft: "")

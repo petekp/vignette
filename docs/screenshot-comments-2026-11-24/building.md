@@ -155,5 +155,14 @@ files it touches, and `docs/voice.md` for any new words.
    `--comments`, `ReplyProtocol.version` goes up, a request stores `base.png`, the reply card holds
    the person's pins with the answers, and the skill says how. Verified by protocol tests and one
    live round in the VM with each agent client.
+   Step 4 settled these points the plan left open:
+   - Agents leave pins with `pins=` on `add` and `show`, as marks come with `marks=`, and the same
+     rules hold: shown on top until kept or cleared, each an undo step. ADR 0032 has the reply's side.
+   - Pete picked mock A (11-25). On screen an agent's pin wears its logo in its brand's colour, or
+     its first letter when the app has no logo for it, and a person's pin keeps its number. A pin an
+     agent answered wears that agent's dot. Copy and Send keep a number on every pin.
+   - The pointer on a pin grows it into a card with the writer, the number, how long ago, the first
+     line and the replies. An area's outline shows only while its pin is hovered, selected, being
+     placed or open.
 
 Steps 1 and 2 show nothing new on their own. Step 3 is the first a person sees.

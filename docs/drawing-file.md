@@ -34,7 +34,10 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
   `corner`, the corner its teardrop's tip sits on: `topLeft`, `topRight`, `bottomLeft` or
   `bottomRight`. A file without it reads as `topLeft`. A comment has
   `text`, at most 2,000 characters, and `agent` and `agentName` as a mark has them, left out for
-  a person's. A file holds at most 99 pins.
+  a person's. It also has `at`, when it was written, in ISO 8601 in UTC to the second, such as
+  `2026-11-25T18:04:05Z`. An edit gives it a new `at`. A comment without `at`, as every one written
+  before times were kept, or with one that does not read, has no time and is kept. A file holds at
+  most 99 pins.
 - `pieceNumbers` is a stitch's: where each piece wears its number, as `[x, y, w, h]` in px, so a
   teardrop turns away from it. It is left out when there are none, and does not raise the version.
 - `nextPin` is the number the next pin gets, and is left out at 1. It never goes down while the

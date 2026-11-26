@@ -72,6 +72,11 @@ extension ScreenshotRequests {
         var answer: LiveAnswer? = nil
         /// What the agent says the reply shows, recorded on the published file (`Agent.record(title:on:)`).
         var title: AgentTitle? = nil
+        /// The agent's answers on the person's pins, which the card's pins hold. Nil for none.
+        var comments: [ReplyProtocol.Comment]? = nil
+        /// When Vignette accepted the reply: the time its answers were written, so a rebuilt card says
+        /// the same. Nil in a record from before replies carried answers.
+        var accepted: Date? = nil
         var stage: Stage
         var destination: URL?
         /// Where the person renamed the published file to, inside the watch folder. Nil while it
