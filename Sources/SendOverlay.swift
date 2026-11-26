@@ -9,7 +9,8 @@ import SwiftUI
 /// is the one part of the overlay that takes presses.
 ///
 /// The logo is one view in every state, so when the grace ends it glides to its new place rather
-/// than being replaced by a copy drawn there. Its badge comes in once it has arrived.
+/// than being replaced by a copy drawn there. Its badge shows nothing until the delivery has
+/// answered, then grows in whole, never sooner than `sendBadgeDelay` after the logo appeared.
 struct SendOverlay: View {
     let notice: SendNotice
     let corner: CGFloat
@@ -18,8 +19,8 @@ struct SendOverlay: View {
     @State private var landed = false
     @State private var shown: SendNotice.State?
     @State private var since = Date()
-    /// The logo is where the layout puts it, so its badge may show.
-    @State private var logoArrived = true
+    /// The logo has been on screen for `sendBadgeDelay`, so its badge may grow in.
+    @State private var badgeMayShow = false
     private static let sendingHold: TimeInterval = 0.45
     /// The logo over the smallest Don't send. A card shorter than this puts the button beside it.
     private static let stackedHeight: CGFloat = 57
@@ -66,6 +67,9 @@ struct SendOverlay: View {
             shown = notice.state
             since = Date()
             withAnimation(Anim.spring(0.4 * motion, bounce: 0.45)) { landed = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Settings.shared.motionUI.sendBadgeDelay) {
+                badgeMayShow = true
+            }
         }
         .onChange(of: notice.state) { previous, next in
             let spring = Anim.spring(0.35 * motion, bounce: 0.35)
@@ -76,17 +80,10 @@ struct SendOverlay: View {
             for step in SendNotice.steps(from: previous, to: next) {
                 let leavesGrace = last == .inGrace && step != .inGrace
                 DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
-                    // The grace is not the sending state: the hold counts from when the badge shows.
+                    // The grace is not the sending state: the hold counts from when the logo has
+                    // glided to its place.
                     if step == .sending { since = Date().addingTimeInterval(leavesGrace ? glide : 0) }
-                    withAnimation(spring) {
-                        shown = step
-                        if leavesGrace { logoArrived = false }
-                    }
-                    if leavesGrace {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + glide) {
-                            withAnimation(Anim.spring(0.3 * motion, bounce: 0.45)) { logoArrived = true }
-                        }
-                    }
+                    withAnimation(spring) { shown = step }
                 }
                 wait += (leavesGrace ? glide : 0) + Self.sendingHold
                 last = step
@@ -225,17 +222,21 @@ struct SendOverlay: View {
     }
 
     /// The agent's logo on a white disc, as on a card an agent sent: in its grace with the ring that
-    /// empties, after it with the delivery at its corner.
+    /// empties, and once the delivery has answered, with what it came to at its corner.
     private var logo: some View {
-        logoDisc
+        let motion = Settings.shared.motionScale
+        let entrance = AnyTransition.scale(scale: Settings.shared.data.ui.sendBadgeStartScale).combined(with: .opacity)
+            .animation(Anim.spring(0.3 * motion, bounce: 0.45))
+        let answered = BadgeOutcome(state) != nil
+        return logoDisc
             .overlay {
                 if state == .inGrace, let grace = notice.grace {
                     GraceRing(grace: grace).padding(-4).transition(.opacity)
                 }
             }
             .overlay(alignment: .bottomTrailing) {
-                if state != .inGrace, logoArrived {
-                    badge.offset(x: 5, y: 4).transition(.scale(scale: 0.3).combined(with: .opacity))
+                if answered, badgeMayShow {
+                    badge.offset(x: 5, y: 4).transition(entrance)
                 }
             }
             .allowsHitTesting(false)
@@ -254,30 +255,19 @@ struct SendOverlay: View {
         }
     }
 
-    /// The dark disc the spinner turns on, and the coin after it.
-    private var disc: some View { Circle().fill(Color(white: 0.18)).frame(width: 15, height: 15) }
-
-    /// On a white ring, which parts it from the disc it sits on. The spinner is always there under
-    /// what the delivery came to, and goes once that has covered it: removed instead, as the
-    /// delivery's badge came in, it was gone in one frame and the ring showed white until the next
-    /// one had grown over it.
+    /// What the delivery came to, on a white ring, which parts it from the disc it sits on.
     private var badge: some View {
         ZStack {
             Circle().fill(.white).frame(width: 18, height: 18)
-            ZStack {
-                disc
-                ProgressView().controlSize(.mini).environment(\.colorScheme, .dark).scaleEffect(0.8)
-            }
-            .modifier(LeavesWhenCovered(shown: state == .sending ? 1 : 0))
             if let outcome = BadgeOutcome(state) {
                 Group {
                     switch outcome {
                     case .check:
-                        // The coin covers the badge only face on. Its own disc keeps the spinner,
-                        // which leaves under it on a bouncing spring, out of sight while it turns.
+                        // The badge grows in rather than spinning, so the coin is face on throughout.
+                        // What shows through it (`checkClarity`) is a dark disc, not the white ring.
                         ZStack {
-                            disc
-                            CheckCoin(diameter: 15)
+                            Circle().fill(Color(white: 0.18)).frame(width: 15, height: 15)
+                            CheckCoin(diameter: 15, spins: false)
                         }
                     case .clock:
                         // One layer, its hands cut out, so they show the white ring beneath.

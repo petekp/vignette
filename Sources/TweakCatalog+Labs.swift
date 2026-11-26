@@ -52,6 +52,10 @@ extension TweakCatalog {
                 .number("checkBloomRadius", "Radius", \.checkBloomRadius, 0...0.8, step: 0.01, safe: 0...1),
                 .number("checkBloomThreshold", "Threshold", \.checkBloomThreshold, 0...0.95, step: 0.01, safe: 0...0.95),
             ], caption: { _ in "What is brighter than Threshold, the mark's glow and the glint's flash, blurred over Radius, a fraction of the coin, and added back, so it glows past the coin's edge. Strength 0 turns it off. It shows on the dark veil, not on the white ring of a send's badge." }),
+            TweakGroup("Send badge", [
+                .number("sendBadgeStartScale", "Start size", \.sendBadgeStartScale, 0...1, step: 0.05, safe: 0...1),
+                .number("sendBadgeDelay", "Delay", \.sendBadgeDelay, 0...1, step: 0.01, unit: "s", safe: 0...10),
+            ], caption: { _ in "The badge at the corner of a send's logo shows nothing until the send has answered, then grows in whole, from Start size, a fraction of its own, never sooner than Delay after the logo appears." }),
         ]),
     ]
 }
