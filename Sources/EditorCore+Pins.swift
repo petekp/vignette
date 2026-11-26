@@ -188,10 +188,15 @@ extension EditorCore {
         composer = Composer(pin: pin.id, draft: "")
     }
 
-    /// A press on a handle of the open pin's area resizes it with the popover still open.
-    func keepsComposer(at point: CGPoint) -> Bool {
-        guard let open = composer?.pin, case .handle(let id, _)? = target(at: point) else { return false }
-        return id == open
+    /// A press on a handle of the open pin's area resizes it with the popover still open, and a
+    /// double-click's second press on the open pin leaves the popover its first click opened.
+    func keepsComposer(at point: CGPoint, _ clickCount: Int) -> Bool {
+        guard let open = composer?.pin else { return false }
+        switch target(at: point) {
+        case .handle(let id, _)?: return id == open
+        case .pin(let id)?: return clickCount >= 2 && id == open && composer?.takesKeys == true
+        default: return false
+        }
     }
 
     /// A press opens no edit until it drags, so a press put back with the popover open leaves the

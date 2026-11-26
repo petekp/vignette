@@ -45,6 +45,10 @@ final class EditorCorePinsTests: XCTestCase {
         core.click(512, 288)
         XCTAssertEqual(core.composer, Core.Composer(pin: first.id, editing: nil, draft: ""))
         XCTAssertEqual(core.selection, [first.id])
+        write(&core, "Draft")
+        _ = core.press(512, 288, count: 2)
+        _ = core.release(512, 288)
+        XCTAssertEqual(core.composer?.draft, "Draft", "a double-click's second press leaves the popover open")
         core.click(512, 288)
         XCTAssertNil(core.composer, "a click on the open pin closes its popover")
         core.click(512, 288, .shift)
@@ -53,6 +57,16 @@ final class EditorCorePinsTests: XCTestCase {
         core.click(512, 288)
         XCTAssertNil(core.composer)
         XCTAssertEqual(core.selection, [first.id])
+    }
+
+    func testACommentToolPressOnOneOfSeveralSelectedPinsKeepsThemSelectedForADrag() {
+        let first = pin(1, 500, 300), second = pin(2, 200, 300)
+        var core = core(pins: [first, second], nextPin: 3)
+        core.click(512, 288, .shift)
+        core.click(212, 288, .shift)
+        XCTAssertEqual(core.selection, [first.id, second.id])
+        _ = core.press(512, 288)
+        XCTAssertEqual(core.selection, [first.id, second.id])
     }
 
     func testReturnInAnEmptyComposerClosesItAndKeepsThePinSelected() throws {

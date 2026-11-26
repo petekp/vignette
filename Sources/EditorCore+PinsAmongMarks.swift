@@ -7,14 +7,15 @@ extension EditorCore {
     /// A press on pin `id` changes the selection as one on a mark does, and answers what its release
     /// does. With the Comment tool a click without Shift or Command opens the pin's popover (`.open`),
     /// unless the press closed it. A double-click opens it at once with either tool, and answers nil.
-    mutating func pinPress(_ id: Pin.ID, _ modifiers: Modifiers, clickCount: Int, wasOpen: Bool) -> Click? {
+    mutating func pinPress(_ id: Pin.ID, _ modifiers: Modifiers, _ clickCount: Int, wasOpen: Bool) -> Click? {
         if clickCount >= 2 {
-            openComposer(on: id)
+            if composer?.pin != id { openComposer(on: id) }
             return nil
         }
         let plain = modifiers.isDisjoint(with: [.shift, .command])
         if tool == .comment, plain, !wasOpen {
-            selection = [id]
+            // A drag from one of several selected pins moves them all, as from a mark.
+            if !selection.contains(id) { selection = [id] }
             return .open
         }
         if !plain {

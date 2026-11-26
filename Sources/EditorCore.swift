@@ -603,7 +603,7 @@ struct EditorCore {
             endTyping()
         }
         let openPin = composer?.pin
-        if composer != nil, !keepsComposer(at: at) { closeComposer() }
+        if composer != nil, !keepsComposer(at: at, clickCount) { closeComposer() }
         let before = selection
         func press(_ target: PressTarget) {
             gesture = Gesture(press: Press(location: at, time: event.time, target: target, selectionBefore: before), phase: .pressed, pointer: at)
@@ -618,7 +618,7 @@ struct EditorCore {
         case .dot(let id, let kind)?:
             press(.dot(id, kind))
         case .pin(let id)?:
-            guard let click = pinPress(id, event.modifiers, clickCount: clickCount, wasOpen: openPin == id) else { return }
+            guard let click = pinPress(id, event.modifiers, clickCount, wasOpen: openPin == id) else { return }
             press(.pin(id, click: click))
         case .cluster(let ids)?:
             press(.cluster(ids))
