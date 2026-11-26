@@ -9,7 +9,9 @@ final class EditorPinUI: NSObject {
     /// none and the view's own size is the fit.
     var fittedWidth: CGFloat = 0
     var composer: PinPopover?
-    var cluster: NSPopover?
+    /// The menu of pins a cluster or the toolbar's Pins button opened, from its asking until it closes.
+    var list: NSMenu?
+    let listActions = PinListActions()
     var elements: [Pin.ID: PinElement] = [:]
     /// The order VoiceOver's Pins rotor goes through, by number.
     var rotorOrder: [Pin.ID] = []
@@ -88,13 +90,13 @@ extension EditorView {
     // MARK: A cluster's list and the toolbar's
 
     func showCluster(_ ids: [Pin.ID], at frame: CGRect) {
-        showPinList(ids.compactMap(core.pin), from: frame.applying(toView), of: self, edge: .maxY)
+        showPinList(ids.compactMap(core.pin), under: frame.applying(toView), of: self)
     }
 
-    /// Every pin with a number, in number order, listed from `rect` in `view`: the toolbar's Pins button.
+    /// Every pin with a number, in number order, in a menu under `rect` in `view`: the toolbar's Pins button.
     func showPinList(from rect: CGRect, of view: NSView) {
         let pins = core.drawing.pins.filter { $0.number > 0 }.sorted { $0.number < $1.number }
-        showPinList(pins, from: rect, of: view, edge: view.isFlipped ? .minY : .maxY)
+        showPinList(pins, under: rect, of: view)
     }
 
     /// Opens pin `id` chosen in a list, first bringing its teardrop and area into view: the picture
@@ -115,37 +117,55 @@ extension EditorView {
 
     /// The image changed or the editor is leaving: a list open from it goes.
     func closePinList() {
-        pinUI.cluster?.close()
-        pinUI.cluster = nil
+        pinUI.list?.cancelTracking()
+        pinUI.list = nil
     }
 
-    private func showPinList(_ pins: [Pin], from rect: CGRect, of view: NSView, edge: NSRectEdge) {
-        pinUI.cluster?.close()
-        let list = NSStackView(views: pins.map { pin in
-            let first = pin.comments.first?.text.asOneLine ?? ""
-            let button = PressButton(title: "\(pin.number)  \(first)")
-            button.isBordered = false
-            button.alignment = .left
-            button.lineBreakMode = .byTruncatingTail
-            button.setAccessibilityLabel(pin.spokenName)
-            button.widthAnchor.constraint(lessThanOrEqualToConstant: PinPopover.width).isActive = true
-            let id = pin.id
-            button.press = { [weak self] in
-                self?.pinUI.cluster?.close()
-                self?.openFromList(id)
-            }
-            return button
-        })
-        list.orientation = .vertical
-        list.alignment = .leading
-        list.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
-        let controller = NSViewController()
-        controller.view = list
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.contentViewController = controller
-        pinUI.cluster = popover
-        popover.show(relativeTo: rect, of: view, preferredEdge: edge)
+    /// `pins` as a menu under `rect` in `view`, a pull-down's place. It opens a turn later, as the
+    /// target's menu does: opened inside the editor's keyDown, a menu took no keys. A pick is applied a
+    /// turn later too, once the menu's event loop has ended.
+    private func showPinList(_ pins: [Pin], under rect: CGRect, of view: NSView) {
+        closePinList()
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for pin in pins { menu.addItem(pinListItem(pin)) }
+        pinUI.listActions.pick = { [weak self] id in DispatchQueue.main.async { self?.openFromList(id) } }
+        pinUI.list = menu
+        DispatchQueue.main.async { [weak self, weak view] in
+            guard let self, let view, pinUI.list === menu else { return }
+            menu.popUp(positioning: nil, at: NSPoint(x: rect.minX, y: view.isFlipped ? rect.maxY : rect.minY), in: view)
+            if pinUI.list === menu { pinUI.list = nil }
+        }
+    }
+
+    /// A pin's row: its teardrop as it looks on screen, then its first comment on one line, an agent's
+    /// in the system's monospaced face, as an agent's pin number is. The tooltip holds the comment whole.
+    func pinListItem(_ pin: Pin) -> NSMenuItem {
+        let ui = Settings.shared.data.ui, menuFont = NSFont.menuFont(ofSize: 0)
+        let agent = pin.color == .agent
+        let font = agent ? NSFont.monospacedSystemFont(ofSize: menuFont.pointSize, weight: .regular) : menuFont
+        let first = pin.comments.first?.text.asOneLine ?? ""
+        let item = NSMenuItem(title: "", action: #selector(PinListActions.picked(_:)), keyEquivalent: "")
+        item.attributedTitle = NSAttributedString(string: SessionMenu.fitted(first, width: ui.pinListTitleWidth, font: font), attributes: [.font: font])
+        item.target = pinUI.listActions
+        item.representedObject = pin.id
+        item.toolTip = pin.comments.first?.text
+        item.setAccessibilityLabel("\(pin.spokenName): \(first)")
+        item.image = Self.pinImage(number: pin.number, agent: agent, side: ui.pinListImageSize, markStyle: core.markStyle)
+        if #available(macOS 27.0, *) { item.preferredImageVisibility = .visible }
+        return item
+    }
+
+    /// A teardrop `side` pt across wearing `number`, drawn flat, as a menu's row shows it.
+    static func pinImage(number: Int, agent: Bool, side: CGFloat, markStyle: MarkStyle) -> NSImage {
+        NSImage(size: NSSize(width: side, height: side), flipped: true) { rect in
+            guard let ctx = NSGraphicsContext.current?.cgContext, markStyle.pin.side > 0 else { return false }
+            let pointScale = side / markStyle.pin.side, inset = markStyle.pin.rimWidth * pointScale
+            let drop = PinTeardrop(number: number, agent: agent, tip: CGPoint(x: rect.minX + inset, y: rect.maxY - inset), orientation: .upRight,
+                                   side: side - 2 * inset, style: markStyle.pin)
+            drop.drawFlat(in: ctx, color: agent ? .agent : .person, pointScale: pointScale, markStyle: markStyle)
+            return true
+        }
     }
 
     // MARK: VoiceOver
@@ -214,17 +234,11 @@ final class PinElement: NSAccessibilityElement {
     }
 }
 
-/// A button that runs `press` when pressed.
-final class PressButton: NSButton {
-    var press: (() -> Void)?
+/// The target of a pin list's items: a pick names its pin.
+final class PinListActions: NSObject {
+    var pick: ((Pin.ID) -> Void)?
 
-    convenience init(title: String) {
-        self.init(frame: .zero)
-        self.title = title
-        bezelStyle = .push
-        target = self
-        action = #selector(pressed)
+    @objc func picked(_ item: NSMenuItem) {
+        if let id = item.representedObject as? Pin.ID { pick?(id) }
     }
-
-    @objc private func pressed() { press?() }
 }

@@ -138,6 +138,12 @@ files it touches, and `docs/voice.md` for any new words.
      no level between.
    - A stored history leaves pin ids out of the selections it keeps, so an undo after reopening
      selects the marks it touched and no pin.
+   - The look is made of the system's own pieces. On screen a pin is solid, lighter at the top,
+     inside a white hairline, with a soft shadow (`PinShading`), in the editor, on cards and in
+     flight. Copy, Send and Stitch keep the white edge. The popover is an `NSPopover`, which
+     macOS 26 draws in its glass: comments are rows under their writer's name, with separators, and
+     the field is a standard one. A cluster and the Pins button open an `NSMenu`, so the arrow keys,
+     Return and Esc work in it.
 4. Agents answer on pins (Choice 5). Its ADR is written first. Then the reply helper takes
    `--comments`, `ReplyProtocol.version` goes up, a request stores `base.png`, the reply card holds
    the person's pins with the answers, and the skill says how. Verified by protocol tests and one

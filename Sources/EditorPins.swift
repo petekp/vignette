@@ -70,7 +70,7 @@ final class EditorPins {
             (drop, PinTeardrop(number: drop.number, agent: drop.agent, tip: drop.tip.applying(transform), orientation: drop.orientation,
                                side: what.placement.side * zoom, style: what.markStyle.pin))
         }
-        let reach = 2 * (what.markStyle.edgeWidth * what.dropScale + what.outlineWidth / 2)
+        let reach = 2 * (what.markStyle.pin.rimWidth * what.dropScale + what.outlineWidth / 2)
         for (drop, teardrop) in teardrops where what.selected.contains(drop.id) {
             rings.addPath(teardrop.body.copy(strokingWithWidth: reach, lineCap: .round, lineJoin: .round, miterLimit: 1).union(teardrop.body))
         }

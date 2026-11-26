@@ -293,11 +293,13 @@ Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
 | --- | --- |
 | The popover's field, empty | Add a comment |
 | The field, to VoiceOver | Comment on pin *n*; Comment on new pin |
-| A comment's row, to VoiceOver | Edit this comment |
+| Who wrote a comment, above its words | You; the agent's name, or Agent |
+| A comment's row, to VoiceOver | You: *words*, then Edit this comment |
 | A pin's first comment posted, to VoiceOver | Pin *n* added |
 | A pin, to VoiceOver | Pin 3, area, 2 comments; Pin 1, point, 1 comment; New pin |
 | A selection with pins, to VoiceOver | 2 pins; 1 mark and 2 pins |
 | The rotor and the action | Pins; Add Pin |
+| A pin's row in a cluster's or the toolbar's menu, to VoiceOver (`EditorView.pinListItem`) | Pin 3, area, 2 comments: *first comment* |
 | The toolbar's button, its tooltip, and to VoiceOver (`ToolbarView.pinsButton`) | Pins, beside a badge with the count; Pins; Pins, *n* |
 
 ### A drawing, on its card ("Not saved")

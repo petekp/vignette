@@ -67,7 +67,7 @@ spell-check, autocorrect or replacements, holds plain text, and lets an input me
   each one.
 - The popover fades with the pin before the annotator hides at park.
 - The list of every pin is a button on the toolbar, after the tools, showing how many pins there
-  are. It opens a popover listing each pin's number and the start of its first comment. The button
+  are. It opens a menu listing each pin's teardrop and the start of its first comment. The button
   slides in on a spring with the first pin and out with the last.
 
 ### What a pin looks like
@@ -127,7 +127,7 @@ The pin's size, its outline's width and the cluster distance are tuning settings
   narrows back into each teardrop. They slide back in when the zoom pushes them together.
 - The open pin and a selected pin never join a cluster, so the popover's anchor and the selection
   handles never vanish. A pin that is closed or deselected joins its cluster then, on a spring.
-- A click on a cluster opens a popover listing its pins, each with its number and the start of its
+- A click on a cluster opens a menu listing its pins, each with its teardrop and the start of its
   first comment. Choosing one opens that pin. Pins on the same point stay a cluster at every zoom,
   so this list always reaches them.
 - Cards cluster pins by the same rule at the card's size.

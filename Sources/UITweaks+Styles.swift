@@ -53,6 +53,7 @@ extension UITweaks {
                  clusterPadding: clusterPadding, farthestMove: pinFarthestMove, listNarrowest: commentListNarrowest,
                  listWidestBelow: commentListWidestBelow, listWidthBeside: commentListWidthBeside,
                  listRowPadding: commentListRowPadding, listWordsGap: commentListWordsGap,
-                 listParagraphSpacing: commentListParagraphSpacing)
+                 listParagraphSpacing: commentListParagraphSpacing, gradient: pinGradient, bottomShade: pinBottomShade, rimWidth: pinRimWidth,
+                 shadowRadius: pinShadowRadius, shadowOffset: pinShadowOffset, shadowOpacity: pinShadowOpacity)
     }
 }
