@@ -152,7 +152,7 @@ final class MarkLayers {
         for cluster in placement.clusters {
             let record = clusters[cluster.pins] ?? PinLayer(scale: contentsScale)
             record.show(PinTeardrop(label: cluster.label, agent: cluster.agent, orientation: cluster.orientation, frame: cluster.frame, style: markStyle.pin),
-                        color: cluster.agent ? .agent : .person, pointScale: pointScale, markStyle: markStyle)
+                        maker: cluster.maker, pointScale: pointScale, markStyle: markStyle)
             clusters[cluster.pins] = record
             layers.append(record.root)
         }

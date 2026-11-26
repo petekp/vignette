@@ -264,6 +264,9 @@ Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
 | The rotor and the action | Pins; Add Pin |
 | A pin's row in a cluster's or the toolbar's menu, to VoiceOver (`EditorView.pinListItem`) | Pin 3, area, 2 comments: *first comment* |
 | The toolbar's button, its tooltip, and to VoiceOver (`ToolbarView.pinsButton`) | Pins, beside a badge with the count; Pins; Pins, *n* |
+| The card a pin grows into under the pointer, its writer (`PinHoverCard.Words`) | You; Claude, the agent's name capitalized; An agent |
+| Beside the writer | Pin 3 · 1 min. ago, in `RelativeDateTimeFormatter`'s abbreviated style; Pin 3 for a comment that kept no time |
+| Under the first comment's first line, on a pin with replies | 1 reply from Claude; 2 replies from you; 3 replies, from more than one writer |
 
 ### An agent showing a screenshot (`ShownOverlay`, `AgentMarksBar`, `Shown`)
 

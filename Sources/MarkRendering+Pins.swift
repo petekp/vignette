@@ -93,7 +93,7 @@ extension Drawing {
         for pin in pins {
             guard case .area(let frame, _) = pin.place else { continue }
             Mark(geometry: .rectangle(frame), agent: pin.color == .agent)
-                .draw(in: ctx, pointScale: pointScale, imageWidth: CGFloat(pixels.width), style: style, markStyle: markStyle)
+                .draw(in: ctx, pointScale: pointScale, imageWidth: CGFloat(pixels.width), style: style, markStyle: markStyle.painting(pin.maker))
         }
         let drops = renderedTeardrops(markStyle: markStyle)
         ctx.saveGState()
@@ -110,7 +110,7 @@ extension Drawing {
             line.move(to: placed.pin.tip)
             line.addLine(to: placed.drop.tip)
             MarkShape(stroked: line, filled: nil, lineWidth: markStyle.strokeWidth * pointScale)
-                .drawLifted(in: ctx, color: markStyle.color(placed.pin.color), pointScale: pointScale, markStyle: markStyle)
+                .drawLifted(in: ctx, color: markStyle.painting(placed.pin.maker).color(placed.pin.color), pointScale: pointScale, markStyle: markStyle)
         }
         ctx.restoreGState()
         for placed in drops { placed.pin.draw(placed.drop, in: ctx, pointScale: pointScale, markStyle: markStyle) }

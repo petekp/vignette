@@ -9,6 +9,8 @@ final class EditorPinUI: NSObject {
     /// none and the view's own size is the fit.
     var fittedWidth: CGFloat = 0
     var composer: PinPopover?
+    /// The card the pin under the pointer grows into.
+    var hoverCard: PinHoverCard?
     /// A drag runs with the popover open: a resize of its pin's area, which took the keys from its field.
     var resizingOpenPin = false
     /// The menu of pins a cluster or the toolbar's Pins button opened, from its asking until it closes.
@@ -61,10 +63,31 @@ extension EditorView {
         if pinUI.resizingOpenPin, !resizing { pinUI.composer?.takeKeys() }
         pinUI.resizingOpenPin = resizing
         showPinElements(placement)
+        showHoverCard(placement)
         if pinUI.rotorOrder.count != pinUI.count {
             pinUI.count = pinUI.rotorOrder.count
             pinUI.onCount?(pinUI.count)
         }
+    }
+
+    /// The hovered pin's card, while no popover, menu or drag is under way.
+    private func showHoverCard(_ placement: PinPlacement) {
+        var hovered: Pin.ID?
+        if case .pin(let id)? = core.hover { hovered = id }
+        let quiet = core.composer == nil && core.gesture == nil && pinUI.list == nil
+        guard quiet, let id = hovered, let pin = core.pin(id), pin.number > 0,
+              let drop = placement.drops.first(where: { $0.id == id }) else {
+            pinUI.hoverCard?.leave()
+            pinUI.hoverCard = nil
+            return
+        }
+        if pinUI.hoverCard?.pin != id {
+            pinUI.hoverCard?.leave()
+            let card = PinHoverCard(pin: id)
+            addSubview(card)
+            pinUI.hoverCard = card
+        }
+        pinUI.hoverCard?.show(pin, body: drop.square.applying(toView), orientation: drop.orientation, inside: visibleRect)
     }
 
     /// The rect in the view a popover on pin `id` hangs from: its teardrop, or its cluster's capsule.
@@ -156,19 +179,20 @@ extension EditorView {
         item.representedObject = pin.id
         item.toolTip = pin.comments.first?.text
         item.setAccessibilityLabel("\(pin.spokenName): \(first)")
-        item.image = Self.pinImage(number: pin.number, agent: agent, side: ui.pinListImageSize, markStyle: core.markStyle)
+        item.image = Self.pinImage(number: pin.number, maker: pin.maker, side: ui.pinListImageSize, markStyle: core.markStyle)
         if #available(macOS 27.0, *) { item.preferredImageVisibility = .visible }
         return item
     }
 
-    /// A teardrop `side` pt across wearing `number`, drawn flat, as a menu's row shows it.
-    static func pinImage(number: Int, agent: Bool, side: CGFloat, markStyle: MarkStyle) -> NSImage {
+    /// The teardrop of a pin `maker` made, `side` pt across, wearing `number` or its maker's face, drawn
+    /// flat, as a menu's row shows it.
+    static func pinImage(number: Int, maker: PinMaker, side: CGFloat, markStyle: MarkStyle) -> NSImage {
         NSImage(size: NSSize(width: side, height: side), flipped: true) { rect in
             guard let ctx = NSGraphicsContext.current?.cgContext, markStyle.pin.side > 0 else { return false }
             let pointScale = side / markStyle.pin.side, inset = markStyle.pin.rimWidth * pointScale
-            let drop = PinTeardrop(number: number, agent: agent, tip: CGPoint(x: rect.minX + inset, y: rect.maxY - inset), orientation: .upRight,
+            let drop = PinTeardrop(number: number, agent: maker.isAgent, tip: CGPoint(x: rect.minX + inset, y: rect.maxY - inset), orientation: .upRight,
                                    side: side - 2 * inset, style: markStyle.pin)
-            drop.drawFlat(in: ctx, color: agent ? .agent : .person, pointScale: pointScale, markStyle: markStyle)
+            drop.drawFlat(in: ctx, maker: maker, face: PinFace(maker), pointScale: pointScale, markStyle: markStyle)
             return true
         }
     }

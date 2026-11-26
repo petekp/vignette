@@ -39,12 +39,16 @@ extension UITweaks {
         var pinShadowRadius = 2.5
         var pinShadowOffset = 1.5
         var pinShadowOpacity = 0.35
+        var pinLogoSize = 0.56           // an agent's logo on its pin, a share of the pin's size
+        var pinAnswerSize = 0.5          // the dot on a pin an agent answered
         var pinPopoverWidth = 280.0      // screen pt
         var pinPopoverInset = 12.0
         var pinPopoverSpacing = 10.0
         var pinListImageSize = 18.0
         var pinListTitleWidth = 320.0
         var pinPostSize = 20.0
+        var pinHoverWidth = 240.0        // the card a pin grows into under the pointer
+        var pinHoverDuration = 0.25      // seconds it takes to grow
         var pinAreaWidth = 1.5           // an area's dashed outline in the editor, screen pt
         var pinAreaDash = 4.0
         var pinAreaGap = 3.0

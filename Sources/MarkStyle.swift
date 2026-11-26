@@ -71,6 +71,10 @@ struct PinStyle: Equatable, Sendable {
     var shadowRadius: CGFloat
     var shadowOffset: CGFloat
     var shadowOpacity: CGFloat
+    /// What a pin wears on screen (`PinFace`), as shares of `side`: an agent's logo's size, and the
+    /// size of the dot carrying the logo of an agent that answered a person's pin.
+    var logoSize: CGFloat
+    var answerSize: CGFloat
     /// An area's dashed outline in the editor (`EditorPins`), in screen pt at every zoom: the line's
     /// width, its dashes and the gaps between them, and how fast the dashes march, in pt a second,
     /// while the pin is being placed or is open.

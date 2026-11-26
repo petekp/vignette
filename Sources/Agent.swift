@@ -248,4 +248,13 @@ enum Agent {
 
     /// The glyph for a vendor without a logo: the closest SF Symbol to the robot this wants to be.
     static let fallbackSymbol = "cpu"
+
+    /// Whether the bundle holds a logo for the vendor named `name`, in any case.
+    static func hasLogo(_ name: String) -> Bool {
+        !name.isEmpty && Bundle.main.url(forResource: name.lowercased(), withExtension: "svg", subdirectory: "agents") != nil
+    }
+
+    /// The colour of each vendor's pins, by lower-case name. Claude's is the fill of `claude.svg`.
+    /// Codex's logo is one black shape, so its pins are black. A vendor not listed takes `ui.agentColor`.
+    static let brandColors: [String: SRGB] = ["claude": SRGB(hex: "#d97757")!, "codex": SRGB(hex: "#000000")!]
 }

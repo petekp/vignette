@@ -137,6 +137,17 @@ struct PinTeardrop {
         return path
     }
 
+    /// What `face` puts on the teardrop as letter outlines in px: its number, or an agent's first
+    /// letter. Nothing for a logo.
+    func lettering(_ face: PinFace, style: PinStyle) -> CGPath {
+        switch face {
+        case .number: return number
+        case .logo: return CGMutablePath()
+        case .letter(let letter):
+            return Self.letters(letter, centredIn: square, size: square.height * style.numberSize, widest: square.height * style.numberWidth, agent: true)
+        }
+    }
+
     /// The teardrop as a mark's shape, so it is drawn inside the same white edge with the same shadows.
     var shape: MarkShape { MarkShape(stroked: nil, filled: body, lineWidth: 0) }
 }
@@ -149,12 +160,12 @@ extension Pin {
              in: ctx, pointScale: pointScale, markStyle: markStyle)
     }
 
-    /// Draws `drop`, this pin's teardrop wherever it is, in the pin's colour.
+    /// Draws `drop`, this pin's teardrop wherever it is, in the pin's colour, wearing its number.
     func draw(_ drop: PinTeardrop, in ctx: CGContext, pointScale: CGFloat, markStyle: MarkStyle) {
         ctx.saveGState()
         defer { ctx.restoreGState() }
         ctx.setLineJoin(.round)
-        drop.shape.drawLifted(in: ctx, color: markStyle.color(color), pointScale: pointScale, markStyle: markStyle)
+        drop.shape.drawLifted(in: ctx, color: markStyle.painting(maker).color(color), pointScale: pointScale, markStyle: markStyle)
         ctx.setFillColor(markStyle.wordColor.cgColor)
         ctx.addPath(drop.number)
         ctx.fillPath()

@@ -12,11 +12,14 @@ struct PinPlacement: Equatable {
         let id: Pin.ID
         /// 0 for a pin before its first comment, which shows no number.
         let number: Int
-        let agent: Bool
+        let maker: PinMaker
+        let answeringAgent: PinMaker?
         let tip: CGPoint
         let orientation: PinTeardrop.Orientation
         /// The square the teardrop fits in, in px.
         let square: CGRect
+
+        var agent: Bool { maker.isAgent }
     }
 
     /// Pins drawn as one capsule that names them, such as "3 · 4", or "3 · 4 · 7 +2" past three.
@@ -24,13 +27,14 @@ struct PinPlacement: Equatable {
         /// In number order.
         let pins: [Pin.ID]
         let label: String
-        /// Every pin in it is an agent's.
-        let agent: Bool
+        let maker: PinMaker
         /// The tip of its lowest-numbered pin.
         let tip: CGPoint
         let orientation: PinTeardrop.Orientation
         /// The capsule, in px: a teardrop's height, and as wide as its label needs.
         let frame: CGRect
+
+        var agent: Bool { maker.isAgent }
     }
 
     /// A teardrop's side, in px.
@@ -47,7 +51,7 @@ struct PinPlacement: Equatable {
         let drops = pins.map { pin -> Drop in
             let orientation = PinTeardrop.facing(tip: pin.tip, side: fitSide, edge: edge, in: drawing.pixels, avoiding: drawing.pieceNumbers,
                                                  area: pin.area, leftward: pin.leansLeft)
-            return Drop(id: pin.id, number: pin.number, agent: pin.color == .agent, tip: pin.tip, orientation: orientation,
+            return Drop(id: pin.id, number: pin.number, maker: pin.maker, answeringAgent: pin.answeringAgent, tip: pin.tip, orientation: orientation,
                         square: PinTeardrop.square(tip: pin.tip, orientation: orientation, side: side))
         }
         let reach = side * (1 - min(max(style.clusterOverlap, 0), 1))
@@ -79,7 +83,7 @@ struct PinPlacement: Equatable {
             let up = first.orientation == .upLeft || first.orientation == .upRight
             let right = leftward ? first.tip.x - width - edge < 0 : first.tip.x + width + edge <= CGFloat(drawing.pixels.width)
             let frame = CGRect(x: right ? first.tip.x : first.tip.x - width, y: up ? first.tip.y - side : first.tip.y, width: width, height: side)
-            return Cluster(pins: chosen.map(\.id), label: label, agent: chosen.allSatisfy(\.agent), tip: first.tip, orientation: PinTeardrop.orientation(up: up, right: right),
+            return Cluster(pins: chosen.map(\.id), label: label, maker: PinMaker(cluster: chosen.map(\.maker)), tip: first.tip, orientation: PinTeardrop.orientation(up: up, right: right),
                            frame: frame)
         }.sorted { $0.label < $1.label }
     }

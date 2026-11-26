@@ -60,7 +60,7 @@ final class EditorPins {
         for pin in what.outlined {
             guard case .area(let frame, _) = pin.place else { continue }
             let record = areas[pin.id] ?? AreaOutline(scale: scale)
-            record.show(frame.applying(transform), color: what.markStyle.color(pin.color), style: what.markStyle.pin,
+            record.show(frame.applying(transform), color: what.markStyle.painting(pin.maker).color(pin.color), style: what.markStyle.pin,
                         edge: what.markStyle.pin.rimWidth * what.dropScale, speed: what.marching.contains(pin.id) ? what.marchSpeed : 0)
             areas[pin.id] = record
             layers.append(record.root)
@@ -84,7 +84,8 @@ final class EditorPins {
         drops = drops.filter { kept.contains($0.key) }
         for (drop, teardrop) in teardrops {
             let record = drops[drop.id] ?? PinLayer(scale: scale)
-            record.show(teardrop, color: drop.agent ? .agent : .person, pointScale: what.dropScale, markStyle: what.markStyle)
+            record.show(teardrop, maker: drop.maker, face: PinFace(drop.maker), answeringAgent: drop.answeringAgent, pointScale: what.dropScale,
+                        markStyle: what.markStyle)
             drops[drop.id] = record
             layers.append(record.root)
         }
@@ -95,7 +96,7 @@ final class EditorPins {
             let record = clusters[cluster.pins] ?? PinLayer(scale: scale)
             record.show(PinTeardrop(label: cluster.label, agent: cluster.agent, orientation: cluster.orientation,
                                     frame: cluster.frame.applying(transform), style: what.markStyle.pin),
-                        color: cluster.agent ? .agent : .person, pointScale: what.dropScale, markStyle: what.markStyle)
+                        maker: cluster.maker, pointScale: what.dropScale, markStyle: what.markStyle)
             clusters[cluster.pins] = record
             layers.append(record.root)
         }

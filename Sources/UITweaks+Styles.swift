@@ -55,6 +55,7 @@ extension UITweaks {
                  listRowPadding: self.commentListRowPadding, listWordsGap: self.commentListWordsGap,
                  listParagraphSpacing: self.commentListParagraphSpacing, gradient: self.pinGradient, bottomShade: self.pinBottomShade, rimWidth: self.pinRimWidth,
                  shadowRadius: self.pinShadowRadius, shadowOffset: self.pinShadowOffset, shadowOpacity: self.pinShadowOpacity,
+                 logoSize: self.pinLogoSize, answerSize: self.pinAnswerSize,
                  areaWidth: self.pinAreaWidth, areaDash: self.pinAreaDash, areaGap: self.pinAreaGap, areaSpeed: self.pinAreaSpeed)
     }
 }
