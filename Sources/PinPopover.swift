@@ -11,7 +11,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     let pin: Pin.ID
     private let popover = NSPopover()
     private let controller = NSViewController()
-    private let list = CommandReturnStack()
+    private let list = CommandKeyStack()
     private let comments = NSStackView()
     private let field = ComposerField()
     private let post = NSButton()
@@ -27,7 +27,9 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     /// The window that keeps the keys while the popover the editor opened on its own comes up.
     private weak var keepsKeys: NSWindow?
 
-    init(pin: Pin, composer: EditorCore.Composer, send: @escaping (EditorCore.ComposerInput) -> Void) {
+    /// `zoom` takes the editor's zoom keys while the field has the keys.
+    init(pin: Pin, composer: EditorCore.Composer, send: @escaping (EditorCore.ComposerInput) -> Void,
+         zoom: @escaping (EditorCore.ZoomRequest) -> Void) {
         self.pin = pin.id
         self.send = send
         super.init()
@@ -58,6 +60,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         list.spacing = ui.pinPopoverSpacing
         list.edgeInsets = NSEdgeInsets(top: Self.inset, left: Self.inset, bottom: Self.inset, right: Self.inset)
         list.commandReturn = { [weak self] in self?.send(.finish) }
+        list.zoom = zoom
         let size = ui.pinPostSize
         post.isBordered = false
         post.image = NSImage(systemSymbolName: "arrow.up.circle.fill", accessibilityDescription: "Post comment")?
@@ -359,27 +362,5 @@ private final class CommentRow: NSView {
     override func accessibilityPerformPress() -> Bool {
         press?()
         return press != nil
-    }
-}
-
-/// The composer's field, which keeps where its caret was when its editing ended.
-private final class ComposerField: NSTextField {
-    var endedSelection: NSRange?
-
-    override func textDidEndEditing(_ notification: Notification) {
-        endedSelection = (notification.object as? NSTextView)?.selectedRange()
-        super.textDidEndEditing(notification)
-    }
-}
-
-/// The popover's view: Cmd+Return is a key equivalent, which may never reach the field as a new line.
-private final class CommandReturnStack: NSStackView {
-    var commandReturn: (() -> Void)?
-
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard [36, 76].contains(event.keyCode), flags.contains(.command), let commandReturn else { return super.performKeyEquivalent(with: event) }
-        commandReturn()
-        return true
     }
 }

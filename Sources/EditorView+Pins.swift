@@ -110,7 +110,8 @@ extension EditorView {
             return
         }
         pinUI.composer?.close()
-        let popover = PinPopover(pin: pin, composer: composer) { [weak self] input in self?.handle(.composer(input)) }
+        let popover = PinPopover(pin: pin, composer: composer, send: { [weak self] input in self?.handle(.composer(input)) },
+                                 zoom: { [weak self] request in self?.onZoom?(request) })
         pinUI.composer = popover
         popover.show(from: rect, of: self, takesKeys: composer.takesKeys)
     }
