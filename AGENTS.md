@@ -121,8 +121,8 @@ These files hold code for several areas. Read the file for the part you change:
 - `scripts/build.sh` regenerates the Xcode project and builds the app.
   `scripts/run.sh` does that, waits for the old process to exit, and relaunches. `scripts/build.sh
   --test` also runs the unit tests in `Tests/` (the `VignetteTests` target compiles `Sources/`
-  itself; it never launches the app). A build into another `-derivedDataPath` leaves `build/`,
-  and an instance running from it, untouched.
+  itself; it never launches the app). `--derived-data <path>` builds into another folder, which
+  leaves `build/`, and an instance running from it, untouched.
   `scripts/build.sh --test` fails when a file in `Sources/` has no filename or glob in this map.
 - `media/trailer/trailer.py all` records the trailer from the current source: it builds a stage copy
   of the app with its own bundle id, sets up a desktop with the game in Chrome and the trailer's own

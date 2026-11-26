@@ -7,6 +7,11 @@
 # agent's session id, pane id and token out of the app and every tool it starts. LaunchServices still
 # adds the variables a launch from Finder gets.
 set -e
+derived_data=build
+args=("$@")
+for i in {1..$#args}; do
+  [[ "${args[i]}" == --derived-data && -n "${args[i+1]}" ]] && derived_data=${args[i+1]:a}
+done
 cd "$(dirname "$0")/.."
 ./scripts/build.sh "$@"
 name=$(sed -n 's/^name: *//p' project.yml)
@@ -14,4 +19,4 @@ if pgrep -x "$name" >/dev/null; then
   pkill -x "$name"
   for i in {1..50}; do pgrep -x "$name" >/dev/null || break; sleep 0.1; done
 fi
-env -i HOME="$HOME" /usr/bin/open -n -g "build/Build/Products/Debug/$name.app"
+env -i HOME="$HOME" /usr/bin/open -n -g "$derived_data/Build/Products/Debug/$name.app"
