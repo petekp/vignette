@@ -25,8 +25,11 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         self.send = send
         super.init()
         field.placeholderString = "Add a comment"
-        field.isBezeled = true
-        field.bezelStyle = .squareBezel
+        field.isBezeled = false
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.textColor = .labelColor
         field.isEditable = true
         field.font = .preferredFont(forTextStyle: .body)
         field.usesSingleLineMode = false

@@ -142,7 +142,8 @@ files it touches, and `docs/voice.md` for any new words.
      inside a white hairline, with a soft shadow (`PinShading`), in the editor, on cards and in
      flight. Copy, Send and Stitch keep the white edge. The popover is an `NSPopover`, which
      macOS 26 draws in its glass: comments are rows under their writer's name, with separators, and
-     the field is a standard one. A cluster and the Pins button open an `NSMenu`, so the arrow keys,
+     the field is a borderless `NSTextField` whose words and placeholder sit on the glass, with the
+     caret as its only focus sign. A cluster and the Pins button open an `NSMenu`, so the arrow keys,
      Return and Esc work in it.
 4. Agents answer on pins (Choice 5). Its ADR is written first. Then the reply helper takes
    `--comments`, `ReplyProtocol.version` goes up, a request stores `base.png`, the reply card holds
