@@ -54,8 +54,11 @@ extension EditorView {
 
     func showPins() {
         let placement = core.pinPlacement, outlined = core.outlinedPins
+        let carded = hoverCardPin(placement)
+        // The card covers its teardrop, so the teardrop's selection ring would show at its corner.
+        let ringed = core.selection.subtracting(carded.map { [$0] } ?? [])
         pinUI.pins.show(EditorPins.Shown(placement: placement, outlined: core.drawing.pins.filter { outlined.contains($0.id) },
-                                         marching: core.marchingPins, selected: core.selection, markStyle: core.markStyle,
+                                         marching: core.marchingPins, selected: ringed, markStyle: core.markStyle,
                                          outlineWidth: core.metrics.selectionOutlineWidth, dropScale: core.drawing.pointScale * core.fitZoom,
                                          marchSpeed: core.markStyle.pin.areaSpeed * Settings.shared.motionScale, transform: toView))
         pinUI.composer?.follow(anchor(of: pinUI.composer?.pin, in: placement))
@@ -63,20 +66,24 @@ extension EditorView {
         if pinUI.resizingOpenPin, !resizing { pinUI.composer?.takeKeys() }
         pinUI.resizingOpenPin = resizing
         showPinElements(placement)
-        showHoverCard(placement)
+        showHoverCard(carded, placement)
         if pinUI.rotorOrder.count != pinUI.count {
             pinUI.count = pinUI.rotorOrder.count
             pinUI.onCount?(pinUI.count)
         }
     }
 
-    /// The hovered pin's card, while no popover, menu or drag is under way.
-    private func showHoverCard(_ placement: PinPlacement) {
-        var hovered: Pin.ID?
-        if case .pin(let id)? = core.hover { hovered = id }
+    /// The hovered pin with a number, drawn on its own, while no popover, menu or drag is under way:
+    /// the one that grows into its card.
+    private func hoverCardPin(_ placement: PinPlacement) -> Pin.ID? {
         let quiet = core.composer == nil && core.gesture == nil && pinUI.list == nil
-        guard quiet, let id = hovered, let pin = core.pin(id), pin.number > 0,
-              let drop = placement.drops.first(where: { $0.id == id }) else {
+        guard quiet, case .pin(let id)? = core.hover, let pin = core.pin(id), pin.number > 0,
+              placement.drops.contains(where: { $0.id == id }) else { return nil }
+        return id
+    }
+
+    private func showHoverCard(_ carded: Pin.ID?, _ placement: PinPlacement) {
+        guard let id = carded, let pin = core.pin(id), let drop = placement.drops.first(where: { $0.id == id }) else {
             pinUI.hoverCard?.leave()
             pinUI.hoverCard = nil
             return

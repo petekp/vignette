@@ -107,7 +107,8 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   in the words beside it. A pin's row in a menu shows no dot either. A cluster keeps its numbers, in its pins' one maker's colour.
 - In the editor, the pointer resting on a pin with a number grows it into a card (`PinHoverCard`),
   while no popover, menu or drag is under way. The card grows from the teardrop's tip, which stays
-  its square corner, with the writer's avatar where the body was. It shows the name, "Pin 3" and
+  its square corner, with the writer's avatar where the body was. A selected pin's ring is left off while its card shows,
+  since the card covers the teardrop the ring goes round. It shows the name, "Pin 3" and
   how long ago, the first comment's first line, and the replies. It takes no clicks, and VoiceOver
   reads the pin instead. Its width is `ui.pinHoverWidth` and it grows over
   `ui.pinHoverDuration`, which the motion setting scales.
