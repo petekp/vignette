@@ -31,7 +31,8 @@ final class PinHoverCard: NSView {
             replies = writers.count == 1 ? "\(count) from \(writers.first ?? "")" : count
         }
 
-        private static func writer(_ comment: Pin.Comment?, capitalized: Bool) -> String {
+        /// Who wrote `comment`: "You", or the agent's name, as "Claude".
+        static func writer(_ comment: Pin.Comment?, capitalized: Bool) -> String {
             guard let comment, comment.agent else { return capitalized ? "You" : "you" }
             let name = (comment.agentName ?? "").trimmingCharacters(in: .whitespaces)
             guard let letter = name.first else { return capitalized ? "An agent" : "an agent" }
@@ -167,6 +168,12 @@ final class PinHoverCard: NSView {
         let diameter = side * 0.8
         avatar.frame.size = CGSize(width: diameter, height: diameter)
         avatar.layer?.cornerRadius = diameter / 2
+        Self.paint(avatar, as: maker)
+    }
+
+    /// A writer's avatar: the person's silhouette, or the agent's logo in black on white. `avatar` is
+    /// layer-backed and round. The pin's popover shows the same beside each comment.
+    static func paint(_ avatar: NSImageView, as maker: PinMaker) {
         switch maker {
         case .person:
             avatar.image = NSImage(systemSymbolName: "person.crop.circle.fill", accessibilityDescription: nil)

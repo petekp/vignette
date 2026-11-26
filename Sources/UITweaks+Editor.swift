@@ -48,6 +48,7 @@ extension UITweaks {
         var pinListTitleWidth = 320.0
         var pinPostSize = 20.0
         var pinDeleteSize = 16.0         // a comment's trash button in the popover
+        var pinAvatarSize = 20.0         // the writer's avatar beside a comment in the popover
         var pinHoverWidth = 240.0        // the card a pin grows into under the pointer
         var pinHoverDuration = 0.25      // seconds it takes to grow
         var pinAreaWidth = 1.5           // an area's dashed outline in the editor, screen pt

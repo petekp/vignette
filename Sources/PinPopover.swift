@@ -27,7 +27,9 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         self.pin = pin.id
         self.send = send
         super.init()
-        field.placeholderString = "Add a comment"
+        field.placeholderAttributedString = NSAttributedString(string: "Add a comment", attributes: [
+            .font: NSFont.preferredFont(forTextStyle: .body), .foregroundColor: NSColor.secondaryLabelColor,
+        ])
         field.isBezeled = false
         field.isBordered = false
         field.drawsBackground = false
@@ -68,7 +70,18 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         field.widthAnchor.constraint(equalToConstant: Self.fieldWidth).isActive = true
         post.widthAnchor.constraint(equalToConstant: size).isActive = true
         post.heightAnchor.constraint(equalToConstant: size).isActive = true
-        controller.view = list
+        // The popover's own glass let the page behind show through the words: the window's material is thick enough.
+        let backing = NSVisualEffectView()
+        backing.material = .windowBackground
+        backing.blendingMode = .behindWindow
+        backing.state = .active
+        list.translatesAutoresizingMaskIntoConstraints = false
+        backing.addSubview(list)
+        for constraint in [list.leadingAnchor.constraint(equalTo: backing.leadingAnchor), list.trailingAnchor.constraint(equalTo: backing.trailingAnchor),
+                           list.topAnchor.constraint(equalTo: backing.topAnchor), list.bottomAnchor.constraint(equalTo: backing.bottomAnchor)] {
+            constraint.isActive = true
+        }
+        controller.view = backing
         popover.contentViewController = controller
         popover.behavior = .applicationDefined
         popover.delegate = self
@@ -144,26 +157,31 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         popover.close()
     }
 
-    /// A comment: who wrote it, in the system's red for a person or indigo for an agent, then its
-    /// words, an agent's in the system's monospaced face, as an agent's pin number is. Pressing it edits it, and
+    /// A comment: the writer's avatar, as the pin's hover card shows it, then their name, "You" or the
+    /// agent's as "Claude", and under it their words, all in the system's face. Pressing it edits it, and
     /// its Delete, which shows while the pointer is on it, deletes it.
     private func row(_ comment: Pin.Comment, index: Int) -> NSView {
-        let body = NSFont.preferredFont(forTextStyle: .body), small = NSFont.preferredFont(forTextStyle: .subheadline)
-        let author = comment.agent ? comment.agentName ?? "Agent" : "You"
-        let words = NSMutableAttributedString(string: author + "\n", attributes: [
-            .font: NSFont.systemFont(ofSize: small.pointSize, weight: .semibold),
-            .foregroundColor: comment.agent ? NSColor.systemIndigo : NSColor.systemRed,
-        ])
-        words.append(NSAttributedString(string: comment.text, attributes: [
-            .font: comment.agent ? NSFont.monospacedSystemFont(ofSize: body.pointSize, weight: .regular) : body,
-            .foregroundColor: NSColor.labelColor,
-        ]))
-        let label = NSTextField(wrappingLabelWithString: "")
-        label.attributedStringValue = words
         let ui = Settings.shared.data.ui
-        label.preferredMaxLayoutWidth = Self.width - 2 * Self.inset - ui.pinDeleteSize - ui.pinPopoverSpacing
-        label.isSelectable = false
-        let row = CommentRow(label, deleteSize: ui.pinDeleteSize, gap: ui.pinPopoverSpacing)
+        let author = PinHoverCard.Words.writer(comment, capitalized: true)
+        let avatar = NSImageView()
+        avatar.imageScaling = .scaleProportionallyUpOrDown
+        avatar.wantsLayer = true
+        avatar.layer?.cornerRadius = ui.pinAvatarSize / 2
+        avatar.layer?.masksToBounds = true
+        PinHoverCard.paint(avatar, as: comment.writer)
+        let small = NSFont.preferredFont(forTextStyle: .subheadline)
+        let name = NSTextField(labelWithString: author)
+        name.font = .systemFont(ofSize: small.pointSize, weight: .semibold)
+        name.textColor = .labelColor
+        name.lineBreakMode = .byTruncatingTail
+        let words = NSTextField(wrappingLabelWithString: comment.text)
+        words.font = .preferredFont(forTextStyle: .body)
+        words.textColor = .labelColor
+        words.isSelectable = false
+        words.preferredMaxLayoutWidth = Self.width - 2 * Self.inset - ui.pinAvatarSize - ui.pinDeleteSize - 2 * ui.pinPopoverSpacing
+        let row = CommentRow(avatar: avatar, name: name, words: words, avatarSize: ui.pinAvatarSize, deleteSize: ui.pinDeleteSize,
+                             gap: ui.pinPopoverSpacing)
+        row.widthAnchor.constraint(equalToConstant: Self.width - 2 * Self.inset).isActive = true
         row.press = { [weak self] in self?.send(.edit(index)) }
         row.delete = { [weak self] in self?.send(.delete(index)) }
         row.setAccessibilityLabel("\(author): \(comment.text)")
@@ -225,7 +243,7 @@ private final class CommentRow: NSView {
     var delete: (() -> Void)?
     private let trash = NSButton()
 
-    init(_ label: NSTextField, deleteSize: CGFloat, gap: CGFloat) {
+    init(avatar: NSImageView, name: NSTextField, words: NSTextField, avatarSize: CGFloat, deleteSize: CGFloat, gap: CGFloat) {
         super.init(frame: .zero)
         trash.isBordered = false
         trash.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "Delete comment")?
@@ -238,14 +256,22 @@ private final class CommentRow: NSView {
         // The row takes Delete from the keyboard itself, so Tab never stops on a button that is not shown.
         trash.refusesFirstResponder = true
         trash.alphaValue = 0
-        for view in [label, trash] as [NSView] {
+        for view in [avatar, name, words, trash] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
-        for constraint in [label.leadingAnchor.constraint(equalTo: leadingAnchor), label.topAnchor.constraint(equalTo: topAnchor),
-                           label.bottomAnchor.constraint(equalTo: bottomAnchor),
-                           trash.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: gap),
-                           trash.trailingAnchor.constraint(equalTo: trailingAnchor), trash.topAnchor.constraint(equalTo: topAnchor),
+        name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        for constraint in [avatar.leadingAnchor.constraint(equalTo: leadingAnchor), avatar.topAnchor.constraint(equalTo: topAnchor),
+                           avatar.widthAnchor.constraint(equalToConstant: avatarSize), avatar.heightAnchor.constraint(equalToConstant: avatarSize),
+                           avatar.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor),
+                           name.leadingAnchor.constraint(equalTo: avatar.trailingAnchor, constant: gap),
+                           name.centerYAnchor.constraint(equalTo: avatar.centerYAnchor),
+                           name.trailingAnchor.constraint(lessThanOrEqualTo: trash.leadingAnchor, constant: -gap),
+                           words.leadingAnchor.constraint(equalTo: name.leadingAnchor),
+                           words.topAnchor.constraint(equalTo: avatar.bottomAnchor, constant: 2),
+                           words.trailingAnchor.constraint(equalTo: trash.leadingAnchor, constant: -gap),
+                           words.bottomAnchor.constraint(equalTo: bottomAnchor),
+                           trash.trailingAnchor.constraint(equalTo: trailingAnchor), trash.centerYAnchor.constraint(equalTo: avatar.centerYAnchor),
                            trash.widthAnchor.constraint(equalToConstant: deleteSize), trash.heightAnchor.constraint(equalToConstant: deleteSize)] {
             constraint.isActive = true
         }

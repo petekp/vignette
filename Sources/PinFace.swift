@@ -41,11 +41,12 @@ enum PinFace: Equatable {
     }
 }
 
+extension Pin.Comment {
+    var writer: PinMaker { agent ? .agent((agentName ?? "").lowercased()) : .person }
+}
+
 extension Pin {
-    var maker: PinMaker {
-        guard let first = comments.first, first.agent else { return .person }
-        return .agent((first.agentName ?? "").lowercased())
-    }
+    var maker: PinMaker { comments.first?.writer ?? .person }
 
     /// The agent whose dot a person's pin wears on screen: the writer of its newest agent's comment.
     /// Nil for an agent's pin and for a pin no agent answered.

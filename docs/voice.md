@@ -257,7 +257,7 @@ Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
 | A comment's trash button, its tooltip and to VoiceOver, and the comment's VoiceOver action | Delete comment |
 | A comment's contextual menu | Delete Comment |
 | A comment, to VoiceOver, as a hint | Edit this comment |
-| Who wrote a comment, above its words | You; the agent's name, or Agent |
+| Who wrote a comment, beside their avatar and above their words (`PinHoverCard.Words.writer`) | You; Claude, the agent's name capitalized; An agent |
 | A comment's row, to VoiceOver | You: *words*, then Edit this comment |
 | A pin's first comment posted, to VoiceOver | Pin *n* added |
 | A pin, to VoiceOver | Pin 3, area, 2 comments; Pin 1, point, 1 comment; New pin |
