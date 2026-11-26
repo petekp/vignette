@@ -19,6 +19,7 @@ open -g "vignette://trash?file=~/Dropbox/Screenshots/x.png"
 open -g "vignette://unsend?file=~/Dropbox/Screenshots/x.png"  # cancel a send still in its grace period, as Don't send on its card does: [unsend] ok request=<ids> <name>, or error nothing-to-unsend. Without file= it acts on the newest screenshot
 open -g "vignette://stitch?file=~/Dropbox/Screenshots/a.png&file=~/Dropbox/Screenshots/b.png"
 open -g vignette://last                       # show the newest screenshot or recording as a lone thumbnail
+open -g "vignette://show?file=~/Dropbox/Screenshots/a.png&file=~/Dropbox/Screenshots/b.png&agent=claude&session=$CLAUDE_CODE_SESSION_ID&message=Is%20this%20the%20bug%3F"  # point the user at screenshots already in the folder: the cards come up, or are marked in place, with "From Claude" and the message; &marks=<json> draws on the first one until the user keeps or clears the marks; changes no file
 open -g "vignette://add?file=/tmp/agent/x.png" # copy an image in from anywhere and show its thumbnail; &annotate opens the editor
 open -g "vignette://add?file=/tmp/agent/x.png&agent=claude"  # the same, with a tab naming the agent
 open -g "vignette://add?file=/tmp/agent/x.png&agent=claude&session=$CLAUDE_CODE_SESSION_ID"  # the same, and Reply on the card goes back to that Claude Code session
@@ -108,12 +109,20 @@ Every command answers with one line in `~/Library/Logs/Vignette.log`:
 menu bar opens it. The codes are fixed:
 `unknown-command`, `missing-file`, `outside-watch-folder`, `not-enough-files`, `unreadable-image`,
 `debug-disabled`, `no-apple-original`, `write-failed`, `unsupported-type`, `invalid-marks`,
-`no-agent`, `send-failed`, `reply-refused`, `live-ink-off`, `invalid-points`, `live-ink-not-asked`, `unknown-section`, `nothing-to-unsend`. The log has one event per line,
+`no-agent`, `send-failed`, `reply-refused`, `live-ink-off`, `invalid-points`, `live-ink-not-asked`, `unknown-section`, `nothing-to-unsend`, `too-many-files`. The log has one event per line,
 `HH:mm:ss.SSS [tag] key=value …`, and rotates to `Vignette.log.1` at 5 MB.
 
+`show` answers `[show] ok files=[<names>] agent=<name> session=<id> joined=<n> inColumn=<n> inEditor=<n>
+marks=<n> after=<ms> tag=<tag>` once its cards are up. `files=` is a JSON array, since names hold
+spaces. While the person's hand is in the corner it first logs `[show] waits for
+<press|drag|sweep|swipe|stitch|slide-out>`, and `after=` counts the wait. A shown state that ends
+logs `[show] ended <name> by=left|opened|replaced`, and Keep and Clear log `[show] kept marks=<n>
+<name>` and `[show] cleared marks=<n> <name>`. `add` of the person's own screenshot in the folder
+answers `unsupported-type` and names `show`.
+
 Where Send starts is logged too. `[send] target <address> project=<detail> focus=<why> role=<role> [reply] [capture=<app>:<percent>,…]`
-names the session the bar's filled button sends to whenever one of these changes. `focus` is `kept`,
-`app`, `pane`, `tab` or `none` (the session used last). `capture` is there when the image opened
+names the session the bar's filled button sends to whenever one of these changes. `focus` is
+`showedIt` (the session that showed the image with `show`), `kept`, `app`, `pane`, `tab` or `none` (the session used last). `capture` is there when the image opened
 from a capture whose rect Vignette saw: the apps whose windows it showed, by bundle id (or process
 name), with each one's share of the points some window covered, the largest first, three at most.
 When the app before Vignette was the Codex app and the capture showed another app more, the log

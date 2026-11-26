@@ -32,7 +32,7 @@ keys. The rest of the stack is in `stack.md`.
   the time from the press until the stack, with its cards, takes the keys. A zoomed editor springs
   back to the fit before it closes, so the listing can finish first; the stack then focuses a card
   only once the opened card lands. Over lone thumbnails, or over a stack the corner became, the shortcut keeps
-  the cards on screen and brings the older ones in above them (`StackEntrance`). The next press
+  the cards on screen that the recent listing also lists, and every shown card (`stack.md`), and brings the older ones in above them (`StackEntrance`). The next press
   closes it.
 
   While a card is in the annotator the panel gives up the keys so typing reaches the editor. It

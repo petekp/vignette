@@ -16,14 +16,14 @@ Part of [Singling out existing screenshots: the agent API](../agent-single-out-a
 
 It adds:
 
-- one entry point, `ThumbnailController.show(_ shots: [Screenshot], by: Shown?)`. The one-card
+- one entry point, `ThumbnailController.show(_ call: ShowCall)`. The one-card
   `show(_:)` cannot serve: each call brings one card in its own motion, and each joins the bottom,
   so a list would arrive as separate slides with the first file named at the bottom. `post` brings
   a card up through that same `show(_:)`, so `show` posts the notice only to cards already in the
   column. `putBack` cannot serve either: it runs only on an open stack, and it selects the cards
   it returns and moves the focus to them;
 - the shown state in `StackModel`, ended in `StackModel.removeCards` and at an opening's start;
-- `ThumbnailController.isBusy` and the list of calls waiting on it;
+- `ThumbnailController.handInCorner` and the list of calls waiting on it (`ShowQueue`);
 - the second group of cards in `present(cards:)`, and the skip in `removeOverflow`;
 - `CommandError.tooManyFiles`.
 
@@ -54,45 +54,27 @@ gives the `show` URL, the parameters above, and the `[show]` answer. It says to 
 screenshot as the agent's and drops its title. It says the answer can come later than usual while
 the person's hand is in the corner. The skill's version goes up by one.
 
-## Open choices for Pete
+## Pete's decisions
 
-1. **Whether `show` carries the agent's words.** The choice is a `message=` of up to 60
-   characters on each card's notice, or no words. Recommendation: carry them. A card that comes up
-   without a reason sends the person back to the terminal to find out why. One line on the card
-   says it where they are looking.
-2. **The headline's words.** Candidates are "Shown by Claude", "Claude pointed this out" and
-   "From Claude". Recommendation: "Shown by Claude". It says what happened in three words, claims
-   nothing about what the agent wants, and does not borrow "From", which the tab uses for where a
-   card came from.
-3. **How a shown card looks.** This is a visual choice, to mock as 2 to 4 variants through Vignette
-   before building:
-   - (a) the notice alone: the agent's logo, the headline and the message, on the card the way a
-     send's notice sits;
-   - (b) the notice, plus a ring in the agent's indigo that grows out of the card's resting
-     border, as the focus ring does. It risks a third ring colour beside the accent for selected
-     and the white for focused;
-   - (c) the notice, plus one spring lift of the card as it arrives or is marked in place;
-   - (d) the notice, plus a dim over the corner's other cards while shown cards are up, for a
-     corner that already holds several.
-4. **How long shown lone thumbnails stay.** The choice is the agent push's dwell (10 s, held by
-   hover), or longer. Recommendation: the push's dwell. It is the corner's existing rule for
-   "something to read", and the person can bring the cards back with the shortcut (choice 5). A
-   longer dwell would also need a new tuned default in `UITweaks`.
-5. **The shortcut over shown cards.** The choice is to keep them at the bottom of the recent column,
-   or to let them go as the code does today. Recommendation: keep them. The shortcut is how the
-   person reaches for cards in the corner, and losing the ones an agent just raised breaks that.
-6. **Where the shown session sits in Send's choice.** It can come before the kept pick or after it.
-   Recommendation: before. The kept pick says which session the person has been sending to lately.
-   The shown state says which session asked about this very screenshot, which is the more specific
-   fact. It changes the rule that the kept pick comes first. That rule's point, one rule that says
-   where Send starts, still holds with one more fact in it.
-7. **Whether `add` should refuse to relabel a person's capture.** Today `add?file=<in-folder
-   capture>&agent=claude` turns a person's screenshot into "From Claude" and drops its Sent record.
-   Recommendation: a separate change after `show` ships. `add` would answer `unsupported-type`
-   for a file that has no agent attribute, naming `show`. It changes `add`'s contract, so it needs
-   its own yes.
+Pete answered the open choices on 2026-11-25. The build follows these answers where they differ
+from the recommendations above.
 
-8. **Whether `show` waits while the person's hand is in the corner.** The choice is to wait, as
-   above, or to run at once as a capture does. Recommendation: wait. A card that slides in under a
-   drag or a sweep moves what the person is reaching for. Captures have that gap today. The
-   cost is the busy predicate and the waiting list, and an answer that can come seconds late.
+1. `show` carries the agent's words. `message=` holds up to 60 characters, cut at a word. It also
+   takes `marks=`, in `add`'s format and limits, drawn on the first file named. The marks sit on
+   top of the person's drawing until kept, in the agent's colour, on the card and in the editor.
+   One click keeps them, joining the drawing as one undo step, or clears them. The file is untouched
+   until Keep. The controls are the system's own buttons: Clear in the bordered style and Keep in
+   the prominent one, on the card's notice and in a bar at the top of the editor.
+2. The headline is "From Claude", the words of the agent's tab. A card never says the same words
+   twice: while the notice's headline repeats the tab, the tab gives way (`CardView.repeatsNotice`).
+3. A shown card wears the notice, and the corner's other cards dim while shown cards are up. The
+   dim's amount and its fade are `ui.shownDim` and `ui.shownDimFade`, in the tweaks panel's
+   "Shown by an agent" group. The fade is a spring through `Settings.motionUI`.
+4. Lone thumbnails stay 10 seconds, as an agent's push does, and the pointer over a card holds them.
+5. The shortcut keeps shown cards at the bottom of the recent column, and the overflow never drops
+   them.
+6. Send starts on the session that showed the image first, before the kept pick
+   (`docs/rules/send-start.md`).
+7. `add` refuses a file in the folder that has no agent attribute, with an error that names `show`.
+8. `show` waits while a press, drag, sweep, swipe, stitch or slide-out is under way, then runs the
+   waiting calls in order.

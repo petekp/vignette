@@ -46,6 +46,10 @@ one. The card's bar is then Reply and goes back there. `Agent.record(agent:origi
 writer of the name and those attributes. It removes a session an earlier push recorded that this
 one does not name, so a push with `agent=` and no `session=` of a file already in the folder
 leaves it with no Reply. It also removes the file's send, which was of the picture this push replaces.
+A file already in the folder that has no agent attribute is the person's own screenshot, and `add`
+refuses it with `unsupported-type`, naming `vignette://show` (`FolderWrites.add`, ADR 0031). `show`
+points the person at a screenshot without writing to it. So only an agent's own image can be
+pushed again from inside the folder.
 `ScreenshotRequests.origin(of:)` is the one reader: a reply's request, else the file's
 attributes (`Agent.origin(of:)`). The id is the pusher's claim. Sending to it
 still checks that a live plugin inbox holds that Claude Code session

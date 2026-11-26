@@ -79,7 +79,7 @@ extension AppDelegate {
             case .failure(let failure):
                 thumbnail.pendingMarks.set(entry, on: key)
                 Log.write("[show] error \(failure.code.rawValue) \(key.name): its marks were not kept: \(failure)")
-                thumbnail.post(.notSaved(reason: "The marks could not be added."), on: Screenshot(key: key), comesUp: false)
+                thumbnail.post(.notSaved(reason: "Vignette couldn't add the marks. You can keep them again."), on: Screenshot(key: key), comesUp: false)
             }
         }
     }

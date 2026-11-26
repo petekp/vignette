@@ -180,3 +180,19 @@
   outside the card's frame, and the clip that hides it does not shrink the hit area. The
   `contentShape` in `CardView` holds each card's hover and clicks to its own frame; without it a
   hovered card, whose slot `zIndex` raises for its hover scale, takes them from the card below.
+- A shown card is a card an agent pointed the person at with `vignette://show`
+  (`ThumbnailController+Show.swift`, `Shown.swift`). Its shown state, the agent, the session, the
+  message and when, is kept beside the card in `StackModel.shown`, in memory only. It ends when the
+  card leaves the column (`StackModel.removeCards`, `by=left`), when the card opens in the annotator
+  (`shownCardOpens`, `by=opened`), or when a later `show` replaces it (`by=replaced`). The card
+  wears the `shown` notice, which has no hold and goes when the state ends (`ShownOverlay`). Its
+  headline is the tab's own words, "From Claude", so the tab gives way while the notice says them
+  (`CardView.repeatsNotice`): a card never says the same words twice. While shown cards are up, the
+  corner's other cards dim by `ui.shownDim`, with a spring of `ui.shownDimFade`, for the dwell of
+  the newest call; a hovered card never dims. The shortcut keeps shown cards at the bottom of the
+  recent column, under the recent ones (`keptShown` in `openRecent`), and `removeOverflow` never
+  drops one. A `show` waits while the person's hand is in the corner (`handInCorner`): a press, a
+  drag, a drag-select, a swipe, a converging stitch or a slide-out. A card that moves under the hand
+  makes the person miss what they reached for. The agent's marks that `show` brings sit on top of
+  the drawing in a layer of their own (`Card.agentMarks`, `PendingMarks`) until Keep or Clear,
+  which `AppDelegate.settleAgentMarks` handles for the card and the editor alike.

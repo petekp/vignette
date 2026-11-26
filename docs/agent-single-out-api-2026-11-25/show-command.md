@@ -1,25 +1,26 @@
 # The `show` command: parameters, mark and corner states
 
-Part of [Singling out existing screenshots: the agent API](../agent-single-out-api-2026-11-25.md), 2026-11-25. The open choices are in [reuse-and-choices.md](reuse-and-choices.md#open-choices-for-pete).
+Part of [Singling out existing screenshots: the agent API](../agent-single-out-api-2026-11-25.md), 2026-11-25. Pete's decisions are in [reuse-and-choices.md](reuse-and-choices.md#petes-decisions).
 
-## The proposal: one command, `show`
+## One command, `show`
 
 ```sh
-open -g -a "<app>" "vignette://show?file=<path>&file=<path>&agent=claude&session=$CLAUDE_CODE_SESSION_ID&message=<words>"
+open -g -a "<app>" "vignette://show?file=<path>&file=<path>&agent=claude&session=$CLAUDE_CODE_SESSION_ID&message=<words>&marks=<json>"
 ```
 
 `show` brings existing screenshots to the corner and marks each one as shown by the agent. It
 changes no file, no extended attribute and no drawing. Everything it sets lives in memory and ends
-on its own.
+on its own. The agent's marks reach the drawing only when the person presses Keep.
 
 ### Parameters
 
 | Parameter | Required | Meaning and limits |
 | --- | --- | --- |
 | `file=` | yes, one or more | Screenshots or screen recordings inside the screenshots folder, in the order the agent wants them read. A file named twice counts once, at its first place. At most `recentCount` files (30 by default, 0 to 1000), the most the corner's column keeps (`removeOverflow`). At 0, every call answers `too-many-files`. |
-| `agent=` | no | The agent's name, read by `Agent.clean` as `add` reads it: any name up to 64 characters, with the vendor's logo for `claude` and `codex`. It names the agent on the mark. Without it the cards come up with no mark, which is `last` for the files named. |
-| `session=` | no | The agent session showing them, read by `Agent.pushOrigin` as `add` reads it. Only a UUID of the client `agent=` names counts. Anything else logs a warning and `show` still answers `ok`. It decides where Send starts on these cards (see Send in [show-cases.md](../show-cases.md#send-and-reply-on-a-shown-card)). |
-| `message=` | no | One line from the agent to the person. It is cut at a word to 60 characters, the length of a notice's second line (`docs/voice.md`), and a cut logs a warning. Open choice 1 asks whether to have it. Today `Commands.parse` reads `message=` raw for `live-ink-ask`, while `title=` goes through the form reader (`Commands.text`), which reads `+` as a space. The change moves `message=` to the form reader for both commands. `live-ink-ask` needs `debug`, and its callers encode with `encodeURIComponent`, which writes a plus as `%2B`, so they see no change. A caller that writes a space as `+`, as Python's `urlencode` does, now gets a space there, as it already does for `title=`. |
+| `agent=` | no | The agent's name, read by `Agent.clean` as `add` reads it: any name up to 64 characters, with the vendor's logo for `claude` and `codex`. It names the agent on the mark. Without it the cards come up with no mark, which is `last` for the files named, unless `marks=` is given: then the marks are an agent's with no name, and the headline is "From an agent". |
+| `session=` | no | The agent session showing them, read by `Agent.pushOrigin` as `add` reads it. Only a UUID of the client `agent=` names counts. Anything else logs a warning and `show` still answers `ok`. It decides where Send starts on these cards (see Send in [show-cases.md](show-cases.md#send-and-reply-on-a-shown-card)). |
+| `message=` | no | One line from the agent to the person. It is cut at a word to 60 characters, the length of a notice's second line (`docs/voice.md`), and a cut logs a warning. Its lines are joined into one. `Commands.parse` reads it through the form reader (`Commands.text`), as it reads `title=`, so `+` is a space, for `live-ink-ask` too. `live-ink-ask` needs `debug`, and its callers encode with `encodeURIComponent`, which writes a plus as `%2B`, so they see no change. A caller that writes a space as `+`, as Python's `urlencode` does, now gets a space there, as it already does for `title=`. |
+| `marks=` | no | The agent's marks for the first file named, in `add`'s format and limits (`AgentMark.parse`), as a path to a JSON file or the JSON itself. They are drawn on top of the person's drawing, in the agent's colour, on the card and in the editor, until the person keeps or clears them. Bad marks answer `invalid-marks` and show nothing, as do marks on a recording or marks none of which can be drawn. |
 | `tag=` | no | Echoed in the answer, as `state` echoes it, so an agent can find its own line. |
 
 The command answers with one line, as every command does: `[show] ok …` or
@@ -34,11 +35,11 @@ carries the agent's message as its second line.
 
 | | What it is |
 | --- | --- |
-| Headline | "Shown by *Agent*", such as "Shown by Claude"; "Shown by an agent" for `agent=` with no name. Open choice 2 has the wording. |
+| Headline | "From *Agent*", such as "From Claude", the words of the agent's tab (`Agent.label(for:)`); "From an agent" for an agent with no name. |
 | Second line | The `message=`, when there is one. |
-| Tab | Unchanged. A person's screenshot keeps no tab or its Sent tab, and an agent's push keeps "From *Agent*". The tab says where a card came from and where it went, and `show` changes neither. |
-| Look | Not chosen. Open choice 3 lists the variants to mock. |
-| VoiceOver | The card's accessibility label leads with the headline. Vignette posts one announcement per call, such as "Claude showed you 3 screenshots". |
+| Tab | Unchanged, except that it gives way while the notice's headline says the same words. A person's screenshot keeps no tab or its Sent tab, and an agent's push keeps "From *Agent*", which the notice then says for it. `show` changes neither where a card came from nor where it went. |
+| Look | A band across the bottom of the card in the system's regular material, with the logo, the headline and the message, and Clear and Keep when the card has the agent's marks (`ShownOverlay`). The corner's other cards dim while shown cards are up. |
+| VoiceOver | The band reads as the headline and the message. Vignette posts one announcement per call, such as "Claude showed you 3 screenshots". |
 
 The notice follows the CardNotices rules (`docs/card-notices-2026-10-02.md`). It is one notice per
 card, and the newest wins. A Copied, a send or a later `show` replaces it. A send still waiting
@@ -76,28 +77,28 @@ change, since `show` makes none of the calls it counts.
 | Corner when `show` arrives | Cards | Order and scroll | Selection and focus | Keys |
 | --- | --- | --- | --- | --- |
 | Nothing showing | The named cards come up together as lone thumbnails, in one `present(cards:)`, sliding in staggered from the edge as a column does. | The first file named is at the top and the last at the bottom, so the column reads top to bottom in the agent's order. | None: lone thumbnails have no selection or focus. With two or more, a card's selection circle appears under the pointer, as on any lone thumbnails (`offersSelection`, `CardView.showsCircle`). | The person's app keeps them. |
-| Lone thumbnails showing | Named cards already there stay in their slots and get the notice. The others join the bottom together in one `shiftUp(to:entering:scrollsHome:)`, in the order named. | The column drops back to the bottom as it does for a capture. | None. | Kept by the person's app. |
+| Lone thumbnails showing | Named cards already there stay in their slots and get the notice. The others join the bottom one after another through `insert`, in the order named, each adding to the lift the one before left. | The column drops back to the bottom as it does for a capture. | None. | Kept by the person's app. |
 | The recent stack, keyed | Named cards in the column stay in their slots, in date order, and get the notice. The others join the bottom, as a capture joining an open stack does. | When none of the named cards is in view, the column scrolls to the first named card on the `relayoutDuration` spring (`scrollToReveal`), as an arrow key's focus move does. A card joining the bottom brings the column home, as a capture does. | Left alone. The person's selection is theirs, and `show` neither replaces it nor adds to it. The focus stays where it was. The focused card follows the pointer, so moving onto a shown card focuses it as usual. | The stack keeps them. |
 | A stack made of the corner's own cards | As the keyed stack. | As the keyed stack. | As the keyed stack. | The stack keeps them. |
 | The annotator open | A new shot never closes the annotator: the run answers `join` (`ThumbnailController.show`). The cards join the corner, which is narrowed beside the annotator when it is the stack. A lone card that is in the annotator has left the panel, so the cards come up beside the annotator as a capture's would. | As above. | As above. | The annotator keeps them. |
-| The card itself in the annotator | Nothing is posted and no shown state is kept. A notice posted to a card in the annotator would travel home with the card and show when it lands (`isSeen`), and a lone card wearing a notice does not leave at once (`leavesAtOnce`). The person is already looking at this screenshot. The answer counts it under `inEditor`. | — | — | — |
+| The card itself in the annotator | Nothing is posted and no shown state is kept. A notice posted to a card in the annotator would travel home with the card and show when it lands (`isSeen`), and a lone card wearing a notice does not leave at once (`leavesAtOnce`). The person is already looking at this screenshot. The answer counts it under `inEditor`. The agent's marks, when it brought some, appear in the editor on top of the drawing, with the bar to keep or clear them. | — | — | — |
 | The corner sliding out | `show` waits until the slide-out ends, then runs on the empty corner. Today a capture that arrives mid-slide-out and is not one of the sliding cards goes through `present`, which removes the sliding cards with animations off. That looks like a one-frame disappearance. It has not been checked on screen. | — | — | — |
 | A stitch converging | `show` waits until the converge ends. A card inserted while the pieces fly moves the slot they fly to ([corner-8](../state-machines/plausible-findings-run-to-toolbar.md#corner-8)). | — | — | — |
 
 #### When the person's hand is in the corner
 
-While the corner is busy, `show` waits. No one predicate says that today, so the change adds
-one, `ThumbnailController.isBusy`. It is true while any of these holds:
+While the person's hand is in the corner, `show` waits. `ThumbnailController.handInCorner` says
+what the hand is doing, and nil when it is free. It names the first of these that holds:
 
 - a card is pressed (`model.pressedCard`), or a flight is pressed (`FlightPress`);
 - a card is dragged out (`model.draggedCard`);
 - a drag-select is under way (`model.sweepCard`);
-- a swipe has moved the column (`StackSwipe` not idle);
+- a swipe has moved the column (`model.swipe` not 0);
 - a stitch is converging (`model.forming` not empty);
-- the corner is sliding out (`model.slidingOut`).
+- the corner is sliding out (`model.slidingOut` while the corner is no longer `visible`).
 
-Calls that arrive while it is true wait in a first-in, first-out list, and each runs in turn once
-it is false. A second call waits behind the first, and never replaces it. A call that waited runs
+Calls that arrive meanwhile wait in a first-in, first-out list (`ShowQueue`), and all of them run
+in turn once it is nil. The corner looks again every 0.1 s while calls wait. A second call waits behind the first, and never replaces it. A call that waited runs
 against the corner as it is then, so a corner that closed meanwhile gets lone thumbnails. Each
 wait logs `[show] waits for <press|drag|sweep|swipe|stitch|slide-out>`. The `ok` line comes when
 the cards are up, with the wait as `after=<ms>`. A gesture ends when the person lets go, so the
@@ -105,8 +106,8 @@ wait has no limit of its own.
 
 An agent's show is never urgent to the second. A card that moves while the person's hand is on the
 column makes them miss or drop what they were reaching for. Today a capture that arrives mid-gesture does not wait: `insert` ends a
-drag-select at once (`sweep.end()`). That gap is the same for captures, and this spec does not
-change it. Open choice 8 asks whether to wait.
+drag-select at once (`sweep.end()`). That gap is the same for captures, and `show` does not
+change it.
 
 #### Live ink
 

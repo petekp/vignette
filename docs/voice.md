@@ -258,6 +258,24 @@ Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
 | A pin's row in a cluster's or the toolbar's menu, to VoiceOver (`EditorView.pinListItem`) | Pin 3, area, 2 comments: *first comment* |
 | The toolbar's button, its tooltip, and to VoiceOver (`ToolbarView.pinsButton`) | Pins, beside a badge with the count; Pins; Pins, *n* |
 
+### An agent showing a screenshot (`ShownOverlay`, `AgentMarksBar`, `Shown`)
+
+A card an agent showed with `vignette://show` says who showed it, in the tab's own words, and the
+agent's line under them. While the notice says the tab's words, the tab gives way, so a card never
+says the same words twice.
+
+| Where | Words |
+| --- | --- |
+| The notice's headline | From *Agent* ("From an agent" with no name) |
+| The notice's second line | The agent's `message=`, at most 60 characters, cut at a word with an ellipsis |
+| The notice, to VoiceOver | From *Agent*: *message* |
+| VoiceOver, once per call | *Agent* showed you a screenshot; *Agent* showed you 3 screenshots ("An agent" with no name) |
+| The buttons on the notice and in the editor's bar | Clear, Keep |
+| Clear's help | Take the agent's marks off |
+| Keep's help | Add the agent's marks to your drawing |
+| The editor's bar | Marks from *Agent* ("Marks from an agent" with no name) |
+| "Not saved", when Keep could not write the marks | Vignette couldn't add the marks. You can keep them again. |
+
 ### A drawing, on its card ("Not saved")
 
 | When | Reason |
