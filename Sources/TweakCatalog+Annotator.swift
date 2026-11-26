@@ -15,6 +15,10 @@ extension TweakCatalog {
                 .number("zoomEdgePull", "Zoom edge pull", \.zoomEdgePull, 0...1, step: 0.05, safe: 0...1),
             ]),
             TweakGroup("Agent title", [
+                .number("agentSenderSize", "Sender size", \.agentSenderSize, 9...20, step: 0.5, unit: "pt", safe: 1...200),
+                .number("agentSenderLogoSize", "Sender logo", \.agentSenderLogoSize, 8...24, step: 0.5, unit: "pt", safe: 1...200),
+                .number("agentSenderLogoGap", "Sender logo gap", \.agentSenderLogoGap, 0...16, step: 0.5, unit: "pt", safe: 0...200),
+                .number("agentSenderGap", "Sender to title", \.agentSenderGap, 0...16, step: 0.5, unit: "pt", safe: 0...200),
                 .number("agentTitleSize", "Title size", \.agentTitleSize, 11...32, step: 0.5, unit: "pt", safe: 1...200),
                 .number("agentDescriptionSize", "Description size", \.agentDescriptionSize, 9...24, step: 0.5, unit: "pt", safe: 1...200),
                 .number("agentTitleLineGap", "Line gap", \.agentTitleLineGap, 0...16, step: 0.5, unit: "pt", safe: 0...200),
