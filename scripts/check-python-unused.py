@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""Fails when pyflakes reports a problem in the Python under `media/` or `scripts/e2e/`: an unused
-import or assignment, an undefined name, a redefinition and the rest of what pyflakes reads.
+"""Fails when pyflakes reports a problem in the Python Git tracks under `media/` or `scripts/e2e/`: an unused
+import or assignment, an undefined name, a redefinition and the rest of what pyflakes reads. Files Git
+ignores, such as the packages an end-to-end build checks out under `scripts/e2e/out/`, are not ours
+and are not read.
 
 It runs `python3 -m pyflakes` when that Python has pyflakes, and otherwise `uvx pyflakes` at the
 version `PYFLAKES` names, which uv downloads once and keeps. When neither is there this fails and
@@ -36,12 +38,14 @@ def main():
               "scripts/e2e/ were not checked; install uv (`brew install uv`) or pyflakes "
               "(`python3 -m pip install pyflakes`)", file=sys.stderr)
         return 1
-    result = subprocess.run(command + FOLDERS, cwd=repo, capture_output=True, text=True)
+    tracked = subprocess.run(["git", "ls-files", "--", *(f"{folder}/*.py" for folder in FOLDERS)],
+                             cwd=repo, capture_output=True, text=True, check=True).stdout.split()
+    result = subprocess.run(command + tracked, cwd=repo, capture_output=True, text=True)
     if result.returncode != 0:
         print((result.stdout + result.stderr).strip(), file=sys.stderr)
         print("python unused: pyflakes found the problems above", file=sys.stderr)
         return 1
-    print(f"python unused: none in {', '.join(FOLDERS)}")
+    print(f"python unused: none in {len(tracked)} files under {', '.join(FOLDERS)}")
     return 0
 
 
