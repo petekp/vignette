@@ -18,6 +18,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     private let send: (EditorCore.ComposerInput) -> Void
     private var shown: (comments: [Pin.Comment], editing: Int?)?
     private var anchor = CGRect.null
+    private var aroundArea = false
     /// One line of the field's words, and the field's height, which grows with them up to
     /// `ui.pinComposerLines` lines.
     private var lineHeight: CGFloat = 0
@@ -109,11 +110,17 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         return width - 2 * inset - ui.pinPostSize - ui.pinPopoverSpacing
     }
 
-    /// Opens to the right of the pin, or to its left when the screen has no room there. With
-    /// `takesKeys` false the keys stay with `view`'s window until the person clicks into the popover.
-    func show(from rect: CGRect, of view: NSView, takesKeys: Bool) {
-        anchor = rect
-        popover.show(relativeTo: rect, of: view, preferredEdge: .maxX)
+    /// Opens by the pin's teardrop, `rect` in `view`, as `PinPopoverPlace` says from the pin's `area`
+    /// and the room on the screen. With `takesKeys` false the keys stay with `view`'s window until
+    /// the person clicks into the popover.
+    func show(from rect: CGRect, area: CGRect?, of view: NSView, takesKeys: Bool) {
+        let onScreen = view.window.map { $0.convertToScreen(view.convert(rect, to: nil)) }
+        let screen = view.window?.screen?.visibleFrame
+        let roomOnRight = onScreen.flatMap { drop in screen.map { drop.maxX + PinPopoverPlace.reach(width: Self.width) <= $0.maxX } } ?? true
+        let place = PinPopoverPlace(teardrop: rect, area: area, roomOnRight: roomOnRight)
+        anchor = place.rect
+        aroundArea = place.aroundArea
+        popover.show(relativeTo: place.rect, of: view, preferredEdge: place.edge)
         field.window?.autorecalculatesKeyViewLoop = true
         guard takesKeys else {
             keepsKeys = view.window
@@ -150,11 +157,13 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         editor.selectedRange = NSRange(location: location, length: min(kept.length, length - location))
     }
 
-    /// The pin's teardrop moved with the zoom or a drag: the popover moves with it.
-    func follow(_ rect: CGRect?) {
-        guard let rect, rect != anchor, popover.isShown else { return }
-        anchor = rect
-        popover.positioningRect = rect
+    /// The pin's teardrop, and its area, moved with the zoom or a drag: the popover moves with them.
+    func follow(_ rect: CGRect?, area: CGRect?) {
+        guard let rect, popover.isShown else { return }
+        let place = PinPopoverPlace(teardrop: rect, area: area, aroundArea: aroundArea)
+        guard place.rect != anchor else { return }
+        anchor = place.rect
+        popover.positioningRect = place.rect
     }
 
     func update(_ pin: Pin, composer: EditorCore.Composer) {

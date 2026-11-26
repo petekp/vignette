@@ -59,7 +59,10 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   a window of its own and outlives the editor's unless the core closes it: every way the editor
   leaves its image parks the core, and `park` posts the draft and reports the close
   (`reportComposer`) before it stops reporting. It opens to the
-  right of the teardrop, or to its left when the screen has no room. Its post button posts as
+  right of the teardrop, or to its left when the screen has no room. An area pin with no room on the
+  right hangs it under its area, or over it when there is no room under it, from the teardrop's
+  column, so the area stays in view (`PinPopoverPlace`). That side is kept while the popover is
+  open. Its post button posts as
   Return does, and works only while the field holds words. A press on a handle of the open pin's
   area resizes it with the popover open (`keepsComposer`); the resize is its own undo step, the
   composer's edit begins again after it (`resumeComposerEdit`), and the field takes the keys back with its caret or selection where it was (`PinPopover.takeKeys`).

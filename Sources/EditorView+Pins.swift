@@ -61,7 +61,7 @@ extension EditorView {
                                          marching: core.marchingPins, selected: ringed, markStyle: core.markStyle,
                                          outlineWidth: core.metrics.selectionOutlineWidth, dropScale: core.drawing.pointScale * core.fitZoom,
                                          marchSpeed: core.markStyle.pin.areaSpeed * Settings.shared.motionScale, transform: toView))
-        pinUI.composer?.follow(anchor(of: pinUI.composer?.pin, in: placement))
+        pinUI.composer?.follow(anchor(of: pinUI.composer?.pin, in: placement), area: area(of: pinUI.composer?.pin))
         let resizing = core.composer != nil && core.gesture != nil
         if pinUI.resizingOpenPin, !resizing { pinUI.composer?.takeKeys() }
         pinUI.resizingOpenPin = resizing
@@ -104,6 +104,12 @@ extension EditorView {
         return placement.clusters.first { $0.pins.contains(id) }?.frame.applying(toView)
     }
 
+    /// Pin `id`'s area in the view, or nil for a point pin.
+    private func area(of id: Pin.ID?) -> CGRect? {
+        guard let id, case .area(let frame, _)? = core.pin(id)?.place else { return nil }
+        return frame.applying(toView)
+    }
+
     // MARK: The pin popover
 
     func showComposer(_ composer: EditorCore.Composer?) {
@@ -120,7 +126,7 @@ extension EditorView {
         let popover = PinPopover(pin: pin, composer: composer, send: { [weak self] input in self?.handle(.composer(input)) },
                                  zoom: { [weak self] request in self?.onZoom?(request) })
         pinUI.composer = popover
-        popover.show(from: rect, of: self, takesKeys: composer.takesKeys)
+        popover.show(from: rect, area: area(of: pin.id), of: self, takesKeys: composer.takesKeys)
     }
 
     /// The editor came up on its screenshot: the first pin's popover opens, leaving the keys here.
