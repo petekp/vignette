@@ -16,6 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: brew install xcodegen
+      # scripts/check-site-js.py runs deno lint, and scripts/check-python-unused.py runs pyflakes through uvx.
+      - run: brew install deno uv
       - run: xcodebuild -version
       # Without scripts/signing.env the build is ad-hoc signed.
       - run: scripts/build.sh --test
