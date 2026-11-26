@@ -143,6 +143,8 @@ the editor's own step names come first (the table above).
 | Stitch | Stitch |
 | A screenshot opened in the annotator, or another opened in its place | Open Drawing |
 | The annotator closed | Close Drawing |
+| Keep on an agent's marks, on a card or in the editor | Keep Marks |
+| Clear on an agent's marks, on a card or in the editor | Clear Marks |
 
 ### The line an agent receives (`ScreenshotRequests.requestLine`)
 

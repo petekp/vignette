@@ -47,6 +47,8 @@ struct Shown: Equatable {
 @MainActor
 final class PendingMarks {
     struct Entry {
+        /// Tells these marks from others the same agent or another put on the same screenshot later.
+        let id = UUID()
         let agent: String
         /// The session that showed them, and its name as `Shown.sender` has it.
         let session: AgentAddress?

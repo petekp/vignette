@@ -76,19 +76,33 @@ extension AppDelegate {
         annotator.pendingMarks = { [weak self] key in self?.thumbnail.pendingMarks[key] }
         annotator.onAgentMarks = { [weak self] key, keep in self?.settleAgentMarks(on: key, keep: keep) }
         thumbnail.model.onAgentMarks = { [weak self] card, keep in self?.settleAgentMarks(on: card.shot.key, keep: keep) }
+        thumbnail.timeline.marks = UndoTimeline.MarksOnTop(
+            onTop: { [unowned self] in thumbnail.pendingMarks[$0] },
+            setOnTop: { [unowned self] in thumbnail.pendingMarks.set($0, on: $1) },
+            drawn: { [unowned self] in drawings.drawn(of: $0, style: settings.data.ui.textStyle) },
+            takeBack: { [unowned self] in drawings.takeBackAgentMarks(of: $0, style: settings.data.ui.textStyle) },
+            putBack: { [unowned self] in
+                drawings.putBackAgentMarks($0, on: $1, style: settings.data.ui.textStyle, newScreen: Self.newDrawingScreen,
+                                           rule: settings.data.ui.markScaleRule)
+            })
     }
 
     /// Keep joins the agent's marks to the drawing as one undo step, through `add`'s own path;
-    /// Clear lets them go. Either way they leave the top. Marks that could not be written go back on
-    /// top, and the card says why.
+    /// Clear lets them go. Either way they leave the top, as a step of the undo timeline. Marks that
+    /// could not be written go back on top, and the card says why.
     func settleAgentMarks(on key: ScreenshotKey, keep: Bool) {
         guard let entry = thumbnail.pendingMarks[key] else { return }
         thumbnail.pendingMarks.set(nil, on: key)
-        guard keep else { Log.write("[show] cleared marks=\(entry.drawing.marks.count) \(key.name)"); return }
+        guard keep else {
+            thumbnail.timeline.cleared(entry, on: key)
+            Log.write("[show] cleared marks=\(entry.drawing.marks.count) \(key.name)")
+            return
+        }
         addMarks(entry.marks, from: entry.agent, to: key, rule: settings.data.ui.markScaleRule) { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let joined):
+                if joined > 0 { thumbnail.timeline.kept(entry, on: key) }
                 Log.write("[show] kept marks=\(joined) \(key.name)")
             case .failure(let failure):
                 thumbnail.pendingMarks.set(entry, on: key)

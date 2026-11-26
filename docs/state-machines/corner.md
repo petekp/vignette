@@ -221,8 +221,9 @@ a 0.1 s timer that looks again. Per file, `pendingMarks[key]` set or nil.
 | card's `shown` set | `removeCards` takes the card | `shown` nil; `dimsUnshown` false when none is left | `unshown` posted; `[show] ended … by=left` |
 | card's `shown` set | `perform(.prepare)` opens the card | `shown` nil; `openedShown` set when it named a session | `unshown` posted; `[show] ended … by=opened` |
 | `dimsUnshown` true | `dimTimer` fires | `dimsUnshown` false | the dim fades out |
-| `pendingMarks[key]` set | Keep | nil | `Drawings.add` joins the marks; on failure set again, "Not saved" |
-| `pendingMarks[key]` set | Clear | nil | the layers go |
+| `pendingMarks[key]` set | Keep | nil | `Drawings.add` joins the marks; on failure set again, "Not saved"; else a Keep Marks step |
+| `pendingMarks[key]` set | Clear | nil | the layers go; a Clear Marks step |
+| `pendingMarks[key]` nil | Undo of either step | the entry; nil on Redo | UndoTimeline in `stack.md` |
 
 **Invariants**
 
