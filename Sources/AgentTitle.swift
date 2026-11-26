@@ -41,7 +41,7 @@ struct AgentTitle: Equatable {
 
     /// Control characters and line breaks become spaces, and runs of spaces become one, so a title
     /// is one paragraph. Nil when nothing is left.
-    private static func oneLine(_ value: String?) -> String? {
+    static func oneLine(_ value: String?) -> String? {
         guard let value else { return nil }
         let words = value.components(separatedBy: .controlCharacters).joined(separator: " ")
             .split(whereSeparator: \.isWhitespace)
@@ -50,7 +50,7 @@ struct AgentTitle: Equatable {
 
     /// `text` cut to `limit` characters, the ellipsis counted: at the last space that leaves a word
     /// whole, or mid-word when the text has no space to cut at.
-    private static func clipped(_ text: String?, to limit: Int) -> (text: String?, cut: Bool) {
+    static func clipped(_ text: String?, to limit: Int) -> (text: String?, cut: Bool) {
         guard let text, text.count > limit else { return (text, false) }
         let room = text.prefix(limit - 1)
         let breaksAfter = text.dropFirst(limit - 1).first?.isWhitespace ?? true

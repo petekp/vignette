@@ -115,9 +115,27 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(Agent.title(of: renamed), titleOnly)
     }
 
-    func testBadgeLabelNamesTheAgent() {
-        XCTAssertEqual(Agent.label(for: "claude"), "From Claude")
-        XCTAssertEqual(Agent.label(for: ""), "From an agent")
+    func testASendersNameIsOneShortLineAndAPushWithoutOneDropsTheLast() throws {
+        XCTAssertEqual(Commands.parse(URL(string: "vignette://add?file=/tmp/x.png&agent=claude&from=sender+name")!).from, "sender name")
+        XCTAssertEqual(Agent.cleanSender("  sender\nname ").name, "sender name")
+        XCTAssertNil(Agent.cleanSender(" ").name)
+        let long = Agent.cleanSender(String(repeating: "word ", count: 20))
+        XCTAssertTrue(long.cut)
+        XCTAssertLessThanOrEqual(try XCTUnwrap(long.name).count, Agent.maxSenderLength)
+
+        let file = dir.appendingPathComponent("Sent.png")
+        try Data("png".utf8).write(to: file)
+        Agent.record(agent: "claude", origin: nil, on: file)
+        Agent.record(sender: "vignette", on: file)
+        XCTAssertEqual(Agent.sender(of: file), "vignette")
+        Agent.record(agent: "claude", origin: nil, on: file)
+        XCTAssertNil(Agent.sender(of: file), "a later push names its own sender or none")
+    }
+
+    func testBadgeLabelNamesTheSessionElseTheAgent() {
+        XCTAssertEqual(Agent.label(for: "claude", sender: "vignette"), "From vignette")
+        XCTAssertEqual(Agent.label(for: "claude", sender: nil), "From Claude")
+        XCTAssertEqual(Agent.label(for: "", sender: nil), "From an agent")
         XCTAssertNotNil(NSImage(systemSymbolName: Agent.fallbackSymbol, accessibilityDescription: nil), "the badge glyph must exist")
     }
 }

@@ -39,7 +39,7 @@ final class FolderWrites {
     /// Moves a file to the Trash and answers where it went; a test passes its own, so it never
     /// reaches the person's Trash.
     private let trashItem: (URL) throws -> URL
-    private let now: () -> TimeInterval
+    let now: () -> TimeInterval
 
     init(trash: @escaping (URL) throws -> URL = FolderWrites.moveToTrash,
          now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
@@ -96,20 +96,7 @@ final class FolderWrites {
         }
         writtenAt = now()
         let origin = Agent.pushOrigin(agent: request.agent, session: request.session)
-        if let agent = request.agent { Agent.record(agent: agent, origin: origin, on: destination) }
-        if origin == nil {
-            // Not quoted: the value is the caller's, and the log is not a place for it.
-            if Agent.cleanSession(request.session) != nil {
-                Log.write("[add] warning \(name): session= names a session only with agent=claude or agent=codex; Reply on its card will ask where to send")
-            } else if !(request.session ?? "").isEmpty {
-                Log.write("[add] warning \(name): session= is not a session id; Reply on its card will ask where to send")
-            }
-        }
-        let title = AgentTitle.validated(title: request.title, description: request.description)
-        Agent.record(title: title.value, on: destination)
-        for part in title.cut {
-            Log.write("[add] warning \(name): its \(part.rawValue) is longer than \(part.limit) characters and was cut")
-        }
+        let title = recordAgent(of: request, origin: origin, on: key, at: destination)
         // The agent saw the drawing only when the file had none before this push.
         let agentsDrawing = origin != nil && (callbacks.storedDrawing(key)?.isEmpty ?? true)
         guard !marks.isEmpty else {
@@ -235,7 +222,7 @@ final class FolderWrites {
     /// What an `[add] ok` line says about the request beyond the file name.
     private func detail(_ request: CommandRequest, _ origin: AgentAddress?, titled: Bool) -> String {
         (request.annotate ? " annotate" : "") + (request.agent.map { " agent=\($0)" } ?? "") + (titled ? " title" : "")
-            + (origin.map { " session=\($0.id)" } ?? "")
+            + (request.from != nil && request.agent != nil ? " from" : "") + (origin.map { " session=\($0.id)" } ?? "")
     }
 
     // MARK: Removals

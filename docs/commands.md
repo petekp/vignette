@@ -55,6 +55,11 @@ so one without `session=` removes the earlier session. Reply on the card needs `
 Code session id or a Codex thread id. Any other `session=` is not recorded, and `[add]` still
 answers `ok` with a warning.
 
+`from=` is the name of the agent session pushing the image, which the card's tab says ("From
+vignette"), one line of up to 40 characters, cut at a word with a warning. Without it, a push with
+`session=` takes the name its session menu row gives that session, and the tab says "From Claude"
+until the session list answers. `show` takes `from=` too, for its notice.
+
 `title=` and `description=` say what the image shows. The editor shows the title above the image's
 frame, with the description under it in fainter text. The text is white or black, whichever
 stands out more from the screen behind it. Each is one line of up to 60

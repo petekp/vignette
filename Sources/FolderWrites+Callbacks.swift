@@ -12,6 +12,11 @@ extension FolderWrites {
         var joinMarks: ([AgentMark], _ agent: String?, ScreenshotKey, @escaping (Result<Int, Drawings.Failure>) -> Void) -> Void = { _, _, _, done in
             done(.failure(Drawings.Failure(code: .writeFailed, description: "nothing stores drawings")))
         }
+        /// The name the session list gives a session, on the main thread, nil when it has none
+        /// (`SessionListing.senderName`).
+        var senderName: (AgentAddress, @escaping @MainActor (String?) -> Void) -> Void = { _, answer in answer(nil) }
+        /// A sender was recorded on the file after its card may have been made.
+        var senderRecorded: (Screenshot) -> Void = { _ in }
         /// A screenshot's drawing as the editor would open it.
         var storedDrawing: (ScreenshotKey) -> Drawing? = { _ in nil }
         var removeCards: ([Screenshot]) -> Void = { _ in }
