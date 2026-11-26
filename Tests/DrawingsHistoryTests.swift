@@ -58,4 +58,29 @@ final class DrawingsHistoryTests: XCTestCase {
         XCTAssertEqual(drawings.message(of: shot.screenshotKey, pixels: pixels), "the button")
         XCTAssertEqual(drawings.history(of: shot.screenshotKey, pixels: pixels, drawing: saved.drawing).undo.count, 1)
     }
+
+    func testAFileWithNoMarksOrPinsIsWrittenBackAfterItsScreenshotWentWithItsMessageHistoryAndNumbering() throws {
+        let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+        let typedShot = try writeTestImage(width: 300, height: 200, space: space, in: dir) { _, _ in (0xe0, 0x31, 0x31) }
+        let typedPixels = try XCTUnwrap(PixelSize(imageAt: typedShot))
+        let typed = EditorHistory(undo: [.message(MessageStep(name: .typing, before: "", after: "the button"))])
+        drawings.write(Drawing(key: typedShot.path, pixels: typedPixels, pointScale: 2, marks: [], nextPin: 3), message: "the button",
+                       history: typed, reason: "saved")
+        let stitchShot = dir.appendingPathComponent("stitch.png")
+        try FileManager.default.copyItem(at: typedShot, to: stitchShot)
+        let pieces = [CGRect(x: 0, y: 0, width: 300, height: 100), CGRect(x: 0, y: 100, width: 300, height: 100)]
+        drawings.write(Drawing(key: stitchShot.path, pixels: typedPixels, pointScale: 2, marks: [], pieceNumbers: pieces), reason: "stitched")
+
+        let keys = [typedShot.screenshotKey, stitchShot.screenshotKey]
+        let saved = try keys.map { try XCTUnwrap(drawings.saved(of: $0, style: .standard)) }
+        drawings.remove(keys)
+        XCTAssertNil(drawings.numbering(of: typedShot.screenshotKey, pixels: typedPixels))
+        for item in saved { drawings.write(item.drawing, message: item.message, history: item.history, reason: "put back") }
+
+        XCTAssertEqual(drawings.message(of: typedShot.screenshotKey, pixels: typedPixels), "the button")
+        XCTAssertEqual(drawings.numbering(of: typedShot.screenshotKey, pixels: typedPixels)?.nextPin, 3)
+        let blank = try XCTUnwrap(saved.first?.drawing)
+        XCTAssertEqual(drawings.history(of: typedShot.screenshotKey, pixels: typedPixels, drawing: blank).undo.count, 1)
+        XCTAssertEqual(drawings.numbering(of: stitchShot.screenshotKey, pixels: typedPixels)?.pieceNumbers, pieces)
+    }
 }
