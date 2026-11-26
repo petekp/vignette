@@ -1,7 +1,7 @@
 import AppKit
 
-/// The popover by an open pin: its comments, oldest first, each one a click away from being edited,
-/// and under them the composer, the field a comment is written in. Its keys are the composer's
+/// The popover beside an open pin: its comments, oldest first, each one a click away from being
+/// edited, and under them the composer, the field a comment is written in, with its post button. Its keys are the composer's
 /// (`EditorCore.ComposerInput`): Return posts, Shift+Return or Option+Return breaks the line,
 /// Cmd+Return posts and finishes, and Esc posts and closes.
 @MainActor
@@ -14,6 +14,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     private let list = CommandReturnStack()
     private let comments = NSStackView()
     private let field = NSTextField()
+    private let post = NSButton()
     private let send: (EditorCore.ComposerInput) -> Void
     private var shown: (comments: [Pin.Comment], editing: Int?)?
     private var anchor = CGRect.null
@@ -36,7 +37,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         field.cell?.wraps = true
         field.cell?.isScrollable = false
         field.lineBreakMode = .byWordWrapping
-        field.preferredMaxLayoutWidth = Self.width - 2 * Self.inset
+        field.preferredMaxLayoutWidth = Self.fieldWidth
         field.delegate = self
         field.setAccessibilityLabel(pin.number > 0 ? "Comment on pin \(pin.number)" : "Comment on new pin")
         comments.orientation = .vertical
@@ -48,10 +49,23 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         list.spacing = ui.pinPopoverSpacing
         list.edgeInsets = NSEdgeInsets(top: Self.inset, left: Self.inset, bottom: Self.inset, right: Self.inset)
         list.commandReturn = { [weak self] in self?.send(.finish) }
+        let size = ui.pinPostSize
+        post.isBordered = false
+        post.image = NSImage(systemSymbolName: "arrow.up.circle.fill", accessibilityDescription: "Post comment")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: size, weight: .regular))
+        post.imageScaling = .scaleProportionallyDown
+        post.target = self
+        post.action = #selector(postPressed)
+        post.toolTip = "Post comment"
+        let composerRow = NSStackView(views: [field, post])
+        composerRow.alignment = .bottom
+        composerRow.spacing = ui.pinPopoverSpacing
         list.addArrangedSubview(comments)
-        list.addArrangedSubview(field)
+        list.addArrangedSubview(composerRow)
         list.widthAnchor.constraint(equalToConstant: Self.width).isActive = true
-        field.widthAnchor.constraint(equalToConstant: Self.width - 2 * Self.inset).isActive = true
+        field.widthAnchor.constraint(equalToConstant: Self.fieldWidth).isActive = true
+        post.widthAnchor.constraint(equalToConstant: size).isActive = true
+        post.heightAnchor.constraint(equalToConstant: size).isActive = true
         controller.view = list
         popover.contentViewController = controller
         popover.behavior = .applicationDefined
@@ -59,11 +73,25 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         update(pin, composer: composer)
     }
 
+    /// The field's width: the popover's, less its insets, the post button and the gap before it.
+    private static var fieldWidth: CGFloat {
+        let ui = Settings.shared.data.ui
+        return width - 2 * inset - ui.pinPostSize - ui.pinPopoverSpacing
+    }
+
+    /// Opens to the right of the pin, or to its left when the screen has no room there.
     func show(from rect: CGRect, of view: NSView) {
         anchor = rect
-        popover.show(relativeTo: rect, of: view, preferredEdge: .maxY)
+        popover.show(relativeTo: rect, of: view, preferredEdge: .maxX)
         field.window?.autorecalculatesKeyViewLoop = true
         field.window?.makeFirstResponder(field)
+    }
+
+    /// A press on the picture took the keys, as a resize does: they come back to the field.
+    func takeKeys() {
+        guard let window = field.window, popover.isShown else { return }
+        window.makeKey()
+        if field.currentEditor() == nil { window.makeFirstResponder(field) }
     }
 
     /// The pin's teardrop moved with the zoom or a drag: the popover moves with it.
@@ -86,8 +114,17 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
             if let window = field.window, field.currentEditor() == nil { window.makeFirstResponder(field) }
         }
         if field.stringValue != composer.draft { field.stringValue = composer.draft }
+        showPostable()
         fit()
     }
+
+    /// The post button works only when the field holds words: an empty Return is how a comment is deleted or the popover closed.
+    private func showPostable() {
+        post.isEnabled = !field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        post.contentTintColor = post.isEnabled ? .controlAccentColor : .tertiaryLabelColor
+    }
+
+    @objc private func postPressed() { send(.post) }
 
     func close() {
         closing = true
@@ -154,6 +191,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
 
     func controlTextDidChange(_ notification: Notification) {
         send(.changed(field.stringValue))
+        showPostable()
         fit()
     }
 

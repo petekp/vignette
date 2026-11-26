@@ -16,8 +16,40 @@ struct Pin: Equatable, Identifiable {
     enum Place: Equatable {
         /// In px of the screenshot, the space marks use.
         case point(CGPoint)
-        /// Its width and height are more than 0.
-        case area(CGRect)
+        /// Its width and height are more than 0. The teardrop's tip sits on corner `tip`, where the
+        /// drag that made it ended.
+        case area(CGRect, tip: Corner)
+    }
+
+    /// A corner of an area, in the screenshot's px, whose y runs down.
+    enum Corner: String, CaseIterable {
+        case topLeft, topRight, bottomLeft, bottomRight
+
+        init(right: Bool, bottom: Bool) {
+            switch (right, bottom) {
+            case (true, true): self = .bottomRight
+            case (true, false): self = .topRight
+            case (false, true): self = .bottomLeft
+            case (false, false): self = .topLeft
+            }
+        }
+
+        /// The corner a drag from `start` to `end` ends at.
+        init(from start: CGPoint, to end: CGPoint) {
+            self.init(right: end.x >= start.x, bottom: end.y >= start.y)
+        }
+
+        var isRight: Bool { self == .topRight || self == .bottomRight }
+        var isBottom: Bool { self == .bottomLeft || self == .bottomRight }
+
+        /// The corner across the area on each axis that is true.
+        func mirrored(x: Bool, y: Bool) -> Corner {
+            Corner(right: isRight != x, bottom: isBottom != y)
+        }
+
+        func point(of frame: CGRect) -> CGPoint {
+            CGPoint(x: isRight ? frame.maxX : frame.minX, y: isBottom ? frame.maxY : frame.minY)
+        }
     }
 
     /// The words one person or one agent wrote on a pin.
@@ -38,12 +70,24 @@ struct Pin: Equatable, Identifiable {
     /// The most pins one screenshot holds.
     static let maxCount = 99
 
-    /// Where the teardrop's tip sits: a point pin's point, or an area's top-left corner.
+    /// Where the teardrop's tip sits: a point pin's point, or its area's corner `tip`.
     var tip: CGPoint {
         switch place {
         case .point(let point): return point
-        case .area(let frame): return frame.origin
+        case .area(let frame, let corner): return corner.point(of: frame)
         }
+    }
+
+    var area: CGRect? {
+        if case .area(let frame, _) = place { return frame }
+        return nil
+    }
+
+    /// The teardrop's body goes up and to the left of its tip, rather than to the right, so that it
+    /// stays outside an area whose tip is its bottom-left corner.
+    var leansLeft: Bool {
+        if case .area(_, .bottomLeft) = place { return true }
+        return false
     }
 
     /// Who made the pin, the writer of its first comment, which its colour says.
@@ -54,7 +98,7 @@ struct Pin: Equatable, Identifiable {
         var moved = self
         switch place {
         case .point(let point): moved.place = .point(CGPoint(x: point.x + delta.dx, y: point.y + delta.dy))
-        case .area(let frame): moved.place = .area(frame.offsetBy(dx: delta.dx, dy: delta.dy))
+        case .area(let frame, let corner): moved.place = .area(frame.offsetBy(dx: delta.dx, dy: delta.dy), tip: corner)
         }
         return moved
     }
@@ -102,9 +146,15 @@ extension Pin {
             throw MarkProblem("number must be a whole number from 1")
         }
         let origin = CGPoint(x: try fields.number("x"), y: try fields.number("y"))
-        let place: Place = item["w"] == nil && item["h"] == nil
-            ? .point(origin)
-            : .area(CGRect(origin: origin, size: CGSize(width: try fields.size("w"), height: try fields.size("h"))))
+        let place: Place
+        if item["w"] == nil && item["h"] == nil {
+            place = .point(origin)
+        } else {
+            guard let corner = item["corner"] == nil ? .topLeft : (item["corner"] as? String).flatMap(Corner.init(rawValue:)) else {
+                throw MarkProblem("corner must be \(Corner.allCases.map(\.rawValue).joined(separator: ", "))")
+            }
+            place = .area(CGRect(origin: origin, size: CGSize(width: try fields.size("w"), height: try fields.size("h"))), tip: corner)
+        }
         guard let list = item["comments"] as? [Any], !list.isEmpty else { throw MarkProblem("comments must be a list of at least one") }
         let comments = try list.enumerated().map { index, raw in
             do { return try Comment(validating: raw) } catch { throw MarkProblem("comment \(index + 1): \(error)") }
@@ -119,11 +169,11 @@ extension Pin {
         switch place {
         case .point(let point):
             placed.place = .point(CGPoint(x: min(max(point.x, 0), CGFloat(image.width)), y: min(max(point.y, 0), CGFloat(image.height))))
-        case .area(let frame):
+        case .area(let frame, let corner):
             guard case .rectangle(let inside)? = Mark(geometry: .rectangle(frame)).placed(in: image, pointScale: 1, style: .standard)?.geometry else {
                 return nil
             }
-            placed.place = .area(inside)
+            placed.place = .area(inside, tip: corner)
         }
         return placed
     }
@@ -171,8 +221,9 @@ extension Pin.Comment {
 
 // MARK: - The file's encoding
 
-/// A pin as a drawing file writes it: `w` and `h` only for an area, and a comment's `agent` and
-/// `agentName` only for an agent's.
+/// A pin as a drawing file writes it: `x` and `y` are a point, or an area's top-left corner; `w`, `h`
+/// and `corner`, the corner its teardrop's tip sits on, only for an area; and a comment's `agent` and
+/// `agentName` only for an agent's. A file from before `corner` has the tip at the top-left.
 struct PinRecord: Encodable {
     struct CommentRecord: Encodable {
         let text: String
@@ -186,16 +237,18 @@ struct PinRecord: Encodable {
     let y: CGFloat
     var w: CGFloat?
     var h: CGFloat?
+    var corner: String?
     let comments: [CommentRecord]
 
     init(_ pin: Pin) {
         id = pin.id.uuidString
         number = pin.number
-        x = pin.tip.x
-        y = pin.tip.y
-        if case .area(let frame) = pin.place {
+        x = pin.extent.minX
+        y = pin.extent.minY
+        if case .area(let frame, let tip) = pin.place {
             w = frame.width
             h = frame.height
+            corner = tip.rawValue
         }
         comments = pin.comments.map { CommentRecord(text: $0.text, agent: $0.agent ? true : nil, agentName: $0.agentName) }
     }

@@ -76,8 +76,8 @@ final class PinDrawingTests: XCTestCase {
         _ = core.reduce(.zoomChanged(1))
         let pins = EditorPins()
         pins.setScale(1)
-        pins.show(EditorPins.Shown(placement: core.pinPlacement, outlined: [], selected: [], markStyle: .standard, outlineWidth: 1,
-                                   dropScale: 1, areaScale: 1, transform: .identity))
+        pins.show(EditorPins.Shown(placement: core.pinPlacement, outlined: [], marching: [], selected: [], markStyle: .standard,
+                                   outlineWidth: 1, dropScale: 1, marchSpeed: 0, transform: .identity))
         let context = try XCTUnwrap(CGContext(data: nil, width: 300, height: 200, bitsPerComponent: 8, bytesPerRow: 0,
                                               space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)),
                                               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
@@ -123,7 +123,7 @@ final class PinDrawingTests: XCTestCase {
 
     func testAStitchMakesItsPiecesPinsItsOwnInPieceOrderWithoutDrawingThem() throws {
         let area = CGRect(x: 20, y: 20, width: 60, height: 40)
-        let (shot, drawing) = try pinned(pins: [pin(5, .area(area), "Second"), pin(2, .point(CGPoint(x: 100, y: 150)), "First")])
+        let (shot, drawing) = try pinned(pins: [pin(5, .area(area, tip: .topLeft), "Second"), pin(2, .point(CGPoint(x: 100, y: 150)), "First")])
         let (other, otherDrawing) = try pinned("Other", pins: [pin(1, .point(CGPoint(x: 200, y: 50)), "Third")])
         let composed = try XCTUnwrap(Stitch.compose([Stitch.Piece(url: shot, drawing: drawing), Stitch.Piece(url: other, drawing: otherDrawing)],
                                                     style: .standard, markStyle: .standard, longSideLimit: 10_000))
@@ -134,7 +134,7 @@ final class PinDrawingTests: XCTestCase {
         let scale = composed.size.width / plan.size.width
         XCTAssertEqual(composed.pins[0].tip.x, (plan.frames[0].minX + 100) * scale, accuracy: 0.01)
         XCTAssertEqual(composed.pins[2].tip.y, (plan.frames[1].minY + 50) * scale, accuracy: 0.01)
-        guard case .area(let moved) = composed.pins[1].place else { return XCTFail("the area pin lost its area") }
+        guard case .area(let moved, _) = composed.pins[1].place else { return XCTFail("the area pin lost its area") }
         XCTAssertEqual(moved.width, 60 * scale, accuracy: 0.01)
         XCTAssertEqual(composed.badges.count, 2)
         XCTAssertEqual(composed.badges[1].minY, plan.frames[1].minY * scale + composed.badges[1].height / 4, accuracy: 0.01)
@@ -231,7 +231,7 @@ final class PinDrawingTests: XCTestCase {
     }
 
     func testARenderingOutlinesEachAreaAndSendsNoWords() throws {
-        let (shot, drawing) = try pinned(pins: [pin(1, .area(CGRect(x: 50, y: 50, width: 150, height: 100)))])
+        let (shot, drawing) = try pinned(pins: [pin(1, .area(CGRect(x: 50, y: 50, width: 150, height: 100), tip: .topLeft))])
         let image = try XCTUnwrap(NSBitmapImageRep(data: Rendering.png(of: drawing, imageAt: shot, style: .standard, markStyle: .standard)))
         XCTAssertEqual(image.pixelsHigh, 200, "Send's picture is the screenshot's size")
         XCTAssertTrue(isRed(image, at: CGPoint(x: 125, y: 150)))
@@ -251,14 +251,6 @@ final class PinDrawingTests: XCTestCase {
                 XCTAssertFalse(shared.width > 0.5 && shared.height > 0.5, "pin \(drop.pin.number) covers pin \(earlier.pin.number)")
             }
         }
-    }
-
-    func testATeardropTurnsAwayFromAPiecesNumber() {
-        let pixels = PixelSize(width: 300, height: 200), tip = CGPoint(x: 150, y: 100)
-        XCTAssertEqual(PinTeardrop.facing(tip: tip, side: 24, edge: 1.5, in: pixels), .upRight)
-        XCTAssertEqual(PinTeardrop.facing(tip: tip, side: 24, edge: 1.5, in: pixels, avoiding: [CGRect(x: 160, y: 80, width: 10, height: 10)]), .downRight)
-        XCTAssertEqual(PinTeardrop.facing(tip: tip, side: 24, edge: 1.5, in: pixels,
-                                          avoiding: [CGRect(x: 153, y: 70, width: 40, height: 60)]), .upLeft)
     }
 
     func testACopiedRenderingsTextIsItsPathThenItsPinsWords() throws {

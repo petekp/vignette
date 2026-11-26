@@ -143,7 +143,13 @@ files it touches, and `docs/voice.md` for any new words.
      flight. Copy, Send and Stitch keep the white edge. The popover is an `NSPopover`, which
      macOS 26 draws in its glass: comments are rows under their writer's name, with separators, and
      the field is a borderless `NSTextField` whose words and placeholder sit on the glass, with the
-     caret as its only focus sign. A cluster and the Pins button open an `NSMenu`, so the arrow keys,
+     caret as its only focus sign.
+   - An area pin follows Figma's. Its teardrop's tip sits on the corner where the drag ended, so a
+     drag from top left to bottom right puts it at the bottom right. Its body goes up and to the
+     right, or up and to the left from a bottom-left corner, so it never covers the area. A file
+     stores that corner as `corner`. In the editor the outline is dashed, and its dashes march while
+     the pin is being placed or is open. The popover opens to the right of the pin and has a send
+     button. The area's handles resize it while the popover is open. A cluster and the Pins button open an `NSMenu`, so the arrow keys,
      Return and Esc work in it.
 4. Agents answer on pins (Choice 5). Its ADR is written first. Then the reply helper takes
    `--comments`, `ReplyProtocol.version` goes up, a request stores `base.png`, the reply card holds

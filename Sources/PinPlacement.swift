@@ -45,7 +45,8 @@ struct PinPlacement: Equatable {
         let fitSide = style.side * drawing.pointScale
         let pins = drawing.pins.sorted { $0.number < $1.number }
         let drops = pins.map { pin -> Drop in
-            let orientation = PinTeardrop.facing(tip: pin.tip, side: fitSide, edge: edge, in: drawing.pixels, avoiding: drawing.pieceNumbers)
+            let orientation = PinTeardrop.facing(tip: pin.tip, side: fitSide, edge: edge, in: drawing.pixels, avoiding: drawing.pieceNumbers,
+                                                 area: pin.area, leftward: pin.leansLeft)
             return Drop(id: pin.id, number: pin.number, agent: pin.color == .agent, tip: pin.tip, orientation: orientation,
                         square: PinTeardrop.square(tip: pin.tip, orientation: orientation, side: side))
         }
@@ -74,7 +75,9 @@ struct PinPlacement: Equatable {
             let label = Self.label(chosen.map(\.number))
             let width = max(side, Self.width(of: label, size: side * style.numberSize) + side * style.clusterPadding)
             let first = chosen[0]
-            let up = first.tip.y - side - edge >= 0, right = first.tip.x + width + edge <= CGFloat(drawing.pixels.width)
+            let leftward = first.orientation == .upLeft || first.orientation == .downLeft
+            let up = first.orientation == .upLeft || first.orientation == .upRight
+            let right = leftward ? first.tip.x - width - edge < 0 : first.tip.x + width + edge <= CGFloat(drawing.pixels.width)
             let frame = CGRect(x: right ? first.tip.x : first.tip.x - width, y: up ? first.tip.y - side : first.tip.y, width: width, height: side)
             return Cluster(pins: chosen.map(\.id), label: label, agent: chosen.allSatisfy(\.agent), tip: first.tip, orientation: PinTeardrop.orientation(up: up, right: right),
                            frame: frame)

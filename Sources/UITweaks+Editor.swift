@@ -44,6 +44,11 @@ extension UITweaks {
         var pinPopoverSpacing = 10.0
         var pinListImageSize = 18.0
         var pinListTitleWidth = 320.0
+        var pinPostSize = 20.0
+        var pinAreaWidth = 1.5           // an area's dashed outline in the editor, screen pt
+        var pinAreaDash = 4.0
+        var pinAreaGap = 3.0
+        var pinAreaSpeed = 14.0          // screen pt a second the dashes march
         // Marks (`MarkStyle`, `TextStyle`, `docs/mark-style-settings-2026-09-29.md`)
         var personColor = "#e03131"      // a person's marks, as #rrggbb
         var agentColor = "#364fc7"       // every agent's marks

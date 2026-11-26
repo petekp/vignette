@@ -248,6 +248,7 @@ Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
 | Where | Words |
 | --- | --- |
 | The popover's field, empty | Add a comment |
+| The post button beside it, its tooltip and to VoiceOver | Post comment |
 | The field, to VoiceOver | Comment on pin *n*; Comment on new pin |
 | Who wrote a comment, above its words | You; the agent's name, or Agent |
 | A comment's row, to VoiceOver | You: *words*, then Edit this comment |

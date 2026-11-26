@@ -10,6 +10,7 @@ A pin belongs to one drawing, beside its marks. It is not a mark.
 | `number` | Its pin number, from 1 |
 | `x`, `y` | A point pin's point, or an area pin's top-left corner, in px of the screenshot, the space marks use |
 | `w`, `h` | An area pin's size in px. A point pin has neither. |
+| `corner` | The corner of an area its teardrop's tip sits on: `topLeft`, `topRight`, `bottomLeft` or `bottomRight`, the one where the drag that made it ended. A file without it has the tip at `topLeft`. |
 | `comments` | One or more comments, oldest first |
 
 A comment holds `text`, plain like a note's, at most 2,000 characters. When an agent wrote it, it

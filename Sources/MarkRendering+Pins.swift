@@ -59,19 +59,22 @@ extension Drawing {
             .sorted { (hypot($0.dx, $0.dy), $0.dy, -$0.dx) < (hypot($1.dx, $1.dy), $1.dy, -$1.dx) }
         var placed: [RenderedTeardrop] = []
         for pin in pins.sorted(by: { $0.number < $1.number }) {
-            let byEdges = PinTeardrop.facing(tip: pin.tip, side: side, edge: edge, in: pixels, avoiding: pieceNumbers)
+            let byEdges = PinTeardrop.facing(tip: pin.tip, side: side, edge: edge, in: pixels, avoiding: pieceNumbers, area: pin.area,
+                                             leftward: pin.leansLeft)
             let up = byEdges == .upRight || byEdges == .upLeft, right = byEdges == .upRight || byEdges == .downRight
             let turns = [PinTeardrop.orientation(up: !up, right: right), PinTeardrop.orientation(up: up, right: !right),
                          PinTeardrop.orientation(up: !up, right: !right)]
             let square = { (tip: CGPoint, orientation: PinTeardrop.Orientation) in PinTeardrop.square(tip: tip, orientation: orientation, side: side) }
+            let offArea = { (body: CGRect) in !(pin.area.map { body.intersects($0.insetBy(dx: 1, dy: 1)) } ?? false) }
             var place = (tip: pin.tip, orientation: byEdges)
             if !clear(square(pin.tip, byEdges)) {
-                if let turned = turns.first(where: { inside(square(pin.tip, $0)) && clear(square(pin.tip, $0)) }) {
+                if let turned = turns.first(where: { inside(square(pin.tip, $0)) && clear(square(pin.tip, $0)) && offArea(square(pin.tip, $0)) }) {
                     place.orientation = turned
                 } else if let move = moves.lazy.map({ move -> (tip: CGPoint, orientation: PinTeardrop.Orientation) in
                     (CGPoint(x: pin.tip.x + move.dx * side / 2, y: pin.tip.y + move.dy * side / 2),
                      PinTeardrop.orientation(up: move.dy <= 0, right: move.dx >= 0))
-                }).first(where: { inside(square($0.tip, $0.orientation)) && clear(square($0.tip, $0.orientation)) }) {
+                }).first(where: { inside(square($0.tip, $0.orientation)) && clear(square($0.tip, $0.orientation))
+                    && offArea(square($0.tip, $0.orientation)) }) {
                     place = move
                 }
             }
@@ -88,7 +91,7 @@ extension Drawing {
     /// stays readable, then the teardrops.
     func drawRenderedPins(in ctx: CGContext, style: TextStyle, markStyle: MarkStyle) {
         for pin in pins {
-            guard case .area(let frame) = pin.place else { continue }
+            guard case .area(let frame, _) = pin.place else { continue }
             Mark(geometry: .rectangle(frame), agent: pin.color == .agent)
                 .draw(in: ctx, pointScale: pointScale, imageWidth: CGFloat(pixels.width), style: style, markStyle: markStyle)
         }
