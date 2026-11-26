@@ -15,11 +15,11 @@ import ImageIO
 enum ReplyProtocol {
     /// Goes up with any change to the envelope, the bundle, the digest, or the receipt. A helper
     /// built for another version is refused rather than half-understood.
-    static let version = 6
+    static let version = 7
 
-    /// The most a bundle or an attempt file may be. Marks are a few kilobytes; anything near this
-    /// is a mistake, and both files are read on the main thread.
-    static let maxBundleBytes = AgentMark.maxBytes + 16 * 1024
+    /// The most a bundle or an attempt file may be. Marks and comments are a few kilobytes; anything
+    /// near this is a mistake, and both files are read on the main thread.
+    static let maxBundleBytes = 2 * AgentMark.maxBytes + 16 * 1024
     static let maxAttemptBytes = 16 * 1024
     /// The most an accepted reply image may be. A screenshot is well under this.
     static let maxImageBytes = 64 * 1024 * 1024
@@ -126,6 +126,9 @@ enum ReplyProtocol {
         var answer: LiveAnswer? = nil
         /// What the agent says the reply shows, which the editor shows above it. Never with an answer.
         var title: AgentTitle? = nil
+        /// Answers on the person's pins. Never with an image or an answer, since they go on the pins
+        /// of the picture that was sent.
+        var comments: [Comment] = []
     }
 
     /// One dispatch of a bundle. Carries the authorization and the digest; never the payload.
@@ -262,15 +265,19 @@ enum ReplyProtocol {
             guard isPNG(bytes) else { throw Problem(.badPayload, "the reply image is not a PNG this app can read") }
             image = bytes
         }
-        guard hasImage || !marks.isEmpty || answer != nil else {
-            throw Problem(.badPayload, "the reply carries no image, marks or answer")
+        let comments = try bundleComments(object["comments"])
+        guard comments.isEmpty || (!hasImage && answer == nil) else {
+            throw Problem(.badPayload, "comments come without an image or an answer")
+        }
+        guard hasImage || !marks.isEmpty || answer != nil || !comments.isEmpty else {
+            throw Problem(.badPayload, "the reply carries no image, marks, answer or comments")
         }
         let title = AgentTitle.validated(title: object["title"] as? String, description: object["description"] as? String).value
         guard answer == nil || title == nil else {
             throw Problem(.badPayload, "an answer comes without a title")
         }
         let bundle = Bundle(requestID: attempt.requestID, replyID: attempt.replyID, hasImage: hasImage, marks: marks,
-                            answer: answer, title: title)
+                            answer: answer, title: title, comments: comments)
         return (bundle, image, payloadDigest(bundle: data, image: image))
     }
 

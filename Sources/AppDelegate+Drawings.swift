@@ -39,4 +39,21 @@ extension AppDelegate {
             }
         }
     }
+
+    /// A reply's marks and pins, stored as its card's drawing before the card appears.
+    func installReply(_ marks: [AgentMark], pins: [Pin], from agent: String?, at shot: Screenshot, answersLiveInk: Bool,
+                      done: @escaping (Drawings.Failure?) -> Void) {
+        Task {
+            do {
+                let ui = settings.data.ui
+                try drawings.installReply(marks, pins: pins, from: agent, at: shot.key, style: ui.textStyle, newScreen: Self.newDrawingScreen,
+                                          rule: answersLiveInk ? ui.liveInkMarkScaleRule : ui.markScaleRule)
+                done(nil)
+            } catch let failure as Drawings.Failure {
+                done(failure)
+            } catch {
+                done(Drawings.Failure(code: .writeFailed, description: "\(error)"))
+            }
+        }
+    }
 }

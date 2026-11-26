@@ -14,7 +14,7 @@ final class ScreenshotRequestsClearingTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         requests = ScreenshotRequests(root: root)
         requests.callbacks = ScreenshotRequests.Callbacks(
-            installDrawing: { _, _, _, _, done in done(nil) },
+            installDrawing: { _, _, _, _, _, done in done(nil) },
             present: { _ in },
             watchFolder: { [unowned self] in self.folder },
             replyFailed: { _, _ in })

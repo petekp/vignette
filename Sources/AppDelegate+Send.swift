@@ -41,17 +41,30 @@ extension AppDelegate {
             guard annotator.opening == opening else {
                 Log.write("[send] dropped \(name); the editor moved on"); return
             }
-            guard let png = output.png, output.failure == nil else {
-                let failure = output.failure ?? .writeFailed("the rendering made no image")
-                Commands.error("send", failure.code, "\(name): \(failure)")
-                if case .unreadableImage = failure { annotator.sendFailed(Self.unreadable(name)) }
-                else { annotator.sendFailed("Vignette couldn't render the drawing. The log has details.") }
-                return
+            guard let png = sendable(output, name) else { return }
+            if wordsAlone { return submit(.unchanged(card: shot.url, title: agentTitle, png: png), of: shot, to: destination, titled: title, message: message) }
+            guard !rendered.pins.isEmpty else { return submit(.drawing(png: png), of: shot, to: destination, titled: title, message: message) }
+            var withoutPins = rendered
+            withoutPins.pins = []
+            RenderingQueue.shared.render(withoutPins, imageAt: shot.url, output: .bytes, style: ui.textStyle, markStyle: ui.markStyle,
+                                         layout: .picture).whenDone { [weak self] output in
+                guard let self, annotator.opening == opening else { return Log.write("[send] dropped \(name); the editor moved on") }
+                guard let base = sendable(output, name) else { return }
+                submit(.drawing(png: png, pins: rendered.pins, base: base), of: shot, to: destination, titled: title, message: message)
             }
-            let picture: ScreenshotRequests.Picture = wordsAlone ? .unchanged(card: shot.url, title: agentTitle, png: png)
-                                                                       : .drawing(png: png, pins: rendered.pins)
-            submit(picture, of: shot, to: destination, titled: title, message: message)
         }
+    }
+
+    /// The PNG a rendering for Send made, or nil after saying on the bar why it made none.
+    private func sendable(_ output: PendingRendering.Output, _ name: String) -> Data? {
+        guard let png = output.png, output.failure == nil else {
+            let failure = output.failure ?? .writeFailed("the rendering made no image")
+            Commands.error("send", failure.code, "\(name): \(failure)")
+            if case .unreadableImage = failure { annotator.sendFailed(Self.unreadable(name)) }
+            else { annotator.sendFailed("Vignette couldn't render the drawing. The log has details.") }
+            return nil
+        }
+        return png
     }
 
     private static func unreadable(_ name: String) -> String {

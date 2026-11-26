@@ -963,20 +963,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// sends over as it quits (`ScreenshotRequests.load`).
     private func startRequests(clearingUnsent: Bool) {
         requests.callbacks = ScreenshotRequests.Callbacks(
-            installDrawing: { [weak self] shot, marks, agent, answersLiveInk, done in
+            installDrawing: { [weak self] shot, marks, pins, agent, answersLiveInk, done in
                 guard let self else { return done(Drawings.Failure(code: .writeFailed, description: "the app is gone")) }
-                Task {
-                    do {
-                        let ui = self.settings.data.ui
-                        try self.drawings.installReply(marks, from: agent, at: shot.key, style: ui.textStyle, newScreen: Self.newDrawingScreen,
-                                                       rule: answersLiveInk ? ui.liveInkMarkScaleRule : ui.markScaleRule)
-                        done(nil)
-                    } catch let failure as Drawings.Failure {
-                        done(failure)
-                    } catch {
-                        done(Drawings.Failure(code: .writeFailed, description: "\(error)"))
-                    }
-                }
+                installReply(marks, pins: pins, from: agent, at: shot, answersLiveInk: answersLiveInk, done: done)
             },
             cardCanvas: { [weak self] url, agent in
                 guard let self, let pixels = PixelSize(imageAt: url) else { return nil }

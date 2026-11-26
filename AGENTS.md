@@ -69,7 +69,7 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   Read it before changing anything that talks to Codex, and add to it what you find or fix.
 - Before changing `ScreenshotRequests*.swift`, read `docs/rules/send.md` and
   `docs/rules/replies.md`. Before changing a reply (`ScreenshotRequestRecords.swift`, `ClearedRequestFolders.swift`,
-  `ReplyProtocol.swift`, `ReplyCommand.swift`, `skills/vignette/scripts/reply`), read
+  `ReplyProtocol*.swift`, `ReplyCommand*.swift`, `skills/vignette/scripts/reply`), read
   `docs/rules/replies.md`, and `docs/rules/agent-push.md` for a reply's title.
 - Before changing the `add` command, `Agent.swift`, `AgentBadge.swift`, `AgentTitle.swift`,
   `AgentTitleView.swift`, `TitleBackdrop.swift` or `FlightCaption.swift`, read

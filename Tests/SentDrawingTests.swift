@@ -290,7 +290,7 @@ final class SentDrawingTests: XCTestCase {
         var presented: [URL] = []
         var installed: Drawing?
         requests.callbacks = ScreenshotRequests.Callbacks(
-            installDrawing: { shot, _, _, _, done in
+            installDrawing: { shot, _, _, _, _, done in
                 installed = self.agentDrawing(at: shot.url)
                 done(nil)
             },

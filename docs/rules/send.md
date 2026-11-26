@@ -93,7 +93,8 @@
   card path with a line break in it count as changed, so the picture goes
   (`ScreenshotRequests.Carried`). Send's picture draws pins as numbers and outlines at the
   screenshot's size. Their words go in the line after the message (`Pin.lineWords`), and the
-  request stores them as `pins.json` beside `image.png`. Words alone carry neither the agent's
+  request stores them as `pins.json` beside `image.png`, and the drawing rendered without them as
+  `base.png`, the picture a reply goes on (`docs/rules/replies.md`). Words alone carry neither the agent's
   marks nor its pins. A file with no
   recorded drawing always sends the picture. Send closes the editor
   without a Copied notice, and the queue carries on to the next card: a list of files to annotate is

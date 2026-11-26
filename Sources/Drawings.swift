@@ -266,7 +266,7 @@ final class Drawings {
 
     /// A reserved reply has one complete materialization. Recovery reuses it before publication,
     /// rather than joining the raw marks again under a different screen scale or text style.
-    func installReply(_ agentMarks: [AgentMark], from agent: String?, at key: ScreenshotKey,
+    func installReply(_ agentMarks: [AgentMark], pins: [Pin] = [], from agent: String?, at key: ScreenshotKey,
                       style: TextStyle, newScreen: DrawingScreen, rule: MarkScaleRule) throws {
         let url = key.url
         guard let pixels = PixelSize(imageAt: url) else {
@@ -274,8 +274,8 @@ final class Drawings {
         }
         do {
             if let stored = try store.readComplete(key: key.path, pixels: pixels, style: style) {
-                guard stored.marks.count == agentMarks.count else {
-                    throw DrawingStore.Refusal.incomplete("the checkpoint does not contain every reply mark")
+                guard stored.marks.count == agentMarks.count, stored.pins.count == pins.count else {
+                    throw DrawingStore.Refusal.incomplete("the checkpoint does not contain every reply mark and pin")
                 }
                 keys.insert(key)
                 changed(key, stored)
@@ -286,10 +286,12 @@ final class Drawings {
         }
         var drawing = Drawing(key: url.path, pixels: pixels, sizedFor: newScreen, rule: rule)
         let made = marks(agentMarks, from: agent, in: pixels, pointScale: drawing.pointScale, style: style, rule: rule, name: url.lastPathComponent)
-        guard made.count == agentMarks.count, !made.isEmpty else {
+        guard made.count == agentMarks.count, !made.isEmpty || !pins.isEmpty else {
             throw Failure(code: .writeFailed, description: "the complete drawing for \(url.lastPathComponent) could not be constructed")
         }
         drawing.marks = made
+        drawing.pins = pins
+        drawing.nextPin = (pins.map(\.number).max() ?? 0) + 1
         guard write(drawing, reason: "built") else {
             throw Failure(code: .writeFailed, description: "the drawing for \(url.lastPathComponent) could not be written")
         }

@@ -4,12 +4,12 @@ extension ScreenshotRequests {
     /// What the coordinator needs from the rest of the app. Closures, like ThumbnailController's,
     /// so nothing here reaches into the annotator or the stack.
     struct Callbacks {
-        /// Adds marks to a screenshot's drawing and stores it, without showing anything, then answers
-        /// nil, or why not. Publication waits for the answer, so a card never appears without its marks.
+        /// Adds marks and pins to a screenshot's drawing and stores it, without showing anything, then
+        /// answers nil, or why not. Publication waits for the answer, so a card never appears without them.
         /// The name is the agent's, which its notes' badges show. `answersLiveInk` is true for an
         /// answer to live ink, whose marks were laid out on `cardCanvas`.
-        var installDrawing: (Screenshot, [AgentMark], _ agent: String?, _ answersLiveInk: Bool,
-                             @escaping (Drawings.Failure?) -> Void) -> Void = { _, _, _, _, done in
+        var installDrawing: (Screenshot, [AgentMark], [Pin], _ agent: String?, _ answersLiveInk: Bool,
+                             @escaping (Drawings.Failure?) -> Void) -> Void = { _, _, _, _, _, done in
             done(Drawings.Failure(code: .writeFailed, description: "nothing stores drawings"))
         }
         /// The picture at a URL as `installDrawing` will draw an agent's answer on it, so the answer's

@@ -32,7 +32,7 @@ final class ScreenshotRequestsHandOverTests: XCTestCase {
         let requests = ScreenshotRequests(root: root, connections: [.claude: client], now: { clock.time },
                                           schedule: { _, work in clock.timers.append(work) })
         var delivered: [SubmissionOutcome] = []
-        requests.callbacks = ScreenshotRequests.Callbacks(installDrawing: { _, _, _, _, done in done(nil) }, present: { _ in },
+        requests.callbacks = ScreenshotRequests.Callbacks(installDrawing: { _, _, _, _, _, done in done(nil) }, present: { _ in },
                                                           watchFolder: { folder }, replyFailed: { _, _ in })
         requests.callbacks.delivered = { _, outcome in delivered.append(outcome) }
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 4, pixelsHigh: 4, bitsPerSample: 8, samplesPerPixel: 4,

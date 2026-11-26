@@ -200,18 +200,6 @@ final class ScreenshotRequests {
     /// A send refused before the client was invoked, with what the person reads about it.
     struct Refusal: Error { let reason: String }
 
-    /// For each session, when its newest request was handed to it. A request cancelled in its grace
-    /// period never was, and a request cleared afterwards still was.
-    func sendHistory() -> [String: Date] {
-        var history: [String: Date] = [:]
-        for record in requests.values {
-            guard let handedOver = record.handedOver else { continue }
-            if let known = history[record.destinationID], known >= handedOver { continue }
-            history[record.destinationID] = handedOver
-        }
-        return history
-    }
-
     /// Stores the drawing and the request, then hands it to the client. The store happens first and
     /// on the main thread: once this answers, the request exists whatever the client does next, and
     /// the annotator may close. The client gets the line `grace` seconds later, or at once when that
@@ -498,11 +486,13 @@ final class ScreenshotRequests {
         guard digest == attempt.payloadDigest else {
             throw ReplyProtocol.Problem(.digestMismatch, "the bundle's bytes are not the ones this attempt names")
         }
+        try ReplyProtocol.check(bundle.comments, requestDirectory: ReplyProtocol.requestDirectory(root: root, requestID: request.id))
         // Ownership first: every byte is copied into the app's own storage and the record is
         // committed before anything is acknowledged, so an accepted reply survives the helper
         // deleting all of its files.
         let reply = Reply(id: bundle.replyID, requestID: request.id, digest: digest,
-                          hasImage: bundle.hasImage, marks: bundle.marks, answer: bundle.answer, title: bundle.title, stage: .accepted)
+                          hasImage: bundle.hasImage, marks: bundle.marks, answer: bundle.answer, title: bundle.title,
+                          comments: bundle.comments.isEmpty ? nil : bundle.comments, accepted: Date(), stage: .accepted)
         do {
             if let image {
                 let url = payloadImageURL(reply)
@@ -518,7 +508,7 @@ final class ScreenshotRequests {
         replies[reply.id] = reply
         pendingImports.append(reply.id)
         writeReceipt(attempt, for: reply)
-        Commands.ok("reply", "\(reply.id) accepted for \(request.id) marks=\(reply.marks.count)\(reply.hasImage ? " image" : "")\(reply.answer == nil ? "" : " answer")")
+        Commands.ok("reply", "\(reply.id) accepted for \(request.id) marks=\(reply.marks.count)\(reply.hasImage ? " image" : "")\(reply.answer == nil ? "" : " answer")\(bundle.comments.isEmpty ? "" : " comments=\(bundle.comments.count)")")
         importNext()
     }
 
@@ -621,7 +611,7 @@ final class ScreenshotRequests {
 
         // 2. The owned PNG, copied atomically. An existing file here is this reply's own from an
         //    interrupted run, since the name carries its id; nothing else may use this name.
-        let source = reply.hasImage ? payloadImageURL(reply) : ReplyProtocol.requestDirectory(root: root, requestID: reply.requestID).appendingPathComponent("image.png")
+        let source = picture(of: reply, ownImage: payloadImageURL(reply))
         guard let bytes = try? Data(contentsOf: source), Commands.isReadableImage(source) else {
             fail(reply.id, stage: .failed, code: "payload-unreadable"); return done()
         }
@@ -636,8 +626,9 @@ final class ScreenshotRequests {
         // 3. The marks, in a drawing the person edits like their own. An image-only reply needs none.
         let agent = requests[reply.requestID]?.address.client.rawValue
         let marks = reply.cardMarks(on: reply.answer == nil ? nil : callbacks.cardCanvas(destination, agent))
-        guard !marks.isEmpty else { return commit(reply, at: destination, done: done) }
-        callbacks.installDrawing(shot(at: destination), marks, agent, reply.answer != nil) { [weak self] failure in
+        let pins = cardPins(of: reply, on: source, at: destination)
+        guard !marks.isEmpty || !pins.isEmpty else { return commit(reply, at: destination, done: done) }
+        callbacks.installDrawing(shot(at: destination), marks, pins, agent, reply.answer != nil) { [weak self] failure in
             guard let self else { return }
             // Clearing can remove the reserved file while installation is pending. The request
             // remains cancelled even when that installation later reports a failure.
@@ -666,8 +657,10 @@ final class ScreenshotRequests {
         publishedAt[reply.id] = ProcessInfo.processInfo.systemUptime
         if let client = requests[reply.requestID]?.address.client { Agent.record(agent: client.rawValue, origin: nil, on: url) }
         Agent.record(title: reply.title, on: url)
-        Agent.record(sentDrawing: callbacks.storedDrawing(shot(at: url).key), on: url)
-        Log.write("[reply] published \(reply.fileName) marks=\(reply.cardMarks(on: nil).count)")
+        let drawing = callbacks.storedDrawing(shot(at: url).key)
+        Agent.record(sentDrawing: drawing, on: url)
+        let pins = drawing?.pins.count ?? 0
+        Log.write("[reply] published \(reply.fileName) marks=\(reply.cardMarks(on: nil).count)\(pins == 0 ? "" : " pins=\(pins)")")
         callbacks.present(shot(at: url))
         done()
     }
