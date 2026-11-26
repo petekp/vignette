@@ -102,5 +102,16 @@ flight home (`TransitionLayer.Caption`). When the ink is still unknown 0.5 s aft
 it when it answers. The wait is for data, not motion, so the motion scale does not shorten it.
 `[annotate] title shown ink=… source=… waited=<ms>ms` logs how long each title waited after the
 landing. `[state] annotator.title` is its frame, or null when there
-is none or it has not shown yet, and `annotator.titleInk` its ink and where the ink came from. The reply helper takes the same two as `--title` and `--description`, and the published
+is none or it has not shown yet, and `annotator.titleInk` its ink and where the ink came from.
+
+The block above the frame starts with the sender's line: the agent's logo and the card's tab
+words, "From <sender>", else "From Claude" (`AgentTitleView.Sender`). Every file an agent pushed
+has it, so a file without a title shows the line alone, with the same room, ink, fade and flight
+as a title. It is the subheadline text style in semibold at `ui.agentSenderSize`, in the
+secondary label colour of the appearance that matches the ink (dark for white ink). The logo is
+`ui.agentSenderLogoSize` square, `ui.agentSenderLogoGap` from the words, and the title sits
+`ui.agentSenderGap` under the line. A name the session list gives after the editor opened changes
+the words in place (`AnnotationController.refreshSender`): the line is there from the open, so the
+block keeps its height and the frame does not move. `[state] annotator.sender` is the line's words,
+or null for a file no agent pushed. The reply helper takes the same two as `--title` and `--description`, and the published
 reply records them as `add` does. `docs/agent-title-2026-10-28.md` has the measurements.

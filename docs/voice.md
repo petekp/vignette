@@ -74,6 +74,8 @@ the person deletes in Codex also says nothing, since they did it there.
 
 *sender* is the name of the session that pushed the card: the agent's `from=`, else the session's Herdr tab label or its own name, as its session menu row says it without a suffix. The card says From *Agent* until Vignette has the name.
 
+The editor says the same words, From *sender*, else From *Agent*, in the line above an agent's title, with the logo before them. It never says Replied: the line names who the picture is from.
+
 *session* is the title the send's notice showed, as above. A newer send replaces it. The tab
 names the last send that reached its client: a send that failed, went unconfirmed or was
 cancelled with Don't send leaves the tab as it was.

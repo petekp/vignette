@@ -20,7 +20,7 @@ extension AnnotationController {
         let win = window ?? makeWindow()
         frameView?.isHidden = false
         let ui = Settings.shared.data.ui
-        let title = Agent.title(of: shot.url)
+        let title = AgentTitleView.Content.of(shot.url)
         titleView.show(false, duration: 0)
         titleView.set(title, ui: ui)
         revealTitle(title == nil ? .closed : .opened)
@@ -45,14 +45,14 @@ extension AnnotationController {
     /// The zoom moves the frame there once the flight has landed (`AnnotatorZoom.refit`).
     func refit(in frame: NSRect, room: NSRect) {
         guard let shot = current else { return }
-        let title = Agent.title(of: shot.url)
+        let title = AgentTitleView.Content.of(shot.url)
         run(.refit(fitted: frame, room: Self.room(room, below: title, over: frame, ui: Settings.shared.data.ui), bar: bar))
     }
 
-    /// `room` less an agent's title above `frame` and its margin: the frame grows no higher than
-    /// leaves the title on screen. Its height at the fitted frame is the most it takes, since a
+    /// `room` less the block above `frame`, the sender's line and the agent's title, and its margin:
+    /// the frame grows no higher than leaves the block on screen. Its height at the fitted frame is the most it takes, since a
     /// wider frame wraps it onto fewer lines.
-    private static func room(_ room: NSRect, below title: AgentTitle?, over frame: NSRect, ui: UITweaks) -> NSRect {
+    private static func room(_ room: NSRect, below title: AgentTitleView.Content?, over frame: NSRect, ui: UITweaks) -> NSRect {
         guard let title else { return room }
         let wrap = StackLayout.titleWrapWidth(frame: frame, room: room, minimum: ui.agentTitleMinWidth,
                                               indent: ui.annotationCornerRadius)

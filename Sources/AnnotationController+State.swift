@@ -18,6 +18,7 @@ extension AnnotationController {
             "frame": frameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
             "toolbar": (toolbar.panel.isVisible ? StateReport.topLeft(toolbar.barFrame, primaryHeight: StateReport.primaryHeight) : nil) as Any,
             "title": titleFrameOnScreen.map { StateReport.topLeft($0, primaryHeight: StateReport.primaryHeight) } as Any,
+            "sender": titleView.content?.sender?.words as Any,
             "titleInk": (titleFrameOnScreen == nil ? nil : ["ink": titleView.ink.rawValue, "source": inkSource as Any]) as Any,
             "toolbarFocus": toolbar.model.focus?.name as Any,
             "toolbarKey": toolbar.panel.isKeyWindow,

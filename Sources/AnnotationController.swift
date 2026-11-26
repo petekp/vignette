@@ -121,11 +121,11 @@ final class AnnotationController {
     var bar: ZoomBar { ZoomBar(height: AnnotatorToolbar.height, margin: Settings.shared.data.ui.annotationToolbarGap) }
 
     /// Room the annotator needs above its window for `shot` when its title wraps at `wrap`
-    /// (`StackLayout.titleWrapWidth`): its agent's title and the gap under it, or nothing for a
-    /// screenshot without one.
+    /// (`StackLayout.titleWrapWidth`): its sender's line, its agent's title and the gap under them,
+    /// or nothing for a screenshot no agent pushed.
     func spaceAbove(for shot: Screenshot, wrap: CGFloat) -> CGFloat {
-        guard let title = Agent.title(of: shot.url) else { return 0 }
-        return AgentTitleView.spaceAbove(title, wrap: wrap, ui: Settings.shared.data.ui)
+        guard let content = AgentTitleView.Content.of(shot.url) else { return 0 }
+        return AgentTitleView.spaceAbove(content, wrap: wrap, ui: Settings.shared.data.ui)
     }
 
     /// The zoom's rules and where they put the frame and the picture. The spring is `zoomTween`.
@@ -231,7 +231,7 @@ final class AnnotationController {
         }
         markScaleRule = ui.markScaleRule
         editor.applyTweaks(style: textStyle, metrics: ui.editorMetrics, markStyle: ui.markStyle, scale: scale)
-        titleView.set(titleView.title, ui: ui)
+        titleView.set(titleView.content, ui: ui)
         if let frame = frameOnScreen { placeTitle(frame: frame) }
         applyRing()
         measureTitleInk()
