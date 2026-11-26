@@ -22,8 +22,7 @@ extension AnnotatorToolbar {
     func activate() {
         switch model.focus {
         case .tool(let tool)?: onTool?(tool)
-        // A turn later, as the target's menu: opened inside the editor's keyDown, a popover took no keys.
-        case .pins?: DispatchQueue.main.async { [weak self] in self?.showPins() }
+        case .pins?: showPins()
         case .copy?: onDone?()
         case .target?: openTargetMenuFromKeys()
         case .action?:

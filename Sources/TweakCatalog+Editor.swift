@@ -29,8 +29,22 @@ extension TweakCatalog {
                 .number("pinNumberWidth", "Widest number", \.pinNumberWidth, 0.2...1, step: 0.01, safe: 0.01...10),
                 .number("clusterOverlap", "Pins cluster past", \.clusterOverlap, 0...1, step: 0.05, safe: 0...1),
                 .number("clusterPadding", "Cluster padding", \.clusterPadding, 0...2, step: 0.05, safe: 0...10),
+            ], caption: { _ in "A pin's size is in the drawing's points, and its number's size and widest setting are shares of it. Two pins are drawn as one cluster when their bodies overlap by more than the cluster share of their width, and a cluster's label has its padding, a share of the pin's size, beside it." }),
+            TweakGroup("On screen", [
+                .number("pinGradient", "Lighter top", \.pinGradient, 0...0.6, step: 0.01, safe: 0...1),
+                .number("pinBottomShade", "Darker bottom", \.pinBottomShade, 0...0.6, step: 0.01, safe: 0...1),
+                .number("pinRimWidth", "Hairline", \.pinRimWidth, 0...3, step: 0.25, unit: "pt", safe: 0...100),
+                .number("pinShadowRadius", "Shadow radius", \.pinShadowRadius, 0...10, step: 0.25, unit: "pt", safe: 0...100),
+                .number("pinShadowOffset", "Shadow offset", \.pinShadowOffset, 0...8, step: 0.25, unit: "pt", safe: 0...100),
+                .number("pinShadowOpacity", "Shadow darkness", \.pinShadowOpacity, 0...1, step: 0.05, safe: 0...1),
+            ], caption: { _ in "How a pin looks in the editor, on a card and in flight. Its top is lightened toward white and its bottom darkened toward black by those shares. The hairline and the shadow are in the drawing's points, and the marks' shadow strength multiplies the darkness. Copy, Send and Stitch keep the marks' white edge." }),
+            TweakGroup("Popover and lists", [
                 .number("pinPopoverWidth", "Popover width", \.pinPopoverWidth, 200...480, step: 4, unit: "pt", safe: 100...2000),
-            ], caption: { _ in "A pin's size is in the drawing's points, and its number's size and widest setting are shares of it. Two pins are drawn as one cluster when their bodies overlap by more than the cluster share of their width, and a cluster's label has its padding, a share of the pin's size, beside it. The popover's width is in screen points." }),
+                .number("pinPopoverInset", "Popover inset", \.pinPopoverInset, 0...32, step: 1, unit: "pt", safe: 0...200),
+                .number("pinPopoverSpacing", "Popover spacing", \.pinPopoverSpacing, 0...32, step: 1, unit: "pt", safe: 0...200),
+                .number("pinListImageSize", "List pin size", \.pinListImageSize, 10...32, step: 1, unit: "pt", safe: 4...200),
+                .number("pinListTitleWidth", "List text width", \.pinListTitleWidth, 120...600, step: 10, unit: "pt", safe: 40...2000),
+            ], caption: { _ in "In screen points. The popover by a pin has its width, its inset from the edge, and the spacing between comments. The menus a cluster and the toolbar's Pins button open show each pin at the list's pin size, and cut its first comment at the text width." }),
             TweakGroup("Renderings", [
                 .number("pinFarthestMove", "Farthest move", \.pinFarthestMove, 0...12, step: 0.5, safe: 0...24),
                 .number("commentListNarrowest", "Narrowest list", \.commentListNarrowest, 4...40, step: 0.5, safe: 1...1000),

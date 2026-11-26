@@ -82,8 +82,8 @@ Where Send starts is in `send-start.md`, and the target and its menu are in `ses
   reads it as its value (`ToolbarView.pinsButton`). The editor reports the count through
   `EditorPinUI.onCount`, which sets `Model.pinCount`, and the button comes and goes with the
   count, as a control the offer adds does. Tab reaches it after the tools (`Control.pins`). A press,
-  or Space a turn later as for the target's menu, opens the list of every pin above the button
-  (`AnnotatorToolbar.showPins`, `onPins`, `EditorView.showPinList`). The controller closes the list
+  or Space, opens the menu of every pin under the button a turn later, as the target's menu opens
+  from Space (`AnnotatorToolbar.showPins`, `onPins`, `EditorView.showPinList`). The controller closes the list
   when another image opens or the editor leaves. `docs/rules/editor-and-drawings.md` says what a
   pick does.
   `docs/annotator-toolbar-2026-09-19.md` has the numbers.

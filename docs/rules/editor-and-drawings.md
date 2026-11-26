@@ -54,7 +54,9 @@
   The orientation is worked out each time from the picture at the drawing's own size and is never
   stored, so every drawer agrees (`PinTeardrop.facing`). A body that would cover a stitch's piece
   number turns away from it (`Drawing.pieceNumbers`). `MarkLayers` shows pins with `PinLayer`
-  and `MarkRendering` draws them with `Pin.draw`, from the same paths. `MarkLayers` clusters them as
+  and `MarkRendering` draws them with `Pin.draw`, from the same paths. On screen a pin has its own
+  look (`PinShading`): a gradient, a white hairline and a soft shadow, the same in the editor, on a
+  card and in flight. A rendering keeps the marks' white edge. `MarkLayers` clusters them as
   `PinPlacement` does at the drawing's own size. A card's teardrops scale with its picture, so that
   is the editor's rule at the card's size, and a flight shows the card's clusters.
 - A PNG rendering draws pins as `Drawing.renderedTeardrops` places them, since its reader cannot
@@ -82,8 +84,8 @@
   the open and a new one. The core needs the fit zoom and the visible rect for that and for
   Shift+Return, and the view sends both (`viewChanged`) before each `zoomChanged`. A pin is
   selected, moved, nudged and deleted with the marks, by its `id` in `selection`.
-- A cluster's list and the toolbar's Pins button open one list (`EditorView.showPinList`). A pick
-  goes through `openFromList`: `EditorPinUI.onReveal` pans to its teardrop and area, or `onZoom(.fit)`
+- A cluster and the toolbar's Pins button open one list, an `NSMenu` a turn later, under the
+  capsule or the button (`EditorView.showPinList`, `pinListItem`). A pick, a turn later again, goes through `openFromList`: `EditorPinUI.onReveal` pans to its teardrop and area, or `onZoom(.fit)`
   when they are larger than `EditorCore.visible`, then the composer opens. The controller closes the
   list when another image opens or the editor leaves (`closePinList`). The bar shows the button while
   `Model.pinCount`, which `EditorPinUI.onCount` sets, is above 0, and Tab reaches it after the tools.

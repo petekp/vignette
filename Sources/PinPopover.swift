@@ -7,6 +7,7 @@ import AppKit
 @MainActor
 final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     static var width: CGFloat { Settings.shared.data.ui.pinPopoverWidth }
+    private static var inset: CGFloat { Settings.shared.data.ui.pinPopoverInset }
     let pin: Pin.ID
     private let popover = NSPopover()
     private let controller = NSViewController()
@@ -24,29 +25,30 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         self.send = send
         super.init()
         field.placeholderString = "Add a comment"
-        field.isBezeled = false
-        field.drawsBackground = false
-        field.focusRingType = .none
-        field.font = .systemFont(ofSize: NSFont.systemFontSize)
+        field.isBezeled = true
+        field.bezelStyle = .squareBezel
+        field.isEditable = true
+        field.font = .preferredFont(forTextStyle: .body)
         field.usesSingleLineMode = false
         field.cell?.wraps = true
         field.cell?.isScrollable = false
         field.lineBreakMode = .byWordWrapping
-        field.preferredMaxLayoutWidth = Self.width - 24
+        field.preferredMaxLayoutWidth = Self.width - 2 * Self.inset
         field.delegate = self
         field.setAccessibilityLabel(pin.number > 0 ? "Comment on pin \(pin.number)" : "Comment on new pin")
         comments.orientation = .vertical
         comments.alignment = .leading
-        comments.spacing = 8
+        let ui = Settings.shared.data.ui
+        comments.spacing = ui.pinPopoverSpacing
         list.orientation = .vertical
         list.alignment = .leading
-        list.spacing = 10
-        list.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        list.spacing = ui.pinPopoverSpacing
+        list.edgeInsets = NSEdgeInsets(top: Self.inset, left: Self.inset, bottom: Self.inset, right: Self.inset)
         list.commandReturn = { [weak self] in self?.send(.finish) }
         list.addArrangedSubview(comments)
         list.addArrangedSubview(field)
         list.widthAnchor.constraint(equalToConstant: Self.width).isActive = true
-        field.widthAnchor.constraint(equalToConstant: Self.width - 24).isActive = true
+        field.widthAnchor.constraint(equalToConstant: Self.width - 2 * Self.inset).isActive = true
         controller.view = list
         popover.contentViewController = controller
         popover.behavior = .applicationDefined
@@ -57,6 +59,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     func show(from rect: CGRect, of view: NSView) {
         anchor = rect
         popover.show(relativeTo: rect, of: view, preferredEdge: .maxY)
+        field.window?.autorecalculatesKeyViewLoop = true
         field.window?.makeFirstResponder(field)
     }
 
@@ -72,9 +75,12 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
             shown = (pin.comments, composer.editing)
             for row in comments.arrangedSubviews { row.removeFromSuperview() }
             for (index, comment) in pin.comments.enumerated() where index != composer.editing {
+                if !comments.arrangedSubviews.isEmpty { comments.addArrangedSubview(separator()) }
                 comments.addArrangedSubview(row(comment, index: index))
             }
             comments.isHidden = comments.arrangedSubviews.isEmpty
+            // A row pressed from the keyboard had the focus, and went with the rows.
+            if let window = field.window, field.currentEditor() == nil { window.makeFirstResponder(field) }
         }
         if field.stringValue != composer.draft { field.stringValue = composer.draft }
         fit()
@@ -85,30 +91,36 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         popover.close()
     }
 
-    /// A comment: who wrote it when it was an agent, then its words. A click on it edits it.
+    /// A comment: who wrote it, in the system's red for a person or indigo for an agent, then its
+    /// words, an agent's in the system's monospaced face, as an agent's pin number is. Pressing it edits it.
     private func row(_ comment: Pin.Comment, index: Int) -> NSView {
-        let words = NSTextField(wrappingLabelWithString: comment.text)
-        words.preferredMaxLayoutWidth = Self.width - 24
-        words.isSelectable = false
-        let row = NSStackView(views: [words])
-        row.orientation = .vertical
-        row.alignment = .leading
-        row.spacing = 2
-        if comment.agent {
-            let name = NSTextField(labelWithString: comment.agentName ?? "Agent")
-            name.font = .systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold)
-            name.textColor = .secondaryLabelColor
-            row.insertArrangedSubview(name, at: 0)
-        }
-        row.addGestureRecognizer(CommentClick(target: self, action: #selector(clicked(_:)), index: index))
-        row.setAccessibilityElement(true)
-        row.setAccessibilityRole(.button)
-        row.setAccessibilityLabel(comment.text)
-        row.setAccessibilityHelp("Edit this comment")
+        let body = NSFont.preferredFont(forTextStyle: .body), small = NSFont.preferredFont(forTextStyle: .subheadline)
+        let author = comment.agent ? comment.agentName ?? "Agent" : "You"
+        let words = NSMutableAttributedString(string: author + "\n", attributes: [
+            .font: NSFont.systemFont(ofSize: small.pointSize, weight: .semibold),
+            .foregroundColor: comment.agent ? NSColor.systemIndigo : NSColor.systemRed,
+        ])
+        words.append(NSAttributedString(string: comment.text, attributes: [
+            .font: comment.agent ? NSFont.monospacedSystemFont(ofSize: body.pointSize, weight: .regular) : body,
+            .foregroundColor: NSColor.labelColor,
+        ]))
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.attributedStringValue = words
+        label.preferredMaxLayoutWidth = Self.width - 2 * Self.inset
+        label.isSelectable = false
+        let row = CommentRow(label)
+        row.press = { [weak self] in self?.send(.edit(index)) }
+        row.setAccessibilityLabel("\(author): \(comment.text)")
         return row
     }
 
-    @objc private func clicked(_ click: CommentClick) { send(.edit(click.index)) }
+    private func separator() -> NSView {
+        let line = NSBox()
+        line.boxType = .separator
+        line.widthAnchor.constraint(equalToConstant: Self.width - 2 * Self.inset).isActive = true
+        return line
+    }
+
 
     private func fit() {
         field.invalidateIntrinsicContentSize()
@@ -147,16 +159,46 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     }
 }
 
-/// A click on one of the popover's comments, which knows which.
-private final class CommentClick: NSClickGestureRecognizer {
-    let index: Int
+/// A comment in the popover, which a click edits. With Full Keyboard Access on, Tab reaches it and
+/// Space or Return edits it, as a button.
+private final class CommentRow: NSView {
+    var press: (() -> Void)?
 
-    init(target: AnyObject, action: Selector, index: Int) {
-        self.index = index
-        super.init(target: target, action: action)
+    init(_ label: NSTextField) {
+        super.init(frame: .zero)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        for constraint in [label.leadingAnchor.constraint(equalTo: leadingAnchor), label.trailingAnchor.constraint(equalTo: trailingAnchor),
+                           label.topAnchor.constraint(equalTo: topAnchor), label.bottomAnchor.constraint(equalTo: bottomAnchor)] {
+            constraint.isActive = true
+        }
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityHelp("Edit this comment")
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    override var acceptsFirstResponder: Bool { NSApp.isFullKeyboardAccessEnabled }
+    override var canBecomeKeyView: Bool { NSApp.isFullKeyboardAccessEnabled }
+    override var focusRingMaskBounds: NSRect { bounds }
+    override func drawFocusRingMask() { bounds.fill() }
+
+    override func mouseDown(with event: NSEvent) {}
+
+    /// As a button: the press counts where it is let go inside.
+    override func mouseUp(with event: NSEvent) {
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { press?() }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.charactersIgnoringModifiers == " " || [36, 76].contains(event.keyCode) { press?() } else { super.keyDown(with: event) }
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        press?()
+        return press != nil
+    }
 }
 
 /// The popover's view: Cmd+Return is a key equivalent, which may never reach the field as a new line.

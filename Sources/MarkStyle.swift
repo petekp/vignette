@@ -61,6 +61,16 @@ struct PinStyle: Equatable, Sendable {
     var listRowPadding: CGFloat
     var listWordsGap: CGFloat
     var listParagraphSpacing: CGFloat
+    /// The look on screen (`PinShading`): how far the top is lightened toward white and the bottom
+    /// darkened toward black, as shares; the white hairline's width; and the shadow's radius, its
+    /// offset down and its darkness, which `MarkStyle.shadowOpacity` multiplies too. Widths in pt of
+    /// the drawing.
+    var gradient: CGFloat
+    var bottomShade: CGFloat
+    var rimWidth: CGFloat
+    var shadowRadius: CGFloat
+    var shadowOffset: CGFloat
+    var shadowOpacity: CGFloat
 }
 
 /// A colour in sRGB, from settings.json's `#rrggbb`.

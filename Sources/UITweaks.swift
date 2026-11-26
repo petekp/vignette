@@ -144,7 +144,17 @@ struct UITweaks: Codable, Equatable {
     var commentListRowPadding = 0.6
     var commentListWordsGap = 0.75
     var commentListParagraphSpacing = 0.4
+    var pinGradient = 0.2
+    var pinBottomShade = 0.1
+    var pinRimWidth = 1.0
+    var pinShadowRadius = 2.5
+    var pinShadowOffset = 1.5
+    var pinShadowOpacity = 0.35
     var pinPopoverWidth = 280.0      // screen pt
+    var pinPopoverInset = 12.0
+    var pinPopoverSpacing = 10.0
+    var pinListImageSize = 18.0
+    var pinListTitleWidth = 320.0
     // Marks (`MarkStyle`, `TextStyle`, `docs/mark-style-settings-2026-09-29.md`)
     var personColor = "#e03131"      // a person's marks, as #rrggbb
     var agentColor = "#364fc7"       // every agent's marks
