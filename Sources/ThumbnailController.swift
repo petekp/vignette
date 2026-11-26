@@ -463,8 +463,7 @@ final class ThumbnailController {
         sessionCard?.marks = model.cards.first { $0.id == card.id }.map(\.marks) ?? marks(drawing, on: card)
     }
 
-    /// Sets what the tabs of `shot`'s cards say about its last send, the editor's card included.
-    /// The file's sender was recorded after its card was made: the card's tab names it.
+    /// The file's sender changed after its card was made: the card's tab says the one it has now.
     func refreshSender(of shot: Screenshot) {
         let sender = Agent.sender(of: shot.url)
         guard model.cards.contains(where: { $0.shot.url == shot.url && $0.sender != sender }) else { return }
@@ -476,6 +475,7 @@ final class ThumbnailController {
         }
     }
 
+    /// Sets what the tabs of `shot`'s cards say about its last send, the editor's card included.
     func setSent(_ sent: Card.Sent?, of shot: Screenshot) {
         if model.cards.contains(where: { $0.shot.url == shot.url && $0.sent != sent }) {
             model.cards = model.cards.map { card in

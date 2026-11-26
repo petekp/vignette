@@ -104,8 +104,10 @@ struct AgentBadge: View {
     var body: some View {
         // The longest words that fit. Words longer than the ones shown wait for room to spare, as an
         // unfold does.
+        // Clamped, since the labels can lose their longer words while the tab shows them.
+        let shown = shownWords.map { min($0, labels.count - 1) }
         let words = labels.indices.first { index in
-            !fit(of: labels[index]).folds(cardWidth: cardWidth, wasFolded: shownWords.map { $0 > index } ?? true)
+            !fit(of: labels[index]).folds(cardWidth: cardWidth, wasFolded: shown.map { $0 > index } ?? true)
         }
         let folded = words == nil
         let fit = fit(of: labels[words ?? labels.count - 1])

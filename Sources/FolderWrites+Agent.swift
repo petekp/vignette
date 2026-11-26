@@ -11,6 +11,8 @@ extension FolderWrites {
         if from.cut { Log.write("[add] warning \(name): its from= is longer than \(Agent.maxSenderLength) characters and was cut") }
         if request.agent != nil {
             if let sender = from.name { Agent.record(sender: sender, on: destination) } else if let origin { nameSender(of: origin, on: key, at: destination) }
+            // A push of a file already in the folder makes no new card, so its card's tab follows here.
+            callbacks.senderRecorded(Screenshot(key: key))
         }
         if origin == nil {
             // Not quoted: the value is the caller's, and the log is not a place for it.
