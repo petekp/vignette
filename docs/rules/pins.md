@@ -63,9 +63,12 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   composer's edit begins again after it (`resumeComposerEdit`), and the field takes the keys back.
 - The popover's comments are in the system's face, an agent's as a person's. Each shows its writer's
   avatar, the one the hover card shows (`PinHoverCard.paint`, `Pin.Comment.writer`), then their name
-  in the label colour, "You" or the agent's capitalized, and under it the words. The popover's content
-  sits on the window background material, since the popover's own glass let the page behind show
-  through the words. The field's placeholder is in the secondary label colour.
+  in the label colour, "You" or the agent's capitalized, and under it the words. The popover is
+  macOS's own, with nothing behind its content: a view of our own under the content is not clipped
+  to the popover's shape, so its arrow and body part ways. The field's placeholder is in the field's
+  font and the secondary label colour. The post button is centred on the field's last line
+  (`PinPopover.composerRow`), so one line of words, the placeholder and the caret sit on the
+  popover's centre line with the button.
 - Each comment in the popover has its own Delete, for the person's and an agent's alike: a trash
   button at its trailing edge, shown while the pointer is on the comment, Delete Comment in its
   contextual menu, the Delete key on the comment when Full Keyboard Access focuses it, and a
