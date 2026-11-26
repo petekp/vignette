@@ -19,7 +19,7 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 - `unsaved`: the drawing changed since the last hand-over.
 - `drawing.pins` and `drawing.nextPin`: the Comment tool adds a pin with number 0; its first comment numbers it from `nextPin`, which never goes down. A pin with number 0 is in no hand-over and no undo step.
 - `composer: Composer?` (`EditorCore+Pins.swift`): the pin whose popover is open, the comment it edits or nil for a new one, and the draft. While it is open, `edit` is open on that pin. `reportedComposer` is what `settle()` last told the view.
-- `fitZoom`, `visible`: from `viewChanged`, for a teardrop's size and Shift+Return's place.
+- `visible`: from `viewChanged`, for Shift+Return's place.
 - `selection`, `hover`, `tool`, `zoom`, `style`, `metrics`, `markStyle`.
 - `finishes`: what Return and Cmd+Return do. The host sets it from the toolbar's offer.
 - `reportedTool`, `reportedCursor`, `announcedSelection`: what `settle()` last told the view.

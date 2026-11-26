@@ -67,17 +67,17 @@ final class PinDrawingTests: XCTestCase {
         XCTAssertFalse(isRed(image, at: CGPoint(x: 250, y: 50)))
     }
 
-    func testTheEditorDrawsATeardropOnThePixelsTheRenderingDrawsAtTheFitZoom() throws {
+    func testAtZoomOneOnADrawingOfPointScaleOneTheEditorDrawsATeardropOnThePixelsTheRenderingDraws() throws {
         let (shot, drawing) = try pinned()
         let rendering = try XCTUnwrap(NSBitmapImageRep(data: Rendering.png(of: drawing, imageAt: shot, style: .standard, markStyle: .standard)))
         var core = EditorCore()
         _ = core.reduce(.open(drawing, style: .standard, metrics: .standard, markStyle: .standard))
-        _ = core.reduce(.viewChanged(fit: 1, visible: CGRect(x: 0, y: 0, width: 300, height: 200)))
+        _ = core.reduce(.viewChanged(visible: CGRect(x: 0, y: 0, width: 300, height: 200)))
         _ = core.reduce(.zoomChanged(1))
         let pins = EditorPins()
         pins.setScale(1)
         pins.show(EditorPins.Shown(placement: core.pinPlacement, outlined: [], marching: [], selected: [], markStyle: .standard,
-                                   outlineWidth: 1, dropScale: 1, marchSpeed: 0, transform: .identity))
+                                   outlineWidth: 1, marchSpeed: 0, transform: .identity))
         let context = try XCTUnwrap(CGContext(data: nil, width: 300, height: 200, bitsPerComponent: 8, bytesPerRow: 0,
                                               space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)),
                                               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))

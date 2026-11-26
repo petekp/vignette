@@ -5,9 +5,6 @@ import AppKit
 @MainActor
 final class EditorPinUI: NSObject {
     let pins = EditorPins()
-    /// The width in screen pt of the frame the whole picture fits, from the host, or 0 when it gives
-    /// none and the view's own size is the fit.
-    var fittedWidth: CGFloat = 0
     var composer: PinPopover?
     /// The card the pin under the pointer grows into.
     var hoverCard: PinHoverCard?
@@ -28,27 +25,9 @@ final class EditorPinUI: NSObject {
 }
 
 extension EditorView {
-    /// The host's fitted frame's width; see `EditorPinUI.fittedWidth`.
-    var fittedWidth: CGFloat {
-        get { pinUI.fittedWidth }
-        set {
-            guard newValue != pinUI.fittedWidth else { return }
-            pinUI.fittedWidth = newValue
-            if core.isOpen { zoomChanged() }
-        }
-    }
-
-    /// The zoom at which the picture fits the frame, in screen pt per image px.
-    private var fitZoom: CGFloat {
-        let width = CGFloat(core.drawing.pixels.width), height = CGFloat(core.drawing.pixels.height)
-        guard width > 0, height > 0 else { return 0 }
-        if pinUI.fittedWidth > 0 { return pinUI.fittedWidth / width }
-        return bounds.isEmpty ? zoom : min(bounds.width / width, bounds.height / height)
-    }
-
-    /// A zoom step: the core hears where the picture sits, then the zoom, which redraws.
+    /// A zoom step: the core hears the part of the picture in view, then the zoom, which redraws.
     func zoomChanged() {
-        message(.viewChanged(fit: fitZoom, visible: resolution.visible))
+        message(.viewChanged(visible: resolution.visible))
         handle(.zoomChanged(zoom))
     }
 
@@ -59,7 +38,7 @@ extension EditorView {
         let ringed = core.selection.subtracting(carded.map { [$0] } ?? [])
         pinUI.pins.show(EditorPins.Shown(placement: placement, outlined: core.drawing.pins.filter { outlined.contains($0.id) },
                                          marching: core.marchingPins, selected: ringed, markStyle: core.markStyle,
-                                         outlineWidth: core.metrics.selectionOutlineWidth, dropScale: core.drawing.pointScale * core.fitZoom,
+                                         outlineWidth: core.metrics.selectionOutlineWidth,
                                          marchSpeed: core.markStyle.pin.areaSpeed * Settings.shared.motionScale, transform: toView))
         pinUI.composer?.follow(anchor(of: pinUI.composer?.pin, in: placement), area: area(of: pinUI.composer?.pin))
         let resizing = core.composer != nil && core.gesture != nil

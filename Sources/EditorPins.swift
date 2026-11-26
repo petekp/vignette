@@ -23,8 +23,6 @@ final class EditorPins {
         let selected: Set<Pin.ID>
         let markStyle: MarkStyle
         let outlineWidth: CGFloat
-        /// Screen pt per drawing pt for a teardrop.
-        let dropScale: CGFloat
         /// How fast the dashes march, in screen pt a second, with the motion setting applied: 0 keeps them still.
         let marchSpeed: CGFloat
         let transform: CGAffineTransform
@@ -61,7 +59,7 @@ final class EditorPins {
             guard case .area(let frame, _) = pin.place else { continue }
             let record = areas[pin.id] ?? AreaOutline(scale: scale)
             record.show(frame.applying(transform), color: what.markStyle.painting(pin.maker).color(pin.color), style: what.markStyle.pin,
-                        edge: what.markStyle.pin.rimWidth * what.dropScale, speed: what.marching.contains(pin.id) ? what.marchSpeed : 0)
+                        edge: what.markStyle.pin.rimWidth, speed: what.marching.contains(pin.id) ? what.marchSpeed : 0)
             areas[pin.id] = record
             layers.append(record.root)
         }
@@ -71,7 +69,7 @@ final class EditorPins {
             (drop, PinTeardrop(number: drop.number, agent: drop.agent, tip: drop.tip.applying(transform), orientation: drop.orientation,
                                side: what.placement.side * zoom, style: what.markStyle.pin))
         }
-        let reach = 2 * (what.markStyle.pin.rimWidth * what.dropScale + what.outlineWidth / 2)
+        let reach = 2 * (what.markStyle.pin.rimWidth + what.outlineWidth / 2)
         for (drop, teardrop) in teardrops where what.selected.contains(drop.id) {
             rings.addPath(teardrop.body.copy(strokingWithWidth: reach, lineCap: .round, lineJoin: .round, miterLimit: 1).union(teardrop.body))
         }
@@ -84,7 +82,7 @@ final class EditorPins {
         drops = drops.filter { kept.contains($0.key) }
         for (drop, teardrop) in teardrops {
             let record = drops[drop.id] ?? PinLayer(scale: scale)
-            record.show(teardrop, maker: drop.maker, face: PinFace(drop.maker), answeringAgent: drop.answeringAgent, pointScale: what.dropScale,
+            record.show(teardrop, maker: drop.maker, face: PinFace(drop.maker), answeringAgent: drop.answeringAgent, pointScale: 1,
                         markStyle: what.markStyle)
             drops[drop.id] = record
             layers.append(record.root)
@@ -96,7 +94,7 @@ final class EditorPins {
             let record = clusters[cluster.pins] ?? PinLayer(scale: scale)
             record.show(PinTeardrop(label: cluster.label, agent: cluster.agent, orientation: cluster.orientation,
                                     frame: cluster.frame.applying(transform), style: what.markStyle.pin),
-                        maker: cluster.maker, pointScale: what.dropScale, markStyle: what.markStyle)
+                        maker: cluster.maker, pointScale: 1, markStyle: what.markStyle)
             clusters[cluster.pins] = record
             layers.append(record.root)
         }

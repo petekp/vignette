@@ -39,9 +39,8 @@ struct EditorCore {
         case enterCanvas(backward: Bool)
         /// The host's zoom: screen pt per image px.
         case zoomChanged(CGFloat)
-        /// Where the picture sits: the zoom at which it fits the frame, which a pin keeps its size at,
-        /// and the part of the image in view, in px.
-        case viewChanged(fit: CGFloat, visible: CGRect)
+        /// The part of the image in view, in px.
+        case viewChanged(visible: CGRect)
         /// The pin popover's composer: its words, its keys, or a comment or a pin chosen in a popover.
         case composer(ComposerInput)
         /// VoiceOver's Add Pin: a new pin at the middle of the picture in view.
@@ -209,7 +208,6 @@ struct EditorCore {
     private var typingMessage = false
     /// Screen pt per image px.
     private(set) var zoom: CGFloat = 1
-    private(set) var fitZoom: CGFloat = 1
     /// The part of the image in view, in px; null until the host says.
     private(set) var visible = CGRect.null
     /// The pin whose popover is open.
@@ -322,8 +320,7 @@ struct EditorCore {
             selection = (backward ? order.last : order.first).map { [$0] } ?? []
         case .zoomChanged(let zoom):
             if zoom > 0, zoom.isFinite { self.zoom = zoom }
-        case .viewChanged(let fit, let visible):
-            if fit > 0, fit.isFinite { fitZoom = fit }
+        case .viewChanged(let visible):
             self.visible = visible
         case .composer(let input): composerInput(input)
         case .addPin: placePinInView()
@@ -380,9 +377,9 @@ struct EditorCore {
     private mutating func open(_ drawing: Drawing, style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle, selectsNewest: Bool) {
         if typing != nil { emit(.endTyping) }
         if composer != nil { emit(.composer(nil)) }
-        let kept = (zoom, fitZoom, visible, finishes, effects)
+        let kept = (zoom, visible, finishes, effects)
         self = EditorCore()
-        (zoom, fitZoom, visible, finishes, effects) = kept
+        (zoom, visible, finishes, effects) = kept
         guard drawing.pixels.width > 0, drawing.pixels.height > 0, drawing.pointScale > 0, drawing.pointScale.isFinite else { return }
         isOpen = true
         self.drawing = drawing

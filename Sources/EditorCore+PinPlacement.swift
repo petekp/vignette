@@ -4,9 +4,9 @@ import Foundation
 extension EditorCore {
     // MARK: Drawn at one size
 
-    /// A teardrop's side in px at the current zoom: the size it has in the picture when the picture fits
-    /// the frame, kept on screen at every zoom.
-    var pinSide: CGFloat { geometry.screen(markStyle.pin.side * drawing.pointScale * fitZoom) }
+    /// A teardrop's side in px at the current zoom: `PinStyle.side` screen pt at every zoom, on a
+    /// screenshot of any size.
+    var pinSide: CGFloat { geometry.screen(markStyle.pin.side) }
 
     /// The pins as the editor draws them now. The open pin, the selected ones and a new one never
     /// join a cluster.

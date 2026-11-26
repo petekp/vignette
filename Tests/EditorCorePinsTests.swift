@@ -8,7 +8,7 @@ final class EditorCorePinsTests: XCTestCase {
         var core = Core()
         _ = core.reduce(.open(Drawing(key: "/tmp/shot.png", pixels: Self.image, pointScale: 1, marks: marks, pins: pins, nextPin: nextPin),
                               style: .standard, metrics: .standard, markStyle: .standard))
-        _ = core.reduce(.viewChanged(fit: 1, visible: Self.image.bounds))
+        _ = core.reduce(.viewChanged(visible: Self.image.bounds))
         _ = core.reduce(.zoomChanged(zoom))
         _ = core.reduce(.setTool(.comment))
         return core
@@ -279,7 +279,7 @@ final class EditorCorePinsTests: XCTestCase {
 
     func testShiftReturnPlacesAPinInTheMiddleOfTheViewAndOpensASelectedOne() throws {
         var core = core()
-        _ = core.reduce(.viewChanged(fit: 1, visible: CGRect(x: 200, y: 100, width: 400, height: 200)))
+        _ = core.reduce(.viewChanged(visible: CGRect(x: 200, y: 100, width: 400, height: 200)))
         core.key(.returnKey, .shift)
         XCTAssertEqual(core.drawing.pins.first?.tip, CGPoint(x: 400, y: 200))
         write(&core, "Middle")

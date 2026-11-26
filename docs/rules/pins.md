@@ -16,8 +16,8 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   and `MarkRendering` draws them with `Pin.draw`, from the same paths. On screen a pin has its own
   look (`PinShading`): a gradient, a white hairline and a soft shadow, the same in the editor, on a
   card and in flight. A rendering keeps the marks' white edge. `MarkLayers` clusters them as
-  `PinPlacement` does at the drawing's own size. A card's teardrops scale with its picture, so that
-  is the editor's rule at the card's size, and a flight shows the card's clusters.
+  `PinPlacement` does at the drawing's own size. A card's teardrops scale with its picture, as a
+  rendering's do, and a flight shows the card's clusters.
 - A PNG rendering draws pins as `Drawing.renderedTeardrops` places them, since its reader cannot
   hover. It outlines every area in its pin's colour. A body that would overlap an earlier pin's
   body or a piece number tries its other orientations, then moves clear, and a line in the pin's
@@ -37,11 +37,13 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   That file counts as a drawing in `Drawings.keys`, so a rename and the sweep carry it, but it
   reads as no drawing (`Drawing.isFiled`, `DrawingStore.readNumbering`).
 - The editor draws pins itself, above the marks, in view coordinates (`EditorPins`), so a teardrop
-  keeps the size it has at the fit zoom whatever the zoom; `EditorPicture` leaves them out of
+  is `ui.pinSize` screen pt across at every zoom and on a screenshot of any size, as easy to see
+  and to hit on a 5K capture as on a small crop (`EditorCore.pinSide`). Copy, Send and Stitch keep
+  the drawing's size, `ui.pinSize` drawing pt. `EditorPicture` leaves them out of
   `MarkLayers`. The core places them (`EditorCore.pinPlacement`, `PinPlacement`): pins whose
   bodies overlap past `ui.clusterOverlap` of their width draw as one cluster, except the selected,
-  the open and a new one. The core needs the fit zoom and the visible rect for that and for
-  Shift+Return, and the view sends both (`viewChanged`) before each `zoomChanged`. A pin is
+  the open and a new one. The core needs the visible rect for Shift+Return, and the view sends it
+  (`viewChanged`) before each `zoomChanged`. A pin is
   selected, moved, nudged and deleted with the marks, by its `id` in `selection`. With the Comment
   tool a click on a pin opens its popover, and a click on the open pin closes it; with Select a
   click selects it, and a double-click opens it with either tool (`Click.open`).

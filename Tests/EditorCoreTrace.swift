@@ -18,7 +18,7 @@ enum EditorCoreTrace {
         case .setTool(let tool): return "tool \(tool)"
         case .enterCanvas(let backward): return "enterCanvas\(backward ? " backward" : "")"
         case .zoomChanged(let zoom): return "zoom \(zoom)"
-        case .viewChanged(let fit, let visible): return "view fit=\(fit) visible=\(visible)"
+        case .viewChanged(let visible): return "view visible=\(visible)"
         case .composer(let input): return "composer \(input)"
         case .addPin: return "addPin"
         case .tweaksChanged: return "tweaks"

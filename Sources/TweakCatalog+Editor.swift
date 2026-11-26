@@ -29,7 +29,7 @@ extension TweakCatalog {
                 .number("pinNumberWidth", "Widest number", \.pinNumberWidth, 0.2...1, step: 0.01, safe: 0.01...10),
                 .number("clusterOverlap", "Pins cluster past", \.clusterOverlap, 0...1, step: 0.05, safe: 0...1),
                 .number("clusterPadding", "Cluster padding", \.clusterPadding, 0...2, step: 0.05, safe: 0...10),
-            ], caption: { _ in "A pin's size is in the drawing's points, and its number's size and widest setting are shares of it. Two pins are drawn as one cluster when their bodies overlap by more than the cluster share of their width, and a cluster's label has its padding, a share of the pin's size, beside it." }),
+            ], caption: { _ in "A pin's size is in screen points in the editor, at every zoom, and in the drawing's points on a card, in flight and in Copy, Send and Stitch. Its number's size and widest setting are shares of it. Two pins are drawn as one cluster when their bodies overlap by more than the cluster share of their width, and a cluster's label has its padding, a share of the pin's size, beside it." }),
             TweakGroup("On screen", [
                 .number("pinGradient", "Lighter top", \.pinGradient, 0...0.6, step: 0.01, safe: 0...1),
                 .number("pinBottomShade", "Darker bottom", \.pinBottomShade, 0...0.6, step: 0.01, safe: 0...1),
