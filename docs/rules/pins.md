@@ -53,7 +53,10 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   when the file reads as no drawing (`AnnotationController.storedNumbering`), so a number a
   deleted pin had is not given again while the file lasts. The popover by a pin is an
   `NSPopover` (`PinPopover`) that sends `ComposerInput`; the core owns its state
-  (`EditorCore.Composer`) and says when it opens, changes or closes (`.composer`). It opens to the
+  (`EditorCore.Composer`) and says when it opens, changes or closes (`.composer`). The popover is
+  a window of its own and outlives the editor's unless the core closes it: every way the editor
+  leaves its image parks the core, and `park` posts the draft and reports the close
+  (`reportComposer`) before it stops reporting. It opens to the
   right of the teardrop, or to its left when the screen has no room. Its post button posts as
   Return does, and works only while the field holds words. A press on a handle of the open pin's
   area resizes it with the popover open (`keepsComposer`); the resize is its own undo step, the

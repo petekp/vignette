@@ -77,6 +77,19 @@ final class EditorCorePinsTests: XCTestCase {
         XCTAssertNil(core.composer)
     }
 
+    func testParkingPostsTheDraftAndClosesThePopover() throws {
+        var core = core()
+        core.click(500, 300)
+        write(&core, "Too tight")
+        let parked = core.reduce(.park)
+        XCTAssertTrue(parked.contains(.composer(nil)))
+        XCTAssertNil(core.composer)
+        let handed = parked.compactMap { effect -> Drawing? in
+            if case .handOver(let drawing) = effect { return drawing } else { return nil }
+        }
+        XCTAssertEqual(try XCTUnwrap(handed.first).pins.first?.comments.map(\.text), ["Too tight"])
+    }
+
     func testCmdReturnPostsThenFinishesWithThePin() {
         var core = core()
         core.click(500, 300)

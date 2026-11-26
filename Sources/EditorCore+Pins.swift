@@ -204,6 +204,13 @@ extension EditorCore {
 
     /// Posts what was typed and closes the popover. The pin stays selected; a new one with nothing
     /// posted goes, and took no number.
+    /// Tells the view when the pin popover opens, changes or closes.
+    mutating func reportComposer() {
+        guard composer != reportedComposer else { return }
+        reportedComposer = composer
+        emit(.composer(composer))
+    }
+
     mutating func closeComposer() {
         guard let open = composer else { return }
         if gesture != nil { cancelGesture() }

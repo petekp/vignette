@@ -219,7 +219,7 @@ struct EditorCore {
     /// The pin whose popover is open.
     var composer: Composer?
     var composerSelectionBefore: Set<Mark.ID>?
-    private var reportedComposer: Composer?
+    var reportedComposer: Composer?
     /// The changes an open gesture or typing session has made so far.
     var edit: MarkEdit?
     private(set) var pointer: CGPoint?
@@ -410,10 +410,7 @@ struct EditorCore {
     /// selection for VoiceOver.
     private mutating func settle() {
         if let hovered = hover, !exists(hovered) { hover = nil }
-        if composer != reportedComposer {
-            reportedComposer = composer
-            emit(.composer(composer))
-        }
+        reportComposer()
         if tool != reportedTool {
             reportedTool = tool
             emit(.tool(tool))
@@ -473,6 +470,8 @@ struct EditorCore {
 
     private mutating func park() {
         finishForHost()
+        // A parked core reports nothing more, so the closed popover is reported here.
+        reportComposer()
         emit(.cancelTimer)
         emit(.handOver(drawingForHost))
         unsaved = false
