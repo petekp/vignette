@@ -27,8 +27,15 @@ extension DrawingStore {
     /// The numbering the file of the screenshot at `key`, whose size is `pixels`, keeps, or nil with no
     /// file for that image.
     func readNumbering(key: String, pixels: PixelSize) -> Drawing.Numbering? {
+        readUnmarked(key: key, pixels: pixels).map { Drawing.Numbering(nextPin: $0.nextPin, pieceNumbers: $0.pieceNumbers) }
+    }
+
+    /// The drawing the file of the screenshot at `key`, whose size is `pixels`, keeps with its marks
+    /// and pins left out: its scales and its numbering. Nil with no file for that image.
+    func readUnmarked(key: String, pixels: PixelSize) -> Drawing? {
         guard case .stored(let stored) = contents(of: url(for: key)), stored.key == key, stored.pixels == pixels else { return nil }
-        return Drawing.Numbering(nextPin: Pin.writtenNextPin(stored.nextPin) ?? 1, pieceNumbers: stored.pieceNumbers(in: pixels))
+        return Drawing(key: key, pixels: pixels, pointScale: stored.pointScale, markScale: stored.markScale, marks: [],
+                       nextPin: Pin.writtenNextPin(stored.nextPin) ?? 1, pieceNumbers: stored.pieceNumbers(in: pixels))
     }
 }
 

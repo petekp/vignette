@@ -118,12 +118,21 @@ final class Drawings {
     }
 
     /// The drawing, the message and the history of the screenshot `key` as they are now: the
-    /// editor's drawing and history when it is open there, else the stored ones. Nil when it has none.
+    /// editor's drawing and history when it is open there, else the stored ones. A file with no marks
+    /// and no pins, which holds only a message or a stitch's piece numbers, gives an empty drawing with
+    /// its numbering. Nil when it has no file and is not open.
     func saved(of key: ScreenshotKey, style: TextStyle) -> Saved? {
-        guard let drawing = current(of: key, style: style) else { return nil }
+        guard let drawing = current(of: key, style: style) ?? unmarked(of: key) else { return nil }
         let message = message(of: key, pixels: drawing.pixels)
         let history = open?.history(of: key) ?? history(of: key, pixels: drawing.pixels, drawing: drawing)
         return Saved(drawing: drawing, message: message, history: history)
+    }
+
+    /// The stored drawing of the screenshot `key` with its marks and pins left out. Only a screenshot
+    /// with a file has it read.
+    private func unmarked(of key: ScreenshotKey) -> Drawing? {
+        guard keys.contains(key) || messages.contains(key), let pixels = PixelSize(imageAt: key.url) else { return nil }
+        return store.readUnmarked(key: key.path, pixels: pixels)
     }
 
     /// Writes the editor's drawing with `message`, the words in its message field, and `history`, its
