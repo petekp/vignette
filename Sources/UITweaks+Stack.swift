@@ -39,6 +39,7 @@ extension UITweaks {
         var thumbnailSeconds = 5.0       // how long a fresh thumbnail stays
         var markSeconds = 1.7            // how long a card's notice stays; the stored key keeps its older name
         var sendGraceSeconds = 3.0       // how long a Send waits before its session gets it; 0 sends at once
+        var unreadableFolderSeconds = 5.0 // how long the screenshots folder fails to read before the menu says so
         var slideInDuration = 0.3
         var slideInCurve = "spring"      // spring, easeOut, easeInOut, linear
         var slideOutDuration = 0.15

@@ -697,7 +697,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// about, or is nil when it won't.
     private func setupConditions(protectedArea: String?) -> SetupConditions {
         SetupConditions(trusted: ModifierTap.trusted(prompt: false), screenRecording: ScreenRecording.granted,
-                        pickerQuestion: PickerQuestion.status, protectedArea: protectedArea, folder: folderAccess, hasScreenshots: hasScreenshots,
+                        pickerQuestion: PickerQuestion.status, protectedArea: protectedArea, folder: folderAccess,
+                        folderReadFailure: folderReadFailure, hasScreenshots: hasScreenshots,
                         saveTarget: settings.appleTarget, menuBarIconVisible: visibleStatusButton != nil)
     }
 
@@ -732,6 +733,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             switch blocker {
             case .folderAccess:
                 return NSMenuItem(title: "Allow Access to Your Screenshots…", action: #selector(openFilesAndFolders), keyEquivalent: "")
+            case let .folderReadFailure(failure):
+                // No action: it says what Vignette is waiting for, and a menu greys an item with none.
+                let notFound = failure == .notFound
+                let item = NSMenuItem(title: notFound ? "Can't Find Your Screenshots Folder" : "Can't Read Your Screenshots Folder Yet",
+                                      action: nil, keyEquivalent: "")
+                let folder = (watchFolder.path as NSString).abbreviatingWithTildeInPath
+                if #available(macOS 14.4, *) {
+                    item.subtitle = notFound ? "\(Identity.name) keeps looking for \(folder)."
+                        : "macOS isn't letting \(Identity.name) read it. \(Identity.name) keeps trying."
+                }
+                return item
             case let .saveTarget(target):
                 let item = NSMenuItem(title: "Save Screenshots to a Folder", action: #selector(saveCapturesAsFiles), keyEquivalent: "")
                 if #available(macOS 14.4, *) { item.subtitle = "macOS sends them to \(target)." }
@@ -745,55 +757,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
     }
 
-    /// What the menu lists first, as the way to fix it, and the intro's popover names.
-    private enum Blocker {
-        case folderAccess
-        /// macOS saves captures somewhere other than a folder, named for a person ("the Clipboard").
-        case saveTarget(String)
-        /// Accessibility, for the double tap, live ink, or both.
-        case accessibility(shortcut: Bool, liveInk: Bool)
-        /// Screen Recording, which live ink's asks need to see the window under the ink.
-        case screenRecording
-    }
-
     private func missing() -> [Blocker] {
         missing(in: setupConditions(protectedArea: nil), usesLiveInk: settings.data.liveInk)
-    }
-
-    /// What is missing under `conditions`, for someone who uses live ink or not.
-    private func missing(in conditions: SetupConditions, usesLiveInk liveInk: Bool) -> [Blocker] {
-        var missing: [Blocker] = []
-        if conditions.folder == .refused { missing.append(.folderAccess) }
-        if conditions.saveTarget != "file" { missing.append(.saveTarget(AppleScreencapture.targetName(conditions.saveTarget))) }
-        let shortcut = settings.data.usesDoubleTap
-        if shortcut || liveInk, !conditions.trusted { missing.append(.accessibility(shortcut: shortcut, liveInk: liveInk)) }
-        if liveInk, !conditions.screenRecording { missing.append(.screenRecording) }
-        return missing
-    }
-
-    /// What the intro's popover says is still missing: one sentence for one thing, else a list
-    /// worded as the menu items are.
-    private func missingNote(_ missing: [Blocker]) -> MenuBarIntro.Note? {
-        guard let only = missing.first else { return nil }
-        guard missing.count == 1 else {
-            return .list("Click the icon to:", missing.map { blocker in
-                switch blocker {
-                case .folderAccess: "Allow access to your screenshots"
-                case .saveTarget: "Save screenshots to a folder"
-                case let .accessibility(shortcut, liveInk):
-                    "Allow Accessibility for \(shortcut && liveInk ? "the shortcut and live ink" : shortcut ? "the shortcut" : "live ink")"
-                case .screenRecording: "Allow Screen Recording for live ink"
-                }
-            })
-        }
-        switch only {
-        case .folderAccess: return .text("\(Identity.name) can't open your screenshots folder. Click the icon to allow it.")
-        case let .saveTarget(target): return .text("macOS sends your screenshots to \(target). Click the icon to save them to a folder.")
-        case let .accessibility(shortcut, liveInk):
-            let what = shortcut && liveInk ? "The shortcut and live ink need" : shortcut ? "The shortcut needs" : "Live ink needs"
-            return .text("\(what) Accessibility. Click the icon to allow it.")
-        case .screenRecording: return .text("Live ink needs Screen Recording. Click the icon to allow it.")
-        }
     }
 
     private func rebuildMenu(_ menu: NSMenu) {
@@ -1026,7 +991,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         switch result {
         case .shown(let count): Commands.ok("recent", "shown \(count) cards")
         case .dismissed: Commands.ok("recent", "dismissed")
-        case .empty: Commands.error("recent", .missingFile, "no screenshots in \(watchFolder.path)")
+        case .empty:
+            if let unreadable = unreadableFolder { Commands.error("recent", .unreadableFolder, unreadable) }
+            else { Commands.error("recent", .missingFile, "no screenshots in \(watchFolder.path)") }
         }
         return result
     }
@@ -1042,17 +1009,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         startWatching()
     }
 
-    /// Where macOS's permission for the folder stands, as setup shows it.
-    private var folderAccess: FolderAccess {
-        guard let watcher else { return .ask }
-        if watcher.isDenied { return .refused }
-        return watcher.isReadable ? .granted : .waiting
-    }
-
     private func startWatching() {
         watcherGeneration += 1
         let generation = watcherGeneration
-        Log.write("[watcher] watching \(watchFolder.path)")
+        Log.write("[watcher] start \(watchFolder.path)")
         watcher = ScreenshotWatcher(folder: watchFolder, onNew: { [weak self] key in
             guard let self, self.watcherGeneration == generation else { return }
             Log.write("[watcher] new \(key.name)")

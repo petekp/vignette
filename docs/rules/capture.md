@@ -93,7 +93,19 @@
   window and no menu bar icon). Until a listing has worked the reads answer from the empty index.
   While the folder cannot be watched (a volume not mounted yet, or macOS refused the app the
   folder) the reads list it directly and the watch is retried every 2 seconds, logging a change of
-  reason rather than every attempt. A folder that was there but unreadable is indexed silently by
+  reason rather than every attempt. A scan whose open fails with `EINTR`, `ENOENT`, `EPERM` or
+  `EACCES` does not list the folder, and the error says why: unavailable, missing or refused. A
+  listing then would meet the same refusal or wait on the same daemon: when macOS's sandbox daemon
+  stopped answering, each open and each listing waited about 5.4 s and failed with EINTR. After any
+  other error, such as a volume that can't be watched for events, the scan still lists the folder. The
+  watcher keeps when the folder first failed to read (`ScreenshotWatcher.unreadable(after:)`).
+  When every try for `ui.unreadableFolderSeconds` (5 s) has failed, the menu bar menu lists the
+  failure first, greyed, since there is nothing to click. A missing folder reads Can't Find Your
+  Screenshots Folder, and any other failure Can't Read Your Screenshots Folder Yet. A refusal shows
+  Allow Access to Your Screenshots… at once, as before. The wait keeps a slow read or a volume
+  still mounting from showing a warning. The intro's popover says the same, and the shortcut's
+  `[recent]` answer is `error unreadable-folder` with the reason. `[watcher] start` logs the
+  watcher's creation, and `[watcher] watching` logs an open that worked. A folder that was there but unreadable is indexed silently by
   the first listing that works, so a grant does not report every file in it as a new capture; a
   missing folder is indexed as empty, and when it appears, as a volume mounts, the files dated
   before it was found missing are indexed silently and only newer ones are reported. `isDenied` (macOS refused

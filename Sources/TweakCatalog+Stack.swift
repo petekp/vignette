@@ -54,6 +54,7 @@ extension TweakCatalog {
                 .number("thumbnailSeconds", "Thumbnail stays", \.thumbnailSeconds, 1...20, step: 0.5, unit: "s", safe: 0...3600),
                 .number("markSeconds", "Card notice stays", \.markSeconds, 0.5...5, step: 0.1, unit: "s", safe: 0...3600),
                 .number("sendGraceSeconds", "Wait before sending", \.sendGraceSeconds, 0...10, step: 0.5, unit: "s", safe: 0...10),
+                .number("unreadableFolderSeconds", "Unreadable folder warns after", \.unreadableFolderSeconds, 0...60, step: 1, unit: "s", safe: 0...3600),
                 .number("slideInDuration", "Slide in", \.slideInDuration, 0...1.5, step: 0.05, unit: "s", safe: 0...60),
                 .choice("slideInCurve", "Slide in curve", \.slideInCurve, ["spring", "easeOut", "easeInOut", "linear"]),
                 .number("slideOutDuration", "Slide out", \.slideOutDuration, 0...1.5, step: 0.05, unit: "s", safe: 0...60),
