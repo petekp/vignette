@@ -59,7 +59,7 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 | `pressed` on empty space, Comment tool | release | composer open on a new pin | `placePin`: number 0, selected, `edit` opened. Beeps at 99 pins. |
 | `pressed` on empty space, Comment tool | drag past the drag distance | `placing(id)` | `placeArea` on each drag; the release keeps it as an area, or a point when smaller than the smallest rectangle, and opens the composer. Ended without a release, the edit reverts. |
 | `pressed` on a cluster | release | open | `.showCluster(ids, at:)`; a row sends `composer(.open(id))`. |
-| open | double-click a pin, `composer(.open)`, Shift or Option+Return on a lone selected pin | composer open | `openComposer` closes another open one first. |
+| open | a Comment tool click on a pin whose popover is not open, double-click a pin, `composer(.open)`, Shift or Option+Return on a lone selected pin | composer open | `openComposer` closes another open one first. |
 | composer open | `composer(.post)` | composer open, empty, or closed | A new comment is a `Comment` step, an edited one `Typing`, an emptied one `Delete`; the last comment's removal deletes the pin and closes. Return with nothing typed closes. Nothing changed, nothing is committed. |
 | composer open | `composer(.close)`, a press, a tool, Cmd+Z, `done`, `send`, `park` | composer closed | `closeComposer` posts the draft, then reverts a pin still at number 0. |
 | composer open | `composer(.finish)` | composer closed | `closeComposer`, then `finish(finishes.commandReturn)`. |

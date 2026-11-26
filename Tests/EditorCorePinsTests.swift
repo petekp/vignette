@@ -39,6 +39,22 @@ final class EditorCorePinsTests: XCTestCase {
         XCTAssertEqual(core.undoTitle, "Undo Comment")
     }
 
+    func testACommentToolClickOnAPinOpensItsPopoverAndTheSelectToolOnlySelects() {
+        let first = pin(1, 500, 300)
+        var core = core(pins: [first], nextPin: 2)
+        core.click(512, 288)
+        XCTAssertEqual(core.composer, Core.Composer(pin: first.id, editing: nil, draft: ""))
+        XCTAssertEqual(core.selection, [first.id])
+        core.click(512, 288)
+        XCTAssertNil(core.composer, "a click on the open pin closes its popover")
+        core.click(512, 288, .shift)
+        XCTAssertNil(core.composer)
+        _ = core.reduce(.setTool(.select))
+        core.click(512, 288)
+        XCTAssertNil(core.composer)
+        XCTAssertEqual(core.selection, [first.id])
+    }
+
     func testReturnInAnEmptyComposerClosesItAndKeepsThePinSelected() throws {
         var core = core()
         core.click(500, 300)
@@ -227,9 +243,10 @@ final class EditorCorePinsTests: XCTestCase {
         let id = try XCTUnwrap(core.drawing.pins.first?.id)
         core.click(510, 286)
         XCTAssertEqual(core.selection, [id])
-        XCTAssertNil(core.composer)
+        XCTAssertEqual(core.composer?.pin, id)
         core.click(620, 260)
         XCTAssertEqual(core.selection, [box.id])
+        XCTAssertNil(core.composer)
         XCTAssertEqual(core.drawing.pins.count, 1)
         core.click(800, 500)
         XCTAssertEqual(core.drawing.pins.count, 2, "the Comment tool places a pin away from marks and pins")
