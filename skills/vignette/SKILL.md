@@ -3,7 +3,7 @@ name: vignette
 description: >-
   Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "30"
+  version: "31"
 ---
 
 # Vignette
@@ -47,12 +47,44 @@ open -g "vignette://add?file=$file&title=$title&description=$description&agent=c
   `Contents/MacOS/<executable>` before reporting a missing installation. If the bundle or executable
   is absent, tell the user its path is missing and go on without the image. Keep `-a` on retries:
   a bare `open` can start another build on the user's settings.
-- The file may be anywhere. Every other command takes files inside the watch folder only.
+- The file may be anywhere outside the watch folder. Every other command takes files inside it
+  only. For a screenshot already in the folder, use `show` (below).
 - Wait for `[add] ok <name>` in the log. The name gains a counter (`x 2.png`) when one is taken.
   Errors end with `missing-file`, `unreadable-image`, `unsupported-type` (png, jpg, jpeg, or heic
   only, and never a `-annotated` name), `write-failed`, or `invalid-marks`.
 - Push what the user should see, not every image you make. Name the file for them: what it shows,
   at what size or state.
+
+## Point the user at screenshots they already have
+
+When the screenshot is already in the user's screenshots folder, such as one they took earlier,
+use `show`, never `add`. `add` would label the user's own screenshot as yours, so it refuses one
+with `unsupported-type`. `[state]` gives the folder as `app.watchFolder`.
+
+```sh
+a=$(osascript -l JavaScript -e 'function run(argv) { return encodeURIComponent(argv[0]) }' "/abs/path/Screenshots/Checkout.png")
+b=$(osascript -l JavaScript -e 'function run(argv) { return encodeURIComponent(argv[0]) }' "/abs/path/Screenshots/Cart.png")
+message=$(osascript -l JavaScript -e 'function run(argv) { return encodeURIComponent(argv[0]) }' "The total wraps in both")
+open -g "vignette://show?file=$a&file=$b&message=$message&agent=claude&session=$CLAUDE_CODE_SESSION_ID"  # from Claude Code
+open -g "vignette://show?file=$a&file=$b&message=$message&agent=codex&session=$CODEX_THREAD_ID"          # from Codex
+```
+
+- `show` brings each card to the corner in the order you name the files, or marks it where it
+  already is, and dims the others. The card says "From Claude" with your message under it. It
+  changes no file and takes no keys from the user.
+- `&message=<text>` is one line of up to 60 characters. Longer text is cut at a word, and `[show]`
+  still answers `ok` with a warning. Percent-encode it, as you do the paths.
+- `&marks=` takes marks in the format under "Draw on it yourself", for the first file. They sit on
+  top of the user's drawing, on the card and in the editor, until the user presses Keep or Clear.
+  Nothing is written unless they keep them.
+- `&session=<id>` names your session, as for `add`. Send on a card you showed then starts on your
+  session.
+- Name at most as many files as the user's column keeps (`app.recentCount` in `[state]`, 30 by
+  default). More answers `too-many-files`.
+- Wait for `[show] ok files=[…] … joined=<n> inColumn=<n> inEditor=<n>`. While the user's hand is in
+  the corner, the call waits (`[show] waits for drag`), so the answer can come a few seconds late.
+  Errors end with `missing-file`, `outside-watch-folder`, `unreadable-image`, `too-many-files` or
+  `invalid-marks`.
 
 ## Draw on it yourself
 

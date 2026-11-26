@@ -1,12 +1,12 @@
 # Singling out existing screenshots: the agent API
 
-Spec, 2026-11-25. Nothing here is built yet.
+Spec, 2026-11-25, built the same day (`docs/adr/0031-show-points-at-screenshots-and-add-refuses-the-persons-own.md`).
 
 Pete asked on 2026-11-25 whether an outside agent, such as Claude Code or Codex, can single out
 one or more past screenshots, so the person's attention goes to them. No command does that today.
-This spec proposes one new command, `show`, and says what it does to every part of the corner,
-the stack, the annotator and Send. Pete's open choices, each with a
-recommendation, are in [reuse-and-choices.md](agent-single-out-api-2026-11-25/reuse-and-choices.md#open-choices-for-pete).
+This spec gives one new command, `show`, and says what it does to every part of the corner,
+the stack, the annotator and Send. Pete's decisions on its open choices are in
+[reuse-and-choices.md](agent-single-out-api-2026-11-25/reuse-and-choices.md#petes-decisions).
 
 Terms are the glossary's (`docs/glossary.md`). A *card* is one screenshot in the corner. A
 *lone thumbnail* is a card that comes up in the corner on its own and leaves after a few seconds.

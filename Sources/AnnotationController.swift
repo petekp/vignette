@@ -65,6 +65,11 @@ final class AnnotationController {
     var keptPick: DestinationChoice.KeptPick?
     /// The apps whose windows the open image's capture showed, when it opened from one.
     var captured: [CaptureRect.Owner]?
+    /// An agent's marks on the open image that `show` brought, on top of the drawing until kept or
+    /// cleared (`PendingMarks`), and the bar with Keep and Clear. `onAgentMarks` answers the bar.
+    var agentMarks: (layers: MarkLayers, bar: NSView)?
+    var pendingMarks: (ScreenshotKey) -> PendingMarks.Entry? = { _ in nil }
+    var onAgentMarks: ((ScreenshotKey, _ keep: Bool) -> Void)?
     let titleView = AgentTitleView()
     var window: AnnotationWindow?
     /// The window spans the screen's visible frame and stays put, until a re-fit grows it to cover

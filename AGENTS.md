@@ -36,9 +36,11 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   `ProblemReport.swift`, `PickerQuestion.swift`, `SystemPrompts.swift`), read `docs/rules/setup-and-updates.md`. The status item's place is in
   `docs/rules/capture.md`.
 - Before changing the stack or the corner (`Stack*.swift`, `UndoTimeline*.swift`, `OlderShots.swift`, `CardPictures.swift`,
+  `Shown.swift`, `ShownOverlay.swift`,
   `CornerPresentation.swift`, `CornerKeys.swift`, `CardView.swift`, `CardState.swift`,
   `SelectionStrip.swift`, `Stitch.swift`, `Dock.swift`, `BackdropPanel.swift`, `FocusReturn.swift`,
   `DragSourceView.swift`, `CheckCoin.*`, `CheckLab.swift`), read `docs/rules/stack.md`,
+  `docs/rules/corner-presentation.md` for who holds the keys,
   `docs/rules/stack-column.md` for the long column, `docs/rules/undo-timeline.md` for Undo, and `docs/rules/flights-and-presses.md` for the
   matte and the flights in and out of the column.
 - Before changing a flight, a press or an animation (`TransitionLayer*.swift`, `Flight*.swift`,
@@ -182,7 +184,7 @@ Before you drive the app:
   the log.
   `docs/no-toasts-2026-09-30.md` has what each toast became.
 - `docs/voice.md` is how Vignette speaks: clear, short and humble, pointing to what can happen
-  next. It has the rules and every message written to them. A new or changed message follows it
+  next. It has the rules and every message written to them, the Settings switches' in `docs/voice-settings.md`. A new or changed message follows it
   and is added there.
 - Two vocabularies, and they do not mix. Every string a user reads says draw: the buttons, the menu
   items, the toggles, the section headings, the notices on cards. Every name a script, a log reader or a

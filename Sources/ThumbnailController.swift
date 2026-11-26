@@ -90,7 +90,11 @@ final class ThumbnailController {
     /// editor lets them go once it is hidden, which is before the card is sent home.
     private var parkedMarks: MarkLayers?
     /// Where a press on a flying card goes.
-    private var flightPress = FlightPress()
+    var flightPress = FlightPress()
+    /// The agent's marks `show` brought, drawn on top until kept or cleared, and the calls waiting for the hand.
+    let pendingMarks = PendingMarks()
+    var showQueue = ShowQueue<ShowCall>()
+    var showWait: Timer?, dimTimer: Timer?
     /// Cards made in this turn whose stored drawings are still to be read. A stack opening makes
     /// every card in one turn, and reading theirs together gives the column one change of `cards`.
     private var drawingReads: [ScreenshotKey] = []
@@ -214,10 +218,12 @@ final class ThumbnailController {
                             "drawing": drawings?.keys.contains(card.shot.key) ?? false, "agent": card.agent as Any,
                             "kind": card.shot.kind == .recording ? "recording" : "image",
                             "copied": notice?.kind == .copied,
-                            "notCopied": notCopied as Any, "notSaved": notice?.kind == .notSaved]
+                            "notCopied": notCopied as Any, "notSaved": notice?.kind == .notSaved,
+                             "shown": model.shown[card.id].map(Self.shownJSON) as Any,
+                             "agentMarks": pendingMarks[card.shot.key]?.drawing.marks.count ?? 0]
                 },
                 "selected": model.selectedCards().map(\.shot.key.path),
-                "queue": run.queue.map(\.path),
+                "queue": run.queue.map(\.path), "showsWaiting": showQueue.waiting.count, "dimsUnshown": model.dimsUnshown,
                 "focused": model.cards.first { $0.id == model.focused }?.shot.key.path as Any,
                 "hovered": model.cards.first { $0.id == model.hoveredCard }?.shot.key.path as Any,
                 "key": panel.isKeyWindow,
@@ -285,7 +291,7 @@ final class ThumbnailController {
         let asked = CACurrentMediaTime()
         let (shots, detail) = recentListing()
         let started = CACurrentMediaTime()
-        let cards = shots.compactMap { makeCard($0) }
+        let cards = keptShown() + shots.filter { shownCard(of: $0) == nil }.compactMap { makeCard($0) }
         if !cards.isEmpty {
             present(cards: cards)
             Log.write("[stack] shown cards=\(cards.count) \(detail)listed=\(Int((started - asked) * 1000))ms shown=\(Int((CACurrentMediaTime() - started) * 1000))ms decoding=\(cards.filter { $0.image == nil }.count)")
@@ -524,6 +530,7 @@ final class ThumbnailController {
             flightImages.rename(from: old, to: new)
             drawingReads = drawingReads.map { $0 == old ? new : $0 }
             flightPress.rename(from: old, to: new)
+            pendingMarks.rename(from: old, to: new)
             send(.renamed(from: old, to: new))
             if let opening = run.opening, opening.key == new { onAnnotatorRenamed?(shot, opening) }
         }
@@ -796,6 +803,7 @@ final class ThumbnailController {
             dim.show(on: screen)
             parkedMarks = nil
             flights.annotatorStoppedDrawing()   // it draws this image from here, so not the one leaving
+            shownCardOpens(card, opening: opening)
             onAnnotatorPrepare?(card.shot, opening, target, annotatorRoom)
             var from = slot ?? cardFrame(of: card)
             if model.offscreen.contains(card.id) { from = layout.offscreen(from) }
@@ -1050,112 +1058,6 @@ final class ThumbnailController {
                          scroll: model.scroll, safeBottom: area.safeBottom)
     }
 
-    // MARK: Selection
-
-    private func toggle(_ card: Card) {
-        model.toggleSelection(of: card.id)
-        model.focused = card.id
-        relayout()
-        revealFocused()
-    }
-
-    /// A card that was just interacted with while partly out of view scrolls into it.
-    private func revealFocused() {
-        guard let index = model.cards.firstIndex(where: { $0.id == model.focused }) else { return }
-        scrollToReveal(index)
-    }
-
-    private func run(_ action: ShotAction, on cards: [Card]) {
-        guard let actions, action.applies(to: cards.map(\.shot)) else { return }
-        action.run(cards.map(\.shot), actions)
-    }
-
-    /// Cards a shortcut acts on: the selection, else the focused card. The focus is the newest card
-    /// while the stack has keys and follows the pointer, so the card under the mouse is the target.
-    private func targetCards() -> [Card] {
-        if model.inSelectionMode { return model.selectedCards() }
-        if let id = model.focused, let card = model.cards.first(where: { $0.id == id }) { return [card] }
-        return model.cards.first.map { [$0] } ?? []
-    }
-
-    private func handleKey(_ event: NSEvent) -> Bool {
-        guard keys.isKeyed else { return false }
-        let mods = event.modifierFlags.intersection([.command, .option, .shift, .control])
-        // Shift shortcuts arrive uppercase; action keys are declared lowercase.
-        let chars = (event.charactersIgnoringModifiers ?? "").lowercased()
-        // Virtual key codes: 53 esc, 126 up, 125 down, 36 return, 76 enter, 51 delete, 117 fwd delete.
-        let code = event.keyCode
-        let isReturn = code == 36 || code == 76
-        let isDelete = code == 51 || code == 117
-
-        // Esc backs out one level at a time: the selection, then the stack.
-        if code == 53 {
-            if model.inSelectionMode {
-                model.clearSelection()
-                relayout()
-            } else {
-                keys.send(.dismiss(.esc))
-            }
-            return true
-        }
-        if code == 126 || code == 125 {
-            moveFocus(toward: code == 125 ? -1 : 1, extend: mods.contains(.shift))
-            return true
-        }
-        if chars == " " {
-            if let id = model.focused, let card = model.cards.first(where: { $0.id == id }) { toggle(card) }
-            return true
-        }
-        if chars == "a" && mods == [.command] {
-            // Nobody picked an order, so the column's own is the answer: oldest first, top to bottom.
-            model.setSelection(model.cards.reversed().map(\.id))
-            relayout()
-            return true
-        }
-        if chars == "a" && mods == [.command, .shift] {
-            model.clearSelection()
-            relayout()
-            return true
-        }
-        if chars == "z" && (mods == [.command] || mods == [.command, .shift]) {
-            timeline.walk(redo: mods.contains(.shift), repeated: event.isARepeat)
-            return true
-        }
-        let targets = targetCards()
-        let match = Config.action(for: { key in
-            let pressed = (key.character == "\u{7f}" && isDelete) || (key.character == "\r" && isReturn)
-                || (key.character != "\u{7f}" && key.character != "\r" && key.character == chars)
-            return pressed && mods == key.modifiers
-        }, on: targets.map(\.shot))
-        switch match {
-        case .run(let action): run(action, on: targets); return true
-        // The row for it is greyed out in the strip; the key says so the way a disabled menu
-        // item's shortcut does, rather than nothing happening.
-        case .unavailable: NSSound.beep(); return true
-        case .none: return false
-        }
-    }
-
-    /// Down arrow moves toward the newest card (index 0), which sits at the bottom. Shift extends
-    /// the selection in the direction of travel; turning back takes off the card added last.
-    func moveFocus(toward delta: Int, extend: Bool) {
-        guard !model.cards.isEmpty, !waitsForOlder(toward: delta, extend: extend) else { return }
-        let current = model.cards.firstIndex { $0.id == model.focused }
-        let next: Int
-        if let current { next = max(0, min(model.cards.count - 1, current + delta)) } else { next = delta < 0 ? model.cards.count - 1 : 0 }
-        if extend {
-            let here = current.map { model.cards[$0].id }
-            if let here, model.selection.last == here, model.selection.dropLast().last == model.cards[next].id {
-                model.deselect([here])
-            } else {
-                model.select([here, model.cards[next].id].compactMap { $0 })
-            }
-            relayout()
-        }
-        model.focused = model.cards[next].id
-        scrollToReveal(next)
-    }
-
     // MARK: Scrolling
 
     /// The column's height as it is drawn now, at the stack's width scale. `layoutPanel` sizes the
@@ -1216,7 +1118,7 @@ final class ThumbnailController {
 
     // MARK: Internals
 
-    private func card(for shot: Screenshot) -> Card? {
+    func card(for shot: Screenshot) -> Card? {
         model.cards.first { $0.shot.url == shot.url }
     }
 
@@ -1247,6 +1149,7 @@ final class ThumbnailController {
         let space = screenSpace
         let card = Card(id: UUID(), shot: shot, image: Thumbnailer.cached(at: shot.url, maxPixel: maxPixel, space: space),
                         pointSize: header.size, size: size, agent: Agent.of(shot.url), duration: header.duration,
+                        agentMarks: agentMarkLayers(for: shot.key, size: size),
                         sent: sent(of: shot.url))
         if card.image == nil {
             Thumbnailer.loadCard(at: shot.url, maxPixel: maxPixel, space: space, caches: caches) { [weak self] image, kept in
@@ -1284,7 +1187,7 @@ final class ThumbnailController {
     /// Shows a new column. Cards start past the screen edge and arrive staggered, newest first.
     /// `keepOffscreen` leaves the cards parked past the edge, for a card that is about to fly out from there.
     /// Without `ordersPanel`, the panel is laid out but left for `orderPanelIn` to put on screen.
-    private func present(cards: [Card], entrance: Entrance = .slide, ordersPanel: Bool = true) {
+    func present(cards: [Card], entrance: Entrance = .slide, ordersPanel: Bool = true) {
         if !visible {
             // A capture opening in the editor shows on the screen it was taken on, where its flight starts.
             let shown = captureOrigin.flatMap { origin in
@@ -1375,7 +1278,7 @@ final class ThumbnailController {
     }
 
     /// A card joins the bottom of the visible column and slides in.
-    private func insert(_ card: Card, entrance: Entrance = .slide) {
+    func insert(_ card: Card, entrance: Entrance = .slide) {
         guard !model.cards.contains(where: { $0.shot.url == card.shot.url }) else { return }
         dismissGeneration += 1
         sweep.end()
@@ -1478,7 +1381,7 @@ final class ThumbnailController {
     @discardableResult
     private func removeOverflow() -> Bool { model.removeOverflow(over: older.columnLimit) }
 
-    private func relayout() {
+    func relayout() {
         guard visible else { return }
         layoutPanel(shrinkLater: true, animated: true)
     }

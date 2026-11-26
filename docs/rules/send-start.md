@@ -2,7 +2,16 @@
 
 This file says which session the toolbar's target starts on. The bar is in `annotator-toolbar.md`.
 
-- Send starts on the kept pick when there is one: the
+- Send starts first on the session that showed the image, when the image opened from a card an
+  agent showed with `vignette://show` and that call named its session (`session=`). The opening
+  keeps that session (`StackModel.openedShown`, set by `ThumbnailController.shownCardOpens`), and
+  Send's choice marks it `showedIt` (`DestinationChoice`). It comes before the kept pick: the kept
+  pick says where the person has been sending lately, and this session asked about this very image
+  (Pete, 2026-11-25). Until an answer lists it, nothing settles, as for the kept pick. Once every
+  client has answered afresh without it, the rules below decide. A Codex thread is asked for by its
+  id (`SessionListing.readByID`). It belongs to that one opening and lives in memory only, so the
+  next opening, a page to the image beside it included, starts without it.
+- Otherwise Send starts on the kept pick when there is one: the
   session the person picked in the target's menu and then sent to (`DestinationChoice.KeptPick`,
   `AnnotationController.keptPick`). It holds for 10 minutes after the send that set it, and each
   Send to it starts the 10 minutes again. Pete's runs of sends to one session had gaps under 6

@@ -480,7 +480,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     /// `done` answers once the drawing is written, with how many marks joined it. A new drawing is
     /// sized for the main screen, the best guess with no annotator open, by `rule`. `agent` names the
     /// agent they are from.
-    private func addMarks(_ marks: [AgentMark], from agent: String?, to key: ScreenshotKey, rule: MarkScaleRule,
+    func addMarks(_ marks: [AgentMark], from agent: String?, to key: ScreenshotKey, rule: MarkScaleRule,
                           done: @escaping (Result<Int, Drawings.Failure>) -> Void) {
         // A turn later, so callers can set their own state after asking.
         Task {
@@ -524,6 +524,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             Commands.ok("help", "\(Commands.fixed.count + Config.actions.count) commands; errors end with one of: \(CommandError.allCases.map(\.rawValue).joined(separator: " "))")
         case "last": openLast()
         case "add": folderWrites.add(request)
+        case "show": show(request)
         case "recent": pressRecent(by: .url)
         case "state": dumpState(tag: request.tag, section: request.section)
         case "settings": settingsWindow.show(); Commands.ok("settings", "window opened")
@@ -597,17 +598,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                let reason = action.unavailableReason(for: targets) {
                 Commands.error(cmd, .unsupportedType, reason); return
             }
-            for file in targets.map(\.url) {
-                if let code = Commands.policyError(for: file, watchFolder: watchFolder, debug: settings.data.debug) {
-                    Commands.error(cmd, code, file.path); return
-                }
-                // A reserved reply is Vignette's own until its import commits: opening it would show
-                // a drawing still missing its marks, and trashing it would delete the file the import
-                // is about to draw on. The listings hide it; so does naming it.
-                guard requests.isVisible(file) else {
-                    Commands.error(cmd, .missingFile, "\(file.path): an agent reply that is not imported yet"); return
-                }
-            }
+            if let bad = targets.lazy.compactMap({ self.fileError($0.url) }).first { Commands.error(cmd, bad.code, bad.detail); return }
             guard targets.count >= action.minimumCount else {
                 Commands.error(cmd, .notEnoughFiles, "needs \(action.minimumCount), got \(targets.count)"); return
             }

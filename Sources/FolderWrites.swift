@@ -65,6 +65,9 @@ final class FolderWrites {
             do { marks = try AgentMark.parse(value) } catch { Commands.error("add", .invalidMarks, "\(error)"); return }
         }
         let inFolder = Commands.policyError(for: source, watchFolder: watchFolder, debug: false) == nil
+        guard !inFolder || Agent.of(source) != nil else {
+            Commands.error("add", .unsupportedType, "\(source.lastPathComponent) is the user's own screenshot; vignette://show points them at it"); return
+        }
         var destination = source
         if !inFolder {
             guard ScreenshotWatcher.isCandidate(source.lastPathComponent) else {

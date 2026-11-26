@@ -154,15 +154,18 @@ Owner: `CardNotices.swift`, held as `StackModel.notices` (`StackModel.swift`); t
 
 A value that holds the one notice each card shows, such as "Copied" or a send's state, and the send each card still waits on. The controller turns its `hold` into a timer that calls `expire`.
 
-**States**: `shown: [ScreenshotKey: (id, Notice)]`, `awaitingAnswer: [ScreenshotKey: SendNotice]`, `lastID`. `Notice` is `.copied`, `.notCopied`, `.notSaved` or `.send(SendNotice)`. `SendNotice.State` is `inGrace`, `sending`, `sent`, `queued`, `uncertain`, `failed`, `replyFailed`, `done`. A notice "explains" when it carries a reason; it holds three times as long.
+**States**: `shown: [ScreenshotKey: (id, Notice)]`, `awaitingAnswer: [ScreenshotKey: SendNotice]`, `lastID`. `Notice` is `.copied`, `.notCopied`, `.notSaved`, `.shown(Shown)` or `.send(SendNotice)`. `SendNotice.State` is `inGrace`, `sending`, `sent`, `queued`, `uncertain`, `failed`, `replyFailed`, `done`. A notice "explains" when it carries a reason; it holds three times as long.
 
-Events (`post`): `copied`, `notCopied`, `notSaved`, `sending`, `released`, `cancelled`, `answered`, `replyFailed`, `finished`. Also `expire(id, on:)` and `rename(from:to:)`. The controller's senders are `showCopied` (`showCopied(_:after:)` posts it once a rendering succeeds) and `showFailed` (`ThumbnailController.swift`), and `showNotCopied`, `showNotSaved`, `showSending`, `released`, `cancelled`, `delivered`, `finished` and `replyFailed` in `ThumbnailController+Notices.swift`, called from `AppDelegate`.
+Events (`post`): `copied`, `notCopied`, `notSaved`, `shown`, `unshown`, `sending`, `released`, `cancelled`, `answered`, `replyFailed`, `finished`. Also `expire(id, on:)` and `rename(from:to:)`. The controller's senders are `showCopied` (`showCopied(_:after:)` posts it once a rendering succeeds) and `showFailed` (`ThumbnailController.swift`), and `showNotCopied`, `showNotSaved`, `showSending`, `released`, `cancelled`, `delivered`, `finished` and `replyFailed` in `ThumbnailController+Notices.swift`, called from `AppDelegate`.
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
 | any | `copied`, `notCopied`, `notSaved` | `shown[file]` replaced with a new id | hold 1x, or 3x if it explains |
+| any | `shown` | `shown[file]` replaced with a new id | no hold: it goes with the card's shown state |
+| `shown[file]` is a `.shown` notice | `unshown` | that notice expired | — |
+| any other | `unshown` | — | — |
 | any | `replyFailed`, `finished` | as above when no later send waits; else — | hold; — |
 | any | `sending` | `awaitingAnswer[file]` set; `shown` replaced; state `inGrace` if a grace is given | no hold |
 | waiting request is `r` and `inGrace` | `released(r)` | waiting state becomes `sending`; `shown` updated only if it still shows that send | — |
@@ -192,3 +195,38 @@ Events (`post`): `copied`, `notCopied`, `notSaved`, `sending`, `released`, `canc
 - An answer for a card nobody sees: the unseen-card rule.
 - `finished` and `replyFailed` defer to a later waiting send.
 - A file renamed after a send: `sentShots` follows the rename in `AppDelegate`.
+
+### Shown state and the waiting `show` calls (implicit)
+
+Owner: `ThumbnailController+Show.swift`, with the state in `StackModel.shown`, `StackModel.dimsUnshown`
+and `StackModel.openedShown`, the waiting calls in `ShowQueue` (`Shown.swift`) and the agent's marks
+in `PendingMarks`. Tests: `StackModelTests.testTheOverflowKeepsTheCardsInTheEditorInAStitchAndShownByAnAgent`,
+`testACardThatLeavesTakesItsShownNoticeAndTheDimWithIt`, `CardNoticesTests.testAShownNoticeStaysUntilItsShownStateEndsAndTheEndTakesNoNewerNotice`.
+
+`vignette://show` points the person at screenshots already in the folder. Each card it names gets a
+shown state and the `shown` notice, and the corner's other cards dim.
+
+**States**: per card, `shown[card.id]` set or nil. `dimsUnshown`, with `dimTimer`. `openedShown`,
+the opening and the session that showed its card. `showQueue`, the calls waiting, with `showWait`,
+a 0.1 s timer that looks again. Per file, `pendingMarks[key]` set or nil.
+
+**Transitions**
+
+| State | Event | Next state | Effects |
+|---|---|---|---|
+| `handInCorner` nil | a call | each named card's `shown` set; `dimsUnshown` true | cards come up or join; `shown` notice posted; `leaveCorner(after: 2 × thumbnailSeconds)`; one announcement; `[show] ok` |
+| `handInCorner` names a gesture | a call | call added to `showQueue` | `[show] waits for <reason>`; `showWait` armed |
+| calls waiting | `showWait` fires with the hand gone | `showQueue` emptied | each call placed in order |
+| card's `shown` set | a later call names it | `shown` replaced | `[show] ended … by=replaced`; new notice |
+| card's `shown` set | `removeCards` takes the card | `shown` nil; `dimsUnshown` false when none is left | `unshown` posted; `[show] ended … by=left` |
+| card's `shown` set | `perform(.prepare)` opens the card | `shown` nil; `openedShown` set when it named a session | `unshown` posted; `[show] ended … by=opened` |
+| `dimsUnshown` true | `dimTimer` fires | `dimsUnshown` false | the dim fades out |
+| `pendingMarks[key]` set | Keep | nil | `Drawings.add` joins the marks; on failure set again, "Not saved" |
+| `pendingMarks[key]` set | Clear | nil | the layers go |
+
+**Invariants**
+
+- A `shown` notice never outlives its card's shown state: every end posts `unshown`, and `unshown` takes only a `shown` notice. Checked by: `CardNoticesTests.testAShownNoticeStaysUntilItsShownStateEndsAndTheEndTakesNoNewerNotice`, `StackModelTests.testACardThatLeavesTakesItsShownNoticeAndTheDimWithIt`.
+- The overflow never removes a shown card. Checked by: `StackModelTests.testTheOverflowKeepsTheCardsInTheEditorInAStitchAndShownByAnAgent`.
+- No call is placed while the hand is in the corner, and calls run in the order they came. Checked by: nothing beyond `ShowQueue.take`, which returns all or none.
+- Pending marks live in memory only and are not cleared when their card leaves the corner, so a later card or opening of the file shows them again. Keep and Clear follow the marks: the `shown` notice offers them, a card with no notice offers them on a band of its own (`AgentBand.of`), and the editor's bar offers them. Another notice holds the card for its own time first. Checked by: `CardNoticesTests.testKeepAndClearFollowTheAgentsMarksAfterTheShownNoticeEnds`.

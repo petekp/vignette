@@ -66,8 +66,10 @@
    `app` (pid, build, bundle, isActive, accessibility, watch folder, settings file, debug), `screen`,
    `stack` (cards with `file`, `frame`, `out`, `forming`, `drawing`, `agent`, `kind`, `copied`,
    `notCopied`, the reason a copy failed or null, `notSaved`, whether the card says its drawing was
-   not saved; `selected`,
-   `focused`, `hovered`, `queue`, the files waiting for the annotator, `visible`, `key`, `isStack`,
+   not saved, `shown`, the agent that showed it with `vignette://show` and its session, message and
+   time, or null, `agentMarks`, how many of that agent's marks sit on top; `selected`,
+   `focused`, `hovered`, `queue`, the files waiting for the annotator, `showsWaiting`, the `show` calls
+   waiting for the hand to leave the corner, `dimsUnshown`, whether the other cards are dimmed, `visible`, `key`, `isStack`,
    `scroll`, `viewport`, `safeBottom`, the room the Dock keeps under the column, panel,
    `panelOnScreen`, `widthScale`, how wide the stack is drawn, `swipe`, how far a swipe has moved the
    column toward the edge, `older`, the chunks of older cards (`loading`, `reachedOldest`, `added`), `strip`, the selection strip's

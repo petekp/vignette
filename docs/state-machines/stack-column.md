@@ -44,7 +44,7 @@ Reads the screenshots older than the column's oldest card, one chunk of `recentC
 
 - A listing or a header lookup that answers after `reset` is dropped at its own check, so a chunk for an old column never reaches the new one.
 - A chunk that arrives after the stack slid out, or when the corner shows instead, reaches `addOlder`, which returns at its guard. `after` and `loading` have already moved on, so the files that chunk took are not offered again in that column. The next `present` resets.
-- Up arrow on the top card (`moveFocus`, `ThumbnailController.swift`) swallows the key when `waitsForOlder` returns true. It queues a closure and calls `loadOlder`. With no watcher, or a `recentCount` of 0 (`load` returns at its guard), no chunk comes and the closure waits for the next chunk or a `reset`.
+- Up arrow on the top card (`moveFocus`, `ThumbnailController+Keys.swift`) swallows the key when `waitsForOlder` returns true. It queues a closure and calls `loadOlder`. With no watcher, or a `recentCount` of 0 (`load` returns at its guard), no chunk comes and the closure waits for the next chunk or a `reset`.
 - The closure moves the focus on only if the focused card is still the one that was on top and a card has since been added above it (`ThumbnailController+Older.swift`).
 
 ### CardPictures (implicit)

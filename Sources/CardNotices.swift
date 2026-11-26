@@ -55,14 +55,17 @@ struct CardNotices {
         case notCopied(reason: String)
         case notSaved(reason: String)
         case send(SendNotice)
+        /// An agent showed the card (`vignette://show`). It has no hold: it goes when the shown state ends.
+        case shown(Shown)
 
-        enum Kind: Hashable { case copied, notCopied, notSaved, send }
+        enum Kind: Hashable { case copied, notCopied, notSaved, send, shown }
         var kind: Kind {
             switch self {
             case .copied: return .copied
             case .notCopied: return .notCopied
             case .notSaved: return .notSaved
             case .send: return .send
+            case .shown: return .shown
             }
         }
     }
@@ -91,6 +94,10 @@ struct CardNotices {
         case replyFailed(request: String, client: AgentClient, reason: String)
         /// The session's turn on `request`, a live ink note, ended with no result card.
         case finished(request: String, client: AgentClient, sessionTitle: String)
+        /// An agent showed the card; a later `shown` replaces it.
+        case shown(Shown)
+        /// The card's shown state ended: its notice goes, if it is still the one on the card.
+        case unshown
     }
 
     /// A notice the card now shows. `hold`: when to call `expire(_:)`, nil while a send waits for
@@ -118,6 +125,11 @@ struct CardNotices {
             notice = .notCopied(reason: reason)
         case .notSaved(let reason):
             notice = .notSaved(reason: reason)
+        case .shown(let what):
+            return show(.shown(what), on: file, hold: nil)
+        case .unshown:
+            if let current = shown[file], case .shown = current.notice { expire(current.id) }
+            return nil
         case .sending(let request, let client, let sessionTitle, let grace, let starts):
             let send = SendNotice(request: request, client: client, sessionTitle: sessionTitle, state: grace == nil ? .sending : .inGrace, grace: grace,
                                   starts: starts)
@@ -195,7 +207,7 @@ struct CardNotices {
     /// A notice with a sentence to read and act on.
     private static func explains(_ notice: Notice) -> Bool {
         switch notice {
-        case .copied: return false
+        case .copied, .shown: return false
         case .notCopied, .notSaved: return true
         case .send(let send): return explains(send)
         }

@@ -1,6 +1,6 @@
 import Foundation
 
-extension UITweaks {
+extension UITweaks: Codable {
     /// Set on the encoder that writes settings.json. There `ui` holds only the values that differ
     /// from the defaults, so a default tuned in a later build reaches a file an earlier one wrote.
     /// Every other encoding is whole, since `Settings.load` merges a file over it.
@@ -13,15 +13,30 @@ extension UITweaks {
         init?(intValue: Int) { nil }
     }
 
-    /// Every stored property under its own name, as the synthesized encoding writes it; decoding
-    /// stays synthesized. Mirror walks the properties, so a new tweak needs nothing here.
+    /// Each group reads its own keys from the one flat object, and leaves the others' alone.
+    init(from decoder: Decoder) throws {
+        stack = try Stack(from: decoder)
+        labs = try Labs(from: decoder)
+        annotator = try Annotator(from: decoder)
+        editor = try Editor(from: decoder)
+        liveInk = try LiveInk(from: decoder)
+    }
+
+    /// Every tweak under its own name, flat, in the groups' order. Mirror walks the properties, so a
+    /// new tweak needs nothing here.
+    var fields: [(name: String, value: Any)] {
+        Mirror(reflecting: self).children.flatMap { group in
+            Mirror(reflecting: group.value).children.compactMap { child in child.label.map { ($0, child.value) } }
+        }
+    }
+
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: Key.self)
         let differencesOnly = encoder.userInfo[Self.differencesOnly] as? Bool ?? false
-        for (child, fallback) in zip(Mirror(reflecting: self).children, Mirror(reflecting: UITweaks()).children) {
-            guard let name = child.label, let value = child.value as? any Encodable else { continue }
-            if differencesOnly, Self.same(child.value, fallback.value) { continue }
-            try container.encode(value, forKey: Key(stringValue: name))
+        for (field, fallback) in zip(fields, UITweaks().fields) {
+            guard let value = field.value as? any Encodable else { continue }
+            if differencesOnly, Self.same(field.value, fallback.value) { continue }
+            try container.encode(value, forKey: Key(stringValue: field.name))
         }
     }
 

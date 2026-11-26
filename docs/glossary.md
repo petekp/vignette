@@ -64,6 +64,19 @@ What a card says after something happened to it: Copied, Not copied, Not saved, 
 went and how it went. A card shows one notice at a time.
 _Avoid_: Mark, toast, badge
 
+**Shown card**:
+A card an agent pointed the person at with `vignette://show`. It wears a notice that says which
+agent showed it, with the agent's line, until it leaves the corner, opens in the annotator or is
+shown again. Its *shown state* is what Vignette keeps about that: the agent, the session, the line
+and when, in memory only.
+_Avoid_: Highlighted, spotlighted, pinned (a pin is a point on a drawing)
+
+**Pending marks**:
+An agent's marks that `show` brought, drawn on top of the person's drawing on the card and in the
+editor until the person keeps or clears them. The file holds none of them until Keep, which adds
+them to the drawing as one undo step.
+_Avoid_: Preview, suggestion, overlay
+
 **Tab**:
 The white capsule in a card's top-right corner. It says which agent the card is from, which session
 the screenshot was last sent to, or that an agent's card was replied to. It stays on the card, unlike

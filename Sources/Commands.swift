@@ -29,6 +29,8 @@ enum CommandError: String, CaseIterable {
     case unknownSection = "unknown-section"
     /// `unsend` found no send of that screenshot still waiting out its grace.
     case nothingToUnsend = "nothing-to-unsend"
+    /// `show` named more files than the corner's column keeps (`recentCount`).
+    case tooManyFiles = "too-many-files"
 }
 
 /// A `vignette://<name>?file=…&file=…` URL, decoded once.
@@ -58,7 +60,8 @@ struct CommandRequest: Equatable {
     let clear: String?
     /// `points=` from the query, as given: a stroke for `live-ink-stroke`. See `Commands.points`.
     var points: String? = nil
-    /// `message=` from the query: what `live-ink-ask` asks, as the note's words.
+    /// `message=` from the query, read as a form encodes it: what `live-ink-ask` asks, as the note's
+    /// words, or the line `show` puts under its notice's headline.
     var message: String? = nil
     /// `section=` from the query: the one section `state` reports beside `app`.
     var section: String? = nil
@@ -79,6 +82,7 @@ enum Commands {
         Fixed(name: "state", summary: "dump app state to the log; &section=<name> reports only that section and app"),
         Fixed(name: "last", summary: "show the thumbnail for the newest screenshot"),
         Fixed(name: "add", summary: "copy an image from anywhere into the watch folder and show its thumbnail; &annotate opens it in the annotator instead; &agent=<name> marks the card as an agent's; &session=<id> names the Claude Code session it came from, which Reply on the card goes back to; &marks=<json file> draws on it, as marks the user can edit; &title=<text> and &description=<text> say what it shows, above the image in the annotator (at most \(AgentTitle.maxTitle) and \(AgentTitle.maxDescription) characters); ignores copyOnCapture and annotateOnCapture"),
+        Fixed(name: "show", summary: "point the user at screenshots already in the watch folder: brings each file=<path> to the corner, in the order named, and marks its card as shown by &agent=<name>; &session=<id> is the session showing them, where Send on the card starts; &message=<text> is one line under the notice (at most \(Shown.messageLimit) characters); &marks=<json file> draws on the first file, on top of the user's drawing until they keep or clear them; at most recentCount files; changes no file"),
         Fixed(name: "recent", summary: "toggle the recent stack"),
         Fixed(name: "dismiss", summary: "close the thumbnail or the stack"),
         Fixed(name: "cancel", summary: "close the annotator without copying, as Esc would"),
@@ -114,7 +118,7 @@ enum Commands {
                               root: items.first { $0.name == "root" }?.value.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) },
                               clear: items.first { $0.name == "clear" }?.value,
                               points: items.first { $0.name == "points" }?.value,
-                              message: items.first { $0.name == "message" }?.value,
+                              message: text("message", in: url),
                               section: items.first { $0.name == "section" }?.value)
     }
 
