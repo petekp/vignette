@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 extension UndoTimelineTests {
     private func entry(_ agent: String = "claude") -> PendingMarks.Entry {
-        PendingMarks.Entry(agent: agent, marks: [AgentMark(type: .rectangle, x: 0.1, y: 0.1, w: 0.2, h: 0.2)],
+        PendingMarks.Entry(agent: agent, session: nil, sender: nil, marks: [AgentMark(type: .rectangle, x: 0.1, y: 0.1, w: 0.2, h: 0.2)],
                            drawing: Drawing(key: "/shots/b.png", pixels: PixelSize(width: 300, height: 200), pointScale: 1, marks: []))
     }
 
