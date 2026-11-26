@@ -11,6 +11,8 @@ struct KeyPicture: View {
     /// `Settings.motionScale`: 0 with Reduce Motion, and then a held key darkens without moving.
     var motion = 1.0
     @StateObject private var held = HeldModifiers()
+    /// The check's width, a little more than the ×2's height.
+    private static let checkDiameter: CGFloat = 24
 
     var body: some View {
         Group {
@@ -57,21 +59,19 @@ struct KeyPicture: View {
         .accessibilityHidden(true)
     }
 
-    /// ×2 until the shortcut has worked, then a check in the colour setup uses for done.
-    private var badge: some View {
-        ZStack {
-            if fires > 0 {
-                Image(systemName: "checkmark").font(.system(size: 12, weight: .bold))
-                    .transition(.scale.combined(with: .opacity))
-            } else {
-                Text("×2").font(.system(size: 13, weight: .semibold))
-                    .transition(.scale.combined(with: .opacity))
-            }
+    /// ×2 until the shortcut has worked, then the check on a copied or sent card (`CheckCoin`),
+    /// which spins as it appears.
+    @ViewBuilder private var badge: some View {
+        if fires > 0 {
+            CheckCoin(diameter: Self.checkDiameter)
+                .transition(.scale.combined(with: .opacity))
+        } else {
+            Text("×2").font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                .frame(minWidth: 18, minHeight: 17)
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(Capsule().fill(Color.accentColor))
+                .transition(.scale.combined(with: .opacity))
         }
-        .foregroundStyle(.white)
-        .frame(minWidth: 18, minHeight: 17)
-        .padding(.horizontal, 7).padding(.vertical, 3)
-        .background(Capsule().fill(fires > 0 ? Color.installed : Color.accentColor))
     }
 
     private func keycap<Content: View>(width: CGFloat, down: Bool, @ViewBuilder _ content: @escaping () -> Content) -> some View {
