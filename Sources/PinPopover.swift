@@ -117,15 +117,23 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         field.window?.autorecalculatesKeyViewLoop = true
         guard takesKeys else {
             keepsKeys = view.window
-            keepsKeys?.makeKey()
+            holdNoFocus()
             return
         }
         field.window?.makeFirstResponder(field)
     }
 
     func popoverDidShow(_ notification: Notification) {
-        keepsKeys?.makeKey()
+        holdNoFocus()
         keepsKeys = nil
+    }
+
+    /// Opened without the keys, the popover focuses none of its views, so with Full Keyboard Access
+    /// on no comment shows a focus ring before the person moves there.
+    private func holdNoFocus() {
+        guard let keepsKeys else { return }
+        field.window?.makeFirstResponder(nil)
+        keepsKeys.makeKey()
     }
 
     /// A press on the picture took the keys, as a resize does: they come back to the field, with the

@@ -82,7 +82,9 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   (`ComposerInput.openFirst`, from `AnnotationController.landed`), unless a popover, a drag or
   typing is under way. It does not select the pin, and it opens without the keys
   (`Composer.takesKeys` false; `PinPopover.show` gives the key back to the editor's window). So
-  the tool letters, Delete and the arrows act on the drawing as they would with no popover. The
+  the tool letters, Delete and the arrows act on the drawing as they would with no popover. None of
+  its views takes the focus (`PinPopover.holdNoFocus`), so with Full Keyboard Access on no comment
+  shows a focus ring until the person moves into the popover. The
   field takes the keys when the person clicks into it. Esc closes an open popover before it closes
   the editor.
 - An agent's pins come with `pins=` on `add` and `show` (`AgentPins.swift`, format in `docs/commands.md`),
