@@ -263,11 +263,10 @@ struct SendOverlay: View {
                 Group {
                     switch outcome {
                     case .check:
-                        // The badge grows in rather than spinning, so the coin is face on throughout.
-                        // What shows through it (`checkClarity`) is a dark disc, not the white ring.
+                        // What shows through the coin (`checkClarity`) is a dark disc, not the white ring.
                         ZStack {
                             Circle().fill(Color(white: 0.18)).frame(width: 15, height: 15)
-                            CheckCoin(diameter: 15, spins: false)
+                            CheckCoin(diameter: 15)
                         }
                     case .clock:
                         // One layer, its hands cut out, so they show the white ring beneath.
