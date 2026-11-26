@@ -27,8 +27,8 @@ final class FolderWritesTests: XCTestCase {
     /// Set to hold the join's answer in `heldJoin` until the test gives it; otherwise the join
     /// answers `joinResult` in the same turn it is asked.
     var holdsJoin = false
-    var heldJoin: ((Result<Int, Drawings.Failure>) -> Void)?
-    var joinResult: Result<Int, Drawings.Failure> = .success(1)
+    var heldJoin: ((Result<Drawings.Joined, Drawings.Failure>) -> Void)?
+    var joinResult: Result<Drawings.Joined, Drawings.Failure> = .success(Drawings.Joined(marks: 1))
     var joinedKeys: [ScreenshotKey] = []
     var trashFailsFor: String?
 
@@ -54,7 +54,7 @@ final class FolderWritesTests: XCTestCase {
                 self.events.append(.present(shot.url, annotate))
             },
             showCard: { [unowned self] shot in self.events.append(.showCard(shot.url)) },
-            joinMarks: { [unowned self] _, _, key, done in
+            joinMarks: { [unowned self] _, key, done in
                 self.joinedKeys.append(key)
                 if self.holdsJoin { self.heldJoin = done } else { done(self.joinResult) }
             },
@@ -120,7 +120,7 @@ final class FolderWritesTests: XCTestCase {
         let destination = folder.appendingPathComponent("src.png")
         XCTAssertTrue(writes.arrived(destination.screenshotKey))
         XCTAssertEqual(events, [])
-        heldJoin?(.success(1))
+        heldJoin?(.success(Drawings.Joined(marks: 1)))
         XCTAssertEqual(events, [.present(destination, true)])
         XCTAssertFalse(writes.arrived(destination.screenshotKey))
         XCTAssertEqual(events, [.present(destination, true)])

@@ -35,7 +35,7 @@ enum EditorCoreTrace {
             case .image: return "paste image"
             case .other: return "paste other"
             }
-        case .agentMarks(let marks): return "agent marks \(marks.count)"
+        case .agentMarks(let marks, let pins, _, _): return "agent marks \(marks.count) pins \(pins.count)"
         case .takeBackAgentMarks: return "take back agent marks"
         case .putBackAgentMarks(let taken): return "put back agent marks \(taken.step.changes.count)"
         case .done: return "done"

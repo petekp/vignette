@@ -7,58 +7,6 @@ struct PlacedMark {
     var index: Int
 }
 
-/// The changes one edit makes to a drawing's marks while it is open: a gesture, a typing session,
-/// or a single command. It keeps each mark it touched as it was before, so the edit can be put back
-/// exactly or become one undo step. Undo keeps only the marks a step touched, so two edits that
-/// overlap in time, such as an agent's marks joining while a text is typed, stay two steps.
-struct MarkEdit {
-    /// The marks when the edit began, so each touched mark goes back to its place in this order
-    /// however many the edit removed before it.
-    private let start: [Mark]
-    /// The marks the edit touched, in the order it first touched them.
-    private(set) var touched: [Mark.ID] = []
-    /// The selection when the edit began, which undoing its step puts back.
-    let selectionBefore: Set<Mark.ID>
-    /// The pins when the edit began. Putting the edit back puts every pin back as it was.
-    let startPins: [Pin]
-
-    init(marks: [Mark], pins: [Pin], selectionBefore: Set<Mark.ID>) {
-        start = marks
-        startPins = pins
-        self.selectionBefore = selectionBefore
-    }
-
-    /// Notes that the edit is about to change, add or remove the mark `id` names.
-    mutating func note(_ id: Mark.ID) {
-        if !touched.contains(id) { touched.append(id) }
-    }
-
-    /// The mark as the edit found it: nil for one it made.
-    func original(_ id: Mark.ID) -> Mark? {
-        before(id)?.mark
-    }
-
-    private func before(_ id: Mark.ID) -> PlacedMark? {
-        start.firstIndex { $0.id == id }.map { PlacedMark(mark: start[$0], index: $0) }
-    }
-
-    /// `marks` with every mark this edit touched put back as it was, in its place.
-    func reverted(_ marks: [Mark]) -> [Mark] {
-        EditStep.placing(touched.map { ($0, before($0)) }, in: marks)
-    }
-
-    /// The undo step named `name` from where this edit began to `marks` and `selection`, or nil when
-    /// the marks ended as they started.
-    func step(named name: StepName, ending marks: [Mark], selection: Set<Mark.ID>) -> EditStep? {
-        let changes = touched.compactMap { id -> EditStep.Change? in
-            let before = before(id)
-            let after = marks.firstIndex { $0.id == id }.map { PlacedMark(mark: marks[$0], index: $0) }
-            return before?.mark == after?.mark ? nil : EditStep.Change(id: id, before: before, after: after)
-        }
-        return changes.isEmpty ? nil : EditStep(name: name, changes: changes, selectionBefore: selectionBefore, selectionAfter: selection)
-    }
-}
-
 /// One undo step of the drawing: each mark and each pin it touched before and after, and the selection
 /// that goes with each side.
 struct EditStep {
@@ -84,8 +32,11 @@ struct EditStep {
     var selectionAfter: Set<Mark.ID>
     var pins: [PinChange] = []
 
-    /// Agents' marks joining a drawing and nothing else, as a Keep or an `add` makes it.
-    var joinsAgentMarks: Bool { name == .agentMarks && pins.isEmpty && changes.allSatisfy { $0.before == nil } }
+    /// Agents' marks and pins joining a drawing and nothing else, as a Keep or an `add` makes it: marks
+    /// and pins added, and comments added to pins.
+    var joinsAgentMarks: Bool {
+        name == .agentMarks && changes.allSatisfy { $0.before == nil } && pins.allSatisfy { $0.after != nil }
+    }
 
     /// This step and `later` as one, from this one's start to `later`'s end; nil when they cancel out.
     func merged(with later: EditStep) -> EditStep? {
@@ -190,10 +141,12 @@ enum HistoryStep {
         }
     }
 
-    /// The words after Undo or Redo. Marks from one named agent say whose they are: "Claude's Marks".
+    /// The words after Undo or Redo. Marks and comments from one named agent say whose they are:
+    /// "Claude's Marks".
     var title: String {
         guard case .drawing(let step) = self, step.name == .agentMarks else { return name.title }
-        let agents = Set(step.changes.map { $0.after?.mark.agentName })
+        let comments = step.pins.flatMap { ($0.after?.comments ?? []).dropFirst($0.before?.comments.count ?? 0) }
+        let agents = Set(step.changes.map { $0.after?.mark.agentName } + comments.map(\.agentName))
         guard agents.count == 1, let agent = agents.first ?? nil else { return name.title }
         return "\(agent)'s Marks"
     }

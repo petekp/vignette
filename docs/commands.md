@@ -107,6 +107,36 @@ marks join the image's drawing before the card appears, so the card and Copy Dra
 the editor can move, retype, or delete them. A push to the image open in the editor joins its
 drawing as one undo step.
 
+## Pins
+
+An agent can leave comment pins too, and answer the person's. `pins=` on `add` and `show` takes the
+path to a JSON file, or the JSON itself, with one object per comment, in the same fractions as
+`marks=`:
+
+```json
+[{"x": 0.42, "y": 0.18, "text": "This label wraps at 390 px"},
+ {"x": 0.10, "y": 0.55, "w": 0.30, "h": 0.12, "text": "These three rows should line up"},
+ {"pin": 2, "text": "Fixed in the last commit"}]
+```
+
+An object with `x` and `y` alone is a new point pin. One that adds `w` and `h` is a new area pin
+over that rectangle, its teardrop at the corner `corner` names (`topLeft`, `topRight`,
+`bottomLeft` or `bottomRight`, the default). An object with `pin` answers a pin the screenshot
+holds: `pin` is its number, as Send's line calls it ("Pin 2"), or its `id` from a request's
+`pins.json`. An answer takes no `x`, `y`, `w`, `h` or `corner`. Each `text` is at most 2,000
+characters. One call takes at most 99 comments and 256 KB, and a screenshot holds at most 99 pins.
+
+New pins are numbered after the screenshot's last, in the order given, and drawn in the agent
+colour. Every comment is the agent's, with the time of the call. A pin keeps the colour of its first
+comment, so the person's pin an agent answers stays the person's colour. A list that breaks a rule, names a pin the
+screenshot does not hold, or brings more new pins than it has room for answers `invalid-pins`,
+naming the comment by its place in the list. A file outside the watch folder holds no pins to
+answer. With `add`, the pins join the drawing with the marks as one undo step, and `[add] ok`
+counts the comments that joined as `pins=<n>`. With `show`, they wait with the marks until the
+person keeps or clears them, and the new pins sit on top with the marks. Answers are not drawn
+until they are kept. Keep numbers the new pins then and adds the answers; an answer whose
+pin was removed meanwhile is left out with a `[pins] dropped pin=<n>` line.
+
 ## The log
 
 Every command answers with one line in `~/Library/Logs/Vignette.log`:
@@ -114,15 +144,15 @@ Every command answers with one line in `~/Library/Logs/Vignette.log`:
 menu bar opens it. The codes are fixed:
 `unknown-command`, `missing-file`, `outside-watch-folder`, `not-enough-files`, `unreadable-image`,
 `debug-disabled`, `no-apple-original`, `write-failed`, `unsupported-type`, `invalid-marks`,
-`no-agent`, `send-failed`, `reply-refused`, `live-ink-off`, `invalid-points`, `live-ink-not-asked`, `unknown-section`, `nothing-to-unsend`, `too-many-files`. The log has one event per line,
+`invalid-pins`, `no-agent`, `send-failed`, `reply-refused`, `live-ink-off`, `invalid-points`, `live-ink-not-asked`, `unknown-section`, `nothing-to-unsend`, `too-many-files`. The log has one event per line,
 `HH:mm:ss.SSS [tag] key=value …`, and rotates to `Vignette.log.1` at 5 MB.
 
 `show` answers `[show] ok files=[<names>] agent=<name> session=<id> joined=<n> inColumn=<n> inEditor=<n>
-marks=<n> after=<ms> tag=<tag>` once its cards are up. `files=` is a JSON array, since names hold
+marks=<n> [pins=<n>] after=<ms> tag=<tag>` once its cards are up. `files=` is a JSON array, since names hold
 spaces. While the person's hand is in the corner it first logs `[show] waits for
 <press|drag|sweep|swipe|stitch|slide-out>`, and `after=` counts the wait. A shown state that ends
 logs `[show] ended <name> by=left|opened|replaced`, and Keep and Clear log `[show] kept marks=<n>
-<name>` and `[show] cleared marks=<n> <name>`. `add` of the person's own screenshot in the folder
+[pins=<n>] <name>` and `[show] cleared marks=<n> [pins=<n>] <name>`. `add` of the person's own screenshot in the folder
 answers `unsupported-type` and names `show`.
 
 Where Send starts is logged too. `[send] target <address> project=<detail> focus=<why> role=<role> [reply] [capture=<app>:<percent>,…]`

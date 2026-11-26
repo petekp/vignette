@@ -4,6 +4,31 @@ import Foundation
 // `docs/pushed-text-2026-09-19.md` has the numbers behind a text's size and fit.
 
 extension AgentMark {
+    /// What `value` holds as JSON, nil when it does not parse: the JSON itself when the value starts with a
+    /// bracket or a brace, else the path to a file holding it. Throws when it is over `maxBytes` or the
+    /// file cannot be read; `noun` names what it holds, in the error.
+    static func json(_ value: String, of noun: String) throws -> Any? {
+        func tooBig(_ bytes: Int) -> String { "\(bytes / 1024) KB of \(noun); at most \(maxBytes / 1024) KB" }
+        let data: Data
+        if value.hasPrefix("[") || value.hasPrefix("{") {
+            guard value.utf8.count <= maxBytes else { throw MarkProblem(tooBig(value.utf8.count)) }
+            data = Data(value.utf8)
+        } else {
+            let url = URL(fileURLWithPath: (value as NSString).expandingTildeInPath)
+            // Nil for a directory or anything that is not a regular file, which is also the answer
+            // for a pipe or a device that `Data(contentsOf:)` would read until it blocked.
+            guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+                throw MarkProblem("cannot read \(url.path)")
+            }
+            guard size <= maxBytes else { throw MarkProblem(tooBig(size)) }
+            guard let read = try? Data(contentsOf: url) else { throw MarkProblem("cannot read \(url.path)") }
+            data = read
+        }
+        return try? DrawingJSON.object(from: data)
+    }
+}
+
+extension AgentMark {
     /// How many times a text is widened and measured again. Wrapping is discrete, so each estimate
     /// is checked rather than trusted, and four reach the room's width from any box this makes.
     static let textFitPasses = 4

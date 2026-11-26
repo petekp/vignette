@@ -75,6 +75,9 @@ capped at 256 KB, and an error line names the mark and the field without quoting
 said. A text too long to fit even across the whole picture is cut at the edge and named in a
 `[marks] text too long for <name>` line, which is the only thing that says so, since `[add]`
 still answers `ok`. `docs/commands.md` has the format and the rest.
+`&pins=<json file>` leaves the agent's comment pins, or answers on the person's pins, the same
+way and in the same join (`AgentAdditions`, `docs/rules/pins.md`). A list naming a pin the
+screenshot does not hold answers `invalid-pins` before anything is written.
 `&title=<text>` and `&description=<text>` say what the pushed image shows. Both go through one
 type, `AgentTitle`. It makes each part one line and cuts it at a word to its limit, 60 and 140
 characters. A cut logs an `[add] warning` line, and `[add]` still answers `ok`.

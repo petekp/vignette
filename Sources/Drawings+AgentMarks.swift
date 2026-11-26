@@ -7,39 +7,64 @@ extension Drawings {
         let description: String
     }
 
-    /// Adds an agent's marks to the drawing of the screenshot `key`, and answers how many joined.
-    /// When the editor has that screenshot open, the marks join its drawing as one undo step.
+    /// How many of an agent's marks, and of its pins' comments, joined a drawing.
+    struct Joined: Equatable {
+        var marks = 0
+        var pins = 0
+
+        var isEmpty: Bool { marks == 0 && pins == 0 }
+    }
+
+    /// Adds an agent's marks and pins to the drawing of the screenshot `key`, and answers how many
+    /// joined. When the editor has that screenshot open, they join its drawing as one undo step.
     /// Otherwise they are added to the stored drawing, or a new one sized for `newScreen`, as one step of
-    /// its stored history. Either way the
-    /// file is written before this returns, or it throws. `agent` names the agent they are from.
-    func add(_ agentMarks: [AgentMark], from agent: String?, to key: ScreenshotKey, style: TextStyle, newScreen: DrawingScreen,
-             rule: MarkScaleRule) throws -> Int {
-        let url = key.url, name = key.name
+    /// its stored history. Either way the file is written before this returns, or it throws. An answer
+    /// whose pin is gone by now, or a pin past `Pin.maxCount`, is left out with a log line.
+    func add(_ additions: AgentAdditions, to key: ScreenshotKey, style: TextStyle, newScreen: DrawingScreen,
+             rule: MarkScaleRule) throws -> Joined {
+        let url = key.url, name = key.name, agent = additions.agent
         if let open, let before = open.drawing(of: key) {
-            let made = marks(agentMarks, from: agent, in: before.pixels, pointScale: before.pointScale, style: style, rule: rule, name: name)
-            guard let joined = open.join(made) else { return 0 }
+            let made = marks(additions.marks, from: agent, in: before.pixels, pointScale: before.pointScale, style: style, rule: rule, name: name)
+            pins(additions, onto: before, name: name)
+            guard let joined = open.join(made, pins: additions.pins, from: agent, at: additions.at) else { return Joined() }
             guard write(joined, history: open.history(of: key) ?? EditorHistory(), reason: "saved") else {
                 throw Failure(code: .writeFailed, description: "the drawing for \(name) could not be written")
             }
-            return joined.marks.count - before.marks.count
+            func comments(_ drawing: Drawing) -> Int { drawing.pins.reduce(0) { $0 + $1.comments.count } }
+            return Joined(marks: joined.marks.count - before.marks.count, pins: comments(joined) - comments(before))
         }
         guard let pixels = PixelSize(imageAt: url) else {
             throw Failure(code: .unreadableImage, description: "\(name) is not an image this Mac can read")
         }
         var drawing = read(key, pixels: pixels, style: style)
             ?? Drawing(key: key.path, pixels: pixels, sizedFor: newScreen, rule: rule).numbered(numbering(of: key, pixels: pixels))
-        let made = marks(agentMarks, from: agent, in: pixels, pointScale: drawing.pointScale, style: style, rule: rule, name: name)
-        guard !made.isEmpty else { return 0 }
+        let made = marks(additions.marks, from: agent, in: pixels, pointScale: drawing.pointScale, style: style, rule: rule, name: name)
+        let pins = pins(additions, onto: drawing, name: name)
+        guard !made.isEmpty || !pins.isEmpty else { return Joined() }
         var history = history(of: key, pixels: pixels, drawing: drawing)
         let added = made.enumerated().map { offset, mark in
             EditStep.Change(id: mark.id, before: nil, after: PlacedMark(mark: mark, index: drawing.marks.count + offset))
         }
-        history.record(.drawing(EditStep(name: .agentMarks, changes: added, selectionBefore: [], selectionAfter: [])))
+        let pinChanges = pins.map { pin in EditStep.PinChange(id: pin.id, before: drawing.pins.first { $0.id == pin.id }, after: pin) }
+        history.record(.drawing(EditStep(name: .agentMarks, changes: added, selectionBefore: [], selectionAfter: [], pins: pinChanges)))
+        let joined = Joined(marks: made.count, pins: pinChanges.reduce(0) { $0 + ($1.after?.comments.count ?? 0) - ($1.before?.comments.count ?? 0) })
         drawing.marks += made
+        drawing = drawing.taking(pins)
         guard write(drawing, history: history, reason: "built") else {
             throw Failure(code: .writeFailed, description: "the drawing for \(name) could not be written")
         }
-        return made.count
+        return joined
+    }
+
+    /// `AgentPin.join` of `additions`' pins onto `drawing`, with one line for those left out.
+    @discardableResult
+    private func pins(_ additions: AgentAdditions, onto drawing: Drawing, name: String) -> [Pin] {
+        guard !additions.pins.isEmpty else { return [] }
+        let joined = AgentPin.join(additions.pins, from: additions.agent, at: additions.at, onto: drawing)
+        if !joined.dropped.isEmpty {
+            Log.write("[pins] dropped pin=\(joined.dropped.map(String.init).joined(separator: ",")) for \(name): its pin is gone, or the screenshot holds \(Pin.maxCount) pins")
+        }
+        return joined.pins
     }
 
     /// The marks and pins of the screenshot `key`'s drawing as they are now, the editor's when it is
@@ -91,14 +116,19 @@ extension Drawings {
         return write(drawing, history: history, reason: "built")
     }
 
-    /// `add`'s marks alone, in a drawing of their own, writing nothing. Nil when none makes a mark.
-    func preview(_ agentMarks: [AgentMark], from agent: String?, to key: ScreenshotKey, style: TextStyle,
-                 newScreen: DrawingScreen, rule: MarkScaleRule) -> Drawing? {
+    /// `add`'s marks and new pins alone, in a drawing of their own, writing nothing, with the drawing
+    /// they would join. The new pins hold the numbers they would take now. Nil when the image does not
+    /// read.
+    func preview(_ additions: AgentAdditions, to key: ScreenshotKey, style: TextStyle,
+                 newScreen: DrawingScreen, rule: MarkScaleRule) -> (preview: Drawing, onto: Drawing)? {
         let px = PixelSize(imageAt: key.url)
-        guard var d = open?.drawing(of: key) ?? px.map({ read(key, pixels: $0, style: style) ?? Drawing(key: key.path, pixels: $0, sizedFor: newScreen, rule: rule) }) else { return nil }
-        d.marks = marks(agentMarks, from: agent, in: d.pixels, pointScale: d.pointScale, style: style, rule: rule, name: key.name)
-        d.pins = []
-        return d.marks.isEmpty ? nil : d
+        guard let onto = open?.drawing(of: key) ?? px.map({ read(key, pixels: $0, style: style)
+            ?? Drawing(key: key.path, pixels: $0, sizedFor: newScreen, rule: rule).numbered(numbering(of: key, pixels: $0)) }) else { return nil }
+        var preview = onto
+        preview.marks = marks(additions.marks, from: additions.agent, in: onto.pixels, pointScale: onto.pointScale, style: style, rule: rule, name: key.name)
+        let newPins = additions.pins.filter { !$0.isAnswer }
+        preview.pins = AgentPin.join(newPins, from: additions.agent, at: additions.at, onto: onto).pins
+        return (preview, onto)
     }
 
     /// `AgentMark.marks`, with its one line for texts that do not fit, and one for colours named.

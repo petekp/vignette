@@ -8,8 +8,8 @@ extension FolderWrites {
         var present: (Screenshot, _ annotate: Bool) -> Void = { _, _ in }
         /// Shows a published reply's card. A reply never goes through `present`, which treats a file as a capture.
         var showCard: (Screenshot) -> Void = { _ in }
-        /// Agents' marks joining the screenshot's drawing; answers with how many joined.
-        var joinMarks: ([AgentMark], _ agent: String?, ScreenshotKey, @escaping (Result<Int, Drawings.Failure>) -> Void) -> Void = { _, _, _, done in
+        /// Agents' marks and pins joining the screenshot's drawing; answers with how many joined.
+        var joinMarks: (AgentAdditions, ScreenshotKey, @escaping (Result<Drawings.Joined, Drawings.Failure>) -> Void) -> Void = { _, _, done in
             done(.failure(Drawings.Failure(code: .writeFailed, description: "nothing stores drawings")))
         }
         /// The name the session list gives a session, on the main thread, nil when it has none
@@ -19,6 +19,8 @@ extension FolderWrites {
         var senderRecorded: (Screenshot) -> Void = { _ in }
         /// A screenshot's drawing as the editor would open it.
         var storedDrawing: (ScreenshotKey) -> Drawing? = { _ in nil }
+        /// A screenshot's drawing as it is now: the editor's when it is open there (`Drawings.current`).
+        var currentDrawing: (ScreenshotKey) -> Drawing? = { _ in nil }
         var removeCards: ([Screenshot]) -> Void = { _ in }
         var removeDrawings: ([ScreenshotKey], _ observedAt: TimeInterval) -> Void = { _, _ in }
         var fileRemoved: (Screenshot) -> Void = { _ in }

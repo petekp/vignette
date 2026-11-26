@@ -59,11 +59,23 @@ struct Pin: Equatable, Identifiable {
         var agent: Bool
         /// Which agent wrote it, as a mark's `agentName`. Nil for a person's comment.
         var agentName: String?
+        /// When its words were written, to the second, as the file keeps it. Nil for a comment from a
+        /// file written before comments kept a time.
+        var at: Date?
 
-        init(text: String, agent: Bool = false, agentName: String? = nil) {
+        init(text: String, agent: Bool = false, agentName: String? = nil, at: Date? = nil) {
             self.text = text
             self.agent = agent
             self.agentName = agent ? agentName : nil
+            self.at = at.map { Date(timeIntervalSince1970: $0.timeIntervalSince1970.rounded(.down)) }
+        }
+
+        /// How a file writes `at`: ISO 8601 in UTC, to the second, as `2026-11-25T18:04:09Z`.
+        static func written(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }
+
+        /// A file's `at`, or nil when it is missing or not a time `written` would write.
+        static func time(_ raw: Any?) -> Date? {
+            (raw as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
         }
     }
 
@@ -215,7 +227,8 @@ extension Pin.Comment {
     init(validating raw: Any) throws {
         guard let item = raw as? [String: Any] else { throw MarkProblem("not an object") }
         let fields = MarkFields(item: item, unit: .px)
-        self.init(text: try fields.text(), agent: try fields.flag("agent"), agentName: try fields.agentName())
+        // A time that does not read is left out rather than costing the comment its words.
+        self.init(text: try fields.text(), agent: try fields.flag("agent"), agentName: try fields.agentName(), at: Pin.Comment.time(item["at"]))
     }
 }
 
@@ -229,6 +242,7 @@ struct PinRecord: Encodable {
         let text: String
         var agent: Bool?
         var agentName: String?
+        var at: String?
     }
 
     let id: String
@@ -250,6 +264,8 @@ struct PinRecord: Encodable {
             h = frame.height
             corner = tip.rawValue
         }
-        comments = pin.comments.map { CommentRecord(text: $0.text, agent: $0.agent ? true : nil, agentName: $0.agentName) }
+        comments = pin.comments.map {
+            CommentRecord(text: $0.text, agent: $0.agent ? true : nil, agentName: $0.agentName, at: $0.at.map(Pin.Comment.written))
+        }
     }
 }

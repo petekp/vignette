@@ -55,8 +55,16 @@ final class PendingMarks {
         var sender: String?
         /// As `marks=` gave them, for Keep, which adds them as `add` does.
         let marks: [AgentMark]
-        /// The same marks in px on the screenshot, in a drawing of their own, for drawing on top.
+        /// The same marks in px on the screenshot, and the new pins numbered as they would be now, in a
+        /// drawing of their own, for drawing on top.
         let drawing: Drawing
+        /// As `pins=` gave them, for Keep, which numbers the new pins then and adds the answers.
+        var pins: [AgentPin] = []
+        /// When `show` brought them, the time their comments keep.
+        var at = Date()
+
+        /// Keep's additions to the drawing, as `add` takes them.
+        var additions: AgentAdditions { AgentAdditions(marks: marks, pins: pins, agent: agent, at: at) }
     }
 
     private(set) var entries: [ScreenshotKey: Entry] = [:]

@@ -66,8 +66,9 @@ struct EditorCore {
         case timerFired
         /// What the clipboard held when `readClipboard` asked, or what was dropped on the editor.
         case paste(PasteContent)
-        /// Agents' marks joining the open drawing, already in px and kept inside the image.
-        case agentMarks([Mark])
+        /// Agents' marks joining the open drawing, already in px and kept inside the image, and their
+        /// pins, new or answering one, from `agent` and written `at`.
+        case agentMarks([Mark], pins: [AgentPin] = [], from: String? = nil, at: Date = Date())
         /// An Undo of Keep: `newestAgentMarks` and the redo steps leave the history, with no redo left.
         case takeBackAgentMarks
         /// A Redo of Keep: what `takeBackAgentMarks` took comes back, its redo steps under any made since.
@@ -396,7 +397,7 @@ struct EditorCore {
         case .messageTypingEnded: typingMessage = false
         case .timerFired: timerFired()
         case .paste(let content): paste(content)
-        case .agentMarks(let marks): join(marks)
+        case .agentMarks(let marks, let pins, let agent, let at): join(marks, pins: pins, from: agent, at: at)
         case .takeBackAgentMarks: takeBackAgentMarks()
         case .putBackAgentMarks(let step): putBackAgentMarks(step)
         case .done: finish(.done)
@@ -487,7 +488,7 @@ struct EditorCore {
         if unsaved { handOver() }
     }
 
-    private mutating func handOver() {
+    mutating func handOver() {
         emit(.handOver(drawingForHost))
         unsaved = false
     }
@@ -541,21 +542,23 @@ struct EditorCore {
     }
 
     /// Runs `change` as one undo step of its own, beside any gesture or typing session under way.
-    mutating func step(named name: StepName, _ change: (inout EditorCore) -> Void) {
+    /// `pins`, when given, are the step's pin changes in place of those `change` made.
+    mutating func step(named name: StepName, pins: [EditStep.PinChange]? = nil, _ change: (inout EditorCore) -> Void) {
         let open = edit
         edit = newEdit
         change(&self)
-        commitEdit(named: name)
+        commitEdit(named: name, pins: pins)
         edit = open
     }
 
-    /// Ends the open edit, turning what it changed into an undo step named `name`; returns whether it
-    /// changed anything.
+    /// Ends the open edit, turning what it changed into an undo step named `name`, with `pins` as its
+    /// pin changes when given; returns whether it changed anything.
     @discardableResult
-    mutating func commitEdit(named name: StepName) -> Bool {
+    mutating func commitEdit(named name: StepName, pins: [EditStep.PinChange]? = nil) -> Bool {
         guard let edit else { return false }
         self.edit = nil
-        guard let step = edit.step(named: name, ending: drawing, selection: selection) else { return false }
+        guard var step = edit.step(named: name, ending: drawing, selection: selection) else { return false }
+        if let pins { step.pins = pins }
         push(.drawing(step))
         changed()
         return true
@@ -1394,31 +1397,13 @@ struct EditorCore {
 
     // MARK: Agents' marks
 
-    /// Agents' marks join the open drawing as one undo step, and go to the host straight away. The
-    /// selection stays as it was.
-    private mutating func join(_ marks: [Mark]) {
-        let placed = marks.compactMap { geometry.placed(Self.fresh($0)) }
-        guard !placed.isEmpty else { return }
-        step(named: .agentMarks) { core in
-            for mark in placed { core.add(mark) }
-        }
-        handOver()
-    }
-
-    /// The newest undo step when it is agents' marks joining the drawing and nothing else, as a Keep
-    /// or an `add` leaves it. Nil while a gesture or a typing session is under way.
-    var newestAgentMarks: EditStep? {
-        guard gesture == nil, typing == nil, case .drawing(let step)? = undoSteps.last, step.joinsAgentMarks else { return nil }
-        return step
-    }
-
     private mutating func takeBackAgentMarks() {
         guard let step = newestAgentMarks else { return }
         undoSteps.removeLast()
         redoSteps = []
         typingMessage = false
         drawing = step.applied(to: drawing, forward: false)
-        selection.subtract(step.changes.map(\.id))
+        selection.subtract(step.changes.map(\.id) + step.pins.filter { $0.before == nil }.map(\.id))
         handOver()
     }
 

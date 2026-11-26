@@ -221,7 +221,8 @@ final class ThumbnailController {
                             "copied": notice?.kind == .copied,
                             "notCopied": notCopied as Any, "notSaved": notice?.kind == .notSaved,
                              "shown": model.shown[card.id].map(Self.shownJSON) as Any,
-                             "agentMarks": pendingMarks[card.shot.key]?.drawing.marks.count ?? 0]
+                             "agentMarks": pendingMarks[card.shot.key]?.drawing.marks.count ?? 0,
+                             "agentPins": pendingMarks[card.shot.key]?.pins.count ?? 0]
                 },
                 "selected": model.selectedCards().map(\.shot.key.path),
                 "queue": run.queue.map(\.path), "showsWaiting": showQueue.waiting.count, "dimsUnshown": model.dimsUnshown,

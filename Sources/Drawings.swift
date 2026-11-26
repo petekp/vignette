@@ -7,9 +7,10 @@ protocol OpenDrawing: AnyObject {
     /// The drawing open for `key` as the editor would hand it over now, or nil when that screenshot
     /// is not open.
     func drawing(of key: ScreenshotKey) -> Drawing?
-    /// Joins `marks`, already in the open drawing's px, as one undo step. Answers the drawing to
-    /// store in place of a hand-over, or nil when none of them joined.
-    func join(_ marks: [Mark]) -> Drawing?
+    /// Joins `marks`, already in the open drawing's px, and `pins` from `agent`, written `at`, as one
+    /// undo step (`AgentPin.join`). Answers the drawing to store in place of a hand-over, or nil when
+    /// none of them joined.
+    func join(_ marks: [Mark], pins: [AgentPin], from agent: String?, at: Date) -> Drawing?
     /// The screenshot `old` was renamed to `new`: an open drawing for `old` is now for `new`.
     func rekey(_ old: ScreenshotKey, to new: ScreenshotKey)
     /// The undo and redo history open for `key`, or nil when that screenshot is not open.

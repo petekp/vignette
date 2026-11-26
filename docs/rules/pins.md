@@ -58,6 +58,13 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   Return does, and works only while the field holds words. A press on a handle of the open pin's
   area resizes it with the popover open (`keepsComposer`); the resize is its own undo step, the
   composer's edit begins again after it (`resumeComposerEdit`), and the field takes the keys back.
+- An agent's pins come with `pins=` on `add` and `show` (`AgentPins.swift`, format in `docs/commands.md`),
+  as its marks come with `marks=`: new pins, or answers added to the person's pins as the agent's
+  comments. `AgentPin.join` turns them into the pins as they will be: new ones placed in px inside
+  the image and numbered from `nextPin`, answers found by number or `id` among the numbered pins.
+  Each comment holds the time of the call (`Pin.Comment.at`). `AgentPin.problem` refuses a list
+  that names a pin the drawing lacks or overflows 99, before anything is shown or written. A pin
+  first written by an agent is in the agent's colour (`Pin.color`).
 - In the editor an area's outline is dashed in its pin's colour inside a white edge, one width on
   screen at every zoom (`AreaOutline`). Its dashes march while the pin is being placed or is open
   (`EditorCore.marchingPins`), at `ui.pinAreaSpeed` times the motion setting, so Reduce Motion

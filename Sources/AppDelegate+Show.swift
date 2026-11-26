@@ -31,6 +31,10 @@ extension AppDelegate {
         if let value = request.marks {
             do { agentMarks = try AgentMark.parse(value) } catch { Commands.error(cmd, .invalidMarks, "\(error)"); return }
         }
+        var agentPins: [AgentPin] = []
+        if let value = request.pins {
+            do { agentPins = try AgentPin.parse(value) } catch { Commands.error(cmd, .invalidPins, "\(error)"); return }
+        }
         let first = shots[0], name = first.url.lastPathComponent
         let message = Shown.message(request.message)
         if message.cut { Log.write("[show] warning \(name): its message is longer than \(Shown.messageLimit) characters and was cut") }
@@ -40,15 +44,21 @@ extension AppDelegate {
         }
         let from = Agent.cleanSender(request.from)
         if from.cut { Log.write("[show] warning \(name): its from= is longer than \(Agent.maxSenderLength) characters and was cut") }
-        // Marks need someone to come from: with no `agent=` they are an agent's with no name.
-        let agent = request.agent ?? (agentMarks.isEmpty ? nil : "")
+        // Marks and pins need someone to come from: with no `agent=` they are an agent's with no name.
+        let agent = request.agent ?? (agentMarks.isEmpty && agentPins.isEmpty ? nil : "")
         var marks: [ScreenshotKey: PendingMarks.Entry] = [:]
-        if let agent, !agentMarks.isEmpty {
-            guard first.kind == .image, let drawing = drawings.preview(agentMarks, from: agent, to: first.key, style: settings.data.ui.textStyle,
+        if let agent, !agentMarks.isEmpty || !agentPins.isEmpty {
+            let additions = AgentAdditions(marks: agentMarks, pins: agentPins, agent: agent)
+            guard first.kind == .image, let preview = drawings.preview(additions, to: first.key, style: settings.data.ui.textStyle,
                                                                      newScreen: Self.newDrawingScreen, rule: settings.data.ui.markScaleRule) else {
+                Commands.error(cmd, agentMarks.isEmpty ? .invalidPins : .invalidMarks, "\(name): it is not an image its marks or pins can go on"); return
+            }
+            guard agentMarks.isEmpty || !preview.preview.marks.isEmpty else {
                 Commands.error(cmd, .invalidMarks, "\(name): none of its marks can be drawn on it"); return
             }
-            marks[first.key] = PendingMarks.Entry(agent: agent, session: session, sender: from.name, marks: agentMarks, drawing: drawing)
+            if let problem = AgentPin.problem(agentPins, on: preview.onto, name: name) { Commands.error(cmd, .invalidPins, problem); return }
+            marks[first.key] = PendingMarks.Entry(agent: agent, session: session, sender: from.name, marks: agentMarks, drawing: preview.preview,
+                                                  pins: agentPins, at: additions.at)
         }
         let shown = agent.map { Shown(agent: $0, session: session, message: message.text, at: Date(), sender: from.name) }
         thumbnail.show(.init(shots: shots, shown: shown, marks: marks, agent: request.agent, tag: request.tag, asked: asked))
@@ -95,15 +105,15 @@ extension AppDelegate {
         thumbnail.pendingMarks.set(nil, on: key)
         guard keep else {
             thumbnail.timeline.cleared(entry, on: key)
-            Log.write("[show] cleared marks=\(entry.drawing.marks.count) \(key.name)")
+            Log.write("[show] cleared marks=\(entry.drawing.marks.count)\(entry.pins.isEmpty ? "" : " pins=\(entry.pins.count)") \(key.name)")
             return
         }
-        addMarks(entry.marks, from: entry.agent, to: key, rule: settings.data.ui.markScaleRule) { [weak self] result in
+        addMarks(entry.additions, to: key, rule: settings.data.ui.markScaleRule) { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let joined):
-                if joined > 0 { thumbnail.timeline.kept(entry, on: key) }
-                Log.write("[show] kept marks=\(joined) \(key.name)")
+                if !joined.isEmpty { thumbnail.timeline.kept(entry, on: key) }
+                Log.write("[show] kept marks=\(joined.marks)\(entry.pins.isEmpty ? "" : " pins=\(joined.pins)") \(key.name)")
             case .failure(let failure):
                 thumbnail.pendingMarks.set(entry, on: key)
                 Log.write("[show] error \(failure.code.rawValue) \(key.name): its marks were not kept: \(failure)")

@@ -44,7 +44,8 @@ final class PinTests: XCTestCase {
 
     func testAPinnedFileRoundTripsAsVersion2() throws {
         let point = Pin(id: UUID(), number: 1, place: .point(CGPoint(x: 120.5, y: 80)),
-                        comments: [Pin.Comment(text: "Too tight"), Pin.Comment(text: "Agreed", agent: true, agentName: "Claude")])
+                        comments: [Pin.Comment(text: "Too tight"), Pin.Comment(text: "Agreed", agent: true, agentName: "Claude",
+                                                                                at: Date(timeIntervalSince1970: 1_795_000_000.6))])
         let area = Pin(id: UUID(), number: 3, place: .area(CGRect(x: 300, y: 200, width: 150, height: 90), tip: .bottomRight),
                        comments: [Pin.Comment(text: "Whole card", agent: true, agentName: "Codex")])
         let drawing = Drawing(key: key, pixels: pixels, pointScale: 2, marks: [Mark(geometry: .ellipse(CGRect(x: 10, y: 10, width: 40, height: 40)))],
@@ -63,6 +64,11 @@ final class PinTests: XCTestCase {
         XCTAssertEqual(Set(pins[1].keys), ["id", "number", "x", "y", "w", "h", "corner", "comments"])
         XCTAssertEqual(pins[1]["x"] as? Double, 300)
         XCTAssertEqual(pins[1]["corner"] as? String, "bottomRight")
+        let comments = try XCTUnwrap(pins[0]["comments"] as? [[String: Any]])
+        XCTAssertEqual(comments.map { $0["at"] as? String }, [nil, "2026-11-18T11:06:40Z"])
+
+        let untimed = try XCTUnwrap(written([item(1, comments: [["text": "Too tight", "at": "yesterday"]])]))
+        XCTAssertEqual(untimed.pins.first?.comments, [Pin.Comment(text: "Too tight")], "a time that does not read costs the comment nothing but its time")
     }
 
     func testOnlyAFileHoldingPinsANextPinOrAPinStepIsVersion2() throws {
