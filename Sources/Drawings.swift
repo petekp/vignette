@@ -321,6 +321,16 @@ final class Drawings {
         return made.count
     }
 
+    /// `add`'s marks alone, in a drawing of their own, writing nothing. Nil when none makes a mark.
+    func preview(_ agentMarks: [AgentMark], from agent: String?, to key: ScreenshotKey, style: TextStyle,
+                 newScreen: DrawingScreen, rule: MarkScaleRule) -> Drawing? {
+        let px = PixelSize(imageAt: key.url)
+        guard var d = open?.drawing(of: key) ?? px.map({ read(key, pixels: $0, style: style) ?? Drawing(key: key.path, pixels: $0, sizedFor: newScreen, rule: rule) }) else { return nil }
+        d.marks = marks(agentMarks, from: agent, in: d.pixels, pointScale: d.pointScale, style: style, rule: rule, name: key.name)
+        d.pins = []
+        return d.marks.isEmpty ? nil : d
+    }
+
     /// `AgentMark.marks`, with its one line for texts that do not fit, and one for colours named.
     private func marks(_ agentMarks: [AgentMark], from agent: String?, in pixels: PixelSize, pointScale: CGFloat, style: TextStyle,
                        rule: MarkScaleRule, name: String) -> [Mark] {

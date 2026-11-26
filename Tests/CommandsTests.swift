@@ -31,6 +31,17 @@ final class CommandsTests: XCTestCase {
         XCTAssertNil(Commands.parse(URL(string: "vignette://state")!).tag)
     }
 
+    func testShowReadsItsMessageAsAFormEncodesItAndCutsItAtAWord() throws {
+        let url = try XCTUnwrap(URL(string: "vignette://show?file=/tmp/a.png&message=Is+this%20the+bug%3F"))
+        XCTAssertEqual(Commands.parse(url).message, "Is this the bug?")
+        XCTAssertEqual(Shown.message("Is this\nthe bug?").text, "Is this the bug?")
+        let cut = Shown.message(String(repeating: "button ", count: 12))
+        XCTAssertTrue(cut.cut)
+        let text = try XCTUnwrap(cut.text)
+        XCTAssertLessThanOrEqual(text.count, Shown.messageLimit + 1)
+        XCTAssertTrue(text.hasSuffix("button…"))
+    }
+
     func testLiveInkStrokeParsesItsPoints() {
         let request = Commands.parse(URL(string: "vignette://live-ink-stroke?points=10,20;30.5,-4")!)
         XCTAssertEqual(request.points.flatMap(Commands.points), [CGPoint(x: 10, y: 20), CGPoint(x: 30.5, y: -4)])

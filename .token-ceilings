@@ -5,3 +5,7 @@
 # the annotation run, the column's presentation and the notices on cards all read the same model,
 # flights, run and open card. Moving a section out would make that state visible to the whole module.
 Sources/ThumbnailController.swift 21666
+
+# UITweaks.swift is one Codable struct whose synthesized decoding reads every stored property, and
+# Swift keeps a struct's stored properties in its declaration, so the file cannot be split.
+Sources/UITweaks.swift 5100

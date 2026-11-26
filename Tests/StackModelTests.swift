@@ -52,16 +52,32 @@ final class StackModelTests: XCTestCase {
         XCTAssertEqual(model.focused, model.cards[1].id)
     }
 
-    func testTheOverflowKeepsTheCardsInTheEditorAndInAStitch() {
-        let model = model(cards: 4)
-        let (inEditor, forming, oldestFree) = (model.cards[3].id, model.cards[2].id, model.cards[1].id)
+    func testTheOverflowKeepsTheCardsInTheEditorInAStitchAndShownByAnAgent() {
+        let model = model(cards: 5)
+        let (inEditor, forming, shown, oldestFree) = (model.cards[4].id, model.cards[3].id, model.cards[2].id, model.cards[1].id)
         model.outCards = [inEditor]
         model.forming = [forming]
-        XCTAssertTrue(model.removeOverflow(over: 3))
+        model.shown[shown] = Self.shown
+        XCTAssertTrue(model.removeOverflow(over: 4))
         XCTAssertFalse(model.cards.contains { $0.id == oldestFree })
-        XCTAssertEqual(model.cards.count, 3)
+        XCTAssertEqual(model.cards.count, 4)
         XCTAssertTrue(model.cards.contains { $0.id == inEditor })
         XCTAssertTrue(model.cards.contains { $0.id == forming })
+        XCTAssertTrue(model.cards.contains { $0.id == shown })
+    }
+
+    private static let shown = Shown(agent: "claude", session: nil, message: "Is this the bug?", at: Date())
+
+    func testACardThatLeavesTakesItsShownNoticeAndTheDimWithIt() {
+        let model = model(cards: 2)
+        let card = model.cards[1]
+        model.shown[card.id] = Self.shown
+        model.dimsUnshown = true
+        _ = model.notices.post(.shown(Self.shown), on: card.shot.key, seen: true, noticeHold: 2)
+        model.removeCards { $0.id == card.id }
+        XCTAssertTrue(model.shown.isEmpty)
+        XCTAssertFalse(model.dimsUnshown)
+        XCTAssertNil(model.notices.notice(on: card.shot.key))
     }
 
     func testPickingACardAgainPutsItLast() {

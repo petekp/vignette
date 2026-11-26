@@ -33,6 +33,18 @@ final class CardNoticesTests: XCTestCase {
         XCTAssertEqual(notices.notice(on: file), .copied(label: "Copied Path"))
     }
 
+    func testAShownNoticeStaysUntilItsShownStateEndsAndTheEndTakesNoNewerNotice() {
+        var notices = CardNotices()
+        let shown = Shown(agent: "claude", session: nil, message: nil, at: Date())
+        XCTAssertNil(post(&notices, .shown(shown))?.hold)
+        post(&notices, .unshown)
+        XCTAssertNil(notices.notice(on: file))
+        post(&notices, .shown(shown))
+        post(&notices, .copied(label: "Copied"))
+        post(&notices, .unshown)
+        XCTAssertEqual(notices.notice(on: file), .copied(label: "Copied"))
+    }
+
     /// A copy made while a send is out takes the card, and the send's failure still reaches it.
     func testAFailedSendIsShownAfterACopyMadeWhileItWaited() {
         var notices = CardNotices()

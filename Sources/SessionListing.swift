@@ -80,9 +80,11 @@ final class SessionListing {
     /// kept Codex thread and the thread the Codex app shows are each read by id, in the same
     /// listing. Claude Code lists every session it runs, so a kept one needs no read.
     nonisolated static func readByID(kept: AgentDestination?,
-                                     cameFrom: (client: AgentClient, shown: String?)?) -> [AgentClient: [String]] {
+                                     cameFrom: (client: AgentClient, shown: String?)?,
+                                     showedIt: AgentAddress? = nil) -> [AgentClient: [String]] {
         var including: [AgentClient: [String]] = [:]
         if let kept, kept.client == .codex { including[.codex] = [kept.id] }
+        if case .codexThread(let id)? = showedIt, including[.codex]?.contains(id) != true { including[.codex, default: []].append(id) }
         if let cameFrom, let shown = cameFrom.shown, including[cameFrom.client]?.contains(shown) != true {
             including[cameFrom.client, default: []].append(shown)
         }

@@ -140,6 +140,7 @@ final class FolderWritesTests: XCTestCase {
     /// comes, or its card presented before its agent is recorded, which leaves the card without its badge.
     func testAnAddAlreadyInTheFolderPresentsWithoutAReport() throws {
         let file = try source("inside.png", in: folder)
+        Agent.record(agent: "claude", origin: nil, on: file)
         let before = try listing()
         writes.add(request(file: file, agent: "claude"))
         XCTAssertEqual(events, [.present(file, false)])
@@ -148,10 +149,20 @@ final class FolderWritesTests: XCTestCase {
         XCTAssertFalse(writes.arrived(file.screenshotKey))
     }
 
+    /// Catches `add` relabelling the person's own capture as an agent's.
+    func testAnAddRefusesTheUsersOwnScreenshotInTheFolder() throws {
+        let file = try source("capture.png", in: folder)
+        writes.add(request(file: file, agent: "claude", marks: marks))
+        XCTAssertEqual(events, [])
+        XCTAssertEqual(joinedKeys, [])
+        XCTAssertNil(Agent.of(file))
+    }
+
     func testMarksOnAFileInASubfolderJoinThatFilesDrawing() throws {
         let sub = folder.appendingPathComponent("sub")
         try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
         let file = try source("inside.png", in: sub)
+        Agent.record(agent: "codex", origin: nil, on: file)
         writes.add(request(file: file, marks: marks))
         XCTAssertEqual(joinedKeys, [file.screenshotKey])
         XCTAssertEqual(events, [.present(file, false)])

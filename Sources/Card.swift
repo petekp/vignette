@@ -10,6 +10,8 @@ struct Card: Identifiable, Equatable {
     var duration: TimeInterval? = nil   // a recording's length, for its badge; nil for an image
     /// The drawing's marks, drawn over the thumbnail; nil for a screenshot with no drawing.
     var marks: MarkLayers? = nil
+    /// An agent's marks that `show` brought, drawn on top until the person keeps or clears them (`PendingMarks`).
+    var agentMarks: MarkLayers? = nil
     /// What the card's tab says about the last send of its file (`Agent.Sent`). Nil for a file never
     /// sent, and for an agent's card sent anywhere but back to the session it came from.
     var sent: Sent? = nil

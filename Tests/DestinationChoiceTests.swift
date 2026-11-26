@@ -87,9 +87,19 @@ final class DestinationChoiceTests: XCTestCase {
     }
 
     private func send(_ list: [AgentDestination], kept: AgentDestination?, complete: Bool = true, fresh: Bool = true,
-                      herdr: HerdrFocus? = nil, cameFrom: (client: AgentClient, shown: String?)? = nil) -> DestinationChoice.Answer {
+                      herdr: HerdrFocus? = nil, cameFrom: (client: AgentClient, shown: String?)? = nil,
+                      showedIt: AgentAddress? = nil) -> DestinationChoice.Answer {
         DestinationChoice.choose(.init(destinations: list, complete: complete, fresh: fresh, herdr: herdr),
-                                 for: .send(cameFrom: cameFrom, kept: kept))
+                                 for: .send(cameFrom: cameFrom, kept: kept, showedIt: showedIt))
+    }
+
+    func testSendStartsOnTheSessionThatShowedTheImageBeforeTheKeptPick() {
+        let a = Self.claude("a"), b = Self.claude("b")
+        XCTAssertEqual(send([b, a], kept: b, herdr: Self.focusOnB, showedIt: a.address).pick?.id, "a")
+        let notListedYet = send([b], kept: b, complete: false, fresh: false, showedIt: a.address)
+        XCTAssertFalse(notListedYet.decided)
+        XCTAssertNil(notListedYet.pick)
+        XCTAssertEqual(send([b], kept: b, showedIt: a.address).pick?.id, "b", "a session no fresh list has is gone")
     }
 
     private static let focusOnB = HerdrFocus(pane: "p", tab: "t", agents: [.init(pane: "p", session: "b", tab: "t")])

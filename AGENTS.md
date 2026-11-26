@@ -36,6 +36,7 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   `ProblemReport.swift`, `PickerQuestion.swift`, `SystemPrompts.swift`), read `docs/rules/setup-and-updates.md`. The status item's place is in
   `docs/rules/capture.md`.
 - Before changing the stack or the corner (`Stack*.swift`, `UndoTimeline*.swift`, `OlderShots.swift`, `CardPictures.swift`,
+  `Shown.swift`, `ShownOverlay.swift`,
   `CornerPresentation.swift`, `CornerKeys.swift`, `CardView.swift`, `CardState.swift`,
   `SelectionStrip.swift`, `Stitch.swift`, `Dock.swift`, `BackdropPanel.swift`, `FocusReturn.swift`,
   `DragSourceView.swift`, `CheckCoin.*`, `CheckLab.swift`), read `docs/rules/stack.md`,

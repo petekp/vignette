@@ -85,6 +85,7 @@ struct CardView: View, Equatable {
                                    onClick: { model.onClickImage(card) },
                                    marks: card.marks, picture: card.image?.size, corner: ui.cardCornerRadius, restSize: card.size)
                     )
+                    .marks(card.agentMarks, picture: card.image?.size, corner: ui.cardCornerRadius)
                     // The image itself never fades: a card landing from the annotator takes over
                     // from its flight in one frame, and what is drawn over it is what animates.
                     .transition(.identity)
@@ -140,7 +141,8 @@ struct CardView: View, Equatable {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if let tab = CardTab(card), inSlot {
+            // A shown card's notice says "From Claude", so an agent's tab saying the same gives way to it.
+            if let tab = CardTab(card), inSlot, !repeatsNotice {
                 // The fold decides the badge's shape from the card's width, but a zoom can narrow the
                 // card faster than the fold's spring closes. Clipped to the card, it never shows past it.
                 ZStack {
@@ -185,6 +187,7 @@ struct CardView: View, Equatable {
             .landing(inSlot, landing)
             .animation(Anim.spring(0.2 * motion), value: showsCircle)
         }
+        .shownDim(state.dimmed, ui: ui)
         .frame(width: size.width, height: size.height)
         // The thumbnail fills the card, so an image whose shape differs from the card's box hangs
         // outside it, and the clip that hides it does not shrink the hit area. Without this the
@@ -203,6 +206,9 @@ struct CardView: View, Equatable {
                         SendOverlay(notice: send, corner: ui.cardCornerRadius,
                                     onUnsend: { if let unsend = Config.action(id: "unsend") { model.onAction(unsend, [card]) } },
                                     onOverControl: { model.overControl = $0 })
+                    case .shown(let shown):
+                        ShownOverlay(shown: shown, hasMarks: card.agentMarks != nil, corner: ui.cardCornerRadius,
+                                     onMarks: { model.onAgentMarks(card, $0) }, onOverControl: { model.overControl = $0 })
                     }
                 }
                 .transition(.opacity)
@@ -229,6 +235,10 @@ struct CardView: View, Equatable {
 
     /// The ring a selected or focused card wears over its resting border. It is 0 wide on any other card.
     private var ringColor: Color { selected ? .accentColor : .white.opacity(0.9) }
+    private var repeatsNotice: Bool {
+        guard case .shown(let shown)? = notice, let agent = card.agent else { return false }
+        return Agent.label(for: agent) == shown.headline
+    }
     private var ringWidth: CGFloat { inSlot && (selected || focused) ? max(2, ui.cardBorderWidth) : 0 }
 
     /// Newest (bottom) card first, in and out: the cards nearest the cursor move at once, so a

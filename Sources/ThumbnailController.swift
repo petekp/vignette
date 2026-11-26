@@ -90,7 +90,11 @@ final class ThumbnailController {
     /// editor lets them go once it is hidden, which is before the card is sent home.
     private var parkedMarks: MarkLayers?
     /// Where a press on a flying card goes.
-    private var flightPress = FlightPress()
+    var flightPress = FlightPress()
+    /// The agent's marks `show` brought, drawn on top until kept or cleared, and the calls waiting for the hand.
+    let pendingMarks = PendingMarks()
+    var showQueue = ShowQueue<ShowCall>()
+    var showWait: Timer?, dimTimer: Timer?
     /// Cards made in this turn whose stored drawings are still to be read. A stack opening makes
     /// every card in one turn, and reading theirs together gives the column one change of `cards`.
     private var drawingReads: [ScreenshotKey] = []
@@ -214,10 +218,12 @@ final class ThumbnailController {
                             "drawing": drawings?.keys.contains(card.shot.key) ?? false, "agent": card.agent as Any,
                             "kind": card.shot.kind == .recording ? "recording" : "image",
                             "copied": notice?.kind == .copied,
-                            "notCopied": notCopied as Any, "notSaved": notice?.kind == .notSaved]
+                            "notCopied": notCopied as Any, "notSaved": notice?.kind == .notSaved,
+                             "shown": model.shown[card.id].map(Self.shownJSON) as Any,
+                             "agentMarks": pendingMarks[card.shot.key]?.drawing.marks.count ?? 0]
                 },
                 "selected": model.selectedCards().map(\.shot.key.path),
-                "queue": run.queue.map(\.path),
+                "queue": run.queue.map(\.path), "showsWaiting": showQueue.waiting.count, "dimsUnshown": model.dimsUnshown,
                 "focused": model.cards.first { $0.id == model.focused }?.shot.key.path as Any,
                 "hovered": model.cards.first { $0.id == model.hoveredCard }?.shot.key.path as Any,
                 "key": panel.isKeyWindow,
@@ -285,7 +291,7 @@ final class ThumbnailController {
         let asked = CACurrentMediaTime()
         let (shots, detail) = recentListing()
         let started = CACurrentMediaTime()
-        let cards = shots.compactMap { makeCard($0) }
+        let cards = keptShown() + shots.filter { shownCard(of: $0) == nil }.compactMap { makeCard($0) }
         if !cards.isEmpty {
             present(cards: cards)
             Log.write("[stack] shown cards=\(cards.count) \(detail)listed=\(Int((started - asked) * 1000))ms shown=\(Int((CACurrentMediaTime() - started) * 1000))ms decoding=\(cards.filter { $0.image == nil }.count)")
@@ -524,6 +530,7 @@ final class ThumbnailController {
             flightImages.rename(from: old, to: new)
             drawingReads = drawingReads.map { $0 == old ? new : $0 }
             flightPress.rename(from: old, to: new)
+            pendingMarks.rename(from: old, to: new)
             send(.renamed(from: old, to: new))
             if let opening = run.opening, opening.key == new { onAnnotatorRenamed?(shot, opening) }
         }
@@ -796,6 +803,7 @@ final class ThumbnailController {
             dim.show(on: screen)
             parkedMarks = nil
             flights.annotatorStoppedDrawing()   // it draws this image from here, so not the one leaving
+            shownCardOpens(card, opening: opening)
             onAnnotatorPrepare?(card.shot, opening, target, annotatorRoom)
             var from = slot ?? cardFrame(of: card)
             if model.offscreen.contains(card.id) { from = layout.offscreen(from) }
@@ -1110,7 +1118,7 @@ final class ThumbnailController {
 
     // MARK: Internals
 
-    private func card(for shot: Screenshot) -> Card? {
+    func card(for shot: Screenshot) -> Card? {
         model.cards.first { $0.shot.url == shot.url }
     }
 
@@ -1141,6 +1149,7 @@ final class ThumbnailController {
         let space = screenSpace
         let card = Card(id: UUID(), shot: shot, image: Thumbnailer.cached(at: shot.url, maxPixel: maxPixel, space: space),
                         pointSize: header.size, size: size, agent: Agent.of(shot.url), duration: header.duration,
+                        agentMarks: agentMarkLayers(for: shot.key, size: size),
                         sent: sent(of: shot.url))
         if card.image == nil {
             Thumbnailer.loadCard(at: shot.url, maxPixel: maxPixel, space: space, caches: caches) { [weak self] image, kept in
@@ -1178,7 +1187,7 @@ final class ThumbnailController {
     /// Shows a new column. Cards start past the screen edge and arrive staggered, newest first.
     /// `keepOffscreen` leaves the cards parked past the edge, for a card that is about to fly out from there.
     /// Without `ordersPanel`, the panel is laid out but left for `orderPanelIn` to put on screen.
-    private func present(cards: [Card], entrance: Entrance = .slide, ordersPanel: Bool = true) {
+    func present(cards: [Card], entrance: Entrance = .slide, ordersPanel: Bool = true) {
         if !visible {
             // A capture opening in the editor shows on the screen it was taken on, where its flight starts.
             let shown = captureOrigin.flatMap { origin in
@@ -1269,7 +1278,7 @@ final class ThumbnailController {
     }
 
     /// A card joins the bottom of the visible column and slides in.
-    private func insert(_ card: Card, entrance: Entrance = .slide) {
+    func insert(_ card: Card, entrance: Entrance = .slide) {
         guard !model.cards.contains(where: { $0.shot.url == card.shot.url }) else { return }
         dismissGeneration += 1
         sweep.end()

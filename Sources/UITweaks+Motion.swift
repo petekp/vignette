@@ -9,6 +9,7 @@ extension UITweaks {
         u.slideInDuration *= scale; u.slideOutDuration *= scale
         u.staggerDelay *= scale; u.staggerTotalMax *= scale
         u.relayoutDuration *= scale; u.shiftUpDuration *= scale; u.expandDuration *= scale; u.hoverRevealDuration *= scale
+        u.shownDimFade *= scale
         u.dropDuration *= scale
         u.introDuration *= scale
         u.checkSpinDuration *= scale; u.checkSpinDelay *= scale

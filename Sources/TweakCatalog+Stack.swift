@@ -23,6 +23,10 @@ extension TweakCatalog {
                 .number("pressScale", "Press scale", \.pressScale, 0.8...1, step: 0.01, safe: 0.1...10),
                 .number("hoverDim", "Hover dim", \.hoverDim, 0...0.8, step: 0.05, safe: 0...1),
             ]),
+            TweakGroup("Shown by an agent", [
+                .number("shownDim", "Dim on the others", \.shownDim, 0...0.8, step: 0.05, safe: 0...1),
+                .number("shownDimFade", "Dim fade", \.shownDimFade, 0...1, step: 0.05, unit: "s", safe: 0...60),
+            ], caption: { _ in "How much the corner's other cards darken while the cards an agent showed are up, and the spring it comes and goes on." }),
         ]),
         TweakSection("Hover buttons", [
             TweakGroup(nil, [

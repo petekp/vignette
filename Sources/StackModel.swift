@@ -44,6 +44,12 @@ final class StackModel: ObservableObject {
         didSet { if annotating != oldValue { NotificationCenter.default.post(name: .annotatingChanged, object: self) } }
     }
     @Published var notices = CardNotices()     // what each card says: copied, not copied, or where a send went
+    /// The cards an agent showed (`vignette://show`), until each leaves the column, opens or is shown again.
+    @Published var shown: [UUID: Shown] = [:]
+    /// The corner's other cards are dimmed while shown cards are up: for the dwell of the last `show`.
+    @Published var dimsUnshown = false
+    /// The session that showed the card opening in the annotator now, which Send starts on.
+    var openedShown: (opening: Opening, session: AgentAddress)?
     /// The selected cards, in the order they were selected. Every action, Stitch included, takes
     /// them in this order, and a card's circle shows its place here.
     @Published private(set) var selection: [UUID] = []
@@ -114,6 +120,8 @@ final class StackModel: ObservableObject {
     var onSweep: (CGFloat) -> Void = { _ in }       // y from the column top, during a drag from a circle
     var onSweepEnd: () -> Void = {}
     var onClickImage: (Card) -> Void = { _ in }
+    /// Keep (true) or Clear on the agent's marks a shown card carries.
+    var onAgentMarks: (Card, _ keep: Bool) -> Void = { _, _ in }
     /// What the cards a drag out of the stack drop. Each card's file when there is none.
     var drags: DragItems?
     var onHover: (UUID?) -> Void = { _ in }
@@ -125,15 +133,24 @@ final class StackModel: ObservableObject {
     /// drawn for them. A lone thumbnail that leaves for the annotator comes back, and does not come here.
     /// The focused card is where keys act; when it leaves, the newest card takes the focus.
     func removeCards(where leaves: (Card) -> Bool) {
-        for card in cards where leaves(card) { card.marks?.clear() }
+        for card in cards where leaves(card) {
+            card.marks?.clear()
+            card.agentMarks?.clear()
+            if shown.removeValue(forKey: card.id) != nil {
+                _ = notices.post(.unshown, on: card.shot.key, seen: false, noticeHold: 0)
+                Log.write("[show] ended \(card.shot.url.lastPathComponent) by=left")
+            }
+        }
+        if shown.isEmpty { dimsUnshown = false }
         cards.removeAll(where: leaves)
         if let focused, !cards.contains(where: { $0.id == focused }) { self.focused = cards.first?.id }
     }
 
     /// Drops the oldest card when the column holds more than `limit`. True when it did. A card in
-    /// the annotator or in a stitch is passed over: it is coming back to its slot.
+    /// the annotator or in a stitch is passed over: it is coming back to its slot. So is a card an
+    /// agent showed, which the person has not looked at yet.
     func removeOverflow(over limit: Int) -> Bool {
-        let away = outCards.union(forming)
+        let away = outCards.union(forming).union(shown.keys)
         guard cards.count > limit, let oldest = cards.last(where: { !away.contains($0.id) }) else { return false }
         removeCards { $0.id == oldest.id }
         deselect([oldest.id])

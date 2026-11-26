@@ -3,6 +3,7 @@ import AppKit
 extension AppDelegate {
     /// The corner and the annotator hand each other the image, its frame and its flight.
     func connectAnnotator() {
+        connectAgentMarks()
         thumbnail.onAnnotatorPrepare = { [weak self] shot, opening, frame, room in
             guard let self else { return }
             self.annotator.prepare(shot, opening: opening, in: frame, room: room)

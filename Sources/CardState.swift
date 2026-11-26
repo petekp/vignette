@@ -17,6 +17,8 @@ struct CardState: Equatable {
     var isForming: Bool
     var offscreen: Bool
     var notice: CardNotices.Notice?
+    /// Another card in the corner is shown by an agent and this one is not, nor under the pointer.
+    var dimmed: Bool
     var entering: Bool
     var entranceRank: Int?
     // The same on every card.
@@ -36,6 +38,7 @@ struct CardState: Equatable {
         // A swipe carries the column off as one piece, so the card does not slide on its own.
         offscreen = model.offscreen.contains(card.id) && !model.swipeExit
         notice = model.notices.notice(on: card.shot.key)
+        dimmed = model.dimsUnshown && model.shown[card.id] == nil && model.hoveredCard != card.id
         entering = model.entering == card.id
         entranceRank = model.entranceRanks[card.id]
         offersSelection = model.offersSelection

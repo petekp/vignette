@@ -19,6 +19,8 @@ struct UITweaks: Codable, Equatable {
     var hoverScale = 1.06
     var pressScale = 0.97
     var hoverDim = 0.35             // darkening of a hovered card behind its buttons
+    var shownDim = 0.45             // darkening of the corner's other cards while cards an agent showed are up
+    var shownDimFade = 0.35         // that darkening's spring, in and out
     // Hover buttons and selection
     var buttonSize = 27.0
     var buttonIconSize = 11.0
