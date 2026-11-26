@@ -62,20 +62,36 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         post.target = self
         post.action = #selector(postPressed)
         post.toolTip = "Post comment"
-        let composerRow = NSStackView(views: [field, post])
-        composerRow.alignment = .bottom
-        composerRow.spacing = ui.pinPopoverSpacing
         list.addArrangedSubview(comments)
-        list.addArrangedSubview(composerRow)
+        list.addArrangedSubview(composerRow(postSize: size, gap: ui.pinPopoverSpacing))
         list.widthAnchor.constraint(equalToConstant: Self.width).isActive = true
-        field.widthAnchor.constraint(equalToConstant: Self.fieldWidth).isActive = true
-        post.widthAnchor.constraint(equalToConstant: size).isActive = true
-        post.heightAnchor.constraint(equalToConstant: size).isActive = true
         controller.view = list
         popover.contentViewController = controller
         popover.behavior = .applicationDefined
         popover.delegate = self
         update(pin, composer: composer)
+    }
+
+    /// The field and the post button. The button is centred on the field's last line, so one line of
+    /// words, its placeholder and its caret sit on the row's centre line with the button, and the
+    /// button stays beside the last line as the words wrap.
+    private func composerRow(postSize: CGFloat, gap: CGFloat) -> NSView {
+        let row = NSView()
+        for view in [field, post] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            row.addSubview(view)
+        }
+        let lineHeight = field.intrinsicContentSize.height
+        let lift = max(0, (postSize - lineHeight) / 2)
+        for constraint in [field.leadingAnchor.constraint(equalTo: row.leadingAnchor), field.widthAnchor.constraint(equalToConstant: Self.fieldWidth),
+                           field.topAnchor.constraint(equalTo: row.topAnchor, constant: lift),
+                           field.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -lift),
+                           post.leadingAnchor.constraint(equalTo: field.trailingAnchor, constant: gap), post.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+                           post.centerYAnchor.constraint(equalTo: field.bottomAnchor, constant: -lineHeight / 2),
+                           post.widthAnchor.constraint(equalToConstant: postSize), post.heightAnchor.constraint(equalToConstant: postSize)] {
+            constraint.isActive = true
+        }
+        return row
     }
 
     /// The field's width: the popover's, less its insets, the post button and the gap before it.
