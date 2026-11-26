@@ -27,16 +27,17 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         self.pin = pin.id
         self.send = send
         super.init()
-        field.placeholderAttributedString = NSAttributedString(string: "Add a comment", attributes: [
-            .font: NSFont.preferredFont(forTextStyle: .body), .foregroundColor: NSColor.secondaryLabelColor,
-        ])
         field.isBezeled = false
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
         field.textColor = .labelColor
         field.isEditable = true
-        field.font = .preferredFont(forTextStyle: .body)
+        let body = NSFont.preferredFont(forTextStyle: .body)
+        field.font = body
+        field.placeholderAttributedString = NSAttributedString(string: "Add a comment", attributes: [
+            .font: body, .foregroundColor: NSColor.secondaryLabelColor,
+        ])
         field.usesSingleLineMode = false
         field.cell?.wraps = true
         field.cell?.isScrollable = false
@@ -70,18 +71,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         field.widthAnchor.constraint(equalToConstant: Self.fieldWidth).isActive = true
         post.widthAnchor.constraint(equalToConstant: size).isActive = true
         post.heightAnchor.constraint(equalToConstant: size).isActive = true
-        // The popover's own glass let the page behind show through the words: the window's material is thick enough.
-        let backing = NSVisualEffectView()
-        backing.material = .windowBackground
-        backing.blendingMode = .behindWindow
-        backing.state = .active
-        list.translatesAutoresizingMaskIntoConstraints = false
-        backing.addSubview(list)
-        for constraint in [list.leadingAnchor.constraint(equalTo: backing.leadingAnchor), list.trailingAnchor.constraint(equalTo: backing.trailingAnchor),
-                           list.topAnchor.constraint(equalTo: backing.topAnchor), list.bottomAnchor.constraint(equalTo: backing.bottomAnchor)] {
-            constraint.isActive = true
-        }
-        controller.view = backing
+        controller.view = list
         popover.contentViewController = controller
         popover.behavior = .applicationDefined
         popover.delegate = self
