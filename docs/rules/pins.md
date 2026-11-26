@@ -60,7 +60,7 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   right of the teardrop, or to its left when the screen has no room. Its post button posts as
   Return does, and works only while the field holds words. A press on a handle of the open pin's
   area resizes it with the popover open (`keepsComposer`); the resize is its own undo step, the
-  composer's edit begins again after it (`resumeComposerEdit`), and the field takes the keys back.
+  composer's edit begins again after it (`resumeComposerEdit`), and the field takes the keys back with its caret or selection where it was (`PinPopover.takeKeys`).
 - The popover's comments are in the system's face, an agent's as a person's. Each shows its writer's
   avatar, the one the hover card shows (`PinHoverCard.paint`, `Pin.Comment.writer`), then their name
   in the label colour, "You" or the agent's capitalized, and under it the words. The popover is

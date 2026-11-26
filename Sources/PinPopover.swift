@@ -13,7 +13,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     private let controller = NSViewController()
     private let list = CommandReturnStack()
     private let comments = NSStackView()
-    private let field = NSTextField()
+    private let field = ComposerField()
     private let post = NSButton()
     private let send: (EditorCore.ComposerInput) -> Void
     private var shown: (comments: [Pin.Comment], editing: Int?)?
@@ -125,11 +125,18 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         keepsKeys = nil
     }
 
-    /// A press on the picture took the keys, as a resize does: they come back to the field.
+    /// A press on the picture took the keys, as a resize does: they come back to the field, with the
+    /// caret or the selection where it was, where AppKit would select all the words.
     func takeKeys() {
         guard let window = field.window, popover.isShown else { return }
         window.makeKey()
-        if field.currentEditor() == nil { window.makeFirstResponder(field) }
+        guard field.currentEditor() == nil else { return }
+        window.makeFirstResponder(field)
+        guard let editor = field.currentEditor() else { return }
+        let length = (editor.string as NSString).length
+        let kept = field.endedSelection ?? NSRange(location: length, length: 0)
+        let location = min(kept.location, length)
+        editor.selectedRange = NSRange(location: location, length: min(kept.length, length - location))
     }
 
     /// The pin's teardrop moved with the zoom or a drag: the popover moves with it.
@@ -352,6 +359,16 @@ private final class CommentRow: NSView {
     override func accessibilityPerformPress() -> Bool {
         press?()
         return press != nil
+    }
+}
+
+/// The composer's field, which keeps where its caret was when its editing ended.
+private final class ComposerField: NSTextField {
+    var endedSelection: NSRange?
+
+    override func textDidEndEditing(_ notification: Notification) {
+        endedSelection = (notification.object as? NSTextView)?.selectedRange()
+        super.textDidEndEditing(notification)
     }
 }
 
