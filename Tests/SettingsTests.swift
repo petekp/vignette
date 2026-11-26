@@ -158,6 +158,32 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(try json()["ui"] as? [String: Double], ["cardMaxWidth": 300])
     }
 
+    /// Catches a tweak group that reads or writes its keys anywhere but the one flat `ui` object a file from an earlier build holds.
+    @MainActor
+    func testAFileFromBeforeTheTweakGroupsLoadsTheSameAndIsWrittenWithTheSameKeys() throws {
+        let ui: [String: Any] = ["cardMaxWidth": 300, "motion": 0, "checkBloom": 1.5, "introFunnel": 0, "zoomEdgePull": 0.5,
+                                 "pinSize": 30, "agentTextFont": "serif", "inkGelLight": "#ff0000", "liveInkTextWidth": 400]
+        let raw = try JSONSerialization.data(withJSONObject: ["version": Settings.currentVersion, "ui": ui], options: [.sortedKeys])
+        try raw.write(to: file)
+        let boot = Settings.bootstrap(at: file)
+        XCTAssertEqual(boot.data.ui.cardMaxWidth, 300)
+        XCTAssertEqual(boot.data.ui.motion, 0)
+        XCTAssertEqual(boot.data.ui.checkBloom, 1.5)
+        XCTAssertEqual(boot.data.ui.introFunnel, 0)
+        XCTAssertEqual(boot.data.ui.zoomEdgePull, 0.5)
+        XCTAssertEqual(boot.data.ui.pinSize, 30)
+        XCTAssertEqual(boot.data.ui.agentTextFont, "serif")
+        XCTAssertEqual(boot.data.ui.inkGelLight, "#ff0000")
+        XCTAssertEqual(boot.data.ui.liveInkTextWidth, 400)
+        XCTAssertEqual(boot.data.ui.cardMaxHeight, UITweaks().cardMaxHeight)
+        XCTAssertEqual(try json()["ui"] as? NSDictionary, ui as NSDictionary)
+
+        let whole = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(boot.data.ui)) as? [String: Any])
+        XCTAssertEqual(Set(whole.keys), Set(UITweaks().fields.map(\.name)))
+        XCTAssertTrue(whole.values.allSatisfy { !($0 is [String: Any]) })
+        XCTAssertEqual(try JSONDecoder().decode(UITweaks.self, from: JSONEncoder().encode(boot.data.ui)), boot.data.ui)
+    }
+
     @MainActor
     func testFileWithoutVersionIsMigratedAndRewritten() throws {
         try write(#"{"recentCount": 7}"#)
@@ -268,7 +294,7 @@ final class SettingsTests: XCTestCase {
     }
 
     func testEveryTweakHasABound() {
-        let numbers = Mirror(reflecting: UITweaks()).children.filter { $0.value is Double || $0.value is Int }.compactMap(\.label)
+        let numbers = UITweaks().fields.filter { $0.value is Double || $0.value is Int }.map(\.name)
         let doubles = Set(numbers).subtracting(["backdropBands"])
         XCTAssertEqual(Set(UITweaks.bounds.map(\.name)), Set(doubles))
     }

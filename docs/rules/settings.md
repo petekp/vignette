@@ -25,7 +25,11 @@
   drawing's mark scale when it is made, and a change reaches only the drawing open in the editor
   (`docs/rules/editor-and-drawings.md`). What a user would tune belongs in `UITweaks`,
   with an entry in `TweakCatalog`, which gives it its row in the tweak panel and its safety range
-  (`UITweaks.bounds` is made from it); when in doubt, put it there. Editing the file is a supported way to
+  (`UITweaks.bounds` is made from it); when in doubt, put it there. A tweak goes in the group whose
+  file is named as its `TweakCatalog` file is (`UITweaks+Stack.swift` beside `TweakCatalog+Stack.swift`).
+  `ui` stays one flat object: each group decodes its keys from it, `UITweaks.fields` lists every
+  tweak by its own name for the encoding, and `ui.<name>` reads a tweak in any group. Inside an
+  extension of `UITweaks`, write `self.<name>`, since a bare name does not reach the groups. Editing the file is a supported way to
   change settings; the app reloads it within a second. It is the user's real config: never test
   against it. `VIGNETTE_SETTINGS=<path>` in the environment
   (`open -g --env VIGNETTE_SETTINGS=/tmp/x/settings.json <app>`) points a launch at another file,

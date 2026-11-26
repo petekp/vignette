@@ -361,18 +361,18 @@ struct FieldUniforms {
 // What the field draws, decided from the settings in one place.
 extension UITweaks {
     /// The lamp moves on its own, so it draws every refresh.
-    fileprivate var lampLives: Bool { ringShows && (liveInkLampBreath > 0 || liveInkLampDrift > 0) }
+    fileprivate var lampLives: Bool { ringShows && (self.liveInkLampBreath > 0 || self.liveInkLampDrift > 0) }
 
     /// The ring shows round the pointer while the chord is held.
-    var ringShows: Bool { liveInkFieldSize > 0 && liveInkFieldGlow > 0 }
+    var ringShows: Bool { self.liveInkFieldSize > 0 && self.liveInkFieldGlow > 0 }
 
     /// How far from its centre the ring draws anything, at its most stretched. The ring's layer is
     /// this far each way, so it is capped at 600 pt. The lamp's pool grows with its breath, its
     /// energy and the voice, as the shader's `S` does.
     fileprivate var ringReach: CGFloat {
-        let size = CGFloat(liveInkFieldSize), stretch = CGFloat(liveInkFieldStretch)
-        let reach = (3 * CGFloat(liveInkFieldSpread) * size + 8) * (1 + 0.5 * stretch)
-            * (1 + 0.5 * CGFloat(liveInkLampBreath) + 0.35 * CGFloat(liveInkLampEnergy + liveInkLampVoice))
+        let size = CGFloat(self.liveInkFieldSize), stretch = CGFloat(self.liveInkFieldStretch)
+        let reach = (3 * CGFloat(self.liveInkFieldSpread) * size + 8) * (1 + 0.5 * stretch)
+            * (1 + 0.5 * CGFloat(self.liveInkLampBreath) + 0.35 * CGFloat(self.liveInkLampEnergy + self.liveInkLampVoice))
         return min(reach, 600)
     }
 }
