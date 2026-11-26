@@ -6,15 +6,24 @@
 # scripts/check-site-js.py (needs deno) and scripts/check-python-unused.py (needs pyflakes or uvx),
 # then the VignetteTests unit tests
 # after the build, and names any that fail or were skipped.
+# `--derived-data <path>` builds into <path> instead of build/, read from the folder the script is
+# run in, so a worktree's build leaves build/ and any copy running from it alone.
 set -e
-cd "$(dirname "$0")/.."
 run_tests=false
-for arg in "$@"; do
-  case "$arg" in
+derived_data=build
+while (( $# )); do
+  case "$1" in
     --test) run_tests=true ;;
-    *) echo "unknown option: $arg" >&2; exit 2 ;;
+    --derived-data)
+      if [[ -z "$2" || "$2" == --* ]]; then
+        echo "--derived-data needs a folder: scripts/build.sh --derived-data <path>" >&2; exit 2
+      fi
+      derived_data=${2:a}; shift ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
+  shift
 done
+cd "$(dirname "$0")/.."
 if $run_tests; then python3 scripts/check-agent-folders.py; python3 scripts/check-app-data-paths.py; python3 scripts/check-display-links.py; python3 scripts/check-screen-stores.py; python3 scripts/check-app-activation.py; python3 scripts/check-animations.py; python3 scripts/check-agents-map.py; python3 scripts/check-map-line-numbers.py; python3 scripts/check-site-js.py; python3 scripts/check-python-unused.py; fi
 scheme=$(sed -n 's/^name: *//p' project.yml)
 xcodegen generate >/dev/null   # also writes Info.plist
@@ -29,13 +38,13 @@ if [[ -f scripts/signing.env ]]; then
 else
   signing="ad-hoc"
 fi
-xcodebuild -project "$scheme.xcodeproj" -scheme "$scheme" -configuration Debug -derivedDataPath build build -quiet "${signing_args[@]}"
-echo "built: $PWD/build/Build/Products/Debug/$scheme.app ($build, signed: $signing)"
+xcodebuild -project "$scheme.xcodeproj" -scheme "$scheme" -configuration Debug -derivedDataPath "$derived_data" build -quiet "${signing_args[@]}"
+echo "built: ${derived_data:a}/Build/Products/Debug/$scheme.app ($build, signed: $signing)"
 if $run_tests; then
   # Same signing, or the test run rebuilds the app with the project defaults.
-  if ! xcodebuild -project "$scheme.xcodeproj" -scheme "$scheme" -destination 'platform=macOS' -derivedDataPath build test -quiet "${signing_args[@]}"; then
+  if ! xcodebuild -project "$scheme.xcodeproj" -scheme "$scheme" -destination 'platform=macOS' -derivedDataPath "$derived_data" test -quiet "${signing_args[@]}"; then
     # xcodebuild's own output names compile errors; the result bundle names the failed tests.
-    result=$(ls -td build/Logs/Test/*.xcresult 2>/dev/null | head -1)
+    result=$(ls -td "$derived_data"/Logs/Test/*.xcresult 2>/dev/null | head -1)
     if [[ -n "$result" ]]; then
       summary=$(xcrun xcresulttool get test-results summary --path "$result" 2>/dev/null)
       python3 - "$summary" <<'PY' >&2
@@ -50,7 +59,7 @@ PY
   fi
   echo "tests: passed"
   # A skipped test leaves the run passed, so each one is named with its reason.
-  result=$(ls -td build/Logs/Test/*.xcresult 2>/dev/null | head -1)
+  result=$(ls -td "$derived_data"/Logs/Test/*.xcresult 2>/dev/null | head -1)
   if [[ -n "$result" ]]; then
     python3 - "$result" <<'PY'
 import json, subprocess, sys

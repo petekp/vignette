@@ -5,6 +5,7 @@
 ```
 ./scripts/run.sh          # regenerates the Xcode project, builds, relaunches
 ./scripts/build.sh --test # the same build plus the unit tests
+./scripts/build.sh --test --derived-data .derived-data # the same, built into .derived-data
 ```
 
 Requires Xcode 27 or later and `xcodegen` (`brew install xcodegen`). `scripts/build.sh --test`
@@ -21,8 +22,12 @@ The app runs on macOS 14 or later. `Info.plist` is generated from `project.yml`,
 `run.sh` quits any running Vignette, including an installed copy. It then opens the new build from
 `build/Build/Products/Debug/`, which uses your real settings file and screenshots folder.
 
-To run one test class, regenerate the project and give `xcodebuild` an `-only-testing` filter. A
-derived data folder of its own leaves `build/` alone, and so does not rewrite a copy running from it:
+Both scripts build into `build/` unless `--derived-data <path>` names another folder. A relative
+path is read from the folder you run the script in. A build into a folder of its own leaves `build/`
+alone, and so does not rewrite a copy running from it. Use it in a worktree.
+
+To run one test class, regenerate the project and give `xcodebuild` an `-only-testing` filter, with
+a derived data folder of its own:
 
 ```
 xcodegen generate
