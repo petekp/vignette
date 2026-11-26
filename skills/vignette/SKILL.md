@@ -3,7 +3,7 @@ name: vignette
 description: >-
   Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "31"
+  version: "32"
 ---
 
 # Vignette
@@ -27,6 +27,11 @@ open -g "vignette://add?file=$file&title=$title&description=$description&agent=c
   alone and does not open the editor, whatever the user's capture settings say. Add `&annotate`
   to open the editor instead, only when you are asking for marks right away.
 - `&agent=<name>` says who pushed it: `claude` or `codex`. The card gets a tab naming you.
+- `&from=<name>` is your session's name as the user knows it, such as the name of the Herdr tab
+  you run in, in a few words. The card's tab then says "From <name>" in place of "From Claude". It
+  takes up to 40 characters, and longer text is cut at a word with a warning. Leave it out when you
+  do not know the name: with `&session=`, Vignette looks it up from the user's session list.
+  Percent-encode it, as you do the path.
 - `&session=<id>` names your session, so the user's Reply on the card comes back to you. Claude
   Code sets `CLAUDE_CODE_SESSION_ID`, and Codex sets `CODEX_THREAD_ID` to your thread's id. Leave
   it out when your client gives you no session id.
@@ -70,8 +75,10 @@ open -g "vignette://show?file=$a&file=$b&message=$message&agent=codex&session=$C
 ```
 
 - `show` brings each card to the corner in the order you name the files, or marks it where it
-  already is, and dims the others. The card says "From Claude" with your message under it. It
-  changes no file and takes no keys from the user.
+  already is, and dims the others. The card says "From <your session's name>", or "From Claude"
+  when the name is unknown, with your message under it. It changes no file and takes no keys from
+  the user.
+- `&from=<name>` is your session's name, as for `add`.
 - `&message=<text>` is one line of up to 60 characters. Longer text is cut at a word, and `[show]`
   still answers `ok` with a warning. Percent-encode it, as you do the paths.
 - `&marks=` takes marks in the format under "Draw on it yourself", for the first file. They sit on

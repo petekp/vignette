@@ -76,6 +76,24 @@ final class SessionListing {
         }
     }
 
+    /// The name the session menu gives the running session at `address`, its herdr tab's label else its
+    /// own name, answered once on the main thread: when a listing finds the session, with herdr's
+    /// focus read or every list fresh, or nil once every list is fresh without it. A session with
+    /// neither a tab's label nor a name of its own has no name to give ("New session in vignette").
+    func senderName(of address: AgentAddress, _ answer: @escaping @MainActor (String?) -> Void) {
+        var answered = false
+        list(including: [address.client: [address.id]]) { candidates in
+            guard !answered else { return }
+            let found = candidates.destinations.first { $0.address == address }
+            guard let found, candidates.herdr != nil || candidates.fresh else {
+                if candidates.complete && candidates.fresh { answered = true; answer(nil) }
+                return
+            }
+            answered = true
+            answer(SessionMenu.Filer.shortTab(of: found) ?? (found.hasOwnName ? found.name : nil))
+        }
+    }
+
     /// The sessions Send asks each client for by id. Codex lists only the threads used last, so a
     /// kept Codex thread and the thread the Codex app shows are each read by id, in the same
     /// listing. Claude Code lists every session it runs, so a kept one needs no read.

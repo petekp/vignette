@@ -48,12 +48,14 @@ enum Agent {
     /// Records the agent that added the file and the session it came from, which is what
     /// `origin(of:)` reads back. With an origin, its client is the agent. A session recorded by an
     /// earlier push and not named by this one is removed, so Reply never goes to it, and so is a
-    /// send of the file (`Sent`), which was of the picture this push replaces. A failure is
+    /// send of the file (`Sent`), which was of the picture this push replaces, and the earlier
+    /// push's sender (`record(sender:on:)`). A failure is
     /// logged and otherwise ignored: the push itself has already succeeded, and without the session
     /// Reply on the card asks where to send, as for a screenshot of your own.
     static func record(agent name: String, origin: AgentAddress?, on url: URL) {
         write(origin?.client.rawValue ?? name, attribute, "the agent", on: url)
         forgetSent(on: url)
+        removexattr(url.path, senderAttribute, 0)
         for client in AgentClient.allCases {
             if let origin, origin.client == client {
                 write(origin.id, attribute(for: client), "its session", on: url)
@@ -61,6 +63,31 @@ enum Agent {
                 removexattr(url.path, attribute(for: client), 0)
             }
         }
+    }
+
+    /// Where the name of the session that pushed the file is stored: the agent's `from=`, else the
+    /// session's title as its session menu row says it (`SessionListing.senderName`).
+    private static let senderAttribute = Identity.bundleID + ".sender"
+    /// The most characters a sender's name keeps: a herdr tab's label, a few words.
+    static let maxSenderLength = 40
+
+    /// `from=` as it may be stored and shown: one line, trimmed, and cut at a word to
+    /// `maxSenderLength` with an ellipsis, and whether it was cut. Nil for a name with nothing in it.
+    static func cleanSender(_ value: String?) -> (name: String?, cut: Bool) {
+        let clipped = AgentTitle.clipped(AgentTitle.oneLine(value), to: maxSenderLength)
+        return (clipped.text, clipped.cut)
+    }
+
+    /// Records the name of the session that pushed the file, which its tab says ("From vignette").
+    /// Nil removes it. A failure is logged and otherwise ignored, as for the agent's name.
+    static func record(sender: String?, on url: URL) {
+        guard let sender else { removexattr(url.path, senderAttribute, 0); return }
+        write(sender, senderAttribute, "its sender", on: url)
+    }
+
+    /// The name `record(sender:on:)` wrote, read back through `cleanSender`, or nil when the file has none.
+    static func sender(of url: URL) -> String? {
+        cleanSender(read(senderAttribute, of: url, upTo: titleBytes)).name
     }
 
     /// Where each part of an agent's title for the file is stored.
@@ -194,8 +221,10 @@ enum Agent {
         return String(decoding: buffer.prefix(size), as: UTF8.self)
     }
 
-    /// What the badge says: "From Claude" for `agent=claude`, "From an agent" for a push with no name.
-    static func label(for name: String) -> String {
+    /// What the badge says: "From vignette" for a card whose sender is known, else "From Claude" for
+    /// `agent=claude` and "From an agent" for a push with no name.
+    static func label(for name: String, sender: String?) -> String {
+        if let sender, !sender.isEmpty { return "From " + sender }
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard let first = trimmed.first else { return "From an agent" }
         return "From " + first.uppercased() + trimmed.dropFirst()

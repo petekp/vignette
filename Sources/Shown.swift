@@ -1,7 +1,7 @@
 import AppKit
 
 /// What Vignette keeps about a card an agent pointed the person at (`vignette://show`): the agent,
-/// the session that asked, its message and when. It lives in `StackModel` beside the card, in memory
+/// the session that asked and its name, its message and when. It lives in `StackModel` beside the card, in memory
 /// only, and ends when the card leaves the column, opens in the annotator or is shown again.
 struct Shown: Equatable {
     /// `agent=` as `Agent.clean` read it: "" for an agent with no name.
@@ -9,9 +9,12 @@ struct Shown: Equatable {
     let session: AgentAddress?
     let message: String?
     let at: Date
+    /// The session's name: `from=`, else what the session list answers, which can come after the
+    /// card is up (`ThumbnailController.named`). Nil until then, and for a session with no name.
+    var sender: String? = nil
 
-    /// The notice's first line, the words an agent's tab uses: "From Claude".
-    var headline: String { Agent.label(for: agent) }
+    /// The notice's first line, the words an agent's tab uses: "From vignette", else "From Claude".
+    var headline: String { Agent.label(for: agent, sender: sender) }
 
     /// The most a message keeps: the length of a notice's second line (`docs/voice.md`).
     static let messageLimit = 60
@@ -30,9 +33,10 @@ struct Shown: Equatable {
     /// What the person's hand is doing in the corner, which a `show` waits for.
     enum Wait: String { case press, drag, sweep, swipe, stitch, slideOut = "slide-out" }
 
-    /// The words VoiceOver says once for a call: "Claude showed you 3 screenshots".
-    static func announcement(agent: String, count: Int) -> String {
-        let who = agent.isEmpty ? "An agent" : agent.prefix(1).uppercased() + agent.dropFirst()
+    /// The words VoiceOver says once for a call: "vignette showed you 3 screenshots", else "Claude
+    /// showed you 3 screenshots".
+    static func announcement(agent: String, sender: String?, count: Int) -> String {
+        let who = sender ?? (agent.isEmpty ? "An agent" : agent.prefix(1).uppercased() + agent.dropFirst())
         return "\(who) showed you \(count == 1 ? "a screenshot" : "\(count) screenshots")"
     }
 }
@@ -44,6 +48,9 @@ struct Shown: Equatable {
 final class PendingMarks {
     struct Entry {
         let agent: String
+        /// The session that showed them, and its name as `Shown.sender` has it.
+        let session: AgentAddress?
+        var sender: String?
         /// As `marks=` gave them, for Keep, which adds them as `add` does.
         let marks: [AgentMark]
         /// The same marks in px on the screenshot, in a drawing of their own, for drawing on top.
@@ -61,6 +68,15 @@ final class PendingMarks {
         changed(key)
     }
 
+    /// The session list named `session`: the marks it showed that have no name yet say whose they are.
+    func name(_ sender: String, of session: AgentAddress) {
+        for (key, entry) in entries where entry.session == session && entry.sender == nil {
+            var named = entry
+            named.sender = sender
+            set(named, on: key)
+        }
+    }
+
     func rename(from old: ScreenshotKey, to new: ScreenshotKey) {
         guard let entry = entries.removeValue(forKey: old) else { return }
         entries[new] = entry
@@ -76,6 +92,11 @@ struct ShowQueue<Call> {
     var isEmpty: Bool { waiting.isEmpty }
 
     mutating func add(_ call: Call) { waiting.append(call) }
+
+    /// Changes every waiting call in place.
+    mutating func update(_ change: (inout Call) -> Void) {
+        for index in waiting.indices { change(&waiting[index]) }
+    }
 
     /// The calls to run now, in the order they came: every one while the corner is free, none while
     /// `busy` names what the hand is doing.

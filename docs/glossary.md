@@ -78,7 +78,8 @@ them to the drawing as one undo step.
 _Avoid_: Preview, suggestion, overlay
 
 **Tab**:
-The white capsule in a card's top-right corner. It says which agent the card is from, which session
+The white capsule in a card's top-right corner. It says which agent session the card is from, by the
+session's name when Vignette knows it and by the agent's otherwise, which session
 the screenshot was last sent to, or that an agent's card was replied to. It stays on the card, unlike
 a notice.
 _Avoid_: Coin, sticker

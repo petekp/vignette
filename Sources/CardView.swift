@@ -141,12 +141,12 @@ struct CardView: View, Equatable {
             }
         }
         .overlay(alignment: .topTrailing) {
-            // A shown card's notice says "From Claude", so an agent's tab saying the same gives way to it.
+            // A shown card's notice says "From vignette", so an agent's tab saying the same gives way to it.
             if let tab = CardTab(card), inSlot, !repeatsNotice {
                 // The fold decides the badge's shape from the card's width, but a zoom can narrow the
                 // card faster than the fold's spring closes. Clipped to the card, it never shows past it.
                 ZStack {
-                    AgentBadge(agent: tab.agent, label: tab.label, glyph: tab.glyph, size: ui.selectionCircleSize,
+                    AgentBadge(agent: tab.agent, label: tab.label, shorterLabel: tab.shorterLabel, glyph: tab.glyph, size: ui.selectionCircleSize,
                                cardWidth: size.width, foldDuration: ui.relayoutDuration, queued: tab.queued,
                                onUnsend: { if let unsend = Config.action(id: "unsend") { model.onAction(unsend, [card]) } },
                                onOverControl: { model.overControl = $0 })
@@ -237,7 +237,7 @@ struct CardView: View, Equatable {
     /// The ring a selected or focused card wears over its resting border. It is 0 wide on any other card.
     private var ringColor: Color { selected ? .accentColor : .white.opacity(0.9) }
     @ViewBuilder private var agentBand: some View {
-        if let band = AgentBand.of(notice: notice, marksFrom: card.agentMarks?.agent) {
+        if let band = AgentBand.of(notice: notice, marksFrom: card.agentMarks.map { ($0.agent, $0.sender) }) {
             ShownOverlay(band: band, corner: ui.cardCornerRadius, onMarks: { model.onAgentMarks(card, $0) },
                          onOverControl: { model.overControl = $0 })
         }
@@ -245,7 +245,7 @@ struct CardView: View, Equatable {
 
     private var repeatsNotice: Bool {
         guard case .shown(let shown)? = notice, let agent = card.agent else { return false }
-        return Agent.label(for: agent) == shown.headline
+        return Agent.label(for: agent, sender: card.sender) == shown.headline
     }
     private var ringWidth: CGFloat { inSlot && (selected || focused) ? max(2, ui.cardBorderWidth) : 0 }
 

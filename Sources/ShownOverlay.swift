@@ -10,19 +10,19 @@ struct AgentBand: Equatable {
     let offersMarks: Bool
 
     /// Nil while another notice holds the card, or with neither a shown notice nor marks on top.
-    static func of(notice: CardNotices.Notice?, marksFrom agent: String?) -> AgentBand? {
+    static func of(notice: CardNotices.Notice?, marksFrom marks: (agent: String, sender: String?)?) -> AgentBand? {
         switch notice {
         case .shown(let shown)?:
-            return AgentBand(agent: shown.agent, headline: shown.headline, message: shown.message, offersMarks: agent != nil)
+            return AgentBand(agent: shown.agent, headline: shown.headline, message: shown.message, offersMarks: marks != nil)
         case nil:
-            return agent.map { AgentBand(agent: $0, headline: AgentMarksBar.title($0), message: nil, offersMarks: true) }
+            return marks.map { AgentBand(agent: $0.agent, headline: AgentMarksBar.title($0.agent, sender: $0.sender), message: nil, offersMarks: true) }
         default:
             return nil
         }
     }
 }
 
-/// The band: the agent's logo and "From Claude", or "Marks from Claude", the agent's message under it,
+/// The band: the agent's logo and "From vignette", or "Marks from vignette", the agent's message under it,
 /// and Keep and Clear when it offers them. A band of the system's material across the card's foot, as a notification
 /// banner is, so the picture the agent pointed at stays in view.
 struct ShownOverlay: View {

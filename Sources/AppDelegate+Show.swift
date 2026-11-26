@@ -38,6 +38,8 @@ extension AppDelegate {
         if session == nil, !(request.session ?? "").isEmpty {
             Log.write("[show] warning \(name): session= names a session only with agent=claude or agent=codex and a session id; Send on its card starts where it would")
         }
+        let from = Agent.cleanSender(request.from)
+        if from.cut { Log.write("[show] warning \(name): its from= is longer than \(Agent.maxSenderLength) characters and was cut") }
         // Marks need someone to come from: with no `agent=` they are an agent's with no name.
         let agent = request.agent ?? (agentMarks.isEmpty ? nil : "")
         var marks: [ScreenshotKey: PendingMarks.Entry] = [:]
@@ -46,10 +48,22 @@ extension AppDelegate {
                                                                      newScreen: Self.newDrawingScreen, rule: settings.data.ui.markScaleRule) else {
                 Commands.error(cmd, .invalidMarks, "\(name): none of its marks can be drawn on it"); return
             }
-            marks[first.key] = PendingMarks.Entry(agent: agent, marks: agentMarks, drawing: drawing)
+            marks[first.key] = PendingMarks.Entry(agent: agent, session: session, sender: from.name, marks: agentMarks, drawing: drawing)
         }
-        let shown = agent.map { Shown(agent: $0, session: session, message: message.text, at: Date()) }
+        let shown = agent.map { Shown(agent: $0, session: session, message: message.text, at: Date(), sender: from.name) }
         thumbnail.show(.init(shots: shots, shown: shown, marks: marks, agent: request.agent, tag: request.tag, asked: asked))
+        if shown != nil, from.name == nil, let session { nameSender(of: session, asked: asked) }
+    }
+
+    /// The session's name, for a `show` that did not give one with `from=`: the cards come up at
+    /// once and say "From Claude" until the session list answers, then its name in place.
+    private func nameSender(of session: AgentAddress, asked: CFTimeInterval) {
+        sessions.senderName(of: session) { [weak self] sender in
+            let after = "after=\(Int((CACurrentMediaTime() - asked) * 1000))ms"
+            guard let sender = Agent.cleanSender(sender).name else { Log.write("[show] sender not found session=\(session.id) \(after)"); return }
+            Log.write("[show] sender found session=\(session.id) \(after)")
+            self?.thumbnail.named(sender, of: session)
+        }
     }
 
     /// The corner and the editor draw an agent's marks from one store, and Keep and Clear in either

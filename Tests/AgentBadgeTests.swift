@@ -29,9 +29,9 @@ final class AgentBadgeTests: XCTestCase {
     }
 
     func testTheDrawnBadgeIsNoWiderThanTheFitMeasuresAndFoldsToTheLogoAndItsGlyph() {
-        let tabs: [(agent: String, label: String, glyph: String?)] = ["claude", "codex", ""].map { ($0, Agent.label(for: $0), nil) }
+        let tabs: [(agent: String, label: String, glyph: String?)] = ["claude", "codex", ""].map { ($0, Agent.label(for: $0, sender: nil), nil) }
             + [("claude", "Sent to vignette", "paperplane.fill"), ("codex", "Sent to release notes", "paperplane.fill"),
-               ("claude", Agent.label(for: "claude") + " · Replied", "checkmark")]
+               ("claude", Agent.label(for: "claude", sender: nil) + " · Replied", "checkmark")]
         for tab in tabs {
             let fit = AgentBadgeFit.of(tab.label, size: size)
             let full = NSHostingView(rootView: AgentBadge(agent: tab.agent, label: tab.label, glyph: tab.glyph, size: size,
@@ -55,5 +55,21 @@ final class AgentBadgeTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(width - AgentBadgeFit.inset - fit.foldedWidthWithGlyph, circleTrailingEdge + AgentBadgeFit.inset, "\(width)")
         }
         XCTAssertTrue(fit.keepsGlyph(cardWidth: 94), "a 188 pt card at the narrowest stack")
+    }
+
+    func testALongSessionNameGivesWayToTheAgentsNameBeforeTheTabFolds() {
+        let long = Agent.label(for: "claude", sender: "sender name in the annotator")
+        let short = Agent.label(for: "claude", sender: nil)
+        let longFit = AgentBadgeFit.of(long, size: size), shortFit = AgentBadgeFit.of(short, size: size)
+        let between = (longFit.cardWidthForWords + shortFit.cardWidthForWords) / 2
+        XCTAssertTrue(longFit.folds(cardWidth: between, wasFolded: false))
+        XCTAssertFalse(shortFit.folds(cardWidth: between, wasFolded: true))
+        func width(at cardWidth: CGFloat) -> CGFloat {
+            NSHostingView(rootView: AgentBadge(agent: "claude", label: long, shorterLabel: short, size: size,
+                                               cardWidth: cardWidth, foldDuration: 0)).fittingSize.width
+        }
+        XCTAssertEqual(width(at: longFit.cardWidthForWords + 1), longFit.fullWidth, accuracy: 2)
+        XCTAssertEqual(width(at: between), shortFit.fullWidth, accuracy: 2)
+        XCTAssertEqual(width(at: 60), size, accuracy: 0.5)
     }
 }

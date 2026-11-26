@@ -216,6 +216,7 @@ final class ThumbnailController {
                     return ["file": card.shot.key.path, "frame": StateReport.topLeft(cardFrame(i), primaryHeight: h),
                             "out": model.outCards.contains(card.id), "forming": model.forming.contains(card.id),
                             "drawing": drawings?.keys.contains(card.shot.key) ?? false, "agent": card.agent as Any,
+                            "sender": card.sender as Any,
                             "kind": card.shot.kind == .recording ? "recording" : "image",
                             "copied": notice?.kind == .copied,
                             "notCopied": notCopied as Any, "notSaved": notice?.kind == .notSaved,
@@ -462,6 +463,18 @@ final class ThumbnailController {
         sessionCard?.marks = model.cards.first { $0.id == card.id }.map(\.marks) ?? marks(drawing, on: card)
     }
 
+    /// The file's sender changed after its card was made: the card's tab says the one it has now.
+    func refreshSender(of shot: Screenshot) {
+        let sender = Agent.sender(of: shot.url)
+        guard model.cards.contains(where: { $0.shot.url == shot.url && $0.sender != sender }) else { return }
+        model.cards = model.cards.map { card in
+            guard card.shot.url == shot.url else { return card }
+            var card = card
+            card.sender = sender
+            return card
+        }
+    }
+
     /// Sets what the tabs of `shot`'s cards say about its last send, the editor's card included.
     func setSent(_ sent: Card.Sent?, of shot: Screenshot) {
         if model.cards.contains(where: { $0.shot.url == shot.url && $0.sent != sent }) {
@@ -613,7 +626,7 @@ final class ThumbnailController {
         let size = layout.cardSize(for: pointSize)
         guard let image = Thumbnailer.image(at: url, maxPixel: thumbnailPixels(size: size, pointSize: pointSize), space: screenSpace) else { return nil }
         return Card(id: UUID(), shot: Screenshot(key: key), image: image, pointSize: pointSize, size: size,
-                    agent: Agent.of(url), duration: Thumbnailer.duration(of: url), sent: sent(of: url))
+                    agent: Agent.of(url), sender: Agent.sender(of: url), duration: Thumbnailer.duration(of: url), sent: sent(of: url))
     }
 
     /// The Copied notice over the cards themselves. With nothing on screen, the first of them comes
@@ -1148,7 +1161,7 @@ final class ThumbnailController {
         let maxPixel = notDownloaded ? cloudThumbnailPixels : thumbnailPixels(size: size, pointSize: header.size)
         let space = screenSpace
         let card = Card(id: UUID(), shot: shot, image: Thumbnailer.cached(at: shot.url, maxPixel: maxPixel, space: space),
-                        pointSize: header.size, size: size, agent: Agent.of(shot.url), duration: header.duration,
+                        pointSize: header.size, size: size, agent: Agent.of(shot.url), sender: Agent.sender(of: shot.url), duration: header.duration,
                         agentMarks: agentMarkLayers(for: shot.key, size: size),
                         sent: sent(of: shot.url))
         if card.image == nil {

@@ -8,8 +8,8 @@ extension ThumbnailController {
     struct ShowCall {
         let shots: [Screenshot]
         /// Nil for a call with neither `agent=` nor marks: the cards come up as `last` brings them.
-        let shown: Shown?
-        let marks: [ScreenshotKey: PendingMarks.Entry]
+        var shown: Shown?
+        var marks: [ScreenshotKey: PendingMarks.Entry]
         /// `agent=` and the session as the answer logs them.
         let agent: String?
         let tag: String?
@@ -74,7 +74,7 @@ extension ThumbnailController {
                 MainActor.assumeIsolated { self?.model.dimsUnshown = false }
             }
             NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-                .announcement: Shown.announcement(agent: shown.agent, count: joined.count + inColumn.count),
+                .announcement: Shown.announcement(agent: shown.agent, sender: shown.sender, count: joined.count + inColumn.count),
                 .priority: NSAccessibilityPriorityLevel.high.rawValue,
             ])
         }
@@ -90,6 +90,24 @@ extension ThumbnailController {
         detail += " after=\(Int((CACurrentMediaTime() - call.asked) * 1000))ms"
         if let tag = call.tag { detail += " tag=\(tag)" }
         Commands.ok("show", detail)
+    }
+
+    /// The session list named `session`, after its `show` came: its calls still waiting, the cards it
+    /// showed, their notices and the marks it brought say the name, where they have none yet.
+    func named(_ sender: String, of session: AgentAddress) {
+        showQueue.update { call in
+            guard var shown = call.shown, shown.session == session, shown.sender == nil else { return }
+            shown.sender = sender
+            call.shown = shown
+            for (key, entry) in call.marks where entry.session == session && entry.sender == nil { call.marks[key]?.sender = sender }
+        }
+        for (id, shown) in model.shown where shown.session == session && shown.sender == nil {
+            var named = shown
+            named.sender = sender
+            model.shown[id] = named
+        }
+        model.notices.name(sender, of: session)
+        pendingMarks.name(sender, of: session)
     }
 
     /// A keyed stack showing none of `cards` scrolls to the first of them, as a focus move does.
@@ -126,7 +144,7 @@ extension ThumbnailController {
         let layers = MarkLayers(pixels: entry.drawing.pixels, queue: MarkLayers.cardQueue)
         layers.setScale(screen.backingScaleFactor)
         layers.show(entry.drawing, filling: size, backingScale: screen.backingScaleFactor, style: ui.textStyle, markStyle: ui.markStyle)
-        return Card.AgentMarksDrawn(agent: entry.agent, layers: layers)
+        return Card.AgentMarksDrawn(agent: entry.agent, sender: entry.sender, layers: layers)
     }
 
     /// The agent's marks on `key` came, were kept or were cleared: its card draws what is left.
@@ -137,7 +155,7 @@ extension ThumbnailController {
     }
 
     nonisolated static func shownJSON(_ shown: Shown) -> [String: Any] {
-        ["agent": shown.agent, "session": shown.session?.id as Any, "message": shown.message as Any,
+        ["agent": shown.agent, "session": shown.session?.id as Any, "sender": shown.sender as Any, "message": shown.message as Any,
          "at": ISO8601DateFormatter().string(from: shown.at)]
     }
 }

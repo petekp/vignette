@@ -6,7 +6,18 @@ paths that rule does not cover.
 minus the copy and annotate toggles (`&annotate` opens the editor; `FolderWrites.add`). `&agent=<name>` says which
 agent is pushing it: the name is recorded on the copy as the `com.petepetrash.vignette.agent`
 extended attribute (`Agent.swift`, `xattr -l` shows it) and the card gets a white "From <Name>" tab
-with the vendor's logo when `Resources/agents/<name>.svg` has one (`Agent.logo(for:)`). A logo
+with the vendor's logo when `Resources/agents/<name>.svg` has one (`Agent.logo(for:)`).
+The name in the tab is the session's when it is known: "From vignette", else "From Claude". The
+session's name is the sender, recorded as `com.petepetrash.vignette.sender` (`Agent.record(sender:on:)`).
+`&from=<name>` gives it, one line cut at a word to `Agent.maxSenderLength` (40) characters with an
+`[add] warning` (`Agent.cleanSender`). A push that names its session and gives no `from=` asks the
+session list (`SessionListing.senderName`) for the name the session menu gives it, its Herdr tab's
+label else its own name, without the suffix that tells equal titles apart. A session with neither
+has no name, and its card keeps "From Claude". The card comes up at once and says "From Claude"
+until the list answers, then the name in place (`ThumbnailController.refreshSender`); Claude
+Code's list answers about 70 ms after it is asked, so the name is usually there before the card.
+`[add] sender found session=… after=…ms` or `[add] sender not found …` logs the answer. An answer
+that comes after a later push changed the file's session or gave its own name is dropped. A logo
 that is a single black shape, like Codex's, is listed in `Agent.oneColourLogos` and drawn in the
 colour of the text beside it.
 The tab sits in the card's top-right corner, `CardView.buttonPad` in from its edges, and never
@@ -15,7 +26,8 @@ drawn width with that margin on both sides and between it and the selection circ
 corner, it folds to the logo alone in a circle, or to
 `Agent.fallbackSymbol` for an agent with no logo (`AgentBadgeFit`). It says its words again once
 the card has `AgentBadgeFit.hysteresis` (4 pt) more room than it needs, so a pinch held near the
-edge does not fold and unfold it with each step of the stack's width. "From Claude" needs a card
+edge does not fold and unfold it with each step of the stack's width. Before it folds, a tab that names its session says the agent's name instead ("From vignette" gives
+way to "From Claude", `CardTab.shorterLabel`), with the same hysteresis for each step. "From Claude" needs a card
 136 pt wide: a 188 pt card in the stack at its narrowest beside the annotator is 94 pt and folds,
 and so does a tall capture's narrow card at full width. The words are measured once per label and
 size. The right edge stays put, the logo travels with the capsule's left edge, and the words fade
@@ -44,7 +56,7 @@ session, recorded beside the name as `com.petepetrash.vignette.session`. With `a
 a Codex thread, recorded as `com.petepetrash.vignette.thread`, the attribute live ink uses for
 one. The card's bar is then Reply and goes back there. `Agent.record(agent:origin:)` is the one
 writer of the name and those attributes. It removes a session an earlier push recorded that this
-one does not name, so a push with `agent=` and no `session=` of a file already in the folder
+one does not name, and the earlier push's sender, so a push with `agent=` and no `session=` of a file already in the folder
 leaves it with no Reply. It also removes the file's send, which was of the picture this push replaces.
 A file already in the folder that has no agent attribute is the person's own screenshot, and `add`
 refuses it with `unsupported-type`, naming `vignette://show` (`FolderWrites.add`, ADR 0031). `show`

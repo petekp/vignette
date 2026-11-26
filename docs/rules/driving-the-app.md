@@ -64,10 +64,11 @@
    there with a `[tag]`. `open -g "vignette://state?tag=<id>"` writes one
    `[state] {json}` line with the tag echoed, so a script waits for its own line:
    `app` (pid, build, bundle, isActive, accessibility, watch folder, settings file, debug), `screen`,
-   `stack` (cards with `file`, `frame`, `out`, `forming`, `drawing`, `agent`, `kind`, `copied`,
+   `stack` (cards with `file`, `frame`, `out`, `forming`, `drawing`, `agent`, `sender`, the name
+   of the session that pushed it or null, `kind`, `copied`,
    `notCopied`, the reason a copy failed or null, `notSaved`, whether the card says its drawing was
    not saved, `shown`, the agent that showed it with `vignette://show` and its session, message and
-   time, or null, `agentMarks`, how many of that agent's marks sit on top; `selected`,
+   time, and its `sender` once named, or null, `agentMarks`, how many of that agent's marks sit on top; `selected`,
    `focused`, `hovered`, `queue`, the files waiting for the annotator, `showsWaiting`, the `show` calls
    waiting for the hand to leave the corner, `dimsUnshown`, whether the other cards are dimmed, `visible`, `key`, `isStack`,
    `scroll`, `viewport`, `safeBottom`, the room the Dock keeps under the column, panel,

@@ -50,15 +50,31 @@ final class CardNoticesTests: XCTestCase {
         var notices = CardNotices()
         let shown = Shown(agent: "claude", session: nil, message: nil, at: Date())
         post(&notices, .shown(shown))
-        XCTAssertEqual(AgentBand.of(notice: notices.notice(on: file), marksFrom: "claude")?.offersMarks, true)
+        XCTAssertEqual(AgentBand.of(notice: notices.notice(on: file), marksFrom: ("claude", nil))?.offersMarks, true)
         XCTAssertEqual(AgentBand.of(notice: notices.notice(on: file), marksFrom: nil)?.offersMarks, false)
         post(&notices, .unshown)
-        let band = AgentBand.of(notice: notices.notice(on: file), marksFrom: "claude")
+        let band = AgentBand.of(notice: notices.notice(on: file), marksFrom: ("claude", nil))
         XCTAssertEqual(band?.agent, "claude")
         XCTAssertEqual(band?.offersMarks, true)
         XCTAssertNil(AgentBand.of(notice: notices.notice(on: file), marksFrom: nil))
         post(&notices, .copied(label: "Copied"))
-        XCTAssertNil(AgentBand.of(notice: notices.notice(on: file), marksFrom: "claude"), "one notice at a time: Copied holds the card")
+        XCTAssertNil(AgentBand.of(notice: notices.notice(on: file), marksFrom: ("claude", nil)), "one notice at a time: Copied holds the card")
+    }
+
+    func testASessionNamedAfterItsShowRenamesItsNoticeInPlace() throws {
+        var notices = CardNotices()
+        let session = AgentAddress.claudeSession("e011fff1-c791-4934-9e61-9307d840a5eb")
+        let posted = try XCTUnwrap(post(&notices, .shown(Shown(agent: "claude", session: session, message: "Is this the bug?", at: Date()))))
+        let other: ScreenshotKey = "/tmp/other.png"
+        _ = notices.post(.shown(Shown(agent: "claude", session: nil, message: nil, at: Date())), on: other, seen: true, noticeHold: 1)
+        notices.name("vignette", of: session)
+        XCTAssertEqual(AgentBand.of(notice: notices.notice(on: file), marksFrom: nil)?.headline, "From vignette")
+        XCTAssertEqual(AgentBand.of(notice: notices.notice(on: other), marksFrom: nil)?.headline, "From Claude")
+        notices.name("another", of: session)
+        XCTAssertEqual(AgentBand.of(notice: notices.notice(on: file), marksFrom: nil)?.headline, "From vignette")
+        XCTAssertEqual(AgentBand.of(notice: nil, marksFrom: ("claude", "vignette"))?.headline, "Marks from vignette")
+        notices.expire(posted.id)
+        XCTAssertNil(notices.notice(on: file), "the renamed notice keeps the id its post returned")
     }
 
     /// A copy made while a send is out takes the card, and the send's failure still reaches it.
