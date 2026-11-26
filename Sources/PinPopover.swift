@@ -18,6 +18,10 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     private let send: (EditorCore.ComposerInput) -> Void
     private var shown: (comments: [Pin.Comment], editing: Int?)?
     private var anchor = CGRect.null
+    /// One line of the field's words, and the field's height, which grows with them up to
+    /// `ui.pinComposerLines` lines.
+    private var lineHeight: CGFloat = 0
+    private var fieldHeight: NSLayoutConstraint?
     /// Closed by the core, so the popover's own close says nothing back.
     private var closing = false
     /// The window that keeps the keys while the popover the editor opened on its own comes up.
@@ -81,9 +85,11 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
             view.translatesAutoresizingMaskIntoConstraints = false
             row.addSubview(view)
         }
-        let lineHeight = field.intrinsicContentSize.height
+        lineHeight = field.intrinsicContentSize.height
         let lift = max(0, (postSize - lineHeight) / 2)
-        for constraint in [field.leadingAnchor.constraint(equalTo: row.leadingAnchor), field.widthAnchor.constraint(equalToConstant: Self.fieldWidth),
+        let height = field.heightAnchor.constraint(equalToConstant: lineHeight)
+        fieldHeight = height
+        for constraint in [field.leadingAnchor.constraint(equalTo: row.leadingAnchor), field.widthAnchor.constraint(equalToConstant: Self.fieldWidth), height,
                            field.topAnchor.constraint(equalTo: row.topAnchor, constant: lift),
                            field.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -lift),
                            post.leadingAnchor.constraint(equalTo: field.trailingAnchor, constant: gap), post.trailingAnchor.constraint(equalTo: row.trailingAnchor),
@@ -203,9 +209,30 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
 
 
     private func fit() {
-        field.invalidateIntrinsicContentSize()
+        fieldHeight?.constant = wrappedHeight
         list.layoutSubtreeIfNeeded()
         controller.preferredContentSize = list.fittingSize
+    }
+
+    /// The field's words as they wrap at its width, up to `ui.pinComposerLines` lines, past which the
+    /// field scrolls. While the field is edited its words are the field editor's, which the field's
+    /// own size does not follow.
+    private var wrappedHeight: CGFloat {
+        let lines = max(1, Settings.shared.data.ui.pinComposerLines.rounded())
+        guard let font = field.font else { return lineHeight }
+        let line = NSLayoutManager().defaultLineHeight(for: font)
+        let wrapped: CGFloat
+        if let editor = field.currentEditor() as? NSTextView, let layout = editor.layoutManager, let container = editor.textContainer {
+            layout.ensureLayout(for: container)
+            wrapped = layout.usedRect(for: container).height
+        } else if let cell = field.cell {
+            wrapped = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: Self.fieldWidth, height: .greatestFiniteMagnitude)).height
+                - (lineHeight - line)
+        } else {
+            wrapped = line
+        }
+        let extraLines = min(max(0, ((wrapped - line) / line).rounded()), lines - 1)
+        return lineHeight + extraLines * line
     }
 
     // MARK: The composer's keys
