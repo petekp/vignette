@@ -11,7 +11,7 @@ struct Card: Identifiable, Equatable {
     /// The drawing's marks, drawn over the thumbnail; nil for a screenshot with no drawing.
     var marks: MarkLayers? = nil
     /// An agent's marks that `show` brought, drawn on top until the person keeps or clears them (`PendingMarks`).
-    var agentMarks: MarkLayers? = nil
+    var agentMarks: AgentMarksDrawn? = nil
     /// What the card's tab says about the last send of its file (`Agent.Sent`). Nil for a file never
     /// sent, and for an agent's card sent anywhere but back to the session it came from.
     var sent: Sent? = nil
@@ -34,6 +34,12 @@ struct Card: Identifiable, Equatable {
     }
 
     /// Why the session's queue holds the line, and whether Don't send is taking it out.
+    /// The agent whose marks are on top, and their layers.
+    struct AgentMarksDrawn: Equatable {
+        let agent: String
+        let layers: MarkLayers
+    }
+
     struct Queued: Equatable {
         let reason: String
         let withdrawing: Bool

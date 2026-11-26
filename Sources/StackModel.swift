@@ -135,7 +135,7 @@ final class StackModel: ObservableObject {
     func removeCards(where leaves: (Card) -> Bool) {
         for card in cards where leaves(card) {
             card.marks?.clear()
-            card.agentMarks?.clear()
+            card.agentMarks?.layers.clear()
             if shown.removeValue(forKey: card.id) != nil {
                 _ = notices.post(.unshown, on: card.shot.key, seen: false, noticeHold: 0)
                 Log.write("[show] ended \(card.shot.url.lastPathComponent) by=left")

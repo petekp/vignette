@@ -38,7 +38,7 @@ carries the agent's message as its second line.
 | Headline | "From *Agent*", such as "From Claude", the words of the agent's tab (`Agent.label(for:)`); "From an agent" for an agent with no name. |
 | Second line | The `message=`, when there is one. |
 | Tab | Unchanged, except that it gives way while the notice's headline says the same words. A person's screenshot keeps no tab or its Sent tab, and an agent's push keeps "From *Agent*", which the notice then says for it. `show` changes neither where a card came from nor where it went. |
-| Look | A band across the bottom of the card in the system's regular material, with the logo, the headline and the message, and Clear and Keep when the card has the agent's marks (`ShownOverlay`). The corner's other cards dim while shown cards are up. |
+| Look | A band across the bottom of the card in the system's regular material, with the logo, the headline and the message, and Clear and Keep when the card has the agent's marks. Once the shown state ends, a card still drawing the marks keeps Clear and Keep on a band that says "Marks from Claude" (`AgentBand`) (`ShownOverlay`). The corner's other cards dim while shown cards are up. |
 | VoiceOver | The band reads as the headline and the message. Vignette posts one announcement per call, such as "Claude showed you 3 screenshots". |
 
 The notice follows the CardNotices rules (`docs/card-notices-2026-10-02.md`). It is one notice per

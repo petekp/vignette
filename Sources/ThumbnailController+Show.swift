@@ -121,18 +121,18 @@ extension ThumbnailController {
     }
 
     /// The agent's marks for `key` drawn over a card `size` across, nil when it has none.
-    func agentMarkLayers(for key: ScreenshotKey, size: NSSize) -> MarkLayers? {
+    func agentMarkLayers(for key: ScreenshotKey, size: NSSize) -> Card.AgentMarksDrawn? {
         guard let entry = pendingMarks[key] else { return nil }
         let layers = MarkLayers(pixels: entry.drawing.pixels, queue: MarkLayers.cardQueue)
         layers.setScale(screen.backingScaleFactor)
         layers.show(entry.drawing, filling: size, backingScale: screen.backingScaleFactor, style: ui.textStyle, markStyle: ui.markStyle)
-        return layers
+        return Card.AgentMarksDrawn(agent: entry.agent, layers: layers)
     }
 
     /// The agent's marks on `key` came, were kept or were cleared: its card draws what is left.
     func agentMarksChanged(_ key: ScreenshotKey) {
         guard let index = model.cards.firstIndex(where: { $0.shot.key == key }) else { return }
-        model.cards[index].agentMarks?.clear()
+        model.cards[index].agentMarks?.layers.clear()
         model.cards[index].agentMarks = agentMarkLayers(for: key, size: model.cards[index].size)
     }
 

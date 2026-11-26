@@ -195,4 +195,8 @@
   drag, a drag-select, a swipe, a converging stitch or a slide-out. A card that moves under the hand
   makes the person miss what they reached for. The agent's marks that `show` brings sit on top of
   the drawing in a layer of their own (`Card.agentMarks`, `PendingMarks`) until Keep or Clear,
-  which `AppDelegate.settleAgentMarks` handles for the card and the editor alike.
+  which `AppDelegate.settleAgentMarks` handles for the card and the editor alike. The buttons follow
+  the marks, not the notice (Pete, 2026-11-25): wherever the marks are drawn, the person can keep or
+  clear them. On a shown card they are on its notice. On a card whose shown state ended, a band
+  that says "Marks from Claude" holds them while no other notice holds the card (`AgentBand`). In
+  the editor they are in the bar over the image.

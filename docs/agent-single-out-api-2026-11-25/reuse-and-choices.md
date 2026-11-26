@@ -64,7 +64,9 @@ from the recommendations above.
    top of the person's drawing until kept, in the agent's colour, on the card and in the editor.
    One click keeps them, joining the drawing as one undo step, or clears them. The file is untouched
    until Keep. The controls are the system's own buttons: Clear in the bordered style and Keep in
-   the prominent one, on the card's notice and in a bar at the top of the editor.
+   the prominent one. They follow the marks (Pete, 2026-11-25: "Buttons wherever the marks show"):
+   on the card's notice, on a band of their own once the notice has gone, and in a bar at the top
+   of the editor.
 2. The headline is "From Claude", the words of the agent's tab. A card never says the same words
    twice: while the notice's headline repeats the tab, the tab gives way (`CardView.repeatsNotice`).
 3. A shown card wears the notice, and the corner's other cards dim while shown cards are up. The

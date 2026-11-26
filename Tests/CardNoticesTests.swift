@@ -45,6 +45,22 @@ final class CardNoticesTests: XCTestCase {
         XCTAssertEqual(notices.notice(on: file), .copied(label: "Copied"))
     }
 
+    /// Catches a card that still draws an agent's marks with no Keep and Clear once its shown notice is gone.
+    func testKeepAndClearFollowTheAgentsMarksAfterTheShownNoticeEnds() {
+        var notices = CardNotices()
+        let shown = Shown(agent: "claude", session: nil, message: nil, at: Date())
+        post(&notices, .shown(shown))
+        XCTAssertEqual(AgentBand.of(notice: notices.notice(on: file), marksFrom: "claude")?.offersMarks, true)
+        XCTAssertEqual(AgentBand.of(notice: notices.notice(on: file), marksFrom: nil)?.offersMarks, false)
+        post(&notices, .unshown)
+        let band = AgentBand.of(notice: notices.notice(on: file), marksFrom: "claude")
+        XCTAssertEqual(band?.agent, "claude")
+        XCTAssertEqual(band?.offersMarks, true)
+        XCTAssertNil(AgentBand.of(notice: notices.notice(on: file), marksFrom: nil))
+        post(&notices, .copied(label: "Copied"))
+        XCTAssertNil(AgentBand.of(notice: notices.notice(on: file), marksFrom: "claude"), "one notice at a time: Copied holds the card")
+    }
+
     /// A copy made while a send is out takes the card, and the send's failure still reaches it.
     func testAFailedSendIsShownAfterACopyMadeWhileItWaited() {
         var notices = CardNotices()
