@@ -787,15 +787,15 @@ extension EditorView: OpenDrawing {
         core.rekey(to: new.path)
     }
 
-    /// The core hands the joined drawing over at once; that hand-over is the answer, so the caller
-    /// writes it and `onHandOver` does not write it a second time.
-    func join(_ marks: [Mark]) -> Drawing? {
-        var joined: Drawing?
-        for effect in core.reduce(.agentMarks(marks)) {
-            if case .handOver(let drawing) = effect { joined = drawing } else { run(effect, event: nil) }
+    /// Runs `input`, which hands the drawing over at once. That hand-over is the answer, so the
+    /// caller writes it and `onHandOver` does not write it again.
+    func handOver(_ input: EditorCore.Input) -> Drawing? {
+        var handed: Drawing?
+        for effect in core.reduce(input) {
+            if case .handOver(let drawing) = effect { handed = drawing } else { run(effect, event: nil) }
         }
         if !core.holdsKey { heldKeys = [] }
         refresh()
-        return joined
+        return handed
     }
 }

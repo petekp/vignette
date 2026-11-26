@@ -43,6 +43,8 @@ struct Shown: Equatable {
 @MainActor
 final class PendingMarks {
     struct Entry {
+        /// Tells these marks from others the same agent or another put on the same screenshot later.
+        let id = UUID()
         let agent: String
         /// As `marks=` gave them, for Keep, which adds them as `add` does.
         let marks: [AgentMark]

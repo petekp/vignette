@@ -3,20 +3,23 @@ import XCTest
 
 @MainActor
 final class UndoTimelineTests: XCTestCase {
-    private var folder: Set<String> = []
+    var folder: Set<String> = []
     private var trash: [String: URL] = [:]
     private var column: [String] = []
-    private var beeps = 0
-    private var announced: [String] = []
-    private var timeline: UndoTimeline!
-    private var editorOpen: String?
+    var beeps = 0
+    var announced: [String] = []
+    var timeline: UndoTimeline!
+    var editorOpen: String?
     private var parked: String?
     private var corner = true
-    private var steps: [String: (undo: Int, redo: Int)] = [:]
+    var steps: [String: (undo: Int, redo: Int)] = [:]
     private var changed: Set<String> = []
+    var onTop: [String: PendingMarks.Entry] = [:]
+    var joined: [String: Int] = [:]
+    var redrawn: Set<String> = []
 
     private func shot(_ name: String) -> Screenshot { Screenshot(key: key(name)) }
-    private func key(_ name: String) -> ScreenshotKey { ScreenshotKey(folder: URL(fileURLWithPath: "/shots"), name: name) }
+    func key(_ name: String) -> ScreenshotKey { ScreenshotKey(folder: URL(fileURLWithPath: "/shots"), name: name) }
     private func names(_ shots: [Screenshot]) -> [String] { shots.map(\.key.name) }
 
     override func setUp() async throws {
@@ -61,9 +64,41 @@ final class UndoTimelineTests: XCTestCase {
                 steps[name] = counts
             },
             title: { $0 ? "Redo Arrow" : "Undo Arrow" })
+        timeline.marks = UndoTimeline.MarksOnTop(
+            onTop: { [unowned self] in onTop[$0.name] },
+            setOnTop: { [unowned self] entry, key in onTop[key.name] = entry },
+            drawn: { [unowned self] key in
+                let name = key.name
+                return "\(joined[name] ?? 0) \(redrawn.contains(name)) \(editorOpen == name ? steps[name]?.undo ?? 0 : 0)"
+            },
+            takeBack: { [unowned self] key in
+                let name = key.name
+                let step = EditStep(name: .agentMarks, changes: [], selectionBefore: [], selectionAfter: [])
+                if editorOpen == name {
+                    guard var counts = steps[name], counts.undo > 0 else { return nil }
+                    let redo = [HistoryStep](repeating: .drawing(step), count: counts.redo)
+                    counts.undo -= 1
+                    counts.redo = 0
+                    steps[name] = counts
+                    return TakenBackMarks(step: step, redo: redo)
+                }
+                guard let count = joined[name], count > 0 else { return nil }
+                joined[name] = count - 1
+                return TakenBackMarks(step: step, redo: [])
+            },
+            putBack: { [unowned self] taken, key in
+                let name = key.name
+                if editorOpen == name {
+                    steps[name, default: (0, 0)].undo += 1
+                    steps[name, default: (0, 0)].redo += taken.redo.count
+                } else {
+                    joined[name, default: 0] += 1
+                }
+                return true
+            })
     }
 
-    private func open(_ name: String) {
+    func open(_ name: String) {
         park()
         editorOpen = name
         timeline.editorOpened(key(name))
@@ -81,7 +116,7 @@ final class UndoTimelineTests: XCTestCase {
         timeline.editorLeft(key(was))
     }
 
-    private func mark() {
+    func mark() {
         guard let name = editorOpen else { return }
         steps[name] = ((steps[name]?.undo ?? 0) + 1, 0)
     }

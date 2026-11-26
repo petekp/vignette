@@ -85,4 +85,26 @@ final class EditorCoreUndoTests: XCTestCase {
         XCTAssertTrue(core.redoSteps.isEmpty, "a new change ends what could be redone")
         XCTAssertEqual(core.undoSteps.map(\.name), [.rectangle, .typing, .typing])
     }
+
+    func testKeptMarksTakenBackTakeTheRedoStepsWithThemAndPuttingThemBackBringsThoseBack() throws {
+        var core = core()
+        _ = core.reduce(.agentMarks([Mark(geometry: .rectangle(CGRect(x: 600, y: 100, width: 100, height: 100)), agent: true, agentName: "Claude")]))
+        core.drag(from: (100, 100), to: (300, 250))
+        XCTAssertNil(core.newestAgentMarks, "the newest step is the person's rectangle")
+        core.key(.character("z"), .command)
+        XCTAssertEqual(core.redoTitle, "Redo Rectangle")
+
+        let kept = TakenBackMarks(step: try XCTUnwrap(core.newestAgentMarks), redo: core.redoSteps)
+        XCTAssertTrue(core.reduce(.takeBackAgentMarks).contains { if case .handOver = $0 { return true } else { return false } })
+        XCTAssertTrue(core.drawing.marks.isEmpty)
+        XCTAssertEqual(core.undoTitle, "Undo")
+        XCTAssertEqual(core.redoTitle, "Redo")
+
+        _ = core.reduce(.putBackAgentMarks(kept))
+        XCTAssertEqual(core.drawing.marks.map(\.agent), [true])
+        XCTAssertEqual(core.undoTitle, "Undo Claude's Marks")
+        XCTAssertEqual(core.redoTitle, "Redo Rectangle")
+        core.key(.character("z"), [.command, .shift])
+        XCTAssertEqual(core.drawing.marks.map(\.agent), [true, false])
+    }
 }
