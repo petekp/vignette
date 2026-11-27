@@ -472,7 +472,7 @@ struct InkSettle {
 /// layer, with a glow under it. Its light and film drift on `InkClock`'s time, so it looks alive
 /// while it is on the screen (docs/live-ink-gel-2026-10-12.md).
 @MainActor
-final class InkMarkLayer: CALayer {
+final class InkMarkLayer: CALayer, GelLayer {
     private let gel = CAMetalLayer()
     /// What is drawn: the mark, the hand it was given, the hand it is drawn with, which is an even one
     /// when it was given none, and the style its line is laid out in.
@@ -790,6 +790,9 @@ final class InkMarkLayer: CALayer {
         return false
     }
 
+    var readsScreen: Bool { true }
+    var keepsDrifting: Bool { false }
+
     /// In a layer tree, with nothing over it hidden or faded out.
     var isVisible: Bool {
         var layer: CALayer? = self
@@ -832,41 +835,8 @@ final class InkMarkLayer: CALayer {
                                      Float(ui.inkGelPointerHeight * contentsScale), Float(ui.inkGelPointerLight))
         }
 
-        let fieldPass = MTLRenderPassDescriptor()
-        fieldPass.colorAttachments[0].texture = targets.field
-        fieldPass.colorAttachments[0].loadAction = .clear
-        fieldPass.colorAttachments[0].clearColor = MTLClearColor(red: InkGel.far, green: 1, blue: 0, alpha: 0)
-        fieldPass.colorAttachments[0].storeAction = .store
-        fieldPass.depthAttachment.texture = targets.depth
-        fieldPass.depthAttachment.loadAction = .clear
-        fieldPass.depthAttachment.clearDepth = 1
-        fieldPass.depthAttachment.storeAction = .dontCare
-        guard let field = commands.makeRenderCommandEncoder(descriptor: fieldPass) else { return nil }
-        field.setRenderPipelineState(metal.field)
-        field.setDepthStencilState(metal.nearest)
-        field.setVertexBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
-        field.setFragmentBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
-        for draw in built.draws where draw.count > 0 {
-            field.setVertexBuffer(draw.buffer, offset: 0, index: 0)
-            field.drawPrimitives(type: .triangle, vertexStart: draw.start, vertexCount: draw.count)
-        }
-        field.endEncoding()
-
-        let lightPass = MTLRenderPassDescriptor()
-        lightPass.colorAttachments[0].texture = drawable.texture
-        lightPass.colorAttachments[0].loadAction = .clear
-        lightPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
-        lightPass.colorAttachments[0].storeAction = .store
-        guard let light = commands.makeRenderCommandEncoder(descriptor: lightPass) else { return nil }
-        light.setRenderPipelineState(metal.light)
-        light.setFragmentTexture(targets.field, index: 0)
-        light.setVertexBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
-        light.setFragmentBytes(&uniforms, length: MemoryLayout<InkGel.Uniforms>.stride, index: 1)
-        for draw in built.draws where draw.count > 0 {
-            light.setVertexBuffer(draw.buffer, offset: 0, index: 0)
-            light.drawPrimitives(type: .triangle, vertexStart: draw.start, vertexCount: draw.count)
-        }
-        light.endEncoding()
+        guard InkGel.encode(built.draws.map { ($0.buffer, $0.start, $0.count) }, uniforms: uniforms, targets: targets,
+                            into: drawable, commands: commands) else { return nil }
         return (commands, drawable)
     }
 

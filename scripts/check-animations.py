@@ -70,9 +70,6 @@ ALLOWED = {
     "LiveNoteContent.swift": (1,
         "`layOut`: the note's target and its return key move to their row on an ease-out, inside "
         "the note's popover, while `fit` springs the popover's height"),
-    "EditorPins.swift": (1,
-        "`AreaOutline`: an area pin's dashes march at a constant speed, a loop with no target for a "
-        "spring to settle on"),
 }
 
 

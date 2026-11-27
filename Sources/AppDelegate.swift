@@ -1018,7 +1018,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 Log.write("[watcher] copied \(url.lastPathComponent)")
             }
             let origin = self.capturedRect(of: shot), annotate = self.settings.data.annotateOnCapture
-            self.logClues(of: shot)
+            self.captured(shot)
             self.present(shot, annotate: annotate, from: annotate ? origin : nil)
         }, onRemoved: { [weak self] keys, inventory in
             guard let self, self.watcherGeneration == generation else { return }

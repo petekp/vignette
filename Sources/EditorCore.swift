@@ -167,13 +167,13 @@ struct EditorCore {
         }
 
         /// The SF Symbol the toolbar shows.
-        var symbol: String {
+        var symbol: String? {
             switch self {
             case .select: return "cursorarrow"
             case .rectangle: return "rectangle"
             case .arrow: return "arrow.up.right"
             case .text: return "textformat"
-            case .comment: return "text.bubble"
+            case .comment: return nil
             }
         }
     }

@@ -271,8 +271,7 @@ final class ScreenshotRequests {
         Log.write("[send] prepared \(id) to \(destination.name) (\(address.description)) \(picture.logged)")
         if grace > 0 { Log.write("[send] waiting \(Int(grace * 1000))ms request=\(id)") }
         // The log never holds the message: it is the person's words.
-        let line = Self.requestLine(record: record, root: root, message: message, instructions: instructions, title: picture.title,
-                                    pins: picture.pins)
+        let line = Self.requestLine(record: record, root: root, message: message, instructions: instructions, picture: picture)
         if watchingTurn { watchedTurns.insert(id) }
         run(sendGrace.handle(.sent(request: id, line: line, grace: grace, at: now())))
         return record

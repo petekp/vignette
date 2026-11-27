@@ -3,7 +3,7 @@ name: vignette
 description: >-
   Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "36"
+  version: "37"
 ---
 
 # Vignette
@@ -123,22 +123,22 @@ its size, `x2`,`y2` an arrow's head.
 
 ## Leave comment pins
 
-`&pins=` on `add` or `show` leaves comment pins, like the user's, or answers theirs. It
-takes a JSON file's path, or the JSON itself, in the fractions `&marks=` uses:
+`&pins=` on `add` or `show` leaves comment pins, like the user's, or answers theirs: a JSON
+file's path, or the JSON itself, in the fractions `&marks=` uses:
 
 ```json
 [{"x": 0.42, "y": 0.18, "text": "This label wraps at 390 px"},
  {"x": 0.10, "y": 0.55, "w": 0.30, "h": 0.12, "text": "These rows should line up"},
- {"pin": 2, "text": "Fixed: the margin is 8 pt now"}]
+ {"pin": 2, "text": "Fixed: 8 pt now"}]
 ```
 
 - `x`,`y` is a pin at a point. With `w`,`h` it is about that area, its teardrop at the
   bottom-right corner or the one `corner` names (`topLeft`, `topRight`, `bottomLeft`).
 - `pin` answers the user's pin by its number ("Pin 2") or its `id` from `pins.json`, with no place.
-- New pins take the next numbers, in the agent colour. At most 99 per call and 2,000 characters
+- New pins take the next numbers, in the agent colour: at most 99 per call, 2,000 characters
   each. `ok` counts them as `pins=<n>`; `invalid-pins` names the comment and what is wrong.
 - Answer on the user's own screenshot with `show`.
-- `open -g "vignette://comments?file=$file"` reads a card's pins and comments back, with ids: see `references/comments.md`.
+- `open -g "vignette://comments?file=$file"` reads a card's pins and comments back (`references/comments.md`).
 
 ## When the user sends you a drawing
 
@@ -159,19 +159,20 @@ Make this button bigger [From Vignette: "<folder>/image.png". If a drawing would
 ```
 
 The message is their request about the image. The sentence after the image's path is the user's
-to change in Vignette's settings, so know the line by "From Vignette:" and the quoted path.
+to change in Vignette's settings, so know the line by "From Vignette:" and the quoted path. A
+sentence after the path may name the apps it shows, largest first: "The screenshot shows Safari."
 
 Open the image. The boxes, arrows and text on it are the user's: they point at what they want you
 to look at or change. When the answer is easier to show than to say, reply with a drawing: the
 helper puts your marks on a new card beside the user's other screenshots. They edit those marks
 like their own and can send the result straight back to you.
 
-When the user pinned comments on the image, the line carries their words after the message, pin
-by pin: `Pin 1: remove extra margin. Pin 3: too narrow. / can it pulse?` "Pin 3" is the teardrop
-numbered 3 on the image. Its pointed tip marks the place the comment is about, and a pin about an
-area has that area outlined in its colour. A teardrop that would cover another sits a little
-away, joined to its place by a short line. One pin's comments are joined with " / ", oldest
-first. Answer a pin in words, or on the pin itself with `--comments` (below).
+When the user pinned comments, the line carries their words after the message, pin by pin:
+`Pin 1: remove extra margin. Pin 3: too narrow. / can it pulse?` "Pin 3" is the teardrop
+numbered 3 on the image. Its tip marks what the comment is about; a pin about an area
+outlines it in its colour. A teardrop that would cover another sits a little off, on a short line
+to its place. One pin's comments are joined with " / ", oldest first. Answer a pin in words, or
+on the pin itself with `--comments` (below).
 
 When the user answers an image you sent with words alone, and left your marks as they were, the
 line names that image and sends no new picture:

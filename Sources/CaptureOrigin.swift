@@ -319,3 +319,43 @@ final class CaptureOrigin {
         return nil
     }
 }
+
+
+/// The names of the apps a capture showed, kept on its file while `sendCaptureApps` is on, so Send
+/// can name them however long after the capture it comes (`ScreenshotRequests.requestLine`). An
+/// extended attribute follows the file through a rename and goes with it when it is deleted. Names
+/// only, such as "Safari", never a window's title.
+enum CaptureApps {
+    /// After the bundle id, so a fork keeps its own.
+    static let attributeName = Identity.bundleID + ".capture-apps"
+    /// The most apps a file keeps, as many as `[capture] clues` logs.
+    static let kept = 3
+
+    /// The names of the largest `owners`, the largest first. An app with no running copy keeps its
+    /// id, and one known only by its process number is left out.
+    static func names(of owners: [CaptureRect.Owner]) -> [String] {
+        var names: [String] = []
+        for owner in owners where !owner.app.hasPrefix("pid ") {
+            let name = (NSRunningApplication.runningApplications(withBundleIdentifier: owner.app).first?.localizedName ?? owner.app).asOneLine
+            if !name.isEmpty, !names.contains(name) { names.append(name) }
+            if names.count == kept { break }
+        }
+        return names
+    }
+
+    static func write(_ names: [String], to url: URL) throws {
+        let data = try JSONEncoder().encode(names)
+        let result = data.withUnsafeBytes { setxattr(url.path, attributeName, $0.baseAddress, data.count, 0, XATTR_NOFOLLOW) }
+        guard result == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    }
+
+    /// The names kept on the file at `url`, or none. Reading them does not download an iCloud placeholder.
+    static func read(_ url: URL) -> [String] {
+        let size = getxattr(url.path, attributeName, nil, 0, 0, XATTR_NOFOLLOW)
+        guard size > 0 else { return [] }
+        var data = Data(count: size)
+        let read = data.withUnsafeMutableBytes { getxattr(url.path, attributeName, $0.baseAddress, size, 0, XATTR_NOFOLLOW) }
+        guard read == size, let names = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        return Array(names.map(\.asOneLine).filter { !$0.isEmpty }.prefix(kept))
+    }
+}

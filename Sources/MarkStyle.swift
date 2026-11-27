@@ -75,13 +75,16 @@ struct PinStyle: Equatable, Sendable {
     /// size of the dot carrying the logo of an agent that answered a person's pin.
     var logoSize: CGFloat
     var answerSize: CGFloat
-    /// An area's dashed outline in the editor (`EditorPins`), in screen pt at every zoom: the line's
-    /// width, its dashes and the gaps between them, and how fast the dashes march, in pt a second,
-    /// while the pin is being placed or is open.
-    var areaWidth: CGFloat
-    var areaDash: CGFloat
-    var areaGap: CGFloat
-    var areaSpeed: CGFloat
+    /// The gel of a pin in the editor (`PinGel`), in screen pt at every zoom: the bevel round its top,
+    /// the dome on its top as a share of half its side, and the share of its colour its deep edge keeps
+    /// over light content; the rod of its area's outline, the rim of its hover card and popover, and
+    /// the darkness of the shadow under its number or logo.
+    var gelBevel: CGFloat
+    var gelDome: CGFloat
+    var gelDeep: CGFloat
+    var gelRod: CGFloat
+    var gelRim: CGFloat
+    var gelFaceShadow: CGFloat
 }
 
 /// A colour in sRGB, from settings.json's `#rrggbb`.

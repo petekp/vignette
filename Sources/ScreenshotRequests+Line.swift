@@ -9,8 +9,9 @@ extension ScreenshotRequests {
     enum Picture {
         /// The drawing, rendered, and its pins, whose words the line carries and `pins.json` keeps. The
         /// line names the image, and the agent opens it. `base` is the drawing rendered without its
-        /// pins, which a reply goes on (`ReplyProtocol.baseImageURL`); nil when it has none.
-        case drawing(png: Data, pins: [Pin] = [], base: Data? = nil)
+        /// pins, which a reply goes on (`ReplyProtocol.baseImageURL`); nil when it has none. `apps` are
+        /// the apps the screenshot shows (`CaptureApps`), which the line names.
+        case drawing(png: Data, pins: [Pin] = [], base: Data? = nil, apps: [String] = [])
         /// The agent's own image, with the drawing exactly as the agent sent it, and the person's
         /// words. The line names the card's file and its title, and no picture travels. A drawing in
         /// answer still needs a picture to go on, so the request keeps the card's own picture,
@@ -28,16 +29,21 @@ extension ScreenshotRequests {
         func store(in directory: URL) throws {
             let image = directory.appendingPathComponent("image.png")
             switch self {
-            case .drawing(let png, _, _), .unchanged(_, _, let png?): try png.write(to: image, options: .atomic)
+            case .drawing(let png, _, _, _), .unchanged(_, _, let png?): try png.write(to: image, options: .atomic)
             case .unchanged(let card, _, nil): try FileManager.default.copyItem(at: card, to: image)
             }
             guard !pins.isEmpty else { return }
-            if case .drawing(_, _, let base?) = self { try base.write(to: ReplyProtocol.baseImageURL(in: directory), options: .atomic) }
+            if case .drawing(_, _, let base?, _) = self { try base.write(to: ReplyProtocol.baseImageURL(in: directory), options: .atomic) }
             try DrawingJSON.encode(["pins": pins.map(PinRecord.init)]).write(to: directory.appendingPathComponent("pins.json"), options: .atomic)
         }
 
         var pins: [Pin] {
-            if case .drawing(_, let pins, _) = self { return pins.sorted { $0.number < $1.number } }
+            if case .drawing(_, let pins, _, _) = self { return pins.sorted { $0.number < $1.number } }
+            return []
+        }
+
+        var apps: [String] {
+            if case .drawing(_, _, _, let apps) = self { return apps }
             return []
         }
 
@@ -50,7 +56,8 @@ extension ScreenshotRequests {
         /// For the `[send] prepared` line.
         var logged: String {
             switch self {
-            case .drawing(let png, let pins, _): return "\(png.count) bytes" + (pins.isEmpty ? "" : " pins=\(pins.count)")
+            case .drawing(let png, let pins, _, let apps):
+                return "\(png.count) bytes" + (pins.isEmpty ? "" : " pins=\(pins.count)") + (apps.isEmpty ? "" : " apps=\(apps.count)")
             case .unchanged: return "unchanged, no picture sent"
             }
         }
@@ -116,10 +123,10 @@ extension ScreenshotRequests {
     /// it, so the agent opens nothing. No image is beside that file, so it names the ticket.
     ///
     /// The pins' words follow the message, as `Pin.lineWords` writes them, and lead the line when
-    /// there is no message.
+    /// there is no message. `apps`, the apps the screenshot shows (`CaptureApps`), follow the image.
     static func requestLine(record: Record, root: URL, message: String? = nil,
                             instructions: String = SettingsData.defaultSendInstructions, title: String? = nil,
-                            pins: [Pin] = []) -> String {
+                            pins: [Pin] = [], apps: [String] = []) -> String {
         let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
         let about: String
         if record.unchanged == true {
@@ -128,12 +135,24 @@ extension ScreenshotRequests {
             let ticket = directory.appendingPathComponent("ticket.json").path
             about = "about your image \"\(card)\"\(titled), unchanged since you sent it. The reply ticket is \"\(ticket)\"."
         } else {
-            about = "\"\(directory.appendingPathComponent("image.png").path)\"."
+            about = "\"\(directory.appendingPathComponent("image.png").path)\"." + (apps.isEmpty ? "" : " The screenshot shows \(listed(apps)).")
         }
         let note = "From Vignette: \(about)" + (instructions.isEmpty ? "" : " \(instructions)")
         guard !pins.isEmpty else { return message.map { "\($0) [\(note)]" } ?? note }
         let request = [message.map(Pin.ended), Pin.lineWords(pins)].compactMap { $0 }.joined(separator: " ")
         return "\(request) [\(note)]"
+    }
+
+    /// The line for `picture`, with the title, the pins and the apps it carries.
+    static func requestLine(record: Record, root: URL, message: String?, instructions: String, picture: Picture) -> String {
+        requestLine(record: record, root: root, message: message, instructions: instructions, title: picture.title,
+                    pins: picture.pins, apps: picture.apps)
+    }
+
+    /// "Safari", "Safari and Xcode", "Safari, Xcode and Finder".
+    private static func listed(_ names: [String]) -> String {
+        guard names.count > 1, let last = names.last else { return names.first ?? "" }
+        return names.dropLast().joined(separator: ", ") + " and " + last
     }
 }
 
