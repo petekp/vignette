@@ -1,5 +1,7 @@
 # Send
 
+- A pin comment reaches a session without Send, through the same connections, with its own line and
+  store (`docs/rules/live-comments.md`).
 - `Sources/AgentAddress.swift`, `Sources/AgentConnection.swift`, `Sources/ScreenshotRequests.swift`, `Sources/ReplyProtocol.swift`,
   `Sources/ReplyCommand.swift` and `skills/vignette/scripts/reply` are the closed loop: a drawing
   sent to an agent session and that agent's drawing sent back. `Sources/SessionListing.swift` lists

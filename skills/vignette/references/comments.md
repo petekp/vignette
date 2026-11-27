@@ -17,6 +17,9 @@ The file holds:
   comment adds `agentName`, and `session` and `sessionName` when it named its session, so you can
   tell your comments from another session's.
   `at` is when it was written, in UTC. `sentIn` lists the ids of the user's sends that carried it.
+  `delivered` lists the sessions it reached as the user posted it (`references/live-comments.md`),
+  oldest first: `agent`, `session`, `to`, `at` and `status` (`sending`, `sent`, `queued`,
+  `uncertain` or `failed`).
 - A pin's `resolved`, when its ask is done: `resolver` (`person` or `agent`), `agentName` for an
   agent's, and `at`. Vignette leaves resolved pins out of what the user sends you.
 - `sends`: the card's sends that reached an agent session, or may have (`status` `uncertain`),

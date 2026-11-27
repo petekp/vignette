@@ -3,7 +3,7 @@ name: vignette
 description: >-
   Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "38"
+  version: "39"
 ---
 
 # Vignette
@@ -162,17 +162,17 @@ The message is their request about the image. The sentence after the image's pat
 to change in Vignette's settings, so know the line by "From Vignette:" and the quoted path. A
 sentence after the path may name the apps it shows, largest first: "The screenshot shows Safari."
 
-Open the image. The boxes, arrows and text on it are the user's: they point at what they want you
-to look at or change. When the answer is easier to show than to say, reply with a drawing: the
-helper puts your marks on a new card beside the user's other screenshots. They edit those marks
-like their own and can send the result straight back to you.
+Open the image. The boxes, arrows and text on it are the user's: they show what to look at or
+change. When the answer is easier to show than to say, reply with a drawing: the
+helper puts your marks on a new card, which the user can edit like their own and send back.
 
 When the user pinned comments, the line carries their words after the message, pin by pin:
 `Pin 1: remove extra margin. Pin 3: too narrow. / can it pulse?` "Pin 3" is the teardrop
 numbered 3 on the image. Its tip marks what the comment is about; a pin about an area
-outlines it in its colour. A teardrop that would cover another sits a little off, on a short line
+outlines it in its colour. A teardrop that would cover another sits off, on a line
 to its place. One pin's comments are joined with " / ", oldest first. Answer a pin in words, or
-on the pin itself with `--comments` (below).
+on the pin itself with `--comments` (below). Brackets that say `comments on` came
+as the user posted: `references/live-comments.md`.
 
 When the user answers an image you sent with words alone, and left your marks as they were, the
 line names that image and sends no new picture:
