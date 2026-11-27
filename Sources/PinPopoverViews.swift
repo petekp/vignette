@@ -42,7 +42,7 @@ final class CommentRow: NSView {
     private let trash = NSButton()
 
     /// The avatar, the name, the time and the trash button share the top line, and the words start
-    /// under the avatar's left edge.
+    /// under the name's left edge, so the avatar's column holds only avatars.
     init(avatar: NSImageView, name: NSTextField, time: NSTextField, words: NSTextField, avatarSize: CGFloat, deleteSize: CGFloat,
          gaps: (name: CGFloat, words: CGFloat, trash: CGFloat)) {
         super.init(frame: .zero)
@@ -71,7 +71,7 @@ final class CommentRow: NSView {
                            time.leadingAnchor.constraint(equalTo: name.trailingAnchor, constant: gaps.name),
                            time.firstBaselineAnchor.constraint(equalTo: name.firstBaselineAnchor),
                            time.trailingAnchor.constraint(lessThanOrEqualTo: trash.leadingAnchor, constant: -gaps.trash),
-                           words.leadingAnchor.constraint(equalTo: avatar.leadingAnchor),
+                           words.leadingAnchor.constraint(equalTo: name.leadingAnchor),
                            words.topAnchor.constraint(equalTo: avatar.bottomAnchor, constant: gaps.words),
                            words.trailingAnchor.constraint(equalTo: trailingAnchor),
                            words.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -123,5 +123,29 @@ final class CommentRow: NSView {
     override func accessibilityPerformPress() -> Bool {
         press?()
         return press != nil
+    }
+}
+
+extension PinPopover {
+    /// Where the words start: past the avatars' column, at the writers' names.
+    static var wordsIndent: CGFloat {
+        let ui = Settings.shared.data.ui
+        return ui.pinAvatarSize + ui.pinNameGap
+    }
+
+    /// The line between two rows, `width` wide, from the names' left edge to its right end.
+    static func separator(width: CGFloat) -> NSView {
+        let line = NSBox()
+        line.boxType = .separator
+        line.translatesAutoresizingMaskIntoConstraints = false
+        let row = NSView()
+        row.addSubview(line)
+        for constraint in [row.widthAnchor.constraint(equalToConstant: width),
+                           line.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: wordsIndent),
+                           line.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+                           line.topAnchor.constraint(equalTo: row.topAnchor), line.bottomAnchor.constraint(equalTo: row.bottomAnchor)] {
+            constraint.isActive = true
+        }
+        return row
     }
 }

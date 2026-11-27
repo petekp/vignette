@@ -169,7 +169,7 @@ final class PinHoverCard: NSView {
     }
 
     /// Sets the words and the avatar, lays them out across a card `width` wide, and answers the card's
-    /// size, at least `least` tall.
+    /// size, at least `least` tall. The words start under the name, as a comment's do in the popover.
     private func measure(_ words: Words, maker: PinMaker, width: CGFloat, least: CGFloat) -> CGSize {
         let ui = Settings.shared.data.ui, inset = ui.pinPopoverInset, gap = ui.pinNameGap, side = ui.pinAvatarSize
         name.stringValue = words.name
@@ -181,16 +181,17 @@ final class PinHoverCard: NSView {
         avatar.layer?.cornerRadius = side / 2
         Self.paint(avatar, as: maker)
         let column = max(width - 2 * inset, 0), afterAvatar = inset + side + gap
-        let nameSize = name.fittingSize, nameWidth = min(nameSize.width, max(column - side - gap, 0))
+        let wordsWidth = max(column - side - gap, 0)
+        let nameSize = name.fittingSize, nameWidth = min(nameSize.width, wordsWidth)
         name.frame = CGRect(x: afterAvatar, y: avatar.frame.midY - nameSize.height / 2, width: nameWidth, height: nameSize.height)
         let timeSize = time.fittingSize
         let timeTop = name.frame.minY + name.firstBaselineOffsetFromTop - time.firstBaselineOffsetFromTop
         time.frame = CGRect(x: name.frame.maxX + gap, y: timeTop, width: max(inset + column - name.frame.maxX - gap, 0), height: timeSize.height)
         let topLine = max(avatar.frame.maxY, name.frame.maxY)
-        firstLine.frame = CGRect(x: inset, y: topLine + ui.pinWordsGap, width: column, height: firstLine.fittingSize.height)
+        firstLine.frame = CGRect(x: afterAvatar, y: topLine + ui.pinWordsGap, width: wordsWidth, height: firstLine.fittingSize.height)
         var bottom = firstLine.frame.maxY
         if words.footnote != nil {
-            replies.frame = CGRect(x: inset, y: bottom + Self.rowGap, width: column, height: replies.fittingSize.height)
+            replies.frame = CGRect(x: afterAvatar, y: bottom + Self.rowGap, width: wordsWidth, height: replies.fittingSize.height)
             bottom = replies.frame.maxY
         }
         return CGSize(width: width, height: max(least, bottom + inset))
