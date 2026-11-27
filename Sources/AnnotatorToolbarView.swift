@@ -42,6 +42,29 @@ struct ToolbarView: View {
     /// cannot stretch the bar.
     static let targetNameMax: CGFloat = 132
 
+    /// The Comment tool's icon: the outline of the teardrop the tool places, its tip at the bottom left,
+    /// as wide and as heavy as the 14 pt medium symbols beside it, as a template image.
+    static let commentIcon: NSImage = {
+        let side: CGFloat = 13.5, line: CGFloat = 1.4, canvas: CGFloat = 16
+        let image = NSImage(size: NSSize(width: canvas, height: canvas), flipped: true) { _ in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            let inset = (canvas - side) / 2 + line / 2
+            let body = CGRect(x: inset, y: inset, width: canvas - 2 * inset, height: canvas - 2 * inset)
+            let r = body.width / 2
+            let path = CGPath(roundedRect: body, cornerWidth: r, cornerHeight: r, transform: nil)
+                .union(CGPath(rect: CGRect(x: body.minX, y: body.maxY - r, width: r, height: r), transform: nil))
+            ctx.addPath(path)
+            ctx.setLineWidth(line)
+            ctx.setLineJoin(.miter)
+            ctx.setStrokeColor(NSColor.black.cgColor)
+            ctx.strokePath()
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "Comment"
+        return image
+    }()
+
     /// The message field's width in the bar, and the most lines it grows to while it is typed in.
     static let messageWidth: CGFloat = 220
     static let messageLines = 6
@@ -50,7 +73,9 @@ struct ToolbarView: View {
         HStack(spacing: Self.spacing) {
             ForEach(EditorCore.Tool.allCases, id: \.self) { tool in
                 Button { onTool(tool) } label: {
-                    Image(systemName: tool.symbol)
+                    Group {
+                        if let symbol = tool.symbol { Image(systemName: symbol) } else { Image(nsImage: Self.commentIcon).renderingMode(.template) }
+                    }
                         .font(.system(size: 14, weight: .medium))
                         .frame(width: 32, height: 30)
                         // Grey, not the accent: blue belongs to the one action at the end of the bar.
