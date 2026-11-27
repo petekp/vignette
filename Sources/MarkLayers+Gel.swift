@@ -5,7 +5,8 @@ import QuartzCore
 /// its pins flat and the editor in gel (`EditorPins`). On the way to the editor the gel comes in under
 /// the flat body over the first half of the flight, and the flat body goes over the second half, so
 /// the pin is never see-through and lands all gel. The way home turns the same way back. The gel is
-/// drawn in the view's points, at the pins' size on screen, so it stays sharp at any zoom.
+/// drawn at the editor's scale and shrinks with the picture, so its textures keep one size through
+/// the flight instead of being made again on every frame.
 extension MarkLayers {
     struct PinBody {
         let teardrop: PinTeardrop
@@ -33,15 +34,16 @@ extension MarkLayers {
     /// Draws the pins' bodies in gel, `growth` times their drawn size about their tips, `share` of the
     /// way to the editor. Each takes the deep edge the editor gives it, judged at the editor's size.
     func showGel(growth: CGFloat, share: CGFloat) {
-        guard let gel, let zoom, zoom > 0, let markStyle, let pinGrowth else { return }
+        guard let gel, let markStyle, let pinGrowth else { return }
+        let editor = pinGrowth.to.editor ? pinGrowth.to : pinGrowth.from
+        guard editor.zoom > 0 else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        // The marks' layer runs in image px; the gel's, in the view's points.
-        gel.setAffineTransform(CGAffineTransform(scaleX: 1 / zoom, y: 1 / zoom))
+        // The marks' layer runs in image px; the gel's, in the editor's points.
+        gel.setAffineTransform(CGAffineTransform(scaleX: 1 / editor.zoom, y: 1 / editor.zoom))
         gel.opacity = Float(Self.gelOpacity(share))
         CATransaction.commit()
         guard share > 0 else { return }
-        let editor = pinGrowth.to.editor ? pinGrowth.to : pinGrowth.from
         let atEditor = pinGrowth.growth(atZoom: editor.zoom, pointScale: drawing?.pointScale ?? 1)
         let style = markStyle.pin
         let shapes = pinBodies.map { body in
@@ -49,7 +51,7 @@ extension MarkLayers {
             let tint = PinGel.Tint.pin(body.maker, resolved: body.resolved, over: body.teardrop.square.applying(Self.scaling(about: tip, by: atEditor)),
                                        backdrop: backdrop, markStyle: markStyle)
             var shape = PinGel.Shape.body(of: body.teardrop, dome: 0, tint: tint)
-            shape.rect = shape.rect.applying(Self.scaling(about: tip, by: growth).concatenating(CGAffineTransform(scaleX: zoom, y: zoom)))
+            shape.rect = shape.rect.applying(Self.scaling(about: tip, by: growth).concatenating(CGAffineTransform(scaleX: editor.zoom, y: editor.zoom)))
             shape.radius = min(shape.rect.width, shape.rect.height) / 2
             shape.dome = shape.rect.height / 2 * style.gelDome
             return shape

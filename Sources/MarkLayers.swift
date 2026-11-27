@@ -54,7 +54,7 @@ final class MarkLayers {
             growPins()
         }
     }
-    private(set) var zoom: CGFloat?
+    private var zoom: CGFloat?
     /// A flight's gel for its pins' bodies, while one of its ends is the editor (`MarkLayers+Gel.swift`).
     var gel: PinGel?
     /// The teardrops of the last `show`, its lone pins' and its clusters', in px, for the gel.
