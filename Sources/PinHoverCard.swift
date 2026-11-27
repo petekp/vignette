@@ -180,8 +180,8 @@ final class PinHoverCard: NSView {
         avatar.frame = CGRect(x: inset, y: inset, width: side, height: side)
         avatar.layer?.cornerRadius = side / 2
         Self.paint(avatar, as: maker)
-        let column = max(width - 2 * inset, 0), afterAvatar = inset + side + gap
-        let wordsWidth = max(column - side - gap, 0)
+        let column = max(width - 2 * inset, 0), afterAvatar = inset + PinPopover.wordsIndent
+        let wordsWidth = max(column - PinPopover.wordsIndent, 0)
         let nameSize = name.fittingSize, nameWidth = min(nameSize.width, wordsWidth)
         name.frame = CGRect(x: afterAvatar, y: avatar.frame.midY - nameSize.height / 2, width: nameWidth, height: nameSize.height)
         let timeSize = time.fittingSize
@@ -211,17 +211,18 @@ final class PinHoverCard: NSView {
     /// that logo alone. The pin's popover shows the same beside each comment.
     static func paint(_ avatar: NSImageView, as maker: PinMaker) {
         let style = Settings.shared.data.ui.markStyle.painting(maker)
-        avatar.contentTintColor = nil
-        avatar.layer?.masksToBounds = true
+        let bareLogo: NSImage? = if case .agent(let agent) = maker, let logo = Agent.logo(for: agent), logo.isTemplate { logo } else { nil }
+        avatar.contentTintColor = bareLogo == nil ? nil : bareLogoColor
+        avatar.layer?.masksToBounds = bareLogo == nil
+        if let bareLogo {
+            avatar.image = bareLogo
+            return
+        }
         switch (maker, PinFace(maker)) {
         case (.person, _):
             avatar.image = accountPicture ?? letter(accountInitial, on: style.personColor, in: style.wordColor)
         case (.agent, .letter(let first)):
             avatar.image = letter(first, on: style.agentColor, in: style.wordColor)
-        case (.agent(let agent), _) where Agent.oneColourLogos.contains(agent.lowercased()) && Agent.logo(for: agent) != nil:
-            avatar.image = Agent.logo(for: agent)
-            avatar.contentTintColor = bareLogoColor
-            avatar.layer?.masksToBounds = false
         case (.agent(let agent), _):
             avatar.image = logo(agent, on: style.agentColor, in: style.wordColor, filling: style.pin.logoSize)
         }

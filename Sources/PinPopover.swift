@@ -195,12 +195,12 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
             self.live = live
             for row in comments.arrangedSubviews { row.removeFromSuperview() }
             for (index, comment) in pin.comments.enumerated() where index != composer.editing {
-                if !comments.arrangedSubviews.isEmpty { comments.addArrangedSubview(separator()) }
+                if !comments.arrangedSubviews.isEmpty { comments.addArrangedSubview(Self.separator(width: Self.width - 2 * Self.inset)) }
                 comments.addArrangedSubview(row(comment, index: index))
             }
             if let client = live.working {
                 let ui = Settings.shared.data.ui
-                if !comments.arrangedSubviews.isEmpty { comments.addArrangedSubview(separator()) }
+                if !comments.arrangedSubviews.isEmpty { comments.addArrangedSubview(Self.separator(width: Self.width - 2 * Self.inset)) }
                 comments.addArrangedSubview(Self.workingRow(client, avatarSize: ui.pinAvatarSize, gap: ui.pinNameGap))
             }
             comments.isHidden = comments.arrangedSubviews.isEmpty
@@ -290,8 +290,6 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         row.setAccessibilityLabel(([author, ago].filter { !$0.isEmpty } + [delivery?.note].compactMap { $0 }).joined(separator: ", ") + ": \(comment.text)")
         return row
     }
-
-    private func separator() -> NSView { Self.separator(width: Self.width - 2 * Self.inset) }
 
 
     private func fit() {
