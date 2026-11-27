@@ -18,6 +18,8 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     private let send: (EditorCore.ComposerInput) -> Void
     private var shown: (comments: [Pin.Comment], editing: Int?)?
     private var anchor = CGRect.null
+    /// When the popover opened: each comment's time is said as of then, and holds still while it is open.
+    private let opened = Date()
     private var aroundArea = false
     /// One line of the field's words, and the field's height, which grows with them up to
     /// `ui.pinComposerLines` lines.
@@ -196,9 +198,9 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         popover.close()
     }
 
-    /// A comment: the writer's avatar, as the pin's hover card shows it, then their name, "You" or the
-    /// agent's as "Claude", and under it their words, all in the system's face. Pressing it edits it, and
-    /// its Delete, which shows while the pointer is on it, deletes it.
+    /// A comment: a line with the writer's avatar, as the pin's hover card shows it, their name, "You" or
+    /// the agent's as "Claude", and how long ago they wrote, and under it their words, all in the system's
+    /// face. Pressing it edits it, and its Delete, which shows while the pointer is on it, deletes it.
     private func row(_ comment: Pin.Comment, index: Int) -> NSView {
         let ui = Settings.shared.data.ui
         let author = PinHoverCard.Words.writer(comment, capitalized: true)
@@ -213,17 +215,22 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         name.font = .systemFont(ofSize: small.pointSize, weight: .semibold)
         name.textColor = .labelColor
         name.lineBreakMode = .byTruncatingTail
+        let ago = PinHoverCard.Words.ago(comment, now: opened)
+        let time = NSTextField(labelWithString: ago ?? "")
+        time.font = small
+        time.textColor = .secondaryLabelColor
+        time.lineBreakMode = .byTruncatingTail
         let words = NSTextField(wrappingLabelWithString: comment.text)
         words.font = .preferredFont(forTextStyle: .body)
         words.textColor = .labelColor
         words.isSelectable = false
-        words.preferredMaxLayoutWidth = Self.width - 2 * Self.inset - ui.pinAvatarSize - ui.pinDeleteSize - 2 * ui.pinPopoverSpacing
-        let row = CommentRow(avatar: avatar, name: name, words: words, avatarSize: ui.pinAvatarSize, deleteSize: ui.pinDeleteSize,
-                             gap: ui.pinPopoverSpacing)
+        words.preferredMaxLayoutWidth = Self.width - 2 * Self.inset
+        let row = CommentRow(avatar: avatar, name: name, time: time, words: words, avatarSize: ui.pinAvatarSize, deleteSize: ui.pinDeleteSize,
+                             gaps: (name: ui.pinNameGap, words: ui.pinWordsGap, trash: ui.pinPopoverSpacing))
         row.widthAnchor.constraint(equalToConstant: Self.width - 2 * Self.inset).isActive = true
         row.press = { [weak self] in self?.send(.edit(index)) }
         row.delete = { [weak self] in self?.send(.delete(index)) }
-        row.setAccessibilityLabel("\(author): \(comment.text)")
+        row.setAccessibilityLabel([author, ago].compactMap { $0 }.joined(separator: ", ") + ": \(comment.text)")
         return row
     }
 
@@ -291,93 +298,5 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         if !closing { send(.close) }
-    }
-}
-
-/// A comment in the popover, which a click edits. A trash button at its trailing edge, shown while
-/// the pointer is on the comment, deletes it, as Delete Comment in its contextual menu, the Delete key
-/// on it and VoiceOver's Delete comment action do. With Full Keyboard Access on, Tab reaches it and Space or
-/// Return edits it, as a button.
-private final class CommentRow: NSView {
-    var press: (() -> Void)?
-    var delete: (() -> Void)?
-    private let trash = NSButton()
-
-    init(avatar: NSImageView, name: NSTextField, words: NSTextField, avatarSize: CGFloat, deleteSize: CGFloat, gap: CGFloat) {
-        super.init(frame: .zero)
-        trash.isBordered = false
-        trash.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "Delete comment")?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: deleteSize * 0.75, weight: .regular))
-        trash.imageScaling = .scaleProportionallyDown
-        trash.contentTintColor = .secondaryLabelColor
-        trash.toolTip = "Delete comment"
-        trash.target = self
-        trash.action = #selector(deletePressed)
-        // The row takes Delete from the keyboard itself, so Tab never stops on a button that is not shown.
-        trash.refusesFirstResponder = true
-        trash.alphaValue = 0
-        for view in [avatar, name, words, trash] as [NSView] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(view)
-        }
-        name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        for constraint in [avatar.leadingAnchor.constraint(equalTo: leadingAnchor), avatar.topAnchor.constraint(equalTo: topAnchor),
-                           avatar.widthAnchor.constraint(equalToConstant: avatarSize), avatar.heightAnchor.constraint(equalToConstant: avatarSize),
-                           avatar.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor),
-                           name.leadingAnchor.constraint(equalTo: avatar.trailingAnchor, constant: gap),
-                           name.centerYAnchor.constraint(equalTo: avatar.centerYAnchor),
-                           name.trailingAnchor.constraint(lessThanOrEqualTo: trash.leadingAnchor, constant: -gap),
-                           words.leadingAnchor.constraint(equalTo: name.leadingAnchor),
-                           words.topAnchor.constraint(equalTo: avatar.bottomAnchor, constant: 2),
-                           words.trailingAnchor.constraint(equalTo: trash.leadingAnchor, constant: -gap),
-                           words.bottomAnchor.constraint(equalTo: bottomAnchor),
-                           trash.trailingAnchor.constraint(equalTo: trailingAnchor), trash.centerYAnchor.constraint(equalTo: avatar.centerYAnchor),
-                           trash.widthAnchor.constraint(equalToConstant: deleteSize), trash.heightAnchor.constraint(equalToConstant: deleteSize)] {
-            constraint.isActive = true
-        }
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
-        setAccessibilityElement(true)
-        setAccessibilityRole(.button)
-        setAccessibilityHelp("Edit this comment")
-        setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Delete comment") { [weak self] in
-            self?.delete?()
-            return self?.delete != nil
-        }])
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override var acceptsFirstResponder: Bool { NSApp.isFullKeyboardAccessEnabled }
-    override var canBecomeKeyView: Bool { NSApp.isFullKeyboardAccessEnabled }
-    override var focusRingMaskBounds: NSRect { bounds }
-    override func drawFocusRingMask() { bounds.fill() }
-
-    override func mouseEntered(with event: NSEvent) { trash.alphaValue = 1 }
-    override func mouseExited(with event: NSEvent) { trash.alphaValue = 0 }
-
-    override func mouseDown(with event: NSEvent) {}
-
-    /// As a button: the press counts where it is let go inside.
-    override func mouseUp(with event: NSEvent) {
-        if bounds.contains(convert(event.locationInWindow, from: nil)) { press?() }
-    }
-
-    override func keyDown(with event: NSEvent) {
-        if event.charactersIgnoringModifiers == " " || [36, 76].contains(event.keyCode) { press?() }
-        else if [51, 117].contains(event.keyCode) { delete?() }
-        else { super.keyDown(with: event) }
-    }
-
-    override func menu(for event: NSEvent) -> NSMenu? {
-        let menu = NSMenu()
-        menu.addItem(withTitle: "Delete Comment", action: #selector(deletePressed), keyEquivalent: "").target = self
-        return menu
-    }
-
-    @objc private func deletePressed() { delete?() }
-
-    override func accessibilityPerformPress() -> Bool {
-        press?()
-        return press != nil
     }
 }
