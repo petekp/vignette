@@ -237,8 +237,11 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         let toSession = live.target.map { (shown?.comments.isEmpty ?? true) ? "Comment for \($0)" : "Reply to \($0)" }
         let placeholder = resolved ? "Reply to reopen" : toSession ?? "Add a comment"
         guard field.stringValue.isEmpty, field.placeholderAttributedString?.string != placeholder else { return }
+        let oneLine = NSMutableParagraphStyle()
+        oneLine.lineBreakMode = .byTruncatingTail
         field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
             .font: field.font ?? NSFont.preferredFont(forTextStyle: .body), .foregroundColor: NSColor.secondaryLabelColor,
+            .paragraphStyle: oneLine,
         ])
     }
 

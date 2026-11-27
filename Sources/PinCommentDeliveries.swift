@@ -39,8 +39,7 @@ final class CommentDeliveries {
 
     /// What a comment shows about its delivery (look A, `docs/voice.md`).
     struct Shown: Equatable {
-        enum State: Equatable { case sending, sent, queued, uncertain, failed }
-        let state: State
+        let state: Status
         let client: AgentClient
         let reason: String?
     }
@@ -88,12 +87,9 @@ final class CommentDeliveries {
     /// Holds `item` for `destination` and `grace` seconds, with the other changes on `file` for that
     /// session. The wait does not move: changes made in it go with the first.
     func add(_ item: HeldChanges.Item, on file: ScreenshotKey, to destination: AgentDestination, grace: TimeInterval) {
-        if let found = holds.first(where: { $0.value.file == file && $0.value.destination.address == destination.address }) {
-            let id = found.key
-            var hold = found.value
-            hold.changes.add(item)
-            holds[id] = hold
-            if hold.changes.isEmpty {
+        if let id = holds.first(where: { $0.value.file == file && $0.value.destination.address == destination.address })?.key {
+            holds[id]?.changes.add(item)
+            if holds[id]?.changes.isEmpty == true {
                 holds[id] = nil
                 Log.write("[comments] held \(id) went empty \(file.name)")
             }
@@ -122,16 +118,20 @@ final class CommentDeliveries {
     private func release(_ id: String) {
         guard let hold = holds.removeValue(forKey: id), !hold.changes.isEmpty else { return }
         guard let connection = connections[hold.destination.address.client] else { return }
-        let delivery = Delivery(id: id, file: hold.file.path, client: hold.destination.address.client, session: hold.destination.address.id,
-                                sessionName: hold.destination.name, comments: hold.changes.comments,
-                                pins: hold.changes.items.map(\.change.pin), at: Date(), status: .sending)
-        deliveries.append(delivery)
+        deliveries.append(sending(id, hold))
         destinations[id] = hold.destination
         let line = hold.changes.line(file: hold.file.url.path)
         connection.submit(line, to: hold.destination, watchingTurn: false) { outcome in
             DispatchQueue.main.async { MainActor.assumeIsolated { self.finish(id, outcome) } }
         }
         changed(hold.file)
+    }
+
+    /// The delivery `hold`'s line becomes as it goes.
+    private func sending(_ id: String, _ hold: Hold) -> Delivery {
+        Delivery(id: id, file: hold.file.path, client: hold.destination.address.client, session: hold.destination.address.id,
+                 sessionName: hold.destination.name, comments: hold.changes.comments,
+                 pins: hold.changes.items.map(\.change.pin), at: Date(), status: .sending)
     }
 
     private func finish(_ id: String, _ outcome: SubmissionOutcome) {
@@ -148,9 +148,10 @@ final class CommentDeliveries {
         changed(ScreenshotKey(asGiven: delivery.file))
     }
 
-    /// Writes `outcome` into delivery `id` and logs it. False when the delivery is gone.
+    /// Writes `outcome` into delivery `id` and logs it, saving the store unless `save` is false. False
+    /// when the delivery is gone.
     @discardableResult
-    private func record(_ outcome: SubmissionOutcome, for id: String) -> Bool {
+    private func record(_ outcome: SubmissionOutcome, for id: String, save saves: Bool = true) -> Bool {
         guard let index = deliveries.firstIndex(where: { $0.id == id }) else { return false }
         switch outcome {
         case .accepted: deliveries[index].status = .sent
@@ -161,7 +162,7 @@ final class CommentDeliveries {
         deliveries[index].reason = outcome.reason
         let delivery = deliveries[index]
         Log.write("[comments] \(delivery.status.rawValue) \(id) \(delivery.address.description) comments=\(delivery.comments.count) \(outcome.detail)")
-        save()
+        if saves { save() }
         return true
     }
 
@@ -173,9 +174,7 @@ final class CommentDeliveries {
         let answers = Answers()
         for (id, hold) in holds where !hold.changes.isEmpty {
             guard let connection = connections[hold.destination.address.client] else { continue }
-            deliveries.append(Delivery(id: id, file: hold.file.path, client: hold.destination.address.client, session: hold.destination.address.id,
-                                       sessionName: hold.destination.name, comments: hold.changes.comments,
-                                       pins: hold.changes.items.map(\.change.pin), at: Date(), status: .sending))
+            deliveries.append(sending(id, hold))
             group.enter()
             connection.submit(hold.changes.line(file: hold.file.url.path), to: hold.destination, watchingTurn: false) { outcome in
                 answers.set(id, outcome)
@@ -185,7 +184,7 @@ final class CommentDeliveries {
         }
         holds = [:]
         _ = group.wait(timeout: .now() + limit)
-        for (id, outcome) in answers.all { record(outcome, for: id) }
+        for (id, outcome) in answers.all { record(outcome, for: id, save: false) }
         save()
     }
 
@@ -237,15 +236,7 @@ final class CommentDeliveries {
             return Shown(state: .sending, client: hold.destination.address.client, reason: nil)
         }
         guard let delivery = deliveries.last(where: { $0.file == file.path && $0.comments.contains(comment) }) else { return nil }
-        let state: Shown.State
-        switch delivery.status {
-        case .sending: state = .sending
-        case .sent: state = .sent
-        case .queued: state = .queued
-        case .uncertain: state = .uncertain
-        case .failed: state = .failed
-        }
-        return Shown(state: state, client: delivery.client, reason: delivery.reason)
+        return Shown(state: delivery.status, client: delivery.client, reason: delivery.reason)
     }
 
     /// The client whose turn a delivery about `pin` started is running, and when that delivery went.
@@ -329,33 +320,34 @@ final class CommentDeliveries {
             Log.write("[comments] queue unread \(id) line=\(line.id): \(detail)")
             lookAgain(id)
         case .show(let hold):
-            deliveries[index].reason = hold.reason
-            save()
-            changed(file)
+            if deliveries[index].reason != hold.reason {
+                deliveries[index].reason = hold.reason
+                save()
+                changed(file)
+            }
             lookAgain(id)
         case .taken:
-            queues[id] = nil
-            deliveries[index].status = .sent
-            deliveries[index].reason = nil
             Log.write("[comments] taken \(id) line=\(line.id)")
-            save()
+            settle(index, .sent, reason: nil)
             watchTurn(id)
             changed(file)
         case .removed:
-            queues[id] = nil
-            deliveries[index].status = .failed
-            deliveries[index].reason = Self.removedReason
             Log.write("[comments] removed in session \(id) line=\(line.id)")
-            save()
+            settle(index, .failed, reason: Self.removedReason)
             changed(file)
         case .threadGone(let detail):
-            queues[id] = nil
-            deliveries[index].status = .failed
-            deliveries[index].reason = ScreenshotRequests.threadGoneReason
             Log.write("[comments] error thread gone \(id) line=\(line.id) \(detail)")
-            save()
+            settle(index, .failed, reason: ScreenshotRequests.threadGoneReason)
             changed(file)
         }
+    }
+
+    /// The queue let go of delivery `index`'s line: its watch ends and the delivery reads `status`.
+    private func settle(_ index: Int, _ status: Status, reason: String?) {
+        queues[deliveries[index].id] = nil
+        deliveries[index].status = status
+        deliveries[index].reason = reason
+        save()
     }
 
     static let removedReason = "It was removed from the thread's queue in Codex."
