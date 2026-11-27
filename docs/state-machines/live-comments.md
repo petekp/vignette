@@ -41,7 +41,7 @@ Every change of state calls `changed`, which reaches an open popover on that scr
 - One hold per screenshot and session. Checked by: the hold's key in `add`.
 - A comment's words go at most once per post: the diff counts a comment once, and a post deleted inside the grace never goes. Checked by: `CommentDeliveryTests`.
 - An edit, delete, Resolve or Reopen goes only to a session that knows the comment or the pin (`CommentTarget.knows`). Checked by: `CommentDeliveryTests`.
-- The working row shows only for the turn after the line went in. A turn already running when the line went in reads busy at the first look, and is taken for the comment's. A Claude Code session reads lines only between turns, so it then still runs its own turn first. Checked by: nothing.
+- The working row shows only for the turn after the line went in. A turn already running when the line went in reads `waiting` while the line sits in the Claude Code inbox (`ClaudeCodeConnection.turn`), and a Codex line is watched for its turn only once the thread took it. Checked by: `CommentDeliveryTests.testTheWorkingRowShowsForTheTurnThatStartsAfterTheLineWentIn`.
 
 **Late and concurrent answers**
 
