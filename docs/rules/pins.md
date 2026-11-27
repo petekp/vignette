@@ -175,7 +175,10 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   live ink does. An area's outline is a gel rod `ui.pinGelRod` wide in its pin's colour, one shape
   with its pin, or on its own while the pin is in a cluster. It shows only while its pin is hovered,
   selected, being placed or open (`EditorCore.outlinedPins`), and a closed area pin draws none at
-  rest. The pin being placed and the open one keep their gel drifting (`EditorCore.activePins`)
+  rest. A lone selected area pin's corner handles are squares of its gel, `ui.pinGelHandle` wide and
+  joined to the rod, with a white square `ui.pinGelHandleCore` wide in the middle, so they still read
+  as a rectangle's handles over dark content (`EditorCore.areaPinCorners`). The corner under the
+  teardrop has no white square, since the tip takes the press there. The pin being placed and the open one keep their gel drifting (`EditorCore.activePins`)
   at the motion setting, so Reduce Motion stills it. The hover card and the popover have a gel rim
   `ui.pinGelRim` wide in the pin's colour (`PinGelRim`). The popover's follows the popover's outline,
   its arrow included: the rim covers the popover's frame and reads the outline from the shape layer

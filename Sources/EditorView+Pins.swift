@@ -48,7 +48,7 @@ extension EditorView {
         // The card covers its teardrop, so the teardrop's selection ring would show at its corner.
         let ringed = core.selection.subtracting(carded.map { [$0] } ?? [])
         pinUI.pins.show(EditorPins.Shown(placement: placement, outlined: core.drawing.pins.filter { outlined.contains($0.id) },
-                                         drifting: core.activePins, selected: ringed, markStyle: core.markStyle,
+                                         drifting: core.activePins, selected: ringed, handles: core.areaPinCorners, markStyle: core.markStyle,
                                          outlineWidth: core.metrics.selectionOutlineWidth, transform: toView))
         pinUI.composer?.follow(anchor(of: pinUI.composer?.pin, in: placement), area: area(of: pinUI.composer?.pin))
         let resizing = core.composer != nil && core.gesture != nil

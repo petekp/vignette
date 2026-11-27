@@ -60,6 +60,8 @@ extension UITweaks {
         var pinGelEdge = 1.0             // a pin's edge's opacity over dark content, 0 to 1
         var pinGelDeep = 0.85            // the share of a pin's colour its deep edge keeps over light content
         var pinGelRod = 4.5              // an area's outline, screen pt
+        var pinGelHandle = 12.0          // the gel square on each corner of a selected area pin's area, screen pt
+        var pinGelHandleCore = 5.0       // the white square in its middle, screen pt
         var pinGelRim = 2.0              // the rim of a pin's hover card and popover, screen pt
         var pinGelFaceShadow = 0.5       // the shadow under a gel pin's number or logo
         // Marks (`MarkStyle`, `TextStyle`, `docs/mark-style-settings-2026-09-29.md`)

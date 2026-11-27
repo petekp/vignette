@@ -3,8 +3,9 @@ import QuartzCore
 
 /// The pins as the editor shows them, in the editor's coordinates, at one size on screen whatever the
 /// zoom (`PinPlacement`): every teardrop and cluster in gel (`PinGel`), with the outline of each area
-/// that is hovered, selected, being placed or open as a gel rod joined to its pin, then a selection
-/// ring round each selected teardrop, then what each teardrop wears (`PinLayer`).
+/// that is hovered, selected, being placed or open as a gel rod joined to its pin, and a lone selected
+/// area pin's corner handles as squares of its gel with a white core, then a selection ring round each
+/// selected teardrop, then what each teardrop wears (`PinLayer`).
 @MainActor
 final class EditorPins {
     /// The owner puts this between the picture and the overlay.
@@ -21,6 +22,8 @@ final class EditorPins {
     private var drops: [Pin.ID: PinLayer] = [:]
     private var clusters: [[Pin.ID]: PinLayer] = [:]
     private let selectionEdge = CAShapeLayer(), selectionLine = CAShapeLayer()
+    /// The white squares in the middle of an area pin's corner handles.
+    private let handleCores = CAShapeLayer()
     private var scale: CGFloat = 2
     private var shown: Shown?
 
@@ -30,6 +33,7 @@ final class EditorPins {
         let outlined: [Pin]
         let drifting: Set<Pin.ID>
         let selected: Set<Pin.ID>
+        let handles: EditorCore.PinCorners?
         let markStyle: MarkStyle
         let outlineWidth: CGFloat
         let transform: CGAffineTransform
@@ -44,11 +48,21 @@ final class EditorPins {
             outline.lineJoin = .round
             outline.lineCap = .round
         }
+        handleCores.fillColor = CGColor(gray: 1, alpha: 1)
+        handleCores.shadowColor = CGColor(gray: 0, alpha: 1)
+        handleCores.shadowOpacity = Float(Self.coreShadowOpacity)
+        handleCores.shadowRadius = Self.coreShadowRadius
+        handleCores.shadowOffset = .zero
     }
+
+    /// A corner handle's rounding, and its core's, as a share of its side.
+    private static let handleRounding: CGFloat = 0.3
+    /// The shadow that lifts a handle's white core off its gel.
+    private static let coreShadowOpacity: CGFloat = 0.35, coreShadowRadius: CGFloat = 0.75
 
     func setScale(_ scale: CGFloat) {
         self.scale = scale
-        for outline in [selectionEdge, selectionLine] { outline.contentsScale = scale }
+        for outline in [selectionEdge, selectionLine, handleCores] { outline.contentsScale = scale }
         for face in Array(drops.values) + Array(clusters.values) { face.setScale(scale) }
         gel.setScale(scale)
     }
@@ -108,9 +122,27 @@ final class EditorPins {
             faces.append(face.root)
         }
 
+        let cores = CGMutablePath()
+        if let handles = what.handles, case .area(let frame, _) = handles.pin.place {
+            let tint = tint(handles.pin.maker, resolved: handles.pin.isResolved, over: frame.applying(transform), toImage: toImage,
+                            markStyle: what.markStyle)
+            let side = style.gelHandle, core = style.gelHandleCore
+            let squares = teardrops.map(\.1.square)
+            for corner in handles.corners.map({ $0.applying(transform) }) {
+                let square = CGRect(x: corner.x - side / 2, y: corner.y - side / 2, width: side, height: side)
+                shapes.append(PinGel.Shape(rect: square, radius: side * Self.handleRounding, sharp: nil, rod: nil,
+                                           dome: side / 2 * style.gelDome, tint: tint))
+                // The corner under the pin's teardrop is the pin's tip, which takes the press.
+                guard core > 0, !squares.contains(where: { $0.insetBy(dx: -1, dy: -1).contains(corner) }) else { continue }
+                let middle = CGRect(x: corner.x - core / 2, y: corner.y - core / 2, width: core, height: core)
+                cores.addRoundedRect(in: middle, cornerWidth: core * Self.handleRounding, cornerHeight: core * Self.handleRounding)
+            }
+        }
+        handleCores.path = cores
+
         let drifting = !what.drifting.isEmpty
         gel.show(shapes, drifting: drifting, within: host?.bounds)
-        let layers = [gel, selectionEdge, selectionLine] + faces
+        let layers = [gel, handleCores, selectionEdge, selectionLine] + faces
         if (layer.sublayers ?? []).map(ObjectIdentifier.init) != layers.map(ObjectIdentifier.init) { layer.sublayers = layers }
     }
 

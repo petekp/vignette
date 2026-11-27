@@ -57,6 +57,6 @@ extension UITweaks {
                  shadowRadius: self.pinShadowRadius, shadowOffset: self.pinShadowOffset, shadowOpacity: self.pinShadowOpacity,
                  logoSize: self.pinLogoSize, answerSize: self.pinAnswerSize,
                  gelBevel: self.pinGelBevel, gelDome: self.pinGelDome, gelDeep: self.pinGelDeep, gelRod: self.pinGelRod,
-                 gelRim: self.pinGelRim, gelFaceShadow: self.pinGelFaceShadow)
+                 gelHandle: self.pinGelHandle, gelHandleCore: self.pinGelHandleCore, gelRim: self.pinGelRim, gelFaceShadow: self.pinGelFaceShadow)
     }
 }

@@ -34,6 +34,13 @@ extension EditorCore {
         let hitArea: CGRect
     }
 
+    /// A lone selected area pin and its area's corners, in image px, where the pins draw its corner
+    /// handles in its gel.
+    struct PinCorners: Equatable {
+        let pin: Pin
+        let corners: [CGPoint]
+    }
+
     enum DotKind: Equatable { case start, end, middle }
 
     struct Dot: Equatable {
