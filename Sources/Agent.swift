@@ -249,6 +249,13 @@ enum Agent {
     /// text beside it, since black would vanish on a dark bar or in a dark menu.
     static let oneColourLogos: Set<String> = ["codex"]
 
+    /// The avatar of the agent named `name` when its logo is one colour: the logo in black on a white
+    /// circle, which reads on a light or dark popover and on any picture under a pin's dot. Nil for
+    /// every other agent, whose avatar is its logo on its pins' colour.
+    static func oneColourAvatar(_ name: String) -> (fill: SRGB, ink: SRGB)? {
+        oneColourLogos.contains(name.lowercased()) ? (fill: SRGB(red: 1, green: 1, blue: 1), ink: SRGB(red: 0, green: 0, blue: 0)) : nil
+    }
+
     /// The glyph for a vendor without a logo: the closest SF Symbol to the robot this wants to be.
     static let fallbackSymbol = "cpu"
 

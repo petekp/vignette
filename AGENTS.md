@@ -57,9 +57,8 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
 - Before changing the editor, a mark, a pin or a drawing (`Editor*.swift`, `Drawing.swift`, `DrawingFile.swift`,
   `CopiedItems.swift`, `Drawings*.swift`, `DrawingStore*.swift`, `Mark*.swift`, `Pin*.swift`, `Card.swift`,
   `AgentMarks.swift`, `AgentPins.swift`, `RenderingQueue.swift`, `Clipboard.swift`, `DragItems.swift`,
-  `CanvasView.swift`, `Leftovers.swift`), read `docs/rules/editor-and-drawings.md` and `pins.md`.
-  `docs/editor.md` is how the editor behaves.
-- Before changing code that decodes or holds an image, read `docs/rules/memory.md`.
+  `CanvasView.swift`, `Leftovers.swift`), read `docs/rules/editor-and-drawings.md`, `pins.md` and `pin-popover.md`.
+  `docs/editor.md` is how the editor behaves.- Before changing code that decodes or holds an image, read `docs/rules/memory.md`.
 - Before changing Send, a send's notice on its card, or a session list (`CardNotices.swift`,
   `AgentAddress.swift`, `AgentConnection.swift`, `CodexConnection.swift`, `ClaudeInbox.swift`, `ClaudeReadRule.swift`,
   `ClaudeSessionStart.swift`, `AppServer*.swift`, `HerdrFocus.swift`, `SessionListing.swift`,

@@ -203,8 +203,9 @@ final class PinLayer {
         dot.isHidden = answer == nil
         if let answer {
             let agentShading = PinShading(answer.agent, pointScale: pointScale, markStyle: markStyle)
+            let avatar: (fill: SRGB, ink: SRGB)? = if case .agent(let name) = answer.agent { Agent.oneColourAvatar(name) } else { nil }
             dot.path = CGPath(ellipseIn: answer.circle, transform: nil)
-            dot.fillColor = agentShading.top
+            dot.fillColor = avatar?.fill.cgColor ?? agentShading.top
             dot.strokeColor = shading.rimColor
             dot.lineWidth = 2 * shading.rim
             dot.shadowOpacity = shading.shadowOpacity
@@ -212,7 +213,8 @@ final class PinLayer {
             dot.shadowOffset = CGSize(width: 0, height: shading.shadowOffset)
             let side = answer.circle.width * markStyle.pin.logoSize
             Self.wear(PinFace(answer.agent).logo.flatMap(AgentLogos.shared.image(for:)), on: dotLogo, shape: dotLogoShape,
-                      in: CGRect(x: answer.circle.midX - side / 2, y: answer.circle.midY - side / 2, width: side, height: side), color: words)
+                      in: CGRect(x: answer.circle.midX - side / 2, y: answer.circle.midY - side / 2, width: side, height: side),
+                      color: avatar?.ink.cgColor ?? words)
         } else {
             dotLogo.isHidden = true
         }

@@ -4,7 +4,8 @@ import AppKit
 /// Reopen. Under an open pin's field, Resolve, which says Reply and Resolve while the field holds words.
 @MainActor
 final class PinResolveControls: NSObject {
-    /// "Resolved by Claude, 1 min. ago", in the secondary label colour, and Reopen at its trailing edge.
+    /// "Resolved by Claude, 1 min. ago", in the secondary label colour, from the writers' names'
+    /// left edge (`PinPopover.wordsIndent`), and Reopen at its trailing edge.
     let resolvedLine = NSView()
     /// Resolve at the trailing edge.
     let resolveLine = NSView()
@@ -52,7 +53,7 @@ final class PinResolveControls: NSObject {
     @objc private func resolvePressed() { send(.resolve) }
     @objc private func reopenPressed() { send(.reopen) }
 
-    /// `row`, `width` wide, with `leading` and `trailing` on its centre line.
+    /// `row`, `width` wide, with `leading` from the names' left edge and `trailing` on its centre line.
     private static func lay(_ row: NSView, leading: NSView?, trailing: NSView, width: CGFloat, gap: CGFloat) {
         for view in [leading, trailing].compactMap({ $0 }) {
             view.translatesAutoresizingMaskIntoConstraints = false
@@ -62,7 +63,7 @@ final class PinResolveControls: NSObject {
                            trailing.trailingAnchor.constraint(equalTo: row.trailingAnchor),
                            trailing.topAnchor.constraint(equalTo: row.topAnchor), trailing.bottomAnchor.constraint(equalTo: row.bottomAnchor)]
         if let leading {
-            constraints += [leading.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            constraints += [leading.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: PinPopover.wordsIndent),
                             leading.centerYAnchor.constraint(equalTo: trailing.centerYAnchor),
                             leading.trailingAnchor.constraint(lessThanOrEqualTo: trailing.leadingAnchor, constant: -gap)]
         }
