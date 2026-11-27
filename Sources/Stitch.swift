@@ -24,11 +24,11 @@ enum Stitch {
     /// short side: a fixed number is a hairline on a 5K stitch and a margin on a small crop.
     static let gapFraction: CGFloat = 0.02
     static let gapRange: ClosedRange<CGFloat> = 12...48
-    /// A badge's diameter, as a fraction of its own piece's short side, so it stays several times
+    /// A badge's side, as a fraction of its own piece's short side, so it stays several times
     /// the height of the UI text beside it however the reader resizes the composition.
     static let badgeFraction: CGFloat = 0.06
     static let badgeRange: ClosedRange<CGFloat> = 32...128
-    /// The floor is bigger than a small piece, so the diameter is capped at this share of the
+    /// The floor is bigger than a small piece, so the side is capped at this share of the
     /// piece's short side as well: a badge is inset by a quarter of itself, and one wider than its
     /// own piece would hang into the gap and land on the neighbouring screenshot.
     static let badgeMaxOfPiece: CGFloat = 0.8
@@ -117,9 +117,9 @@ enum Stitch {
                     pins.append(moved(pin, number: pins.count + 1, onto: placed, from: drawing.pixels))
                 }
             }
-            let diameter = badgeDiameter(for: sizes[i]) * scale
-            drawBadge(number: i + 1, on: rect, diameter: diameter, in: ctx)
-            badges.append(CGRect(x: frame.minX * scale + diameter / 4, y: frame.minY * scale + diameter / 4, width: diameter, height: diameter))
+            let side = badgeSide(for: sizes[i]) * scale
+            drawBadge(number: i + 1, on: rect, side: side, in: ctx)
+            badges.append(CGRect(x: frame.minX * scale + side / 4, y: frame.minY * scale + side / 4, width: side, height: side))
         }
         NSGraphicsContext.restoreGraphicsState()
 
@@ -222,7 +222,7 @@ enum Stitch {
         return clamp((gapFraction * shortest).rounded(), to: gapRange)
     }
 
-    static func badgeDiameter(for size: CGSize) -> CGFloat {
+    static func badgeSide(for size: CGSize) -> CGFloat {
         let short = min(size.width, size.height)
         return min(clamp((badgeFraction * short).rounded(), to: badgeRange), (badgeMaxOfPiece * short).rounded())
     }
@@ -252,15 +252,17 @@ enum Stitch {
         min(max(value, range.lowerBound), range.upperBound)
     }
 
-    /// The piece's number, in its top-left corner, inset by a quarter of the badge.
-    private static func drawBadge(number: Int, on piece: CGRect, diameter: CGFloat, in ctx: CGContext) {
-        let inset = diameter / 4
-        let circle = CGRect(x: piece.minX + inset, y: piece.maxY - inset - diameter, width: diameter, height: diameter)
-        ctx.setFillColor(CGColor(red: 0.88, green: 0.19, blue: 0.19, alpha: 1))
-        ctx.fillEllipse(in: circle)
+    /// The piece's number, in its top-left corner, inset by a quarter of the badge: white on a dark
+    /// rounded square, so it reads as the piece's label and never as one of the pins' red teardrops.
+    private static func drawBadge(number: Int, on piece: CGRect, side: CGFloat, in ctx: CGContext) {
+        let inset = side / 4
+        let square = CGRect(x: piece.minX + inset, y: piece.maxY - inset - side, width: side, height: side)
+        ctx.setFillColor(CGColor(red: 0.15, green: 0.15, blue: 0.16, alpha: 1))
+        ctx.addPath(CGPath(roundedRect: square, cornerWidth: side * 0.22, cornerHeight: side * 0.22, transform: nil))
+        ctx.fillPath()
         let text = NSAttributedString(string: "\(number)", attributes: [
-            .font: NSFont.systemFont(ofSize: diameter * 0.6, weight: .bold), .foregroundColor: NSColor.white])
+            .font: NSFont.systemFont(ofSize: side * 0.6, weight: .bold), .foregroundColor: NSColor.white])
         let size = text.size()
-        text.draw(at: CGPoint(x: circle.midX - size.width / 2, y: circle.midY - size.height / 2))
+        text.draw(at: CGPoint(x: square.midX - size.width / 2, y: square.midY - size.height / 2))
     }
 }
