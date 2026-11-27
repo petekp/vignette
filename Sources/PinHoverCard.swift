@@ -169,7 +169,7 @@ final class PinHoverCard: NSView {
     }
 
     /// Sets the words and the avatar, lays them out across a card `width` wide, and answers the card's
-    /// size, at least `least` tall.
+    /// size, at least `least` tall. The words start under the name, as a comment's do in the popover.
     private func measure(_ words: Words, maker: PinMaker, width: CGFloat, least: CGFloat) -> CGSize {
         let ui = Settings.shared.data.ui, inset = ui.pinPopoverInset, gap = ui.pinNameGap, side = ui.pinAvatarSize
         name.stringValue = words.name
@@ -180,17 +180,18 @@ final class PinHoverCard: NSView {
         avatar.frame = CGRect(x: inset, y: inset, width: side, height: side)
         avatar.layer?.cornerRadius = side / 2
         Self.paint(avatar, as: maker)
-        let column = max(width - 2 * inset, 0), afterAvatar = inset + side + gap
-        let nameSize = name.fittingSize, nameWidth = min(nameSize.width, max(column - side - gap, 0))
+        let column = max(width - 2 * inset, 0), afterAvatar = inset + PinPopover.wordsIndent
+        let wordsWidth = max(column - PinPopover.wordsIndent, 0)
+        let nameSize = name.fittingSize, nameWidth = min(nameSize.width, wordsWidth)
         name.frame = CGRect(x: afterAvatar, y: avatar.frame.midY - nameSize.height / 2, width: nameWidth, height: nameSize.height)
         let timeSize = time.fittingSize
         let timeTop = name.frame.minY + name.firstBaselineOffsetFromTop - time.firstBaselineOffsetFromTop
         time.frame = CGRect(x: name.frame.maxX + gap, y: timeTop, width: max(inset + column - name.frame.maxX - gap, 0), height: timeSize.height)
         let topLine = max(avatar.frame.maxY, name.frame.maxY)
-        firstLine.frame = CGRect(x: inset, y: topLine + ui.pinWordsGap, width: column, height: firstLine.fittingSize.height)
+        firstLine.frame = CGRect(x: afterAvatar, y: topLine + ui.pinWordsGap, width: wordsWidth, height: firstLine.fittingSize.height)
         var bottom = firstLine.frame.maxY
         if words.footnote != nil {
-            replies.frame = CGRect(x: inset, y: bottom + Self.rowGap, width: column, height: replies.fittingSize.height)
+            replies.frame = CGRect(x: afterAvatar, y: bottom + Self.rowGap, width: wordsWidth, height: replies.fittingSize.height)
             bottom = replies.frame.maxY
         }
         return CGSize(width: width, height: max(least, bottom + inset))
@@ -206,9 +207,17 @@ final class PinHoverCard: NSView {
     /// A writer's avatar. The person's is their macOS account picture, or their initial on their pins'
     /// colour when the account has none. An agent's is what its pin wears (`PinFace`) on its pins'
     /// colour: its logo, or the first letter of its name, in the words' colour. `avatar` is layer-backed
-    /// and round. The pin's popover shows the same beside each comment.
+    /// and round, except for an agent with a one-colour logo (`Agent.oneColourLogos`), whose avatar is
+    /// that logo alone. The pin's popover shows the same beside each comment.
     static func paint(_ avatar: NSImageView, as maker: PinMaker) {
         let style = Settings.shared.data.ui.markStyle.painting(maker)
+        let bareLogo: NSImage? = if case .agent(let agent) = maker, let logo = Agent.logo(for: agent), logo.isTemplate { logo } else { nil }
+        avatar.contentTintColor = bareLogo == nil ? nil : bareLogoColor
+        avatar.layer?.masksToBounds = bareLogo == nil
+        if let bareLogo {
+            avatar.image = bareLogo
+            return
+        }
         switch (maker, PinFace(maker)) {
         case (.person, _):
             avatar.image = accountPicture ?? letter(accountInitial, on: style.personColor, in: style.wordColor)
@@ -217,6 +226,11 @@ final class PinHoverCard: NSView {
         case (.agent(let agent), _):
             avatar.image = logo(agent, on: style.agentColor, in: style.wordColor, filling: style.pin.logoSize)
         }
+    }
+
+    /// A one-colour logo standing alone: black, and the label colour in Dark Mode, where black would vanish.
+    private static let bareLogoColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .labelColor : .black
     }
 
     /// The picture of the macOS account the app runs in, as Users & Groups shows it.

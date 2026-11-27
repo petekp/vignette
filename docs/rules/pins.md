@@ -93,12 +93,13 @@ an agent session as it is posted (`PinCommentDeliveries.swift`, `PinCommentRules
   holding its writer's avatar, the one the hover card shows (`PinHoverCard.paint`, `Pin.Comment.writer`),
   their name in the label colour, "You" or the agent's capitalized, and how long ago they wrote in the
   secondary label colour. The time is said as of when the popover opened and holds still while it is
-  open; a comment with no time (`Pin.Comment.at`) shows none. The words start under the avatar's
-  left edge, and the trash button sits at the end of the top line. The person's avatar is their macOS
+  open; a comment with no time (`Pin.Comment.at`) shows none. The words, separators, working row and
+  field start at the name's left edge. The person's avatar is their macOS
   account picture (`CBIdentity`), or their initial on `ui.personColor` when the account has none.
   An agent's is what its pin wears (`PinFace`) on its pin's colour: its logo, the first letter of its
   name, or `Agent.fallbackSymbol` when it gave no name, in the words' colour and at the pin's
-  `ui.pinLogoSize`. Claude's is its white logo on its orange. The popover is
+  `ui.pinLogoSize`, as Claude's white logo on orange. Codex's is its bare black logo, label-coloured
+  in Dark Mode. The popover is
   macOS's own, with nothing behind its content: a view of our own under the content is not clipped
   to the popover's shape, so its arrow and body part ways. The field's placeholder is in the field's
   font and the secondary label colour. The post button is centred on the field's last line
@@ -107,7 +108,7 @@ an agent session as it is posted (`PinCommentDeliveries.swift`, `PinCommentRules
   from the field editor's layout while it is edited, up to `ui.pinComposerLines` lines, past which
   it scrolls (`PinPopover.wrappedHeight`).
 - Each comment in the popover has its own Delete, for the person's and an agent's alike: a trash
-  button at its trailing edge, shown while the pointer is on the comment, Delete Comment in its
+  button ending its top line, shown while the pointer is on the comment, Delete Comment in its
   contextual menu, the Delete key on the comment when Full Keyboard Access focuses it, and a
   VoiceOver action (`CommentRow`). It sends `ComposerInput.delete`, which empties the comment as an
   edit would, so it is one "Delete" undo step and the pin goes with its only comment.
@@ -146,8 +147,8 @@ an agent session as it is posted (`PinCommentDeliveries.swift`, `PinCommentRules
 - In the editor, the pointer resting on a pin with a number grows it into a card (`PinHoverCard`),
   while no popover, menu or drag is under way. The card is the teardrop widened, its rim included,
   in the popover's glass: the tip stays its square corner and the other corners keep the teardrop's
-  radius. Its top line is laid out as a comment's top line in the popover: the first writer's
-  avatar, their name and how long ago, muted. Under it are the first comment's first line and the
+  radius. It is laid out as a popover comment: the first writer's
+  avatar, name and how long ago, muted, then under the name the first comment's first line and
   replies. A selected pin's ring is left off while its card shows, since the card covers the teardrop
   the ring goes round. A press on the card is a press on its pin's teardrop, which the card
   covers: a click opens the popover with any tool and a drag moves the pin. The card's panel takes

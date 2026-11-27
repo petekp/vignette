@@ -111,7 +111,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         let lift = max(0, (postSize - lineHeight) / 2)
         let height = field.heightAnchor.constraint(equalToConstant: lineHeight)
         fieldHeight = height
-        for constraint in [field.leadingAnchor.constraint(equalTo: row.leadingAnchor), field.widthAnchor.constraint(equalToConstant: Self.fieldWidth), height,
+        for constraint in [field.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: Self.wordsIndent), field.widthAnchor.constraint(equalToConstant: Self.fieldWidth), height,
                            field.topAnchor.constraint(equalTo: row.topAnchor, constant: lift),
                            field.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -lift),
                            post.leadingAnchor.constraint(equalTo: field.trailingAnchor, constant: gap), post.trailingAnchor.constraint(equalTo: row.trailingAnchor),
@@ -122,10 +122,10 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         return row
     }
 
-    /// The field's width: the popover's, less its insets, the post button and the gap before it.
+    /// The field's width: the popover's, less its insets, the avatars' column, the post button and the gap before it.
     private static var fieldWidth: CGFloat {
         let ui = Settings.shared.data.ui
-        return width - 2 * inset - ui.pinPostSize - ui.pinPopoverSpacing
+        return width - 2 * inset - wordsIndent - ui.pinPostSize - ui.pinPopoverSpacing
     }
 
     /// Opens by the pin's teardrop, `rect` in `view`, as `PinPopoverPlace` says from the pin's `area`
@@ -195,12 +195,12 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
             self.live = live
             for row in comments.arrangedSubviews { row.removeFromSuperview() }
             for (index, comment) in pin.comments.enumerated() where index != composer.editing {
-                if !comments.arrangedSubviews.isEmpty { comments.addArrangedSubview(separator()) }
+                if !comments.arrangedSubviews.isEmpty { comments.addArrangedSubview(Self.separator(width: Self.width - 2 * Self.inset)) }
                 comments.addArrangedSubview(row(comment, index: index))
             }
             if let client = live.working {
                 let ui = Settings.shared.data.ui
-                if !comments.arrangedSubviews.isEmpty { comments.addArrangedSubview(separator()) }
+                if !comments.arrangedSubviews.isEmpty { comments.addArrangedSubview(Self.separator(width: Self.width - 2 * Self.inset)) }
                 comments.addArrangedSubview(Self.workingRow(client, avatarSize: ui.pinAvatarSize, gap: ui.pinNameGap))
             }
             comments.isHidden = comments.arrangedSubviews.isEmpty
@@ -281,7 +281,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         words.textColor = shownState?.resolved == nil ? .labelColor : .secondaryLabelColor
         if let note = delivery?.note { words.attributedStringValue = Self.words(comment.text, note: note, color: words.textColor ?? .labelColor) }
         words.isSelectable = false
-        words.preferredMaxLayoutWidth = Self.width - 2 * Self.inset
+        words.preferredMaxLayoutWidth = Self.width - 2 * Self.inset - Self.wordsIndent
         let row = CommentRow(avatar: avatar, name: name, time: time, words: words, avatarSize: ui.pinAvatarSize, deleteSize: ui.pinDeleteSize,
                              gaps: (name: ui.pinNameGap, words: ui.pinWordsGap, trash: ui.pinPopoverSpacing))
         row.widthAnchor.constraint(equalToConstant: Self.width - 2 * Self.inset).isActive = true
@@ -289,13 +289,6 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         row.delete = { [weak self] in self?.send(.delete(index)) }
         row.setAccessibilityLabel(([author, ago].filter { !$0.isEmpty } + [delivery?.note].compactMap { $0 }).joined(separator: ", ") + ": \(comment.text)")
         return row
-    }
-
-    private func separator() -> NSView {
-        let line = NSBox()
-        line.boxType = .separator
-        line.widthAnchor.constraint(equalToConstant: Self.width - 2 * Self.inset).isActive = true
-        return line
     }
 
 
