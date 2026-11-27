@@ -12,6 +12,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
     let folder: URL
     private let onNew: (ScreenshotKey) -> Void
     private let onRemoved: ([ScreenshotKey], Inventory) -> Void
+    private let onReadState: () -> Void
     private let onRenamed: ([(from: ScreenshotKey, to: ScreenshotKey)], Inventory) -> Void
     private let onInventory: (Inventory) -> Void
     private var source: DispatchSourceFileSystemObject?
@@ -124,12 +125,13 @@ final class ScreenshotWatcher: @unchecked Sendable {
     init(folder: URL, onNew: @escaping (ScreenshotKey) -> Void,
          onRemoved: @escaping ([ScreenshotKey], Inventory) -> Void, onInventory: @escaping (Inventory) -> Void = { _ in },
          onRenamed: @escaping ([(from: ScreenshotKey, to: ScreenshotKey)], Inventory) -> Void = { _, _ in },
-         openFolder: @escaping FolderOpen = ScreenshotWatcher.openForEvents) {
+         onReadState: @escaping () -> Void = {}, openFolder: @escaping FolderOpen = ScreenshotWatcher.openForEvents) {
         self.folder = folder
         self.openFolder = openFolder
         self.onNew = onNew
         self.onRemoved = onRemoved
         self.onRenamed = onRenamed
+        self.onReadState = onReadState
         self.onInventory = onInventory
         // macOS holds the first read of a folder it protects (the Desktop, Documents, Downloads)
         // until the user answers its prompt, so that read runs on the queue. An ordinary folder
@@ -161,6 +163,10 @@ final class ScreenshotWatcher: @unchecked Sendable {
             return s.availability
         }
     }
+
+    /// When every open or listing began failing, or nil while the folder reads. `onReadState` runs
+    /// on the main thread when this starts, ends, or its reason changes.
+    var unreadableSince: Date? { state.withLock { $0.unreadableSince } }
 
     /// Opens the folder and watches it. Nil once it is watched, else the error the open failed with.
     private func start() -> Int32? {
@@ -197,7 +203,8 @@ final class ScreenshotWatcher: @unchecked Sendable {
     /// A scan that could not read the folder. A missing folder counts as indexed and empty from
     /// `now`, so the files dated before it are taken in silently when it comes back.
     private func failed(_ availability: Availability, at now: Date) {
-        state.withLock { s in
+        let changed = state.withLock { s in
+            let changed = s.unreadableSince == nil || s.availability != availability
             s.availability = availability
             s.denied = availability == .refused
             s.unreadableSince = s.unreadableSince ?? now
@@ -205,7 +212,9 @@ final class ScreenshotWatcher: @unchecked Sendable {
                 s.missingSince = s.missingSince ?? now
                 s.indexed = true
             }
+            return changed
         }
+        if changed { DispatchQueue.main.async { [weak self] in self?.onReadState() } }
         retryLater()
     }
 
@@ -273,6 +282,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
         let listing = Self.read(folder)
         let now = Date()
         guard case .available(let inventory) = listing else { return failed(listing.availability, at: now) }
+        let recovered = state.withLock { $0.unreadableSince != nil }
         let (arrivals, scanNumber, base) = state.withLock { s -> ([(String, Arrival)], Int, (names: Set<String>, scan: Int)) in
             s.scans += 1
             let scanNumber = s.scans
@@ -316,6 +326,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
                 return (name, arrival)
             }, scanNumber, base)
         }
+        if recovered { DispatchQueue.main.async { [weak self] in self?.onReadState() } }
         let started = generation, left = Self.left(base.names, for: inventory.names)
         DispatchQueue.main.async {
             let began = ProcessInfo.processInfo.systemUptime
@@ -405,28 +416,6 @@ final class ScreenshotWatcher: @unchecked Sendable {
         }
     }
 
-    /// True when ImageIO can decode the file. A file still being written fails to decode; ImageIO's
-    /// status calls do not tell the two apart (measured: both report complete), so this decodes once.
-    /// An image ImageIO can decode, or a recording AVFoundation finds a video track in. The second
-    /// also stores the recording's size, so the card made for it next does not read it again.
-    static func isComplete(_ url: URL) -> Bool {
-        Screenshot.Kind(of: url) == .recording ? Thumbnailer.pointSize(of: url) != nil : isCompleteImage(url)
-    }
-
-    static func isCompleteImage(_ url: URL) -> Bool {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
-        return CGImageSourceCreateImageAtIndex(source, 0, nil) != nil
-    }
-
-    /// The formats screencapture can write that the app can show. Outputs of the annotator are not candidates.
-    static let candidateExtensions: Set<String> = Set(["png", "jpg", "jpeg", "heic"]).union(Screenshot.recordingExtensions)
-
-    static func isCandidate(_ name: String) -> Bool {
-        let lower = name.lowercased()
-        guard !lower.hasPrefix("."), !lower.contains(Config.annotatedSuffix) else { return false }
-        return candidateExtensions.contains((lower as NSString).pathExtension)
-    }
-
     private enum Listing {
         case available(Inventory)
         case unavailable(Availability)
@@ -468,42 +457,5 @@ final class ScreenshotWatcher: @unchecked Sendable {
         guard let before, before == DirectoryID(folder.path) else { return .unavailable(.unavailable) }
         return .available(Inventory(folder: folder, names: Set(urls.map(\.lastPathComponent)), dates: files,
                                     observedAt: observedAt, directoryID: before, identities: identities))
-    }
-
-    private static func identity(from values: URLResourceValues?) -> FileIdentity? {
-        guard let date = values?.contentModificationDate, let file = values?.fileIdentifier,
-              let size = values?.fileSize else { return nil }
-        return FileIdentity(file: file, size: size, modified: date)
-    }
-
-    static func identity(of url: URL) -> FileIdentity? {
-        identity(from: try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileIdentifierKey, .fileSizeKey]))
-    }
-
-    static func modificationDate(of url: URL) -> Date? {
-        try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-    }
-
-    /// The newest `limit` of `files` that `include` takes, newest first, plus the count of `files`.
-    /// Ties fall to the name, which carries the capture time for a screenshot. Only the files it
-    /// reaches are made keys, since making one costs about 3 µs and a folder can hold thousands.
-    static func recent(from files: [String: Date], in folder: URL, limit: Int,
-                       include: (ScreenshotKey) -> Bool = { _ in true }) -> (recent: [ScreenshotKey], files: Int) {
-        guard limit > 0 else { return ([], files.count) }
-        func newer(_ a: (key: String, value: Date), _ b: (key: String, value: Date)) -> Bool {
-            a.value != b.value ? a.value > b.value : a.key > b.key
-        }
-        if limit == 1, let newest = files.max(by: { newer($1, $0) }) {
-            let key = ScreenshotKey(folder: folder, name: newest.key)
-            if include(key) { return ([key], files.count) }
-        }
-        var recent: [ScreenshotKey] = []
-        for file in files.sorted(by: newer) {
-            let key = ScreenshotKey(folder: folder, name: file.key)
-            guard include(key) else { continue }
-            recent.append(key)
-            if recent.count == limit { break }
-        }
-        return (recent, files.count)
     }
 }

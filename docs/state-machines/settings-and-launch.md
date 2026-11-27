@@ -171,19 +171,20 @@ Registers Vignette as a login item. The state is `SMAppService.mainApp.status` p
 
 ### Updater and the update dot (implicit)
 
-Owner: `Updater.swift` (`waiting`), `AppDelegate.swift` (`updateDot`). Tests: none.
+Owner: `Updater.swift` (`waiting`), `AppDelegate+StatusIcon.swift` (`statusDot`). Tests: none.
 
-Shows a dot on the status item when Sparkle finds an update on a scheduled check.
+Shows a dot on the status item when Sparkle finds an update on a scheduled check, yellow instead while the folder can't be read.
 
-**States**: `waiting` and `statusItem`, read together each time `showUpdateDot` runs.
+**States**: `waiting`, `statusItem` and whether the folder reads (`folderUnreadable`), read together each time `showStatusDot` runs.
 
 **Transitions**
 
 | State | Event | Next state | Effects |
 |---|---|---|---|
-| any | `standardUserDriverWillHandleShowingUpdate`, scheduled and not user-initiated, Sparkle not showing it itself | `waiting` set | `showUpdateDot` |
-| waiting | `...DidReceiveUserAttention` or `...WillFinishUpdateSession` | `waiting` cleared | dot removed |
-| waiting, no status item | `showUpdateDot` | — | `updateDot = nil` (`AppDelegate.swift`) |
+| any | `standardUserDriverWillHandleShowingUpdate`, scheduled and not user-initiated, Sparkle not showing it itself | `waiting` set | `showStatusDot` |
+| waiting | `...DidReceiveUserAttention` or `...WillFinishUpdateSession` | `waiting` cleared | dot removed unless `folderUnreadable` |
+| any | `onReadState`, grace timer, new watcher, tweak change | — | `folderReadChanged`: `showStatusDot`; a failure under the grace sets the timer |
+| waiting, no status item | `showStatusDot` | — | `statusDot.badge = nil` |
 | any, test launch | startup | — | no updater unless `VIGNETTE_FEED` is set |
 
 **Invariants**

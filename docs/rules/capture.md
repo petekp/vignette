@@ -102,8 +102,14 @@
   When every try for `ui.unreadableFolderSeconds` (5 s) has failed, the menu bar menu lists the
   failure first, greyed, since there is nothing to click. A missing folder reads Can't Find Your
   Screenshots Folder, and any other failure Can't Read Your Screenshots Folder Yet. A refusal shows
-  Allow Access to Your Screenshots… at once, as before. The wait keeps a slow read or a volume
-  still mounting from showing a warning. The intro's popover says the same, and the shortcut's
+  Allow Access to Your Screenshots… at once. The wait keeps a slow read or a volume still mounting
+  from showing a warning. The menu bar icon's dot turns yellow for either, and the yellow wins over
+  an update's dot (`showStatusDot`). The watcher tells the app when a failure starts, ends or
+  changes its reason (`onReadState`), and a timer wakes the dot when the grace ends
+  (`folderReadChanged`). The intro's popover says the same. A press of the shortcut that finds
+  nothing for this reason opens that popover under the icon, without the flight, in the menu item's
+  words (`foundNothing`). It goes after 5 s, at a click on the icon, or at the next press, which
+  opens no popover itself. The
   `[recent]` answer is `error unreadable-folder` with the reason. `[watcher] start` logs the
   watcher's creation, and `[watcher] watching` logs an open that worked. A folder that was there but unreadable is indexed silently by
   the first listing that works, so a grant does not report every file in it as a new capture; a

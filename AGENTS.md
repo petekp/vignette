@@ -30,7 +30,7 @@ tests. A new rule goes in its area's file, and a new area gets a file and an ent
   `ScreenshotKey.swift`, `Screenshot.swift`, `FolderWrites*.swift`), or how a recording or an
   iCloud file is read, read `docs/rules/capture.md`.
 - Before changing setup, the Settings window or the menu bar icon (`Setup*.swift`,
-  `SettingsWindow.swift`, `MainMenu.swift`, `MenuBarIntro.swift`, `IntroFunnel.metal`,
+  `SettingsWindow.swift`, `MainMenu.swift`, `MenuBarIntro*.swift`, `IntroFunnel.metal`,
   `IntroLab.swift`, `FunnelFlight.swift`, `DropLanding.swift`, `PermissionRow.swift`,
   `AppLocation.swift`, `LoginItem.swift`, `Updater.swift`, `BuildInfo.swift`,
   `ProblemReport.swift`, `PickerQuestion.swift`, `SystemPrompts.swift`), read `docs/rules/setup-and-updates.md`. The status item's place is in

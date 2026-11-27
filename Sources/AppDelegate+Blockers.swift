@@ -73,6 +73,41 @@ extension AppDelegate {
         }
     }
 
+    /// Whether the dot on the menu bar icon says the folder can't be read: macOS refused it, or it
+    /// has failed to read for longer than the grace.
+    var folderUnreadable: Bool { watcher?.isDenied == true || folderReadFailure != nil }
+
+    /// The folder started or stopped failing, or the grace of a failure ended: the dot shows it, and
+    /// a failure younger than the grace sets a timer for the moment it ends.
+    func folderReadChanged() {
+        statusDot.graceEnds?.invalidate()
+        statusDot.graceEnds = nil
+        showStatusDot()
+        guard !folderUnreadable, let since = watcher?.unreadableSince else { return }
+        let wait = since.addingTimeInterval(settings.data.ui.unreadableFolderSeconds).timeIntervalSinceNow
+        guard wait > 0 else { return }
+        statusDot.graceEnds = Timer.scheduledTimer(withTimeInterval: wait, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.folderReadChanged() }
+        }
+    }
+
+    /// A press found no screenshot to show. When the folder is why, the log says so, and the
+    /// shortcut also says it in the popover under the icon, in the words of the menu's item.
+    func foundNothing(by request: StackRequest) {
+        guard let unreadable = unreadableFolder else {
+            return Commands.error("recent", .missingFile, "no screenshots in \(watchFolder.path)")
+        }
+        Commands.error("recent", .unreadableFolder, unreadable)
+        guard request == .shortcut, let button = visibleStatusButton else { return }
+        let name = Identity.name, folder = (watchFolder.path as NSString).abbreviatingWithTildeInPath
+        switch folderReadFailure {
+        case .notFound: menuBarIntro.say("\(name) can't find your screenshots folder", "\(name) keeps looking for \(folder).", on: button)
+        case .failed:
+            menuBarIntro.say("\(name) can't read your screenshots folder yet", "macOS isn't letting \(name) read it. \(name) keeps trying.", on: button)
+        case nil: menuBarIntro.say("\(name) can't open your screenshots folder", "Click the icon to allow it.", on: button)
+        }
+    }
+
     /// Why a press found nothing to show, for the log, when the folder is what stopped it.
     var unreadableFolder: String? {
         if watcher?.isDenied == true { return "macOS refused \(watchFolder.path)" }

@@ -16,10 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     var statusItem: NSStatusItem?
-    /// The dot on the status item while an update waits (Updater).
-    var updateDot: NSView?
-    var dotExit: DotExit?
-    private let menuBarIntro = MenuBarIntro()
+    let statusDot = StatusDot()
+    let menuBarIntro = MenuBarIntro()
     var updater: Updater?
     var watcher: ScreenshotWatcher?
     var captureOrigin: CaptureOrigin?
@@ -229,7 +227,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     }
 
     private func settingsChanged(_ old: SettingsData, _ new: SettingsData) {
-        if new.ui != old.ui { thumbnail.applyTweaks(); annotator.applyTweaks(); liveInk.applyTweaks(); warmThumbnails() }
+        if new.ui != old.ui { thumbnail.applyTweaks(); annotator.applyTweaks(); liveInk.applyTweaks(); warmThumbnails(); folderReadChanged() }
         if new.recentCount != old.recentCount { warmThumbnails() }
         if new.screenshotsFolder != old.screenshotsFolder {
             // A folder macOS doesn't protect needs no asking, so a move to one while setup waits
@@ -246,7 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if new.liveInk != old.liveInk { liveInk.setOn(new.liveInk) }
         if new.liveInk { liveInkOfferOpen = false; if !new.liveInkOffered { settings.update { $0.liveInkOffered = true } } }
         if new.liveInkChord != old.liveInkChord { liveInk.takeChord() }
-        if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem(); showUpdateDot() }
+        if new.hideMenuBarIcon != old.hideMenuBarIcon { updateStatusItem(); showStatusDot() }
         if new.launchAtLogin != old.launchAtLogin { applyLoginItem() }
     }
 
@@ -663,7 +661,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
 
     /// The status item's button when a person can see it: not turned off, and not hidden by macOS
     /// for want of room (`MenuBarIntro.canSee`).
-    private var visibleStatusButton: NSStatusBarButton? {
+    var visibleStatusButton: NSStatusBarButton? {
         statusItem?.button.flatMap { MenuBarIntro.canSee($0) ? $0 : nil }
     }
 
@@ -867,7 +865,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
         let updater = Updater(feed: feed)
         updater.hasStatusItem = { [weak self] in self?.statusItem != nil }
-        updater.onChange = { [weak self] in self?.showUpdateDot() }
+        updater.onChange = { [weak self] in self?.showStatusDot() }
         self.updater = updater
     }
 
@@ -991,9 +989,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         switch result {
         case .shown(let count): Commands.ok("recent", "shown \(count) cards")
         case .dismissed: Commands.ok("recent", "dismissed")
-        case .empty:
-            if let unreadable = unreadableFolder { Commands.error("recent", .unreadableFolder, unreadable) }
-            else { Commands.error("recent", .missingFile, "no screenshots in \(watchFolder.path)") }
+        case .empty: foundNothing(by: request)
         }
         return result
     }
@@ -1039,7 +1035,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }, onRenamed: { [weak self] pairs, inventory in
             guard let self, self.watcherGeneration == generation else { return }
             self.folderWrites.renamed(pairs, in: inventory)
+        }, onReadState: { [weak self] in
+            if self?.watcherGeneration == generation { self?.folderReadChanged() }
         })
+        folderReadChanged()
         warmThumbnails()
         if wakeObserver == nil {
             // Both observers are registered with queue: .main, so the notification always arrives there.

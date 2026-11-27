@@ -236,6 +236,15 @@ since there is nothing to click. The line under the title shows on macOS 14.4 an
 them under "Click the icon to:", where these two read "See why Vignette can't find your screenshots
 folder" and "See why Vignette can't read your screenshots yet".
 
+The shortcut, pressed when the folder is why there is nothing to show, opens the intro's popover
+under the icon with these (`foundNothing`):
+
+| When | Popover title | Line under it |
+| --- | --- | --- |
+| macOS refused the folder | Vignette can't open your screenshots folder | Click the icon to allow it. |
+| The folder isn't there | Vignette can't find your screenshots folder | Vignette keeps looking for *folder*. |
+| Opening or listing it fails | Vignette can't read your screenshots folder yet | macOS isn't letting Vignette read it. Vignette keeps trying. |
+
 ### The menu bar menu's shortcuts (`HotKeySpec.glyphs`, `HotKeySpec.holdLabel`)
 
 | Item | With a double tap | With a key combination |
