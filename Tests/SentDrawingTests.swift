@@ -203,6 +203,16 @@ final class SentDrawingTests: XCTestCase {
         XCTAssertTrue(ScreenshotRequests.requestLine(record: record, root: root).hasPrefix("From Vignette: \"\(image)\". "))
     }
 
+    func testTheLineNamesTheAppsTheScreenshotShowsAfterTheImage() throws {
+        let record = try ScreenshotRequests(root: root).send(png: png(), source: try card().screenshotKey, to: destination)
+        let image = ReplyProtocol.requestDirectory(root: root, requestID: record.id).appendingPathComponent("image.png").path
+        func line(_ apps: [String]) -> String {
+            ScreenshotRequests.requestLine(record: record, root: root, message: nil, instructions: "", picture: .drawing(png: Data(), apps: apps))
+        }
+        XCTAssertEqual(line(["Safari"]), "From Vignette: \"\(image)\". The screenshot shows Safari.")
+        XCTAssertEqual(line(["Safari", "Xcode", "Finder"]), "From Vignette: \"\(image)\". The screenshot shows Safari, Xcode and Finder.")
+    }
+
     func testAPublishedReplyRecordsTheDrawingItsCardOpensWith() throws {
         let url = try card()
         let requests = ScreenshotRequests(root: root)

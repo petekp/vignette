@@ -23,6 +23,7 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
   "sendInstructions": "If a drawing would answer better than words, you can send one back.",
   "annotateOnCapture": false,
   "copyOnCapture": true,
+  "sendCaptureApps": false,
   "liveInk": false,
   "debug": false,
   "agentSkill": "unasked",
@@ -76,6 +77,11 @@ keeps Apple's screenshot settings in `<bundle id>.screencapture` instead of
   screenshot on the clipboard as it lands: the image, plus its file URL and path for apps that take
   those. It is on by default. An image that arrives through `add` skips this and Instant Draw, since
   a push from an agent is not a capture.
+- **`sendCaptureApps`** is Tell agents which app a screenshot shows, in Settings → Agents. While it
+  is on, each new screenshot keeps the names of the apps it shows, up to three, the largest first,
+  on its file as an extended attribute. Send then names them in the line it puts in a session: "The
+  screenshot shows Safari and Xcode." Only app names are kept, never a window's title or a URL. A
+  screenshot taken while it was off names none. Off by default.
 - **`liveInk`** is Live ink in Settings → Live Ink and in the menu bar menu. While it is on, hold
   Control and Option, or the pair `liveInkChord` names, and draw over any app: a loop becomes an
   ellipse and any other stroke an arrow. Click a mark with the keys held to erase it, or use Clear

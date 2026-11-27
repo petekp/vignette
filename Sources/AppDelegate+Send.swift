@@ -31,6 +31,7 @@ extension AppDelegate {
         }
         let ui = settings.data.ui
         let rendered = carried.rendering(drawing)
+        let apps = settings.data.sendCaptureApps ? CaptureApps.read(shot.url) : []
         let rendering = RenderingQueue.shared.render(rendered, imageAt: shot.url, output: .bytes, style: ui.textStyle, markStyle: ui.markStyle,
                                                      layout: .picture)
         rendering.whenDone { [weak self] output in
@@ -43,14 +44,14 @@ extension AppDelegate {
             }
             guard let png = sendable(output, name) else { return }
             if wordsAlone { return submit(.unchanged(card: shot.url, title: agentTitle, png: png), of: shot, to: destination, titled: title, message: message) }
-            guard !rendered.pins.isEmpty else { return submit(.drawing(png: png), of: shot, to: destination, titled: title, message: message) }
+            guard !rendered.pins.isEmpty else { return submit(.drawing(png: png, apps: apps), of: shot, to: destination, titled: title, message: message) }
             var withoutPins = rendered
             withoutPins.pins = []
             RenderingQueue.shared.render(withoutPins, imageAt: shot.url, output: .bytes, style: ui.textStyle, markStyle: ui.markStyle,
                                          layout: .picture).whenDone { [weak self] output in
                 guard let self, annotator.opening == opening else { return Log.write("[send] dropped \(name); the editor moved on") }
                 guard let base = sendable(output, name) else { return }
-                submit(.drawing(png: png, pins: rendered.pins, base: base), of: shot, to: destination, titled: title, message: message)
+                submit(.drawing(png: png, pins: rendered.pins, base: base, apps: apps), of: shot, to: destination, titled: title, message: message)
             }
         }
     }
