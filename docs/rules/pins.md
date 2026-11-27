@@ -129,7 +129,12 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   avatar, their name and how long ago, muted. Under it are the first comment's first line and the
   replies. A selected pin's ring is left off while its card shows, since the card covers the teardrop
   the ring goes round. It takes no clicks, and VoiceOver reads the pin instead. Its width is `ui.pinHoverWidth`
-  and it grows over `ui.pinHoverDuration`, which the motion setting scales.
+  and it grows over `ui.pinHoverDuration`, which the motion setting scales. The card draws in a
+  borderless panel of its own that passes every event through, a child of the editor's window at the
+  toolbar's level, above the stack's column. So it reaches past the picture's frame over whatever is
+  beside the editor, as the popover does. It grows the way the teardrop faces and turns back on an axis
+  only where the screen's visible frame has no room that way. The glass blurs what is behind the panel. A
+  parked editor takes its card down at once, so none is left over the flight home.
 - In the editor an area's outline is dashed in its pin's colour inside a white edge, one width on
   screen at every zoom (`AreaOutline`). It shows only while its pin is hovered, selected, being
   placed or open (`EditorCore.outlinedPins`), and a closed area pin draws none at rest. Its dashes march while the pin is being placed or is open

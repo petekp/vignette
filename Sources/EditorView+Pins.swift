@@ -63,17 +63,16 @@ extension EditorView {
 
     private func showHoverCard(_ carded: Pin.ID?, _ placement: PinPlacement) {
         guard let id = carded, let pin = core.pin(id), let drop = placement.drops.first(where: { $0.id == id }) else {
-            pinUI.hoverCard?.leave()
+            // A parked editor is leaving the screen, and its card goes with it rather than over the flight.
+            if core.isOpen { pinUI.hoverCard?.leave() } else { pinUI.hoverCard?.close() }
             pinUI.hoverCard = nil
             return
         }
         if pinUI.hoverCard?.pin != id {
             pinUI.hoverCard?.leave()
-            let card = PinHoverCard(pin: id)
-            addSubview(card)
-            pinUI.hoverCard = card
+            pinUI.hoverCard = PinHoverCard(pin: id)
         }
-        pinUI.hoverCard?.show(pin, body: drop.square.applying(toView), orientation: drop.orientation, inside: visibleRect)
+        pinUI.hoverCard?.show(pin, body: drop.square.applying(toView), orientation: drop.orientation, in: self)
     }
 
     /// The rect in the view a popover on pin `id` hangs from: its teardrop, or its cluster's capsule.
