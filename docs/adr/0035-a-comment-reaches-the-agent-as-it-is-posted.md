@@ -16,6 +16,9 @@ pin's own, the one whose agent wrote on it, or else the screenshot's last sessio
 is not running gets nothing, and nothing starts one. The comment says on its top line where it
 went, and a row says while the turn it started runs. `docs/rules/live-comments.md` has the rules.
 
+The toolbar's Send target starts on the same session, the screenshot's last, ahead of the kept
+pick, so the bar and the popover never name two sessions for one image (`docs/rules/send-start.md`).
+
 ## What was weighed
 
 - Every comment waiting for Send, as before. The agent that asked the question would wait on a

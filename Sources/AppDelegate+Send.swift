@@ -131,13 +131,13 @@ extension AppDelegate {
 
     private func listDestinations(for shot: Screenshot, opening: Opening, asked: CFTimeInterval,
                                   cameFrom: (client: AgentClient, shown: String?)?, kept: AgentDestination?) {
-        let showedIt = thumbnail.model.openedShown.flatMap { $0.opening == opening ? $0.session : nil }
-        sessions.list(including: SessionListing.readByID(kept: kept, cameFrom: cameFrom, showedIt: showedIt)) { [weak self] candidates in
+        let last = lastSession(of: shot.key, pins: storedDrawing(shot.key)?.pins ?? [])
+        sessions.list(including: SessionListing.readByID(kept: kept, cameFrom: cameFrom, last: last?.address)) { [weak self] candidates in
             guard let self else { return }
             Log.write("[send] sessions \(candidates.destinations.count)\(candidates.complete ? " complete" : "")\(candidates.fresh ? "" : " kept") after=\(Int((CACurrentMediaTime() - asked) * 1000))ms \(shot.url.lastPathComponent)")
             // A file can reopen while its earlier destination listing is still running.
             guard self.annotator.opening == opening else { return }
-            self.annotator.destinationsAnswered(DestinationChoice.choose(candidates, for: .send(cameFrom: cameFrom, kept: kept, showedIt: showedIt)))
+            self.annotator.destinationsAnswered(DestinationChoice.choose(candidates, for: .send(cameFrom: cameFrom, kept: kept, last: last)))
         }
     }
 

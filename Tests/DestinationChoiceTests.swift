@@ -88,18 +88,22 @@ final class DestinationChoiceTests: XCTestCase {
 
     private func send(_ list: [AgentDestination], kept: AgentDestination?, complete: Bool = true, fresh: Bool = true,
                       herdr: HerdrFocus? = nil, cameFrom: (client: AgentClient, shown: String?)? = nil,
-                      showedIt: AgentAddress? = nil) -> DestinationChoice.Answer {
+                      last: DestinationChoice.LastSession? = nil) -> DestinationChoice.Answer {
         DestinationChoice.choose(.init(destinations: list, complete: complete, fresh: fresh, herdr: herdr),
-                                 for: .send(cameFrom: cameFrom, kept: kept, showedIt: showedIt))
+                                 for: .send(cameFrom: cameFrom, kept: kept, last: last))
     }
 
-    func testSendStartsOnTheSessionThatShowedTheImageBeforeTheKeptPick() {
+    func testSendStartsOnTheImagesLastSessionBeforeTheKeptPick() {
         let a = Self.claude("a"), b = Self.claude("b")
-        XCTAssertEqual(send([b, a], kept: b, herdr: Self.focusOnB, showedIt: a.address).pick?.id, "a")
-        let notListedYet = send([b], kept: b, complete: false, fresh: false, showedIt: a.address)
+        let showedIt = DestinationChoice.LastSession(address: a.address, showedIt: true)
+        let sentThere = DestinationChoice.LastSession(address: a.address, showedIt: false)
+        XCTAssertEqual(send([b, a], kept: b, herdr: Self.focusOnB, last: showedIt).pick?.focus, .showedIt)
+        XCTAssertEqual(send([b, a], kept: b, herdr: Self.focusOnB, last: sentThere).pick?.focus, .last)
+        XCTAssertEqual(send([b, a], kept: b, last: sentThere).pick?.id, "a")
+        let notListedYet = send([b], kept: b, complete: false, fresh: false, last: sentThere)
         XCTAssertFalse(notListedYet.decided)
         XCTAssertNil(notListedYet.pick)
-        XCTAssertEqual(send([b], kept: b, showedIt: a.address).pick?.id, "b", "a session no fresh list has is gone")
+        XCTAssertEqual(send([b], kept: b, last: sentThere).pick?.id, "b", "a session no fresh list has is gone")
     }
 
     private static let focusOnB = HerdrFocus(pane: "p", tab: "t", agents: [.init(pane: "p", session: "b", tab: "t")])

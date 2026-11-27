@@ -11,9 +11,9 @@ enum DestinationChoice {
     enum Asker {
         /// Send, on the annotator's toolbar. `cameFrom` is the agent's own app that was in front
         /// before Vignette, such as the Codex app, and the thread it shows. `kept` is the session of
-        /// the kept pick while it holds (`KeptPick`). `showedIt` is the session that pointed the
-        /// person at this image with `vignette://show`, for the opening that ended its shown state.
-        case send(cameFrom: (client: AgentClient, shown: String?)?, kept: AgentDestination? = nil, showedIt: AgentAddress? = nil)
+        /// the kept pick while it holds (`KeptPick`). `last` is the session the image last
+        /// exchanged with, the one its pin comments go to (`AppDelegate.lastSession`).
+        case send(cameFrom: (client: AgentClient, shown: String?)?, kept: AgentDestination? = nil, last: LastSession? = nil)
         /// The live ink note. It reads neither herdr's focus nor an agent's app.
         case liveNote(LiveNotePick)
     }
@@ -28,6 +28,13 @@ enum DestinationChoice {
 
     /// A session the person picked by hand in Send's menu and then sent to. Send starts on it, before
     /// every other rule, until `lasts` passes with no send to it.
+    /// The session the image last exchanged with (`CommentTarget.last`). `showedIt` is true when it
+    /// pointed the person at this image with `vignette://show`, for the opening that ended its shown state.
+    struct LastSession: Equatable {
+        let address: AgentAddress
+        let showedIt: Bool
+    }
+
     struct KeptPick: Equatable {
         static let lasts: TimeInterval = 10 * 60
         let session: AgentDestination
@@ -127,8 +134,8 @@ enum DestinationChoice {
     /// The pick `asker` starts on from the candidates found so far.
     static func choose(_ candidates: Candidates, for asker: Asker) -> Answer {
         switch asker {
-        case .send(let cameFrom, let kept, let showedIt):
-            return choose(forSend: candidates, cameFrom: cameFrom, kept: kept, showedIt: showedIt)
+        case .send(let cameFrom, let kept, let last):
+            return choose(forSend: candidates, cameFrom: cameFrom, kept: kept, last: last)
         case .liveNote(let pick):
             let list = unmarked(candidates)
             return Answer(list: list, complete: candidates.complete, decided: true,
@@ -167,9 +174,9 @@ enum DestinationChoice {
 
     /// Send's pick from the candidates found so far. `cameFrom` is the agent's own app that was in
     /// front before Vignette, such as the Codex app, and the thread it shows. `kept` is the kept
-    /// pick's session, and `showedIt` the session that showed the image.
+    /// pick's session, and `last` the session the image last exchanged with.
     private static func choose(forSend candidates: Candidates, cameFrom: (client: AgentClient, shown: String?)?,
-                               kept: AgentDestination?, showedIt: AgentAddress?) -> Answer {
+                               kept: AgentDestination?, last: LastSession?) -> Answer {
         let unmarked = Self.unmarked(candidates)
         var complete = candidates.complete
         var list: [AgentDestination]
@@ -182,9 +189,9 @@ enum DestinationChoice {
             list = marked(unmarked, herdr: candidates.herdr)
         }
         let everyAnswerIsFresh = candidates.complete && candidates.fresh
-        if let showedIt {
-            if let index = list.firstIndex(where: { $0.address == showedIt }) {
-                list[index].focus = .showedIt
+        if let last {
+            if let index = list.firstIndex(where: { $0.address == last.address }) {
+                list[index].focus = last.showedIt ? .showedIt : .last
             } else if !everyAnswerIsFresh {
                 // As for the kept pick below: a later answer may still list it.
                 return Answer(list: list, complete: false, decided: false, pick: nil, startable: candidates.startable)
@@ -193,7 +200,7 @@ enum DestinationChoice {
         var keptIsGone = false
         if let kept {
             if let index = list.firstIndex(where: { $0.id == kept.id }) {
-                if list[index].focus != .showedIt { list[index].focus = .kept }
+                if list[index].focus?.isImagesLast != true { list[index].focus = .kept }
             } else if everyAnswerIsFresh {
                 keptIsGone = list.contains { $0.client == kept.client }
             } else {
@@ -206,13 +213,13 @@ enum DestinationChoice {
                       startable: candidates.startable, keptIsGone: keptIsGone)
     }
 
-    /// Where Send goes when nobody has chosen. The session that showed the image first, since it asked
-    /// about this very image. Then the kept pick, which says where the person has been sending. Then the session you came from,
+    /// Where Send goes when nobody has chosen. The session the image last exchanged with first, since
+    /// the image's pin comments go there too. Then the kept pick, which says where the person has been sending. Then the session you came from,
     /// which is where a paste would have gone: the session an agent's app showed, then herdr's
     /// focused pane, then the one session beside it. Then the session used last. `list` is in Send's
     /// order, the session used last first.
     private static func pick(in list: [AgentDestination]) -> AgentDestination? {
-        list.first { $0.focus == .showedIt } ?? list.first { $0.focus == .kept } ?? list.first { $0.focus == .app } ?? list.first { $0.focus == .pane }
+        list.first { $0.focus?.isImagesLast == true } ?? list.first { $0.focus == .kept } ?? list.first { $0.focus == .app } ?? list.first { $0.focus == .pane }
             ?? list.first { $0.focus == .tab } ?? list.first
     }
 
@@ -276,6 +283,9 @@ extension AgentDestination {
         /// It pointed the person at the open image with `vignette://show`, and the image opened from
         /// its shown card (`DestinationChoice`).
         case showedIt
+        /// The image last exchanged with it otherwise: it was sent there, answered there, or pushed
+        /// from there (`DestinationChoice.LastSession`).
+        case last
         /// The person picked it by hand in Send's menu and sent to it in the last 10 minutes, or the
         /// image Send sent from opened on it before they passed (`DestinationChoice.KeptPick`).
         case kept
@@ -286,5 +296,8 @@ extension AgentDestination {
         /// herdr's focused pane runs no agent, and this is the one session in that pane's tab
         /// (`DestinationChoice`, from `HerdrFocus`).
         case tab
+
+        /// The session the image last exchanged with, which Send starts on before every other.
+        var isImagesLast: Bool { self == .showedIt || self == .last }
     }
 }

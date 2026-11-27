@@ -10,14 +10,15 @@ extension AppDelegate {
     }
 
     /// The session the screenshot last exchanged with (`CommentTarget.last`), from what the file, its
-    /// records and its drawing keep.
-    func lastSession(of key: ScreenshotKey, drawing: Drawing) -> AgentAddress? {
+    /// records and its pins keep. Send starts on it, and the pins' comments go to it.
+    func lastSession(of key: ScreenshotKey, pins: [Pin]) -> DestinationChoice.LastSession? {
         let opening = annotator.opening
         let showedIt = thumbnail.model.openedShown.flatMap { $0.opening == opening ? $0.session : nil }
-        var exchanges = CommentTarget.exchanges(on: drawing.pins)
+        var exchanges = CommentTarget.exchanges(on: pins)
         if let sent = Agent.sent(of: key.url) { exchanges.append(CommentTarget.Exchange(session: sent.address, at: sent.at)) }
         if let reply = requests.replyExchange(of: key.url) { exchanges.append(reply) }
-        return CommentTarget.last(showedIt: showedIt, exchanges: exchanges, origin: Agent.origin(of: key.url)?.address)
+        let last = CommentTarget.last(showedIt: showedIt, exchanges: exchanges, origin: Agent.origin(of: key.url)?.address)
+        return last.map { DestinationChoice.LastSession(address: $0, showedIt: $0 == showedIt) }
     }
 
     /// The person changed the open image's pins: each change goes to its session when one runs, after
@@ -25,7 +26,7 @@ extension AppDelegate {
     private func pinsChanged(on shot: Screenshot, from before: Drawing, to after: Drawing) {
         let changes = CommentChange.between(before.pins, after.pins)
         guard !changes.isEmpty else { return }
-        let last = lastSession(of: shot.key, drawing: after)
+        let last = lastSession(of: shot.key, pins: after.pins)?.address
         let running = annotator.runningSessions
         let width = Double(max(after.pixels.width, 1)), height = Double(max(after.pixels.height, 1))
         var stays = 0
@@ -56,7 +57,7 @@ extension AppDelegate {
             let since = Date(timeIntervalSince1970: working.since.timeIntervalSince1970.rounded(.down))
             if !pin.comments.contains(where: { $0.agent && ($0.at ?? .distantPast) >= since }) { live.working = working.client }
         }
-        let last = lastSession(of: key, drawing: annotator.editor.core.drawing)
+        let last = lastSession(of: key, pins: annotator.editor.core.drawing.pins)?.address
         if let destination = CommentTarget.destination(for: pin, last: last, running: annotator.runningSessions) {
             let name = destination.name.count > Self.targetNameLength ? destination.name.prefix(Self.targetNameLength - 1) + "…" : destination.name
             live.target = "\(PinLiveComments.name(of: destination.client)) · \(name)"
