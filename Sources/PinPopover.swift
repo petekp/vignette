@@ -27,8 +27,8 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     private var fieldHeight: NSLayoutConstraint?
     /// Closed by the core, so the popover's own close says nothing back.
     private var closing = false
-    /// The window that keeps the keys while the popover the editor opened on its own comes up.
-    private weak var keepsKeys: NSWindow?
+    /// The view that keeps the keys while the popover the editor opened on its own comes up.
+    private weak var keepsKeys: NSView?
 
     /// `zoom` takes the editor's zoom keys while the field has the keys.
     init(pin: Pin, composer: EditorCore.Composer, send: @escaping (EditorCore.ComposerInput) -> Void,
@@ -125,7 +125,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         popover.show(relativeTo: place.rect, of: view, preferredEdge: place.edge)
         field.window?.autorecalculatesKeyViewLoop = true
         guard takesKeys else {
-            keepsKeys = view.window
+            keepsKeys = view
             holdNoFocus()
             return
         }
@@ -138,11 +138,13 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     /// Opened without the keys, the popover focuses none of its views, so with Full Keyboard Access
-    /// on no comment shows a focus ring before the person moves there.
+    /// on no comment shows a focus ring before the person moves there, and the view it opened from
+    /// is the first responder again, so the tool letters and Esc reach the editor.
     private func holdNoFocus() {
-        guard let keepsKeys else { return }
+        guard let keepsKeys, let window = keepsKeys.window else { return }
         field.window?.makeFirstResponder(nil)
-        keepsKeys.makeKey()
+        window.makeKey()
+        window.makeFirstResponder(keepsKeys)
     }
 
     /// A press on the picture took the keys, as a resize does: they come back to the field, with the
