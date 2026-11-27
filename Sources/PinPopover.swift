@@ -51,6 +51,9 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         field.cell?.wraps = true
         field.cell?.isScrollable = false
         field.lineBreakMode = .byWordWrapping
+        // The field editor's clip view reaches 2 points above the field, so a field scrolled past
+        // `ui.pinComposerLines` lines would show the bottom of the line above its first.
+        field.clipsToBounds = true
         field.preferredMaxLayoutWidth = Self.fieldWidth
         field.delegate = self
         field.setAccessibilityLabel(pin.number > 0 ? "Comment on pin \(pin.number)" : "Comment on new pin")
