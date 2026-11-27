@@ -49,9 +49,11 @@ extension TweakCatalog {
                 .number("pinPostSize", "Post button", \.pinPostSize, 12...32, step: 1, unit: "pt", safe: 6...200),
                 .number("pinDeleteSize", "Delete button", \.pinDeleteSize, 10...28, step: 1, unit: "pt", safe: 6...200),
                 .number("pinAvatarSize", "Comment avatar", \.pinAvatarSize, 12...32, step: 1, unit: "pt", safe: 6...200),
+                .number("pinNameGap", "Comment name gap", \.pinNameGap, 0...16, step: 1, unit: "pt", safe: 0...200),
+                .number("pinWordsGap", "Comment words gap", \.pinWordsGap, 0...16, step: 1, unit: "pt", safe: 0...200),
                 .number("pinHoverWidth", "Hover card width", \.pinHoverWidth, 160...400, step: 4, unit: "pt", safe: 80...2000),
                 .number("pinHoverDuration", "Hover card grows", \.pinHoverDuration, 0...1, step: 0.05, unit: "s", safe: 0...60),
-            ], caption: { _ in "In screen points. The popover by a pin has its width, its inset from the edge, the spacing between comments, and its post button's size. The card a pin grows into under the pointer has its own width and takes the grow time, with the popover's inset. The menus a cluster and the toolbar's Pins button open show each pin at the list's pin size, and cut its first comment at the text width." }),
+            ], caption: { _ in "In screen points. The popover by a pin has its width, its inset from the edge, the spacing between comments, and its post button's size. Each comment starts with a line holding its writer's avatar, name and time, the name gap after the avatar and after the name, and its words follow the words gap below it. The card a pin grows into under the pointer has its own width and takes the grow time, with the popover's inset. The menus a cluster and the toolbar's Pins button open show each pin at the list's pin size, and cut its first comment at the text width." }),
             TweakGroup("Area outline", [
                 .number("pinAreaWidth", "Line width", \.pinAreaWidth, 0.5...4, step: 0.25, unit: "pt", safe: 0.1...100),
                 .number("pinAreaDash", "Dash", \.pinAreaDash, 1...16, step: 0.5, unit: "pt", safe: 0.5...200),
