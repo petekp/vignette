@@ -12,6 +12,7 @@ final class MarksView: NSView {
             if let old = oldValue?.layer, old.superlayer === host { old.removeFromSuperlayer() }
             if let marks {
                 host.addSublayer(marks.layer)
+                marks.host = self
                 marks.setScale(backingScale)
             }
             place()

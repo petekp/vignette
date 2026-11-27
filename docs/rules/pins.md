@@ -15,14 +15,15 @@ an agent session as it is posted (`PinCommentDeliveries.swift`, `PinCommentRules
   orientation is worked out each time from the picture at the drawing's own size and is never
   stored, so every drawer agrees (`PinTeardrop.facing`). A body that would cover a stitch's piece
   number turns away from it (`Drawing.pieceNumbers`). `MarkLayers` shows pins with `PinLayer`
-  and `MarkRendering` draws them with `Pin.draw`, from the same paths. On a card and in flight a
-  pin has its own look (`PinShading`): a gradient, a white hairline and a soft shadow. In the
-  editor it is gel (below). A rendering keeps the marks' white edge. `MarkLayers` clusters them as
+  and `MarkRendering` draws them with `Pin.draw`, from the same paths. On a card a pin has its
+  own look (`PinShading`): a gradient, a white hairline and a soft shadow. In the editor it is gel
+  (below). A rendering keeps the marks' white edge. `MarkLayers` clusters them as
   `PinPlacement` does at the drawing's own size. A card's teardrops scale with its picture, as a
   rendering's do, and a flight shows the card's clusters. A flight between a card and the editor
   scales each pin about its tip on every frame (`MarkLayers.PinGrowth`), so its size on screen
   moves from the card's to the editor's `ui.pinSize` as the picture's zoom does, and lands at the
-  editor's size. The way home shrinks it back the same way.
+  editor's size. The way home shrinks it back the same way. On the way the flat body crossfades
+  into the editor's gel (`MarkLayers+Gel.swift`). A flight between two cards stays flat.
 - A PNG rendering draws pins as `Drawing.renderedTeardrops` places them, since its reader cannot
   hover. It outlines every area in its pin's colour. A body that would overlap an earlier pin's
   body or a piece number tries its other orientations, then moves clear, and a line in the pin's
@@ -168,18 +169,29 @@ an agent session as it is posted (`PinCommentDeliveries.swift`, `PinCommentRules
   each shape carrying its own colour, so many pins cost one drawing a frame. What it wears is drawn over it (`PinLayer` without its body) and casts
   `ui.pinGelFaceShadow`. Its top rises from a `ui.pinGelBevel` bevel into a dome `ui.pinGelDome` of
   half its side across, and the pointer's light glints only on the bevel. A flat top lit from right
-  above turned white and hid the number, and a glint on the dome crossed it. Over light content its edge turns to its own colour at
+  above turned white and hid the number, and a glint on the dome crossed it. The dome shades the
+  face, darker away from the light, by `ui.pinGelShade`, so the pin reads as round, and its edge is
+  `ui.pinGelEdge` opaque over dark content, where live ink's translucent edge left the pin soft and
+  let the content show through. Over light content its edge turns to its own colour at
   `ui.pinGelDeep`, chosen from the picture's brightness under it (`EditorPins.backdrop`). It draws
   on live ink's clock (`InkClock`), so it is lit from the pointer, and drifts and comes to rest as
   live ink does. An area's outline is a gel rod `ui.pinGelRod` wide in its pin's colour, one shape
   with its pin, or on its own while the pin is in a cluster. It shows only while its pin is hovered,
   selected, being placed or open (`EditorCore.outlinedPins`), and a closed area pin draws none at
-  rest. The pin being placed and the open one keep their gel drifting (`EditorCore.activePins`)
+  rest. A lone selected area pin's corner handles are squares of its gel, `ui.pinGelHandle` wide and
+  joined to the rod, with a white square `ui.pinGelHandleCore` wide in the middle, so they still read
+  as a rectangle's handles over dark content (`EditorCore.areaPinCorners`). The corner under the
+  teardrop has no white square, since the tip takes the press there. A selected pin has a ring of
+  neutral gel `ui.pinGelRing` wide, `ui.pinGelRingGap` out from its teardrop, white over dark content
+  and graphite over light content, so it stands apart from every pin's colour on both. The editor's
+  blue selection outline clashed with a red pin. The pin being placed and the open one keep their gel drifting (`EditorCore.activePins`)
   at the motion setting, so Reduce Motion stills it. The hover card and the popover have a gel rim
-  `ui.pinGelRim` wide in the pin's colour (`PinGelRim`). The popover's runs round its body only,
-  since its content view is the body. Cards, flights, Copy, Send and Stitch keep the flat pin, so
-  a pin changes material as it lands in the editor and as it leaves. A rendering draws the area as
-  a solid rectangle mark.
+  `ui.pinGelRim` wide in the pin's colour (`PinGelRim`). The popover's follows the popover's outline,
+  its arrow included: the rim covers the popover's frame and reads the outline from the shape layer
+  AppKit draws the popover's glass with, and moves when that path changes (`PinGelRim.Edge.popover`).
+  Before macOS 26 AppKit draws no such layer, and the popover has no rim, since a box round the body
+  alone did not match the popover's shape. Cards, Copy, Send and Stitch keep the flat pin. A
+  rendering draws the area as a solid rectangle mark.
 - A resolved pin's ask is done (`Pin.resolved`, `Pin.Resolution`). It keeps its number, place and
   comments, and is grey, the system grey `#8e8e93` (`PinShading.resolvedColor`): in the editor's
   gel, on cards and in flights, in its popover's and hover card's rims, and in menus. It clusters

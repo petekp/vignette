@@ -126,7 +126,7 @@ final class PinHoverCard: NSView {
         content.frame.size = card.size
         glass.maskImage = Self.mask(radius: body.height / 2, sharp: sharp ? tipCorner : nil)
         let tip = PinGel.Corner(right: tipCorner.right, bottom: tipCorner.bottom)
-        self.rim.wear(PinShading.color(of: pin.maker, resolved: pin.isResolved, markStyle: ui.markStyle), radius: body.height / 2, sharp: sharp ? tip : nil)
+        self.rim.wear(PinShading.color(of: pin.maker, resolved: pin.isResolved, markStyle: ui.markStyle), edge: .box(radius: body.height / 2, sharp: sharp ? tip : nil))
         grow(to: growth.value)
         growth.animate(to: 1, duration: Settings.shared.motionUI.pinHoverDuration)
     }

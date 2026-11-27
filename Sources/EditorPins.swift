@@ -3,8 +3,9 @@ import QuartzCore
 
 /// The pins as the editor shows them, in the editor's coordinates, at one size on screen whatever the
 /// zoom (`PinPlacement`): every teardrop and cluster in gel (`PinGel`), with the outline of each area
-/// that is hovered, selected, being placed or open as a gel rod joined to its pin, then a selection
-/// ring round each selected teardrop, then what each teardrop wears (`PinLayer`).
+/// that is hovered, selected, being placed or open as a gel rod joined to its pin, and a lone selected
+/// area pin's corner handles as squares of its gel with a white core, and a ring of neutral gel round
+/// each selected teardrop, then what each teardrop wears (`PinLayer`).
 @MainActor
 final class EditorPins {
     /// The owner puts this between the picture and the overlay.
@@ -20,7 +21,8 @@ final class EditorPins {
     private let gel = PinGel(scale: 2)
     private var drops: [Pin.ID: PinLayer] = [:]
     private var clusters: [[Pin.ID]: PinLayer] = [:]
-    private let selectionEdge = CAShapeLayer(), selectionLine = CAShapeLayer()
+    /// The white squares in the middle of an area pin's corner handles.
+    private let handleCores = CAShapeLayer()
     private var scale: CGFloat = 2
     private var shown: Shown?
 
@@ -30,25 +32,28 @@ final class EditorPins {
         let outlined: [Pin]
         let drifting: Set<Pin.ID>
         let selected: Set<Pin.ID>
+        let handles: EditorCore.PinCorners?
         let markStyle: MarkStyle
-        let outlineWidth: CGFloat
         let transform: CGAffineTransform
     }
 
     init() {
-        selectionEdge.strokeColor = EditorStyle.lightEdge.cgColor
-        selectionLine.strokeColor = EditorStyle.selectionBlue.cgColor
-        selectionLine.lineWidth = EditorStyle.outlineWidth
-        for outline in [selectionEdge, selectionLine] {
-            outline.fillColor = nil
-            outline.lineJoin = .round
-            outline.lineCap = .round
-        }
+        handleCores.fillColor = CGColor(gray: 1, alpha: 1)
+        handleCores.shadowColor = CGColor(gray: 0, alpha: 1)
+        handleCores.shadowRadius = Self.coreShadowRadius
+        handleCores.shadowOffset = .zero
     }
+
+    /// The blur of the shadow that lifts a handle's white core off its gel.
+    private static let coreShadowRadius: CGFloat = 0.75
+    /// A selected pin's ring: white over dark content, graphite over light content, so it stands apart
+    /// from every pin's colour on both.
+    private static let ringLight = SRGB(red: 1, green: 1, blue: 1)
+    private static let ringDeep = SRGB(red: 0x3a / 255.0, green: 0x3a / 255.0, blue: 0x3c / 255.0)
 
     func setScale(_ scale: CGFloat) {
         self.scale = scale
-        for outline in [selectionEdge, selectionLine] { outline.contentsScale = scale }
+        handleCores.contentsScale = scale
         for face in Array(drops.values) + Array(clusters.values) { face.setScale(scale) }
         gel.setScale(scale)
     }
@@ -64,22 +69,20 @@ final class EditorPins {
         for pin in what.outlined {
             guard case .area(let frame, _) = pin.place else { continue }
             let rect = frame.applying(transform)
-            shapes.append(.outline(rect, width: style.gelRod, tint: tint(pin.maker, resolved: pin.isResolved, over: rect, toImage: toImage,
+            shapes.append(.outline(rect, width: style.gelRod, tint: .pin(pin.maker, resolved: pin.isResolved, over: frame, backdrop: backdrop,
                                                                          markStyle: what.markStyle)))
         }
 
-        let rings = CGMutablePath()
         let teardrops = what.placement.drops.map { drop in
             (drop, PinTeardrop(number: drop.number, agent: drop.agent, tip: drop.tip.applying(transform), orientation: drop.orientation,
                                side: what.placement.side * zoom, style: style))
         }
-        let reach = 2 * (style.rimWidth + what.outlineWidth / 2)
+        let ringOut = style.gelRingGap + style.gelRing / 2
         for (drop, teardrop) in teardrops where what.selected.contains(drop.id) {
-            rings.addPath(teardrop.body.copy(strokingWithWidth: reach, lineCap: .round, lineJoin: .round, miterLimit: 1).union(teardrop.body))
+            let body = PinGel.Shape.body(of: teardrop, dome: 0, tint: PinGel.Tint(color: Self.ringLight, deepness: 0))
+            shapes.append(PinGel.Shape(rect: body.rect.insetBy(dx: -ringOut, dy: -ringOut), radius: body.radius + ringOut, sharp: body.sharp,
+                                       rod: style.gelRing, tint: ringTint(over: body.rect, toImage: toImage)))
         }
-        selectionEdge.lineWidth = what.outlineWidth
-        selectionEdge.path = rings
-        selectionLine.path = rings
 
         var faces: [CALayer] = []
         let kept = Set(teardrops.map(\.0.id))
@@ -87,7 +90,8 @@ final class EditorPins {
         for (drop, teardrop) in teardrops {
             let face = drops[drop.id] ?? PinLayer(scale: scale, body: false)
             shapes.append(.body(of: teardrop, dome: teardrop.square.height / 2 * style.gelDome,
-                                tint: tint(drop.maker, resolved: drop.resolved, over: teardrop.square, toImage: toImage, markStyle: what.markStyle)))
+                                tint: .pin(drop.maker, resolved: drop.resolved, over: teardrop.square.applying(toImage), backdrop: backdrop,
+                                           markStyle: what.markStyle)))
             face.show(teardrop, maker: drop.maker, resolved: drop.resolved, face: PinFace(drop.maker), answeringAgent: drop.answeringAgent,
                       pointScale: 1, markStyle: what.markStyle)
             drops[drop.id] = face
@@ -101,29 +105,41 @@ final class EditorPins {
             let teardrop = PinTeardrop(label: cluster.label, agent: cluster.agent, orientation: cluster.orientation,
                                        frame: cluster.frame.applying(transform), style: style)
             shapes.append(.body(of: teardrop, dome: teardrop.square.height / 2 * style.gelDome,
-                                tint: tint(cluster.maker, resolved: cluster.resolved, over: teardrop.square, toImage: toImage,
+                                tint: .pin(cluster.maker, resolved: cluster.resolved, over: teardrop.square.applying(toImage), backdrop: backdrop,
                                            markStyle: what.markStyle)))
             face.show(teardrop, maker: cluster.maker, resolved: cluster.resolved, pointScale: 1, markStyle: what.markStyle)
             clusters[cluster.pins] = face
             faces.append(face.root)
         }
 
+        let cores = CGMutablePath()
+        if let handles = what.handles, case .area(let frame, _) = handles.pin.place {
+            let tint = PinGel.Tint.pin(handles.pin.maker, resolved: handles.pin.isResolved, over: frame, backdrop: backdrop, markStyle: what.markStyle)
+            let side = style.gelHandle, core = style.gelHandleCore, rounding = min(max(style.gelHandleRounding, 0), 0.5)
+            let underTeardrops = teardrops.map { $0.1.square.insetBy(dx: -1, dy: -1) }
+            for corner in handles.corners.map({ $0.applying(transform) }) {
+                let square = CGRect(x: corner.x - side / 2, y: corner.y - side / 2, width: side, height: side)
+                shapes.append(PinGel.Shape(rect: square, radius: side * rounding, sharp: nil, rod: nil,
+                                           dome: side / 2 * style.gelDome, tint: tint))
+                // The corner under the pin's teardrop is the pin's tip, which takes the press.
+                guard core > 0, !underTeardrops.contains(where: { $0.contains(corner) }) else { continue }
+                let middle = CGRect(x: corner.x - core / 2, y: corner.y - core / 2, width: core, height: core)
+                cores.addRoundedRect(in: middle, cornerWidth: core * rounding, cornerHeight: core * rounding)
+            }
+        }
+        handleCores.path = cores
+        handleCores.shadowOpacity = Float(min(max(style.gelHandleCoreShadow, 0), 1))
+
         let drifting = !what.drifting.isEmpty
         gel.show(shapes, drifting: drifting, within: host?.bounds)
-        let layers = [gel, selectionEdge, selectionLine] + faces
+        let layers = [gel, handleCores] + faces
         if (layer.sublayers ?? []).map(ObjectIdentifier.init) != layers.map(ObjectIdentifier.init) { layer.sublayers = layers }
     }
 
-    /// The gel of a pin `maker` made over `rect` of the editor: in the pin's colour, or grey once
-    /// `resolved`, with its deep edge where that stands out more from the picture there.
-    private func tint(_ maker: PinMaker, resolved: Bool, over rect: CGRect, toImage: CGAffineTransform, markStyle: MarkStyle) -> PinGel.Tint {
-        let color = PinShading.color(of: maker, resolved: resolved, markStyle: markStyle)
-        var deepness: CGFloat = 0
-        if let brightness = backdrop?.mean(in: rect.applying(toImage)) {
-            let share = markStyle.pin.gelDeep
-            let deep = CGColor(srgbRed: color.red * share, green: color.green * share, blue: color.blue * share, alpha: 1)
-            deepness = InkContrast(ice: color.cgColor, deep: deep).deepWins(behind: brightness) ? 1 : 0
-        }
-        return PinGel.Tint(color: color, deepness: deepness)
+    /// A selected pin's ring over `rect` of the editor: graphite where that stands out more from the
+    /// picture there, white elsewhere.
+    private func ringTint(over rect: CGRect, toImage: CGAffineTransform) -> PinGel.Tint {
+        let deepness = PinGel.Tint.deepness(of: Self.ringLight, deep: Self.ringDeep, over: rect.applying(toImage), backdrop: backdrop)
+        return PinGel.Tint(color: Self.ringLight, deepness: deepness, deep: Self.ringDeep)
     }
 }

@@ -54,10 +54,18 @@ extension UITweaks {
         var pinWordsGap = 4.0            // between that line and the comment's words
         var pinHoverWidth = 240.0        // the card a pin grows into under the pointer
         var pinHoverDuration = 0.25      // seconds it takes to grow
-        var pinGelBevel = 3.0            // the gel's bevel round a pin's top in the editor, screen pt
+        var pinGelBevel = 4.0            // the gel's bevel round a pin's top in the editor, screen pt
         var pinGelDome = 1.0             // the dome on a pin's top, a share of half its side
+        var pinGelShade = 0.7            // how much the dome shades a pin's face away from the light, 0 to 1
+        var pinGelEdge = 1.0             // a pin's edge's opacity over dark content, 0 to 1
         var pinGelDeep = 0.85            // the share of a pin's colour its deep edge keeps over light content
-        var pinGelRod = 3.2              // an area's outline, screen pt
+        var pinGelRod = 4.5              // an area's outline, screen pt
+        var pinGelHandle = 12.0          // the gel square on each corner of a selected area pin's area, screen pt
+        var pinGelHandleCore = 5.0       // the white square in its middle, screen pt
+        var pinGelHandleRounding = 0.3   // the rounding of the square and its core, a share of its side
+        var pinGelHandleCoreShadow = 0.35 // the shadow that lifts the core off the gel, 0 to 1
+        var pinGelRing = 4.0             // the gel ring round a selected pin, screen pt
+        var pinGelRingGap = 2.0          // between the ring and the pin, screen pt
         var pinGelRim = 2.0              // the rim of a pin's hover card and popover, screen pt
         var pinGelFaceShadow = 0.5       // the shadow under a gel pin's number or logo
         // Marks (`MarkStyle`, `TextStyle`, `docs/mark-style-settings-2026-09-29.md`)

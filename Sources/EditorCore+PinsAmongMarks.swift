@@ -90,10 +90,26 @@ extension EditorCore {
         return geometry.readingOrder(drawing.marks + pins)
     }
 
-    /// A lone selected area pin's handles, on its area's outline.
+    /// A lone selected area pin's handles, on its area's outline. The pins draw their corners in the
+    /// pin's gel (`areaPinCorners`), so they have no square.
     var areaPinHandles: [Handle] {
-        guard selection.count == 1, let id = selection.first, case .area(let frame, _)? = pin(id)?.place else { return [] }
-        return geometry.handles(around: frame, of: id, markSize: frame.size)
+        guard let area = loneSelectedArea else { return [] }
+        return geometry.handles(around: area.frame, of: area.pin.id, markSize: area.frame.size)
+            .map { Handle(mark: $0.mark, position: $0.position, square: nil, hitArea: $0.hitArea) }
+    }
+
+    /// A lone selected area pin and its area's corners, in image px, where its corner handles are.
+    var areaPinCorners: PinCorners? {
+        guard let area = loneSelectedArea else { return nil }
+        let frame = area.frame
+        return PinCorners(pin: area.pin, corners: [CGPoint(x: frame.minX, y: frame.minY), CGPoint(x: frame.maxX, y: frame.minY),
+                                                   CGPoint(x: frame.maxX, y: frame.maxY), CGPoint(x: frame.minX, y: frame.maxY)])
+    }
+
+    /// The lone selected pin and its area, in image px, when it is an area pin.
+    private var loneSelectedArea: (pin: Pin, frame: CGRect)? {
+        guard selection.count == 1, let id = selection.first, let pin = pin(id), case .area(let frame, _) = pin.place else { return nil }
+        return (pin, frame)
     }
 
     // MARK: Inspecting

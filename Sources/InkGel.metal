@@ -17,10 +17,10 @@ struct GelVertex {
     packed_float2 b;    // its end
     float ra, rb;       // its half width at each end, px
     float s;            // px along the line at its start
-    float kind;         // 0 a segment, 1 the head, 2 a rounded box (a comment's pin, area or rim)
+    float kind;         // 0 a segment, 1 the head, 2 a rounded box (a comment's pin, area or rim), 3 a piece of a rim along a line
     // A rounded box's a is its centre and b its half size, px; ra its corners' radius, px; rb its tint
     // (`boxTint`); s a rod's half width along its edge, px, or for the box itself its dome's radius,
-    // px, negated.
+    // px, negated. A rim's piece is a segment from a to b, px, ra px either side of it, its tint in rb.
 };
 
 struct GelUniforms {
@@ -37,7 +37,8 @@ struct GelUniforms {
     float4 lightPlace; // the shimmer's wavelength in pt and its speed, the light's angle in radians and its height
     float4 head[4];    // the head's corners, px, two to a float4, already moved in by its rounding
     float4 headShape;  // the corner count, the rounding, how far it is shrunk, px along the line at it
-    float4 headMore;   // x: the line's half width where it meets the head, px; y: a rounded box's bevel, px
+    float4 headMore;   // x: the line's half width where it meets the head, px; y: a rounded box's bevel, px; z: how much a
+                       // domed box's face is shaded by its dome; w: a domed box's edge opacity
     float4 pointer;    // the pointer's place in px of the layer, its light's height over the screen in px, and how much of the light it gives
 };
 
@@ -84,7 +85,8 @@ vertex FieldVaryings gelFieldVertex(uint id [[vertex_id]], const device GelVerte
     out.position = float4(pos.x / uni.size.x * 2 - 1, 1 - pos.y / uni.size.y * 2, 0, 1);
     out.pixel = pos;
     // A rounded box's b is its half size, which no shift moves.
-    out.a = float2(v.a) - shift; out.b = v.kind > 1.5 ? float2(v.b) : float2(v.b) - shift;
+    bool box = v.kind > 1.5 && v.kind < 2.5;
+    out.a = float2(v.a) - shift; out.b = box ? float2(v.b) : float2(v.b) - shift;
     out.ra = v.ra; out.rb = v.rb; out.s = v.s; out.kind = v.kind;
     return out;
 }
@@ -129,7 +131,7 @@ fragment FieldOut gelField(FieldVaryings in [[stage_in]], constant GelUniforms &
         sd = polygon(in.pixel, uni, uni.offset.xy) - uni.headShape.y + uni.headShape.z;
         r = uni.headMore.x;
         s = uni.headShape.w;
-    } else {
+    } else if (in.kind < 2.5) {
         // A rounded box round a: its half size b, its corners ra round but the one rb names, which is
         // square, none when rb is negative. With s, a rod s px either side of its edge; without, the box
         // itself, bevelled and domed.
@@ -141,6 +143,15 @@ fragment FieldOut gelField(FieldVaryings in [[stage_in]], constant GelUniforms &
         sd = rod ? abs(box) - in.s : box;
         r = rod ? in.s : -in.s;
         fieldTint = 1 + (rod ? 0 : 1) + tint.colour * 2 + tint.depth * 16;
+        s = in.pixel.x + in.pixel.y;
+    } else {
+        // A piece of a rim along a line, lit as a rod: a capsule ra px either side of the segment from a to b.
+        BoxTint tint = boxTint(in.rb);
+        float2 ba = in.b - in.a;
+        float t = clamp(dot(in.pixel - in.a, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+        sd = length(in.pixel - in.a - ba * t) - in.ra;
+        r = in.ra;
+        fieldTint = 1 + tint.colour * 2 + tint.depth * 16;
         s = in.pixel.x + in.pixel.y;
     }
     // The shimmer only needs the phase, and a half float keeps a phase where it could not keep a length.
@@ -233,8 +244,16 @@ fragment float4 gelLight(FieldVaryings in [[stage_in]], texture2d<float, access:
     // colour stands out from nothing, and a light middle in a dark sheath stands out from anything.
     float sheath = smoothstep(1.12 - uni.behind.w * lightBehind, 1.28 - uni.behind.w * lightBehind, across);
     float3 colour = mix(ice, deep, sheath);
+    // A pin's face is shaded by its dome, lighter toward the light, so it reads as round.
+    // Its slope read wider, so the crease toward the square tip stays soft.
+    if (domed) {
+        float3 round = normalize(float3(glowSide * tilt, sqrt(max(1 - tilt * tilt, 0.0))));
+        colour *= mix(1.0, 0.45 + 0.75 * max(dot(round, L), 0.0), uni.headMore.z);
+    }
     float edge = clamp(0.5 - sd, 0.0, 1.0);
-    float alpha = mix(uni.material.w + (1 - uni.material.w) * core, 0.95, sheath) * edge;
+    // A pin's edge has its own opacity, so it stays crisp over dark content where live ink's fades.
+    float edgeOpacity = domed ? uni.headMore.w : uni.material.w;
+    float alpha = mix(edgeOpacity + (1 - edgeOpacity) * core, 0.95, sheath) * edge;
     float4 body = float4(clamp(colour, 0.0, 1.0) * alpha, alpha);
     return body + halo * (1 - body.a);
 }

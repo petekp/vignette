@@ -40,7 +40,7 @@ final class MarkLayers {
     var texts: [Mark.ID: Text] = [:]
     private var pins: [Pin.ID: PinLayer] = [:]
     private var clusters: [[Pin.ID]: PinLayer] = [:]
-    private var contentsScale: CGFloat = 2
+    private(set) var contentsScale: CGFloat = 2
     var shown: Shown?
     /// The scale and the part of the image of the last `show(_:scale:bound:…)`, for `restyle`.
     private var wholeShow: (scale: CGFloat, bound: CGRect)?
@@ -48,9 +48,25 @@ final class MarkLayers {
     private(set) var isParked = false
     /// A flight's: how its pins change size between its ends, and the zoom it is shown at now.
     var pinGrowth: PinGrowth? {
-        didSet { if pinGrowth != oldValue { growPins() } }
+        didSet {
+            guard pinGrowth != oldValue else { return }
+            wearGel()
+            growPins()
+        }
     }
     private var zoom: CGFloat?
+    /// A flight's gel for its pins' bodies, while one of its ends is the editor (`MarkLayers+Gel.swift`).
+    var gel: PinGel?
+    /// The teardrops of the last `show`, its lone pins' and its clusters', in px, for the gel.
+    var pinBodies: [PinBody] = []
+    /// The style of the last `show`.
+    private(set) var markStyle: MarkStyle?
+    /// The picture's brightness, in image px, which decides whether the gel takes its deep edge.
+    var backdrop: LivePacket.Luminance?
+    /// The view the marks are shown in, whose window the gel is lit in.
+    weak var host: NSView? {
+        didSet { gel?.host = host }
+    }
 
     /// The two ends of a flight between a card and the editor. A card draws a pin at the drawing's
     /// size, scaled with the picture, and the editor draws it `PinStyle.side` screen pt across at every
@@ -70,13 +86,22 @@ final class MarkLayers {
         func growth(atZoom zoom: CGFloat, pointScale: CGFloat) -> CGFloat {
             // A pin's side on screen at an end, in multiples of `PinStyle.side`.
             func side(_ end: End) -> CGFloat { end.editor ? 1 : pointScale * end.zoom }
-            let span = to.zoom - from.zoom
-            // Clamped, so a spring passing its target, or ends whose zooms nearly match, never
-            // carries a pin past either end's size.
-            let progress = abs(span) > 0.0001 ? min(max((zoom - from.zoom) / span, 0), 1) : 1
             let drawn = pointScale * zoom
             guard drawn > 0 else { return 1 }
-            return max(side(from) + (side(to) - side(from)) * progress, 0) / drawn
+            return max(side(from) + (side(to) - side(from)) * progress(atZoom: zoom), 0) / drawn
+        }
+
+        /// How far the flight has come at `zoom`, 0 at its start and 1 at its end. Clamped, so a spring
+        /// passing its target, or ends whose zooms nearly match, never carries a pin past either end.
+        func progress(atZoom zoom: CGFloat) -> CGFloat {
+            let span = to.zoom - from.zoom
+            return abs(span) > 0.0001 ? min(max((zoom - from.zoom) / span, 0), 1) : 1
+        }
+
+        /// How near the editor's end the flight is at `zoom`: 0 at the card's and 1 at the editor's.
+        func towardEditor(atZoom zoom: CGFloat) -> CGFloat {
+            let progress = progress(atZoom: zoom)
+            return to.editor ? progress : from.editor ? 1 - progress : 0
         }
     }
 
@@ -118,6 +143,9 @@ final class MarkLayers {
         texts = [:]
         pins = [:]
         clusters = [:]
+        gel = nil
+        pinBodies = []
+        backdrop = nil
     }
 
     /// Marks shown at one scale over a part of the image, a card's or a flight's, shown again in a
@@ -136,7 +164,13 @@ final class MarkLayers {
 
     private func growPins() {
         let growth = pinGrowth.flatMap { growth in zoom.map { growth.growth(atZoom: $0, pointScale: drawing?.pointScale ?? 1) } } ?? 1
-        for record in Array(pins.values) + Array(clusters.values) { record.growth = growth }
+        let gelShare = gel == nil ? 0 : pinGrowth.flatMap { growth in zoom.map(growth.towardEditor(atZoom:)) } ?? 0
+        let bodyOpacity = Float(Self.bodyOpacity(gelShare: gelShare))
+        for record in Array(pins.values) + Array(clusters.values) {
+            record.growth = growth
+            record.bodyOpacity = bodyOpacity
+        }
+        showGel(growth: growth, share: gelShare)
     }
 
     /// The device pixels per point of the screen the marks are on, for the shape layers.
@@ -144,6 +178,7 @@ final class MarkLayers {
         contentsScale = scale
         for record in shapes.values { record.setScale(scale) }
         for record in Array(pins.values) + Array(clusters.values) { record.setScale(scale) }
+        gel?.setScale(scale)
     }
 
     /// Shows `drawing`'s marks in order, the newest on top, and its pins above them, clustered by the
@@ -156,6 +191,7 @@ final class MarkLayers {
               adopting sources: [MarkLayers] = [], plan: @escaping Plan) {
         guard !isParked, drawing.pixels == pixels else { return }
         self.drawing = drawing
+        self.markStyle = markStyle
         shown = Shown(layout: layout, plan: plan)
         var layers: [CALayer] = []
         var seen = Set<Mark.ID>()
@@ -192,7 +228,12 @@ final class MarkLayers {
                                      style: markStyle.pin)
         let alone = Set(placement.drops.map(\.id))
         pins = pins.filter { alone.contains($0.key) }
+        let gelAt = layers.count
+        pinBodies = []
         for pin in shownPins.pins where alone.contains(pin.id) {
+            pinBodies.append(PinBody(teardrop: PinTeardrop(pin, in: drawing.pixels, pointScale: pointScale, markStyle: markStyle,
+                                                           pieceNumbers: drawing.pieceNumbers),
+                                     maker: pin.maker, resolved: pin.isResolved))
             let record = pins[pin.id] ?? PinLayer(scale: contentsScale)
             record.show(pin, on: drawing, markStyle: markStyle)
             pins[pin.id] = record
@@ -202,11 +243,14 @@ final class MarkLayers {
         clusters = clusters.filter { grouped.contains($0.key) }
         for cluster in placement.clusters {
             let record = clusters[cluster.pins] ?? PinLayer(scale: contentsScale)
-            record.show(PinTeardrop(label: cluster.label, agent: cluster.agent, orientation: cluster.orientation, frame: cluster.frame, style: markStyle.pin),
-                        maker: cluster.maker, resolved: cluster.resolved, pointScale: pointScale, markStyle: markStyle)
+            let teardrop = PinTeardrop(label: cluster.label, agent: cluster.agent, orientation: cluster.orientation, frame: cluster.frame,
+                                       style: markStyle.pin)
+            record.show(teardrop, maker: cluster.maker, resolved: cluster.resolved, pointScale: pointScale, markStyle: markStyle)
+            pinBodies.append(PinBody(teardrop: teardrop, maker: cluster.maker, resolved: cluster.resolved))
             clusters[cluster.pins] = record
             layers.append(record.root)
         }
+        if let gel = gel ?? makeGel() { layers.insert(gel, at: gelAt) }
         for id in shapes.keys where !seen.contains(id) {
             shapes[id]?.root.removeFromSuperlayer()
             shapes[id] = nil
