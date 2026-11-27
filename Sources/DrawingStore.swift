@@ -220,7 +220,8 @@ struct DrawingStore: Sendable {
         // drops the history.
         object["history"] = try history.fileObject(endingAt: drawing, message: message)
         let aboutPins = !stored.pins.isEmpty || (Pin.writtenNextPin(stored.nextPin) ?? 1) > 1 || EditorHistory.mentionsPins(object["history"])
-        object["version"] = Drawing.fileVersion(aboutPins: aboutPins)
+        let resolving = Drawing.mentionsResolved(stored.pins) || EditorHistory.mentionsResolved(object["history"])
+        object["version"] = Drawing.fileVersion(aboutPins: aboutPins, resolving: resolving)
         try put(Self.data(of: object), at: url, name: name)
         return !message.isEmpty
     }
@@ -237,14 +238,17 @@ struct DrawingStore: Sendable {
 
     /// `drawing`'s file, with `message` under "message" when there is one and `history` under "history"
     /// when it has steps. The history ends at `end`, the drawing itself unless given. A history step about
-    /// pins makes the file version 2.
+    /// pins makes the file version 2, and one holding a resolved pin version 3.
     private static func encoded(_ drawing: Drawing, message: String, history: EditorHistory, endingAt end: Drawing? = nil) throws -> Data {
         let file = try drawing.encoded()
         let historyObject = try history.fileObject(endingAt: end ?? drawing, message: message)
         guard !message.isEmpty || historyObject != nil, var object = try DrawingJSON.object(from: file) as? [String: Any] else { return file }
         object["message"] = message.isEmpty ? nil : message
         object["history"] = historyObject
-        if EditorHistory.mentionsPins(historyObject) { object["version"] = Drawing.fileVersion(aboutPins: true) }
+        if EditorHistory.mentionsPins(historyObject) {
+            let resolving = drawing.pins.contains(where: \.isResolved) || EditorHistory.mentionsResolved(historyObject)
+            object["version"] = Drawing.fileVersion(aboutPins: true, resolving: resolving)
+        }
         return try data(of: object)
     }
 

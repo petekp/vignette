@@ -14,13 +14,13 @@ extension AppDelegate {
     /// note's text size.
     var copiedLayout: Rendering.Layout { .withComments(textSize: settings.data.ui.newTextSize) }
 
-    /// Copy Drawing: each card's drawing as it is now, rendered and written beside its screenshot,
-    /// and the original file for a card without one. The queue renders these in the order asked, so
+    /// Copy Drawing: each card's drawing as it is now, without its resolved pins, rendered and written
+    /// beside its screenshot, and the original file for a card without one. The queue renders these in the order asked, so
     /// once the last rendering is done every one is.
     func copyAnnotated(_ shots: [Screenshot]) {
         let ui = settings.data.ui, style = ui.textStyle, layout = copiedLayout
         let renderings = shots.map { shot -> (shot: Screenshot, rendering: PendingRendering?, words: String?) in
-            let drawing = drawings.current(of: shot.key, style: style)
+            let drawing = drawings.current(of: shot.key, style: style)?.handedOver
             guard let drawing, !drawing.isEmpty else { return (shot, nil, nil) }
             return (shot, RenderingQueue.shared.render(drawing, imageAt: shot.url, output: .file,
                                                        style: style, markStyle: ui.markStyle, layout: layout),
@@ -71,10 +71,10 @@ extension AppDelegate {
     /// pastes the path and a chat app pastes the image. The text carries the pins' words after the
     /// path. The file is promised, so nothing waits for the rendering but a paste that comes before
     /// it, and the rendering goes ahead of any that has not started. `verb` names the moment in the
-    /// log line. The rendering, or nil when the original file was copied.
+    /// log line. Resolved pins are left out. The rendering, or nil when the original file was copied.
     @discardableResult
     func copyRendering(of drawing: Drawing, shot: Screenshot, verb: String, in opening: Opening?) -> PendingRendering? {
-        let name = shot.url.lastPathComponent
+        let name = shot.url.lastPathComponent, drawing = drawing.handedOver
         guard !drawing.isEmpty else {
             Clipboard.copyFiles([shot.url])
             Log.write("[annotate] \(verb) \(name) nothing drawn, original copied")

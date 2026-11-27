@@ -5,7 +5,7 @@ import AppKit
 /// in the screenshot's points and their sizes in drawing pt. Any app can write the type, so they go
 /// through the same validator as a file's. Marks alone are written as version 1, so a build from
 /// before pins still pastes them. With pins they are version 2, which such a build refuses, pasting
-/// the plain text beside them as a note instead.
+/// the plain text beside them as a note instead, and version 3 with a resolved pin, which keeps its state.
 struct CopiedItems: Equatable {
     static let pasteboardType = NSPasteboard.PasteboardType(Identity.bundleID + ".marks")
 
@@ -26,7 +26,7 @@ struct CopiedItems: Equatable {
     var screenScale: CGFloat { pointScale / markScale }
 
     func encoded() throws -> Data {
-        try DrawingJSON.encode(CopiedItemsRecord(version: pins.isEmpty ? Drawing.versionWithoutPins : Drawing.version,
+        try DrawingJSON.encode(CopiedItemsRecord(version: Drawing.fileVersion(aboutPins: !pins.isEmpty, resolving: pins.contains(where: \.isResolved)),
                                                  pointScale: pointScale, markScale: markScale == 1 ? nil : markScale,
                                                  marks: marks.map(MarkRecord.init), pins: pins.isEmpty ? nil : pins.map(PinRecord.init)))
     }

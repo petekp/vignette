@@ -238,7 +238,7 @@ final class DrawingTests: XCTestCase {
         // Another app can write the type: a mark that fails is dropped and the rest are pasted.
         let written = #"{"version": 1, "pointScale": 1, "marks": [{"type": "rectangle", "x": 1e999, "y": 0, "w": 1, "h": 1, "color": "red"}, {"type": "rectangle", "x": 0, "y": 0, "w": 1, "h": 1, "color": "red"}]}"#
         XCTAssertEqual(CopiedItems(data: Data(written.utf8))?.marks.map(\.geometry), [.rectangle(CGRect(x: 0, y: 0, width: 1, height: 1))])
-        XCTAssertNil(CopiedItems(data: Data(#"{"version": 3, "pointScale": 1, "marks": []}"#.utf8)), "a newer build's marks")
+        XCTAssertNil(CopiedItems(data: Data(#"{"version": \#(Drawing.version + 1), "pointScale": 1, "marks": []}"#.utf8)), "a newer build's marks")
         XCTAssertNil(CopiedItems(data: Data(#"{"version": 1, "pointScale": 9, "marks": [{"type": "rectangle", "x": 0, "y": 0, "w": 1, "h": 1, "color": "red"}]}"#.utf8)))
         XCTAssertNil(CopiedItems(data: Data(#"{"version": 1, "pointScale": 1, "markScale": 2, "marks": [{"type": "rectangle", "x": 0, "y": 0, "w": 1, "h": 1}]}"#.utf8)))
         XCTAssertNil(CopiedItems(data: Data(#"{"version": 1, "pointScale": 1, "marks": []}"#.utf8)))
@@ -262,5 +262,13 @@ final class DrawingTests: XCTestCase {
         XCTAssertEqual(CopiedItems(data: try CopiedItems(pointScale: 2, marks: [], pins: [pin]).encoded())?.pins, [pin])
         let written = #"{"version": 2, "pointScale": 1, "marks": [], "pins": [{"id": "\#(UUID().uuidString)", "number": 1, "x": 0, "y": 0, "comments": []}]}"#
         XCTAssertNil(CopiedItems(data: Data(written.utf8)), "a pin with no comment is dropped, and nothing is left")
+    }
+
+    func testCopiedResolvedPinsKeepTheirStateAsVersion3() throws {
+        var pin = Pin(id: UUID(), number: 3, place: .point(CGPoint(x: 10, y: 20)), comments: [Pin.Comment(text: "Too tight")])
+        pin.resolved = Pin.Resolution(agent: true, agentName: "claude", at: Date(timeIntervalSince1970: 1_795_000_000))
+        let items = CopiedItems(pointScale: 2, marks: [], pins: [pin])
+        XCTAssertEqual(try XCTUnwrap(DrawingJSON.object(from: items.encoded()) as? [String: Any])["version"] as? Int, 3)
+        XCTAssertEqual(CopiedItems(data: try items.encoded())?.pins, [pin])
     }
 }

@@ -151,9 +151,9 @@ extension EditorCore {
         Mark(geometry: mark.geometry, agent: mark.agent, agentName: mark.agentName)
     }
 
-    /// A pin with the same place, comments and number, and new ids.
+    /// A pin with the same place, comments, number and state, and new ids.
     static func fresh(_ pin: Pin) -> Pin {
-        Pin(id: UUID(), number: pin.number, place: pin.place, comments: pin.comments.map(\.copied))
+        Pin(id: UUID(), number: pin.number, place: pin.place, comments: pin.comments.map(\.copied), resolved: pin.resolved)
     }
 
     private static func scaled(_ rect: CGRect, by factor: CGFloat) -> CGRect {
