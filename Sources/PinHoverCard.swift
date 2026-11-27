@@ -5,7 +5,8 @@ import Collaboration
 /// widened into a card whose tip stays its square corner unless the card turned away from an edge. Its
 /// top line holds the avatar of whoever wrote the first comment, their name and how long ago, as a
 /// comment's top line in the popover does. Under it are the comment's first line and how many replies
-/// it has. It goes back into the teardrop when the pointer leaves. It takes no clicks: a click on the pin opens its popover. VoiceOver reads the pin itself.
+/// it has. It goes back into the teardrop when the pointer leaves the pin and the card. A press on it is a
+/// press on its pin, so a click opens the pin's popover. VoiceOver reads the pin itself.
 /// It draws in a borderless panel of its own, a child of the editor's window, so it reaches past the
 /// picture's frame over whatever is beside the editor, as the pin's popover does.
 @MainActor
@@ -56,9 +57,12 @@ final class PinHoverCard: NSView {
     }
 
     let pin: Pin.ID
-    /// The window the card draws in: as large as the card's whole growth and its shadow, and passing
-    /// every event to what is under it.
+    /// The window the card draws in, as large as the card's whole growth and its shadow.
     private let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+    private let room = PinCardRoom()
+    /// A close that came while a press on the panel was down: the card is hidden, and the panel stays
+    /// until the release so the rest of the press still reaches it.
+    private var closesAfterPress = false
     private let clip = FlippedView()
     private let glass = NSVisualEffectView()
     private let content = FlippedView()
@@ -79,7 +83,8 @@ final class PinHoverCard: NSView {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.ignoresMouseEvents = true
+        // `ignoresMouseEvents` is never set: once set either way, the panel takes or passes every press
+        // over its whole rect, whatever its pixels.
         // Above the stack's column (`.statusBar`), as the toolbar is, so a card reaching past the frame
         // is not under the stack's cards.
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
@@ -87,8 +92,9 @@ final class PinHoverCard: NSView {
         panel.animationBehavior = .none
         panel.isReleasedWhenClosed = false
         panel.setAccessibilityElement(false)
-        panel.contentView = FlippedView()
-        panel.contentView?.addSubview(self)
+        room.card = self
+        panel.contentView = room
+        room.addSubview(self)
         wantsLayer = true
         layer?.shadowColor = NSColor.black.cgColor
         layer?.shadowOpacity = 0.18
@@ -133,6 +139,7 @@ final class PinHoverCard: NSView {
     /// screen's visible frame and the other way would not.
     func show(_ pin: Pin, body square: CGRect, orientation: PinTeardrop.Orientation, in editor: NSView) {
         guard let window = editor.window else { return }
+        closesAfterPress = false
         let onScreen = window.convertToScreen(editor.convert(square, to: nil))
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(CGPoint(x: onScreen.midX, y: onScreen.midY)) }) ?? window.screen else { return }
         let bounds = editor.convert(window.convertFromScreen(screen.visibleFrame), from: nil)
@@ -165,6 +172,21 @@ final class PinHoverCard: NSView {
         growth.animate(to: 1, duration: Settings.shared.motionUI.pinHoverDuration)
     }
 
+    /// A press on the panel, on screen, and whether it began on the card.
+    var onPress: ((FlightPress.Event, _ onCard: Bool) -> Void)? {
+        get { room.onPress }
+        set { room.onPress = newValue }
+    }
+
+    /// The teardrop's square widened by its rim, in the editor's coordinates.
+    var teardrop: CGRect? { shown?.start }
+
+    /// Whether `point`, in the editor's coordinates, is on the card as it is drawn now, growing or going.
+    func covers(_ point: CGPoint) -> Bool {
+        guard panel.isVisible, panel.alphaValue > 0, let shown else { return false }
+        return frame.offsetBy(dx: shown.room.minX, dy: shown.room.minY).contains(point)
+    }
+
     /// Goes back into the teardrop, then off the screen.
     func leave() {
         growth.animate(to: 0, duration: Settings.shared.motionUI.pinHoverDuration) { [weak self] in self?.close() }
@@ -173,9 +195,18 @@ final class PinHoverCard: NSView {
     /// Goes off the screen at once.
     func close() {
         growth.stop()
+        if room.pressing {
+            panel.alphaValue = 0
+            closesAfterPress = true
+            return
+        }
         panel.parent?.removeChildWindow(panel)
         panel.orderOut(nil)
         removeFromSuperview()
+    }
+
+    func pressEnded() {
+        if closesAfterPress { close() }
     }
 
     /// Sets the words and the avatar, lays them out across a card `width` wide, and answers the card's

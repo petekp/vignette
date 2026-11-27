@@ -616,7 +616,7 @@ final class EditorView: NSView {
 
     // MARK: Mouse
 
-    private func pointer(_ event: NSEvent) -> EditorCore.Pointer {
+    func pointer(_ event: NSEvent) -> EditorCore.Pointer {
         EditorCore.Pointer(location: imagePoint(forViewPoint: convert(event.locationInWindow, from: nil)),
                            modifiers: Self.modifiers(event), time: event.timestamp)
     }
@@ -629,7 +629,7 @@ final class EditorView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         onPress?()
-        handle(.pointerPressed(pointer(event), clickCount: event.clickCount), event: event)
+        press(event)
     }
 
     override func mouseDragged(with event: NSEvent) {
