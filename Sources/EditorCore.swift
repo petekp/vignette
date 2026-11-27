@@ -39,9 +39,8 @@ struct EditorCore {
         case enterCanvas(backward: Bool)
         /// The host's zoom: screen pt per image px.
         case zoomChanged(CGFloat)
-        /// Where the picture sits: the zoom at which it fits the frame, which a pin keeps its size at,
-        /// and the part of the image in view, in px.
-        case viewChanged(fit: CGFloat, visible: CGRect)
+        /// The part of the image in view, in px.
+        case viewChanged(visible: CGRect)
         /// The pin popover's composer: its words, its keys, or a comment or a pin chosen in a popover.
         case composer(ComposerInput)
         /// VoiceOver's Add Pin: a new pin at the middle of the picture in view.
@@ -209,7 +208,6 @@ struct EditorCore {
     private var typingMessage = false
     /// Screen pt per image px.
     private(set) var zoom: CGFloat = 1
-    private(set) var fitZoom: CGFloat = 1
     /// The part of the image in view, in px; null until the host says.
     private(set) var visible = CGRect.null
     /// The pin whose popover is open.
@@ -231,57 +229,6 @@ struct EditorCore {
     private var reportedCursor: Cursor?
     private var announcedSelection: Set<Mark.ID> = []
     private var effects: [Effect] = []
-
-    /// A press and what it has become.
-    struct Gesture {
-        let press: Press
-        var phase: Phase
-        /// The latest pointer location, so a modifier change with no move updates the gesture.
-        var pointer: CGPoint
-        /// Where the pointer has been while the Arrow tool draws, after the press, inside the image.
-        var stroke: [CGPoint] = []
-    }
-
-    struct Press {
-        let location: CGPoint
-        let time: TimeInterval
-        let target: PressTarget
-        /// The selection before the press changed it, which Esc puts back.
-        let selectionBefore: Set<Mark.ID>
-    }
-
-    enum PressTarget: Equatable {
-        /// Empty space: a drag does what the tool does.
-        case empty
-        /// Empty space inside the frame of several selected marks, in Select: a drag moves them and
-        /// a click clears them.
-        case frame
-        case mark(Mark.ID, click: Click)
-        case handle(Mark.ID, HandlePosition, click: Click)
-        case dot(Mark.ID, DotKind)
-        case pin(Pin.ID, click: Click)
-        case cluster([Pin.ID])
-    }
-
-    /// What a press on a mark or its handle does when the button comes up without a drag.
-    enum Click: Equatable { case nothing, deselect, selectOnly, type(Caret) }
-
-    enum Phase: Equatable {
-        /// Not yet past the drag distance.
-        case pressed
-        /// A rectangle or an arrow being drawn.
-        case drawing(Mark.ID)
-        /// A Comment tool drag choosing a new pin's area.
-        case placing(Pin.ID)
-        /// A Text tool drag setting a new text's wrap width.
-        case wrapping
-        /// With Shift, the brush adds to the selection from before the press.
-        case brushing
-        case moving(originals: [Mark.ID], copies: [Mark.ID])
-        case resizing(Mark.ID, HandlePosition)
-        case draggingEnd(Mark.ID, DotKind)
-        case bending(Mark.ID)
-    }
 
     struct NoteMark {
         let id: Mark.ID
@@ -373,8 +320,7 @@ struct EditorCore {
             selection = (backward ? order.last : order.first).map { [$0] } ?? []
         case .zoomChanged(let zoom):
             if zoom > 0, zoom.isFinite { self.zoom = zoom }
-        case .viewChanged(let fit, let visible):
-            if fit > 0, fit.isFinite { fitZoom = fit }
+        case .viewChanged(let visible):
             self.visible = visible
         case .composer(let input): composerInput(input)
         case .addPin: placePinInView()
@@ -431,9 +377,9 @@ struct EditorCore {
     private mutating func open(_ drawing: Drawing, style: TextStyle, metrics: EditorMetrics, markStyle: MarkStyle, selectsNewest: Bool) {
         if typing != nil { emit(.endTyping) }
         if composer != nil { emit(.composer(nil)) }
-        let kept = (zoom, fitZoom, visible, finishes, effects)
+        let kept = (zoom, visible, finishes, effects)
         self = EditorCore()
-        (zoom, fitZoom, visible, finishes, effects) = kept
+        (zoom, visible, finishes, effects) = kept
         guard drawing.pixels.width > 0, drawing.pixels.height > 0, drawing.pointScale > 0, drawing.pointScale.isFinite else { return }
         isOpen = true
         self.drawing = drawing
@@ -656,7 +602,8 @@ struct EditorCore {
             }
             endTyping()
         }
-        if composer != nil, !keepsComposer(at: at) { closeComposer() }
+        let openPin = composer?.pin
+        if composer != nil, !keepsComposer(at: at, clickCount) { closeComposer() }
         let before = selection
         func press(_ target: PressTarget) {
             gesture = Gesture(press: Press(location: at, time: event.time, target: target, selectionBefore: before), phase: .pressed, pointer: at)
@@ -671,11 +618,8 @@ struct EditorCore {
         case .dot(let id, let kind)?:
             press(.dot(id, kind))
         case .pin(let id)?:
-            if clickCount >= 2 {
-                openComposer(on: id)
-                return
-            }
-            press(.pin(id, click: pinClick(id, event.modifiers)))
+            guard let click = pinPress(id, event.modifiers, clickCount, wasOpen: openPin == id) else { return }
+            press(.pin(id, click: click))
         case .cluster(let ids)?:
             press(.cluster(ids))
         case .mark(let id)?:
@@ -926,6 +870,8 @@ struct EditorCore {
                 }
             case .frame:
                 selection = []
+            case .pin(let id, .open):
+                openComposer(on: id)
             case .mark(let id, .deselect), .pin(let id, .deselect):
                 selection.remove(id)
             case .mark(let id, .selectOnly), .pin(let id, .selectOnly):
@@ -934,7 +880,7 @@ struct EditorCore {
                 showCluster(ids)
             case .mark(let id, .type(let caret)), .handle(let id, _, .type(let caret)):
                 beginTyping(id, caret: caret, edit: newEdit)
-            case .mark(_, .nothing), .handle, .dot, .pin:
+            case .mark, .handle, .dot, .pin:
                 break
             }
         case .placing(let id):

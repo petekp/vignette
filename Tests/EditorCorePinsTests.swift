@@ -8,7 +8,7 @@ final class EditorCorePinsTests: XCTestCase {
         var core = Core()
         _ = core.reduce(.open(Drawing(key: "/tmp/shot.png", pixels: Self.image, pointScale: 1, marks: marks, pins: pins, nextPin: nextPin),
                               style: .standard, metrics: .standard, markStyle: .standard))
-        _ = core.reduce(.viewChanged(fit: 1, visible: Self.image.bounds))
+        _ = core.reduce(.viewChanged(visible: Self.image.bounds))
         _ = core.reduce(.zoomChanged(zoom))
         _ = core.reduce(.setTool(.comment))
         return core
@@ -20,6 +20,17 @@ final class EditorCorePinsTests: XCTestCase {
 
     private func write(_ core: inout Core, _ words: String) {
         _ = core.reduce(.composer(.changed(words)))
+    }
+
+    func testTheCommentToolsPointerOverThePictureIsItsOwnAndOverAPinIsTheArrow() {
+        var core = core(pins: [pin(1, 500, 300)])
+        core.move(200, 200)
+        XCTAssertEqual(core.cursor, .comment(MarkStyle.standard.personColor))
+        core.move(512, 288)
+        XCTAssertEqual(core.cursor, .arrow)
+        _ = core.reduce(.setTool(.rectangle))
+        core.move(200, 200)
+        XCTAssertEqual(core.cursor, .crosshair)
     }
 
     func testAClickPlacesAPinWhoseFirstCommentGivesItTheNextNumber() throws {
@@ -37,6 +48,36 @@ final class EditorCorePinsTests: XCTestCase {
         XCTAssertTrue(posted.contains(.announce("Pin 4 added")))
         XCTAssertEqual(core.composer, Core.Composer(pin: id, editing: nil, draft: ""))
         XCTAssertEqual(core.undoTitle, "Undo Comment")
+    }
+
+    func testACommentToolClickOnAPinOpensItsPopoverAndTheSelectToolOnlySelects() {
+        let first = pin(1, 500, 300)
+        var core = core(pins: [first], nextPin: 2)
+        core.click(512, 288)
+        XCTAssertEqual(core.composer, Core.Composer(pin: first.id, editing: nil, draft: ""))
+        XCTAssertEqual(core.selection, [first.id])
+        write(&core, "Draft")
+        _ = core.press(512, 288, count: 2)
+        _ = core.release(512, 288)
+        XCTAssertEqual(core.composer?.draft, "Draft", "a double-click's second press leaves the popover open")
+        core.click(512, 288)
+        XCTAssertNil(core.composer, "a click on the open pin closes its popover")
+        core.click(512, 288, .shift)
+        XCTAssertNil(core.composer)
+        _ = core.reduce(.setTool(.select))
+        core.click(512, 288)
+        XCTAssertNil(core.composer)
+        XCTAssertEqual(core.selection, [first.id])
+    }
+
+    func testACommentToolPressOnOneOfSeveralSelectedPinsKeepsThemSelectedForADrag() {
+        let first = pin(1, 500, 300), second = pin(2, 200, 300)
+        var core = core(pins: [first, second], nextPin: 3)
+        core.click(512, 288, .shift)
+        core.click(212, 288, .shift)
+        XCTAssertEqual(core.selection, [first.id, second.id])
+        _ = core.press(512, 288)
+        XCTAssertEqual(core.selection, [first.id, second.id])
     }
 
     func testReturnInAnEmptyComposerClosesItAndKeepsThePinSelected() throws {
@@ -227,9 +268,10 @@ final class EditorCorePinsTests: XCTestCase {
         let id = try XCTUnwrap(core.drawing.pins.first?.id)
         core.click(510, 286)
         XCTAssertEqual(core.selection, [id])
-        XCTAssertNil(core.composer)
+        XCTAssertEqual(core.composer?.pin, id)
         core.click(620, 260)
         XCTAssertEqual(core.selection, [box.id])
+        XCTAssertNil(core.composer)
         XCTAssertEqual(core.drawing.pins.count, 1)
         core.click(800, 500)
         XCTAssertEqual(core.drawing.pins.count, 2, "the Comment tool places a pin away from marks and pins")
@@ -262,7 +304,7 @@ final class EditorCorePinsTests: XCTestCase {
 
     func testShiftReturnPlacesAPinInTheMiddleOfTheViewAndOpensASelectedOne() throws {
         var core = core()
-        _ = core.reduce(.viewChanged(fit: 1, visible: CGRect(x: 200, y: 100, width: 400, height: 200)))
+        _ = core.reduce(.viewChanged(visible: CGRect(x: 200, y: 100, width: 400, height: 200)))
         core.key(.returnKey, .shift)
         XCTAssertEqual(core.drawing.pins.first?.tip, CGPoint(x: 400, y: 200))
         write(&core, "Middle")

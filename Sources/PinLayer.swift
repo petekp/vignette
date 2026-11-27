@@ -101,6 +101,13 @@ final class PinLayer {
     private let logo = CALayer(), logoShape = CALayer()
     private let dot = CAShapeLayer(), dotLogo = CALayer(), dotLogoShape = CALayer()
     private var shown: (pin: Pin, pixels: PixelSize, pointScale: CGFloat, markStyle: MarkStyle, pieceNumbers: [CGRect])?
+    /// The teardrop's tip, in px, which `growth` scales the pin about.
+    private var tip = CGPoint.zero
+    /// How many times its drawn size the pin is shown, about its tip: a flight's, on its way between
+    /// a card and the editor (`MarkLayers.PinGrowth`).
+    var growth: CGFloat = 1 {
+        didSet { if growth != oldValue { placeGrowth() } }
+    }
 
     init(scale: CGFloat) {
         for layer in [root, rim, fill, fillShape, number, logo, logoShape, dot, dotLogo, dotLogoShape] { layer.anchorPoint = .zero }
@@ -176,6 +183,17 @@ final class PinLayer {
         }
         CATransaction.commit()
         shown = nil
+        if teardrop.tip != tip {
+            tip = teardrop.tip
+            if growth != 1 { placeGrowth() }
+        }
+    }
+
+    private func placeGrowth() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        root.setAffineTransform(CGAffineTransform(translationX: tip.x, y: tip.y).scaledBy(x: growth, y: growth).translatedBy(x: -tip.x, y: -tip.y))
+        CATransaction.commit()
     }
 
     /// Shows `image` as a shape in `color` filling `frame`, or hides `layer` for no image.

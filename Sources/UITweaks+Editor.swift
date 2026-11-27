@@ -47,6 +47,7 @@ extension UITweaks {
         var pinListImageSize = 18.0
         var pinListTitleWidth = 320.0
         var pinPostSize = 20.0
+        var pinComposerLines = 6.0       // the lines a comment's field grows to before it scrolls
         var pinDeleteSize = 16.0         // a comment's trash button in the popover
         var pinAvatarSize = 20.0         // the writer's avatar on a comment's top line, in the popover and the hover card
         var pinNameGap = 6.0             // after the avatar and after the name on that line

@@ -89,6 +89,7 @@ final class MarksView: NSView {
         CATransaction.setDisableActions(true)
         marks.layer.setAffineTransform(CGAffineTransform(a: drawn.width / image.width, b: 0, c: 0, d: drawn.height / image.height,
                                                          tx: (bounds.width - drawn.width) / 2, ty: (bounds.height - drawn.height) / 2))
+        marks.setZoom(drawn.width / image.width)
         if flattened {
             let largest = max(fill(bounds.size), restSize.map(fill) ?? 0)
             let scale = shape.width * largest / image.width * backingScale
