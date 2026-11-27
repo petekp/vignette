@@ -67,6 +67,8 @@ final class PinGel: CALayer, GelLayer {
         var color: SRGB
         /// 0 for the gel's light edge, over dark content, and 1 for its deep edge, over light content.
         var deepness: CGFloat
+        /// The deep edge's colour, when it is not `ui.pinGelDeep` of `color`.
+        var deep: SRGB? = nil
     }
 
     /// The most colours one layer draws; a shape in a colour past them takes the last one's.
@@ -239,16 +241,16 @@ final class PinGel: CALayer, GelLayer {
     /// `margin` pt wider. A vertex is 10 floats (`GelVertex`): its
     /// place, the box's centre, its half size, its corners' radius, its tint (`BoxTint`), the rod's
     /// half width or the dome's radius negated, and kind 2. Each colour goes in the palette once, light
-    /// and then deep, the deep one `ui.pinGelDeep` of the light one.
+    /// and then deep, the deep one the tint's own or `ui.pinGelDeep` of the light one.
     private func build(_ shapes: [Shape], margin: CGFloat, device: MTLDevice) {
         let scale = contentsScale
         let share = CGFloat(min(max(Settings.shared.data.ui.pinGelDeep, 0), 1))
-        var colours: [SRGB] = []
+        var colours: [(light: SRGB, deep: SRGB?)] = []
         var out: [Float] = []
         for shape in shapes {
-            let colour = colours.firstIndex(of: shape.tint.color) ?? {
+            let colour = colours.firstIndex(where: { $0.light == shape.tint.color && $0.deep == shape.tint.deep }) ?? {
                 guard colours.count < Self.colours else { return Self.colours - 1 }
-                colours.append(shape.tint.color)
+                colours.append((shape.tint.color, shape.tint.deep))
                 return colours.count - 1
             }()
             let depth = Int((min(max(shape.tint.deepness, 0), 1) * 63).rounded())
@@ -290,8 +292,9 @@ final class PinGel: CALayer, GelLayer {
             quad(CGRect(x: outer.minX, y: outer.minY + 2 * band, width: 2 * band, height: max(outer.height - 4 * band, 0)))
             quad(CGRect(x: outer.maxX - 2 * band, y: outer.minY + 2 * band, width: 2 * band, height: max(outer.height - 4 * band, 0)))
         }
-        palette = colours.flatMap { c -> [SIMD4<Float>] in
-            [SIMD4(Float(c.red), Float(c.green), Float(c.blue), 1), SIMD4(Float(c.red * share), Float(c.green * share), Float(c.blue * share), 1)]
+        palette = colours.flatMap { pair -> [SIMD4<Float>] in
+            let c = pair.light, d = pair.deep ?? SRGB(red: c.red * share, green: c.green * share, blue: c.blue * share)
+            return [SIMD4(Float(c.red), Float(c.green), Float(c.blue), 1), SIMD4(Float(d.red), Float(d.green), Float(d.blue), 1)]
         }
         vertexCount = out.count / 10
         vertices = out.isEmpty ? nil : device.makeBuffer(bytes: out, length: out.count * MemoryLayout<Float>.stride)

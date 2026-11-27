@@ -77,7 +77,7 @@ final class PinDrawingTests: XCTestCase {
         let pins = EditorPins()
         pins.setScale(1)
         pins.show(EditorPins.Shown(placement: core.pinPlacement, outlined: [], drifting: [], selected: [], handles: nil, markStyle: .standard,
-                                   outlineWidth: 1, transform: .identity))
+                                   transform: .identity))
         let context = try XCTUnwrap(CGContext(data: nil, width: 300, height: 200, bitsPerComponent: 8, bytesPerRow: 0,
                                               space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)),
                                               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))

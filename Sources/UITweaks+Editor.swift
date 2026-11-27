@@ -62,6 +62,8 @@ extension UITweaks {
         var pinGelRod = 4.5              // an area's outline, screen pt
         var pinGelHandle = 12.0          // the gel square on each corner of a selected area pin's area, screen pt
         var pinGelHandleCore = 5.0       // the white square in its middle, screen pt
+        var pinGelRing = 4.0             // the gel ring round a selected pin, screen pt
+        var pinGelRingGap = 2.0          // between the ring and the pin, screen pt
         var pinGelRim = 2.0              // the rim of a pin's hover card and popover, screen pt
         var pinGelFaceShadow = 0.5       // the shadow under a gel pin's number or logo
         // Marks (`MarkStyle`, `TextStyle`, `docs/mark-style-settings-2026-09-29.md`)
