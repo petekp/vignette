@@ -67,7 +67,10 @@
 - A reply answers the person's pins with `comments`, each the agent's words on one pin, named by
   its id (ADR 0032). The helper's `--comments` takes numbers too and turns them into ids from the
   request's `pins.json`. `ReplyProtocol.check` refuses a pin the request did not send when the
-  reply is accepted. A reply without its own image goes on the request's `base.png` when it has
+  reply is accepted. `--resolve 3,5` resolves pins the comments answer, by number or id, and the
+  helper refuses a pin the request did not send or `--comments` does not answer. The bundle
+  carries it as `resolve: true` on the comment, and the card's pin is resolved by the agent
+  (`Pin.answered`). An answer without it reopens a resolved pin. A reply without its own image goes on the request's `base.png` when it has
   one, and its card holds the request's pins, each answer added as the agent's comment and timed
   by `Reply.accepted`, so a rebuilt card says the same. Each answer keeps the request's session and
   the name the send's card gave it (`Record.sent`). A request without `base.png` takes no

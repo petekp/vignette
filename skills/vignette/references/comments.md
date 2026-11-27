@@ -17,6 +17,8 @@ The file holds:
   comment adds `agentName`, and `session` and `sessionName` when it named its session, so you can
   tell your comments from another session's.
   `at` is when it was written, in UTC. `sentIn` lists the ids of the user's sends that carried it.
+- A pin's `resolved`, when its ask is done: `resolver` (`person` or `agent`), `agentName` for an
+  agent's, and `at`. Vignette leaves resolved pins out of what the user sends you.
 - `sends`: the card's sends that reached an agent session, or may have (`status` `uncertain`),
   oldest first. A send that failed, or that the user took back out of the session's queue, is left
   out. Each has its `id`, `at`, `status`, `to` (the session's title on the card), `agent`, `session`,
@@ -26,3 +28,9 @@ The file holds:
 A comment with an empty `sentIn` has not reached any session yet. A comment written after the
 send that carried it, by `at`, was edited since. To answer a pin, use its `number` or `id` in
 `&pins=` on `show`, or in `--comments` on a reply.
+
+When your answer finishes what a pin asked, resolve it: add `"resolve": true` to the answer in
+`&pins=` (`{"pin": 2, "text": "Moved the date under the title", "resolve": true}`), or pass
+`--resolve 2,5` on a reply, naming pins your `--comments` answer. The pin turns grey and stays
+out of the user's next sends until they reopen it. Leave it off when you are unsure or ask a
+question back. An answer without it reopens a resolved pin.

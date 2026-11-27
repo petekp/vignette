@@ -14,7 +14,8 @@ extension EditorCore {
             guard case .text(let text)? = mark(id)?.geometry else { return nil }
             return text.text
         }
-        if !pins.isEmpty { words.append(Pin.lineWords(pins)) }
+        let openPins = pins.filter { !$0.isResolved }
+        if !openPins.isEmpty { words.append(Pin.lineWords(openPins)) }
         emit(.copyItems(CopiedItems(pointScale: drawing.pointScale, markScale: drawing.markScale, marks: marks, pins: pins),
                         text: words.isEmpty ? nil : words.joined(separator: "\n")))
     }
@@ -151,9 +152,9 @@ extension EditorCore {
         Mark(geometry: mark.geometry, agent: mark.agent, agentName: mark.agentName)
     }
 
-    /// A pin with the same place, comments and number, and new ids.
+    /// A pin with the same place, comments, number and state, and new ids.
     static func fresh(_ pin: Pin) -> Pin {
-        Pin(id: UUID(), number: pin.number, place: pin.place, comments: pin.comments.map(\.copied))
+        Pin(id: UUID(), number: pin.number, place: pin.place, comments: pin.comments.map(\.copied), resolved: pin.resolved)
     }
 
     private static func scaled(_ rect: CGRect, by factor: CGFloat) -> CGRect {

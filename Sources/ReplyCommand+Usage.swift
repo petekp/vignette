@@ -3,7 +3,7 @@ import Foundation
 extension ReplyCommand {
     static let usage = """
     usage: reply --ticket <ticket.json> --marks <marks.json> [--image <your image>] [--title <text>] [--description <text>]
-           reply --ticket <ticket.json> --comments <comments.json> [--marks <marks.json>] [--title <text>] [--description <text>]
+           reply --ticket <ticket.json> --comments <comments.json> [--resolve <pins>] [--marks <marks.json>] [--title <text>] [--description <text>]
            reply --ticket <ticket.json> --answer <answer.json>
            reply --ticket <ticket.json> --retry <bundle folder>
 
@@ -32,6 +32,10 @@ extension ReplyCommand {
     Your answers join the user's pins on the new card, each one under the user's words, so answer
     there rather than drawing a note beside a pin. At most \(ReplyProtocol.maxComments) answers, one per pin, each at most
     \(MarkFields.maxTextLength) characters. Not with --image or --answer.
+
+    --resolve marks pins done, by number or id, separated by commas: --resolve 3,5. Each pin it names
+    needs your answer in --comments saying what you did. A resolved pin turns grey and leaves the
+    next Send. Resolve only a pin whose ask you finished; the person can reopen it.
 
     --title and --description say what your reply shows. The editor shows the title above the
     image and the description under it, so you can say what the picture is without drawing it on.

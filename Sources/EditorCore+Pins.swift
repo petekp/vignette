@@ -31,9 +31,15 @@ extension EditorCore {
         case open(Pin.ID)
         /// A comment's Delete: it goes, and its pin with it when it was the only one, as one undo step.
         case delete(Int)
-        /// The editor came up on its screenshot: the popover opens on the pin with the lowest number,
-        /// leaving the keys and the selection as they are.
+        /// The editor came up on its screenshot: the popover opens on the open pin with the lowest number,
+        /// leaving the keys and the selection as they are. With every pin resolved, none opens.
         case openFirst
+        /// The popover's Resolve, or Reply and Resolve when the field holds words: the words are posted
+        /// and the pin resolved, as one "Resolve" undo step. The popover stays open on the pin.
+        case resolve
+        /// The popover's Reopen: the pin is open again, as one "Reopen" undo step, after any words the
+        /// field holds are posted.
+        case reopen
     }
 
     func pin(_ id: Pin.ID) -> Pin? { drawing.pins.first { $0.id == id } }
@@ -123,9 +129,22 @@ extension EditorCore {
             post()
         case .openFirst:
             guard composer == nil, gesture == nil, typing == nil,
-                  let first = drawing.pins.filter({ $0.number > 0 }).min(by: { $0.number < $1.number }) else { return }
+                  let first = drawing.pins.filter({ $0.number > 0 && !$0.isResolved }).min(by: { $0.number < $1.number }) else { return }
             edit = newEdit
             composer = Composer(pin: first.id, draft: "", takesKeys: false)
+        case .resolve:
+            guard let composer, let pin = pin(composer.pin), pin.number > 0 else { return }
+            let words = !Self.blank(composer.draft) && composer.editing == nil
+            guard words || !pin.isResolved else { return }
+            post(resolving: true)
+        case .reopen:
+            guard let open = composer, pin(open.pin)?.isResolved == true else { return }
+            post()
+            guard let index = drawing.pins.firstIndex(where: { $0.id == open.pin }), drawing.pins[index].isResolved else { return }
+            drawing.pins[index].resolved = nil
+            commitEdit(named: .reopen)
+            edit = newEdit
+            emit(.announce("Pin \(drawing.pins[index].number) reopened"))
         }
     }
 
@@ -144,9 +163,10 @@ extension EditorCore {
 
     /// Posts what the composer holds: a new comment on its pin, or the comment it edits, which goes
     /// when emptied, and the pin with its last comment. A pin takes `nextPin` with its first comment.
-    /// Each post is one undo step. While the pin is there the composer stays open on it, empty, for
-    /// another comment.
-    private mutating func post() {
+    /// A new comment asks again, so it reopens a resolved pin, unless `resolving`, which resolves the
+    /// pin in the same step. Each post is one undo step. While the pin is there the composer stays open
+    /// on it, empty, for another comment.
+    private mutating func post(resolving: Bool = false) {
         guard let open = composer, let index = drawing.pins.firstIndex(where: { $0.id == open.pin }) else { return }
         let words = open.draft.trimmingCharacters(in: .whitespacesAndNewlines)
         var pin = drawing.pins[index]
@@ -162,6 +182,11 @@ extension EditorCore {
             }
         } else if !words.isEmpty {
             pin.comments.append(Pin.Comment(text: words, at: Date()))
+            pin.resolved = nil
+        }
+        if resolving, !pin.comments.isEmpty {
+            pin.resolved = .byPerson()
+            name = .resolve
         }
         guard pin != drawing.pins[index] else {
             composer = Composer(pin: pin.id, draft: "")
@@ -180,6 +205,7 @@ extension EditorCore {
         }
         commitEdit(named: numbered ? .comment : name)
         if numbered { emit(.announce("Pin \(pin.number) added")) }
+        if resolving { emit(.announce("Pin \(pin.number) resolved")) }
         guard self.pin(pin.id) != nil else {
             composer = nil
             return
@@ -227,10 +253,23 @@ extension EditorCore {
 
     /// Posts what was typed and closes the popover. The pin stays selected; a new one with nothing
     /// posted goes, and took no number.
-    /// Tells the view when the pin popover opens, changes or closes.
+    /// What the pin popover shows: the composer, and its pin's number, comments and resolution.
+    struct Popover: Equatable {
+        let composer: Composer
+        let number: Int?
+        let comments: [Pin.Comment]?
+        let resolved: Pin.Resolution?
+    }
+
+    /// Tells the view when the pin popover opens, closes, or changes, which a change to its pin
+    /// alone does too, such as Reopen with nothing typed or an agent's answer.
     mutating func reportComposer() {
-        guard composer != reportedComposer else { return }
-        reportedComposer = composer
+        let popover = composer.map { open in
+            let pin = pin(open.pin)
+            return Popover(composer: open, number: pin?.number, comments: pin?.comments, resolved: pin?.resolved)
+        }
+        guard popover != reportedPopover else { return }
+        reportedPopover = popover
         emit(.composer(composer))
     }
 

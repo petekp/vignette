@@ -146,7 +146,10 @@ final class AnnotationController {
         toolbar.model.onOfferChanged = { [weak self] offer in self?.offerChanged(offer) }
         toolbar.onSend = { [weak self] destination in self?.editor.send(to: destination) }
         editor.onTool = { [weak self] tool in self?.toolbar.model.tool = tool }
-        editor.pinUI.onCount = { [weak self] count in self?.toolbar.model.pinCount = count }
+        editor.pinUI.onCount = { [weak self] count in
+            self?.toolbar.model.pinCount = count.all
+            self?.toolbar.model.openPinCount = count.open
+        }
         toolbar.onPins = { [weak self] rect, view in self?.editor.showPinList(from: rect, of: view) }
         editor.pinUI.onReveal = { [weak self] rect in
             guard let self else { return }

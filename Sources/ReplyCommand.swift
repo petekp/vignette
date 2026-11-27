@@ -58,8 +58,8 @@ enum ReplyCommand {
             // A retry is the same bytes again, which is what makes it safe to send twice. Marks given
             // with it would be dropped without a word, so they are refused instead.
             guard options.marks == nil, options.image == nil, options.answer == nil, options.title == nil, options.description == nil,
-                  options.comments == nil else {
-                throw Failure("--retry sends the prepared reply unchanged; drop --marks, --image, --answer, --comments, --title and --description")
+                  options.comments == nil, options.resolve == nil else {
+                throw Failure("--retry sends the prepared reply unchanged; drop --marks, --image, --answer, --comments, --resolve, --title and --description")
             }
             do {
                 prepared = try reread(URL(fileURLWithPath: retry))
@@ -67,8 +67,9 @@ enum ReplyCommand {
                 throw Failure("the user cleared this request, which removed the reply prepared for it; it takes no replies now")
             }
         } else if let answerPath = options.answer {
-            guard options.marks == nil, options.image == nil, options.title == nil, options.description == nil, options.comments == nil else {
-                throw Failure("--answer comes alone; drop --marks, --image, --comments, --title and --description")
+            guard options.marks == nil, options.image == nil, options.title == nil, options.description == nil, options.comments == nil,
+                  options.resolve == nil else {
+                throw Failure("--answer comes alone; drop --marks, --image, --comments, --resolve, --title and --description")
             }
             answer = try loadAnswer(answerPath)
             prepared = try prepare(ticket: ticket, marks: [], image: nil, answer: answer)
@@ -79,9 +80,12 @@ enum ReplyCommand {
             guard options.comments == nil || options.image == nil else {
                 throw Failure("--comments answers pins on the picture you were sent; drop --image")
             }
+            guard options.resolve == nil || options.comments != nil else {
+                throw Failure("--resolve goes with --comments: each pin it resolves needs your answer saying what you did")
+            }
             let marks = try options.marks.map { try loadMarks($0, allowingEmpty: options.image != nil || options.comments != nil) } ?? []
             let image = try options.image.map { try loadImage(URL(fileURLWithPath: $0)) }
-            let comments = try options.comments.map { try loadComments($0, ticket: ticket) } ?? []
+            let comments = try options.comments.map { try loadComments($0, resolving: options.resolve, ticket: ticket) } ?? []
             let title = AgentTitle.validated(title: options.title, description: options.description)
             cut = title.cut.map(\.rawValue)
             prepared = try prepare(ticket: ticket, marks: marks, image: image, title: title.value, comments: comments)
@@ -149,30 +153,6 @@ enum ReplyCommand {
         guard Commands.realPath(URL(fileURLWithPath: ticket.app)) == Commands.realPath(bundle) else {
             throw Failure("this ticket is for the Vignette at \(ticket.app), not this one at \(bundle.path)")
         }
-    }
-
-    /// The marks at `path`, checked by the validator the app runs when the reply arrives, so a bad
-    /// mark fails here, naming the mark and the field.
-    static func loadMarks(_ path: String, allowingEmpty: Bool = false) throws -> [AgentMark] {
-        do { return try AgentMark.parse(path, allowingEmpty: allowingEmpty) } catch { throw Failure("the marks at \(path): \(error)") }
-    }
-
-    /// The answers at `path`, each named by its pin's id, checked against the pins the request sent.
-    static func loadComments(_ path: String, ticket: ReplyProtocol.Ticket) throws -> [ReplyProtocol.Comment] {
-        let pins = ReplyProtocol.sentPins(in: URL(fileURLWithPath: ticket.requestDirectory))
-        do { return try ReplyProtocol.comments(answering: AgentMark.json(path, of: "comments"), on: pins) }
-        catch { throw Failure("the comments: \(error)") }
-    }
-
-    /// The answer at `path`, checked by the validator the app runs when the reply arrives.
-    static func loadAnswer(_ path: String) throws -> LiveAnswer {
-        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-              size <= AgentMark.maxBytes, let data = try? Data(contentsOf: url) else {
-            throw Failure("cannot read an answer at \(url.path)")
-        }
-        guard let object = try? DrawingJSON.object(from: data) else { throw Failure("the answer at \(path) is not JSON") }
-        do { return try LiveAnswer(json: object, strict: true) } catch { throw Failure("the answer at \(path): \(error)") }
     }
 
     /// The agent's picture as the PNG the app accepts (`ReplyProtocol.isPNG`): a PNG as it is, and
@@ -346,6 +326,7 @@ enum ReplyCommand {
         var title: String?
         var description: String?
         var comments: String?
+        var resolve: String?
         var help = false
 
         init(_ arguments: [String]) throws {
@@ -354,7 +335,7 @@ enum ReplyCommand {
                 if argument == "-h" || argument == "--help" { help = true; continue }
                 let parts = argument.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
                 let name = parts[0]
-                guard ["--ticket", "--marks", "--image", "--answer", "--retry", "--title", "--description", "--comments"].contains(name) else {
+                guard ["--ticket", "--marks", "--image", "--answer", "--retry", "--title", "--description", "--comments", "--resolve"].contains(name) else {
                     throw Failure("unknown argument \(argument); see --help")
                 }
                 guard let value = parts.count > 1 ? parts[1] : rest.popFirst() else { throw Failure("\(name) needs a value") }
@@ -366,6 +347,7 @@ enum ReplyCommand {
                 case "--title": title = value
                 case "--description": description = value
                 case "--comments": comments = value
+                case "--resolve": resolve = value
                 default: retry = value
                 }
             }

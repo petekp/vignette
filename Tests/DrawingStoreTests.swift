@@ -79,7 +79,7 @@ final class DrawingStoreTests: XCTestCase {
     }
 
     func testANewerVersionIsReadAsNoDrawingAndNeverOverwritten() throws {
-        let newer = #"{"version": 3, "key": "\#(key)", "pixels": [3024, 1964], "pointScale": 2, "marks": [], "future": true}"#
+        let newer = #"{"version": 4, "key": "\#(key)", "pixels": [3024, 1964], "pointScale": 2, "marks": [], "future": true}"#
         try put(newer)
         XCTAssertNil(read())
         XCTAssertEqual(lines.all.count, 1)

@@ -1,7 +1,8 @@
 import Foundation
 
 /// A card's pins and comments as the `comments` command writes them for an agent. Each pin has its
-/// `id`, `number` and place, in fractions of the image as `pins=` takes them, and each comment its
+/// `id`, `number` and place, in fractions of the image as `pins=` takes them, `resolved` when its ask
+/// is done, with who resolved it and when, and each comment its
 /// `id`, words, writer, session, time and `sentIn`, the sends that carried it. `sends` lists the
 /// card's sends that reached their client (`Record.reachedClient`), oldest first, and `message` is the
 /// newest one's message.
@@ -21,6 +22,12 @@ enum PinCommentsReport {
                 item["w"] = Double(frame.width) / width
                 item["h"] = Double(frame.height) / height
                 item["corner"] = tip.rawValue
+            }
+            if let resolved = pin.resolved {
+                var by: [String: Any] = ["resolver": resolved.agent ? "agent" : "person"]
+                by["agentName"] = resolved.agentName
+                by["at"] = resolved.at.map(Pin.Comment.written)
+                item["resolved"] = by
             }
             item["comments"] = pin.comments.map { comment -> [String: Any] in
                 var words: [String: Any] = ["id": comment.id.uuidString, "text": comment.text,

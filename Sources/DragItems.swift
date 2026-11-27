@@ -73,7 +73,7 @@ final class DragItems {
     }
 
     private func key(for card: Card) -> Key? {
-        guard let drawing = drawings.current(of: card.shot.key, stored: { card.marks?.drawing }), !drawing.isEmpty else { return nil }
+        guard let drawing = drawings.current(of: card.shot.key, stored: { card.marks?.drawing })?.handedOver, !drawing.isEmpty else { return nil }
         let ui = Settings.shared.data.ui
         return Key(url: card.shot.url, drawing: drawing, style: ui.textStyle, markStyle: ui.markStyle,
                    layout: .withComments(textSize: ui.newTextSize))

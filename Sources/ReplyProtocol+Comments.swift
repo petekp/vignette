@@ -3,10 +3,12 @@ import Foundation
 // MARK: A reply's answers on the person's pins
 
 extension ReplyProtocol {
-    /// The agent's words on one of the person's pins, named by the pin's id from `pins.json`.
+    /// The agent's words on one of the person's pins, named by the pin's id from `pins.json`, and whether
+    /// they resolve it (`--resolve`). A bundle leaves `resolve` out when it is false.
     struct Comment: Codable, Equatable {
         let pin: UUID
         let text: String
+        var resolve: Bool? = nil
     }
 
     /// How many answers one reply may carry: a request sends no more pins.
@@ -36,8 +38,9 @@ extension ReplyProtocol {
     }
 
     /// The helper's `--comments` object: each key a pin's number as the line cites it, or its id,
-    /// and each value the answer's words. Throws the one thing wrong, naming the key.
-    static func comments(answering object: Any?, on pins: [Pin]) throws -> [Comment] {
+    /// and each value the answer's words. `resolving` is `--resolve`'s list, the pins the answers
+    /// resolve, each named as a key is and answered in the object. Throws the one thing wrong, naming the key.
+    static func comments(answering object: Any?, on pins: [Pin], resolving: [String] = []) throws -> [Comment] {
         guard let answers = object as? [String: Any] else {
             throw MarkProblem("expected a JSON object of answers, each key a pin's number or id")
         }
@@ -51,7 +54,25 @@ extension ReplyProtocol {
             catch { throw MarkProblem("\(key): \(error)") }
         }
         guard Set(found.map(\.pin.id)).count == found.count else { throw MarkProblem("two keys name the same pin") }
-        return found.sorted { $0.pin.number < $1.pin.number }.map { Comment(pin: $0.pin.id, text: $0.text) }
+        let resolved = try Set(resolving.map { key -> UUID in
+            guard let pin = pins.first(where: { String($0.number) == key || $0.id == UUID(uuidString: key) }) else {
+                throw MarkProblem("--resolve names \(key), which is not a pin the user sent")
+            }
+            guard found.contains(where: { $0.pin.id == pin.id }) else {
+                throw MarkProblem("--resolve names \(key), which has no answer; say what you did in --comments")
+            }
+            return pin.id
+        })
+        return found.sorted { $0.pin.number < $1.pin.number }.map {
+            Comment(pin: $0.pin.id, text: $0.text, resolve: resolved.contains($0.pin.id) ? true : nil)
+        }
+    }
+
+    /// `--resolve`'s value: pin numbers or ids, separated by commas.
+    static func resolveList(_ value: String) throws -> [String] {
+        let keys = value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        guard !keys.isEmpty else { throw MarkProblem("--resolve needs pin numbers or ids, separated by commas") }
+        return keys
     }
 
     /// A bundle's `comments`, checked as `readBundle` checks marks. None when it has none.
@@ -62,10 +83,11 @@ extension ReplyProtocol {
         }
         let comments = try list.enumerated().map { index, item -> Comment in
             guard let pin = (item["pin"] as? String).flatMap(UUID.init(uuidString:)),
-                  let text = try? MarkFields(item: item, unit: .fraction).text() else {
-                throw Problem(.badPayload, "the bundle's comment \(index + 1) needs a pin id and text")
+                  let text = try? MarkFields(item: item, unit: .fraction).text(),
+                  let resolve = try? MarkFields(item: item, unit: .fraction).flag("resolve") else {
+                throw Problem(.badPayload, "the bundle's comment \(index + 1) needs a pin id and text, and resolve true or false")
             }
-            return Comment(pin: pin, text: text)
+            return Comment(pin: pin, text: text, resolve: resolve ? true : nil)
         }
         guard Set(comments.map(\.pin)).count == comments.count else {
             throw Problem(.badPayload, "the bundle answers one pin twice")
@@ -88,11 +110,13 @@ extension ReplyProtocol {
 }
 
 extension Pin {
-    /// This pin with `comments`' answer to it added as `author`'s comment.
+    /// This pin with `comments`' answer to it added as `author`'s comment, resolved by `author` when the
+    /// answer resolves it.
     func answered(by comments: [ReplyProtocol.Comment], as author: AgentAuthor) -> Pin {
         var pin = self
         for answer in comments where answer.pin == id {
             pin.comments.append(author.comment(answer.text))
+            pin.resolved = answer.resolve == true ? author.resolution : nil
         }
         return pin
     }

@@ -13,6 +13,31 @@ struct Pin: Equatable, Identifiable {
     var place: Place
     /// Oldest first. A pin read from a file holds at least one.
     var comments: [Comment]
+    /// Who said the pin's ask is done, and when. Nil while the pin is open. A resolved pin keeps its
+    /// number, place and comments, and is left out of every rendering and of Send (`Drawing.handedOver`).
+    var resolved: Resolution? = nil
+
+    var isResolved: Bool { resolved != nil }
+
+    /// Who resolved a pin and when: the person, or an agent, named as a comment names its writer.
+    struct Resolution: Equatable {
+        var agent: Bool
+        /// Which agent, as a comment's `agentName`. Nil for the person, and for an agent that gave no name.
+        var agentName: String?
+        /// To the second, as the file keeps it. Nil for a file that kept no time.
+        var at: Date?
+
+        init(agent: Bool = false, agentName: String? = nil, at: Date? = nil) {
+            self.agent = agent
+            self.agentName = agent ? agentName : nil
+            self.at = at.map { Date(timeIntervalSince1970: $0.timeIntervalSince1970.rounded(.down)) }
+        }
+
+        /// The person's, now.
+        static func byPerson(at date: Date = Date()) -> Resolution { Resolution(at: date) }
+
+        var resolver: PinMaker { agent ? .agent((agentName ?? "").lowercased()) : .person }
+    }
 
     enum Place: Equatable {
         /// In px of the screenshot, the space marks use.
@@ -228,7 +253,7 @@ extension Pin {
                 throw MarkProblem("comment \(index + 1): \(error)")
             }
         }
-        self.init(id: id, number: number, place: place, comments: comments)
+        self.init(id: id, number: number, place: place, comments: comments, resolved: Resolution.isWritten(item["resolved"]) ? item["resolved"].map(Resolution.init(reading:)) : nil)
     }
 
     /// This pin inside `image`: a point stopped at the image's edge, and an area moved in where it fits
@@ -279,6 +304,19 @@ extension Pin {
     }
 }
 
+extension Pin.Resolution {
+    /// Whether a pin's `resolved` in a file says it is resolved: any value but none and JSON's null.
+    static func isWritten(_ raw: Any?) -> Bool { raw != nil && !(raw is NSNull) }
+
+    /// A pin's `resolved` object from a file. Any value marks the pin resolved; a field in it that does not
+    /// read is left out rather than reopening the pin.
+    init(reading raw: Any) {
+        let item = raw as? [String: Any] ?? [:]
+        let fields = MarkFields(item: item, unit: .px)
+        self.init(agent: (try? fields.flag("agent")) ?? false, agentName: (try? fields.agentName()) ?? nil, at: Pin.Comment.time(item["at"]))
+    }
+}
+
 extension Pin.Comment {
     /// One item of a pin's `comments` list, with id `standIn` when it has none or one in `taken`.
     /// Throws the one thing wrong with it.
@@ -301,9 +339,16 @@ extension Pin.Comment {
 
 /// A pin as a drawing file writes it: `x` and `y` are a point, or an area's top-left corner; `w`, `h`
 /// and `corner`, the corner its teardrop's tip sits on, only for an area; and a comment's `agent`,
-/// `agentName`, `session` and `sessionName` only for an agent's. A file from before `corner` has the
-/// tip at the top-left.
+/// `agentName`, `session` and `sessionName` only for an agent's; and `resolved` only for a resolved pin.
+/// A file from before `corner` has the tip at the top-left.
 struct PinRecord: Encodable {
+    /// Who resolved the pin, with `agent` and `agentName` only for an agent, and when.
+    struct ResolutionRecord: Encodable {
+        var agent: Bool?
+        var agentName: String?
+        var at: String?
+    }
+
     struct CommentRecord: Encodable {
         var id: String?
         let text: String
@@ -323,6 +368,7 @@ struct PinRecord: Encodable {
     var h: CGFloat?
     var corner: String?
     let comments: [CommentRecord]
+    var resolved: ResolutionRecord?
 
     init(_ pin: Pin) { self.init(pin, commentIDs: true) }
 
@@ -340,6 +386,9 @@ struct PinRecord: Encodable {
         comments = pin.comments.map {
             CommentRecord(id: commentIDs ? $0.id.uuidString : nil, text: $0.text, agent: $0.agent ? true : nil, agentName: $0.agentName, session: $0.session?.id,
                           sessionName: $0.sessionName, at: $0.at.map(Pin.Comment.written))
+        }
+        resolved = pin.resolved.map {
+            ResolutionRecord(agent: $0.agent ? true : nil, agentName: $0.agentName, at: $0.at.map(Pin.Comment.written))
         }
     }
 }
@@ -361,6 +410,6 @@ extension Pin {
         case .point: kind = "point"
         case .area: kind = "area"
         }
-        return "Pin \(number), \(kind), \(comments.count == 1 ? "1 comment" : "\(comments.count) comments")"
+        return "Pin \(number), \(kind), \(comments.count == 1 ? "1 comment" : "\(comments.count) comments")" + (isResolved ? ", resolved" : "")
     }
 }

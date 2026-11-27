@@ -91,7 +91,7 @@ struct EditStep {
 /// What one undo step did, in the words Undo and Redo give it: "Undo Arrow", "Redo Typing". The raw
 /// value is the step's name in a drawing file's history.
 enum StepName: String, CaseIterable {
-    case rectangle, ellipse, arrow, typing, move, resize, bend, arrowEnd, duplicate, delete, paste, cut, agentMarks, comment
+    case rectangle, ellipse, arrow, typing, move, resize, bend, arrowEnd, duplicate, delete, paste, cut, agentMarks, comment, resolve, reopen
 
     /// The words after Undo or Redo.
     var title: String {
@@ -110,6 +110,8 @@ enum StepName: String, CaseIterable {
         case .cut: return "Cut"
         case .agentMarks: return "Agent's Marks"
         case .comment: return "Comment"
+        case .resolve: return "Resolve"
+        case .reopen: return "Reopen"
         }
     }
 }
@@ -218,6 +220,19 @@ extension EditorHistory {
     static func mentionsPins(_ object: Any?) -> Bool {
         guard let object = object as? [String: Any] else { return false }
         return ["undo", "redo"].contains { ((object[$0] as? [[String: Any]]) ?? []).contains { $0["pins"] != nil } }
+    }
+
+    /// Whether a file's `history` object holds a resolved pin before or after a step, which makes the
+    /// file version 3. A step named resolve or reopen always does.
+    static func mentionsResolved(_ object: Any?) -> Bool {
+        guard let object = object as? [String: Any] else { return false }
+        return ["undo", "redo"].contains { field in
+            ((object[field] as? [[String: Any]]) ?? []).contains { step in
+                ((step["pins"] as? [[String: Any]]) ?? []).contains { change in
+                    ["before", "after"].contains { Pin.Resolution.isWritten((change[$0] as? [String: Any])?["resolved"] ?? nil) }
+                }
+            }
+        }
     }
 
     /// The `history` object for a file holding `drawing` and `message`, or nil for an empty history. The

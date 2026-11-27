@@ -11,9 +11,9 @@ struct PinShading {
     let rim: CGFloat, rimColor: CGColor
     let shadowRadius: CGFloat, shadowOffset: CGFloat, shadowOpacity: Float
 
-    /// A pin `maker` made, in its colour, on a drawing of `pointScale`.
-    init(_ maker: PinMaker, pointScale: CGFloat, markStyle: MarkStyle) {
-        let base = Self.color(of: maker, markStyle: markStyle), style = markStyle.pin
+    /// A pin `maker` made, in its colour, or grey when `resolved`, on a drawing of `pointScale`.
+    init(_ maker: PinMaker, resolved: Bool = false, pointScale: CGFloat, markStyle: MarkStyle) {
+        let base = Self.color(of: maker, resolved: resolved, markStyle: markStyle), style = markStyle.pin
         top = Self.mix(base, toward: 1, style.gradient)
         bottom = Self.mix(base, toward: 0, style.bottomShade)
         rim = style.rimWidth * pointScale
@@ -23,10 +23,14 @@ struct PinShading {
         shadowOpacity = Float(min(1, max(0, style.shadowOpacity * markStyle.shadowOpacity)))
     }
 
-    /// The colour of a pin `maker` made: the person's, or the agent's brand.
-    static func color(of maker: PinMaker, markStyle: MarkStyle) -> SRGB {
-        maker.isAgent ? markStyle.painting(maker).agentColor : markStyle.personColor
+    /// The colour of a pin `maker` made: the person's, or the agent's brand, and grey once resolved.
+    static func color(of maker: PinMaker, resolved: Bool = false, markStyle: MarkStyle) -> SRGB {
+        if resolved { return resolvedColor }
+        return maker.isAgent ? markStyle.painting(maker).agentColor : markStyle.personColor
     }
+
+    /// A resolved pin's colour, whoever made it: macOS's system grey, which reads in light and dark.
+    static let resolvedColor = SRGB(red: 0x8e / 255, green: 0x8e / 255, blue: 0x93 / 255)
 
     /// `color` taken `share` of the way to the grey `level`: 1 is white and 0 black.
     private static func mix(_ color: SRGB, toward level: CGFloat, _ share: CGFloat) -> CGColor {
@@ -39,8 +43,8 @@ struct PinShading {
 extension PinTeardrop {
     /// Draws the teardrop of a pin `maker` made as it looks on screen, wearing `face`, but with no
     /// shadow, as a menu's row shows it, in a context whose y runs down.
-    func drawFlat(in ctx: CGContext, maker: PinMaker, face: PinFace, pointScale: CGFloat, markStyle: MarkStyle) {
-        let shading = PinShading(maker, pointScale: pointScale, markStyle: markStyle)
+    func drawFlat(in ctx: CGContext, maker: PinMaker, resolved: Bool = false, face: PinFace, pointScale: CGFloat, markStyle: MarkStyle) {
+        let shading = PinShading(maker, resolved: resolved, pointScale: pointScale, markStyle: markStyle)
         let box = body.boundingBoxOfPath
         ctx.setLineJoin(.round)
         ctx.setLineWidth(2 * shading.rim)
@@ -153,15 +157,16 @@ final class PinLayer {
         if let shown, shown.pin == pin, shown.pixels == pixels, shown.pointScale == pointScale, shown.markStyle == markStyle,
            shown.pieceNumbers == pieceNumbers { return }
         show(PinTeardrop(pin, in: pixels, pointScale: pointScale, markStyle: markStyle, pieceNumbers: pieceNumbers),
-             maker: pin.maker, face: PinFace(pin.maker), answeringAgent: pin.answeringAgent, pointScale: pointScale, markStyle: markStyle)
+             maker: pin.maker, resolved: pin.isResolved, face: PinFace(pin.maker), answeringAgent: pin.answeringAgent, pointScale: pointScale,
+             markStyle: markStyle)
         shown = (pin, pixels, pointScale, markStyle, pieceNumbers)
     }
 
-    /// Draws `teardrop`, a pin's or a cluster's wherever it is, in the colour of `maker`, wearing `face`,
-    /// with `answeringAgent`'s dot, for a drawing of `pointScale`.
-    func show(_ teardrop: PinTeardrop, maker: PinMaker, face: PinFace = .number, answeringAgent: PinMaker? = nil,
+    /// Draws `teardrop`, a pin's or a cluster's wherever it is, in the colour of `maker`, or grey when
+    /// `resolved`, wearing `face`, with `answeringAgent`'s dot, for a drawing of `pointScale`.
+    func show(_ teardrop: PinTeardrop, maker: PinMaker, resolved: Bool = false, face: PinFace = .number, answeringAgent: PinMaker? = nil,
               pointScale: CGFloat, markStyle: MarkStyle) {
-        let shading = PinShading(maker, pointScale: pointScale, markStyle: markStyle)
+        let shading = PinShading(maker, resolved: resolved, pointScale: pointScale, markStyle: markStyle)
         let box = teardrop.body.boundingBoxOfPath
         var toBox = CGAffineTransform(translationX: -box.minX, y: -box.minY)
         CATransaction.begin()

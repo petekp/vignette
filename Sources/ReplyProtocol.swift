@@ -15,7 +15,7 @@ import ImageIO
 enum ReplyProtocol {
     /// Goes up with any change to the envelope, the bundle, the digest, or the receipt. A helper
     /// built for another version is refused rather than half-understood.
-    static let version = 7
+    static let version = 8
 
     /// The most a bundle or an attempt file may be. Marks and comments are a few kilobytes; anything
     /// near this is a mistake, and both files are read on the main thread.

@@ -38,6 +38,22 @@ final class AgentMarksTests: XCTestCase {
         XCTAssertEqual(AgentPin.problem([list[1]], on: nil, name: "a.png"), "pin 1: a.png has no pin 4", "a file new to the folder has no pin to answer")
     }
 
+    func testAnAnswerMarkedResolveResolvesItsPinAndAnAnswerWithoutItReopensOne() throws {
+        let pixels = PixelSize(width: 1000, height: 500)
+        let mine = Pin(id: UUID(), number: 1, place: .point(CGPoint(x: 10, y: 10)), comments: [Pin.Comment(text: "Too tight")])
+        var done = Pin(id: UUID(), number: 2, place: .point(CGPoint(x: 20, y: 20)), comments: [Pin.Comment(text: "Wrong date")])
+        done.resolved = .byPerson()
+        let drawing = Drawing(key: "/shots/a.png", pixels: pixels, pointScale: 1, marks: [], pins: [mine, done], nextPin: 3)
+        let at = Date(timeIntervalSince1970: 1_795_000_000)
+        let list = try AgentPin.parse(#"[{"pin":1,"text":"Loosened it","resolve":true},{"pin":2,"text":"Not quite"}]"#)
+        XCTAssertEqual(list.map(\.resolve), [true, false])
+        let joined = AgentPin.join(list, by: AgentAuthor(agent: "claude", at: at), onto: drawing)
+        XCTAssertEqual(joined.pins.map(\.resolved), [Pin.Resolution(agent: true, agentName: "claude", at: at), nil])
+        XCTAssertThrowsError(try AgentPin.parse(#"[{"x":0.1,"y":0.2,"text":"a","resolve":true}]"#)) {
+            XCTAssertEqual("\($0)", "pin 1: resolve goes only on an answer, with pin")
+        }
+    }
+
     private let sentence = "The strip sits 16 pt from the card now, which reads as one group. Is that enough room, or should it breathe more?"
 
     private func texts(_ marks: [Mark]) -> [Mark.Text] {

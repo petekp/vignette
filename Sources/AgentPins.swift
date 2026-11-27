@@ -20,6 +20,9 @@ struct AgentPin: Equatable {
 
     let target: Target
     let text: String
+    /// `"resolve": true` on an answer: the agent says the pin's ask is done, and the pin is resolved
+    /// with its answer. An answer without it reopens a resolved pin. Never on a new pin.
+    var resolve = false
 
     var isAnswer: Bool {
         switch target {
@@ -49,6 +52,8 @@ struct AgentPin: Equatable {
     private init(validating item: [String: Any]) throws {
         let fields = MarkFields(item: item, unit: .fraction)
         text = try fields.text()
+        resolve = try fields.flag("resolve")
+        guard !resolve || item["pin"] != nil else { throw MarkProblem("resolve goes only on an answer, with pin") }
         if let named = item["pin"] {
             guard ["x", "y", "w", "h", "corner"].allSatisfy({ item[$0] == nil }) else {
                 throw MarkProblem("pin names a pin to answer, so it takes no x, y, w, h or corner")
@@ -112,6 +117,11 @@ struct AgentAuthor {
         self.at = at
     }
 
+    /// This author's resolve of a pin, at the time of its comments.
+    var resolution: Pin.Resolution {
+        Pin.Resolution(agent: true, agentName: Agent.clean(agent).flatMap { $0.isEmpty ? nil : $0 }, at: at)
+    }
+
     /// `text` as this author's comment.
     func comment(_ text: String) -> Pin.Comment {
         let name = Agent.clean(agent).flatMap { $0.isEmpty ? nil : $0 }
@@ -122,7 +132,7 @@ struct AgentAuthor {
 extension AgentPin {
     /// What `list` changes on `drawing`, the pins in their state after: each new pin placed in px inside
     /// the image and numbered from `nextPin` in the order given, and each pin an answer names with the
-    /// answer added. Every comment is `author`'s. `dropped` numbers from 1, as `pins=`
+    /// answer added, resolved by `author` when the answer says `resolve` and open otherwise. Every comment is `author`'s. `dropped` numbers from 1, as `pins=`
     /// counts them, the answers whose pin the drawing does not hold and the new pins past `Pin.maxCount`.
     static func join(_ list: [AgentPin], by author: AgentAuthor, onto drawing: Drawing) -> (pins: [Pin], dropped: [Int]) {
         var changed: [Pin] = [], dropped: [Int] = []
@@ -143,11 +153,14 @@ extension AgentPin {
                     dropped.append(index + 1)
                     continue
                 }
+                let resolved = item.resolve ? author.resolution : nil
                 if let i = changed.firstIndex(where: { $0.id == held.id }) {
                     changed[i].comments.append(comment)
+                    changed[i].resolved = resolved
                 } else {
                     var pin = held
                     pin.comments.append(comment)
+                    pin.resolved = resolved
                     changed.append(pin)
                 }
                 continue

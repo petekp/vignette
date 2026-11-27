@@ -11,51 +11,6 @@ import Collaboration
 /// picture's frame over whatever is beside the editor, as the pin's popover does.
 @MainActor
 final class PinHoverCard: NSView {
-    /// What the card says.
-    struct Words: Equatable {
-        /// "You", or the agent's name, as "Claude".
-        let name: String
-        /// "1 min. ago", or nil for a comment from a file that kept no time.
-        let time: String?
-        let firstLine: String
-        /// "1 reply from Claude", "2 replies from you", or "3 replies" from more than one writer. Nil
-        /// for a pin with one comment.
-        let replies: String?
-
-        init(_ pin: Pin, now: Date) {
-            let first = pin.comments.first
-            name = Self.writer(first, capitalized: true)
-            time = first.flatMap { Self.ago($0, now: now) }
-            firstLine = first?.text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
-            let later = pin.comments.dropFirst()
-            guard !later.isEmpty else { replies = nil; return }
-            let count = later.count == 1 ? "1 reply" : "\(later.count) replies"
-            let writers = Set(later.map { Self.writer($0, capitalized: false) })
-            replies = writers.count == 1 ? "\(count) from \(writers.first ?? "")" : count
-        }
-
-        /// Who wrote `comment`: "You", or the agent's name, as "Claude".
-        static func writer(_ comment: Pin.Comment?, capitalized: Bool) -> String {
-            guard let comment, comment.agent else { return capitalized ? "You" : "you" }
-            let name = (comment.agentName ?? "").trimmingCharacters(in: .whitespaces)
-            guard let letter = name.first else { return capitalized ? "An agent" : "an agent" }
-            return letter.uppercased() + name.dropFirst()
-        }
-
-        /// How long before `now` `comment` was written, as "1 min. ago". Nil for a comment from a file that
-        /// kept no time.
-        static func ago(_ comment: Pin.Comment, now: Date) -> String? {
-            comment.at.map { formatter.localizedString(for: min($0, now), relativeTo: now) }
-        }
-
-        private static let formatter: RelativeDateTimeFormatter = {
-            let formatter = RelativeDateTimeFormatter()
-            formatter.unitsStyle = .abbreviated
-            formatter.dateTimeStyle = .named
-            return formatter
-        }()
-    }
-
     let pin: Pin.ID
     /// The window the card draws in, as large as the card's whole growth and its shadow.
     private let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
@@ -171,7 +126,7 @@ final class PinHoverCard: NSView {
         content.frame.size = card.size
         glass.maskImage = Self.mask(radius: body.height / 2, sharp: sharp ? tipCorner : nil)
         let tip = PinGel.Corner(right: tipCorner.right, bottom: tipCorner.bottom)
-        self.rim.wear(PinShading.color(of: pin.maker, markStyle: ui.markStyle), radius: body.height / 2, sharp: sharp ? tip : nil)
+        self.rim.wear(PinShading.color(of: pin.maker, resolved: pin.isResolved, markStyle: ui.markStyle), radius: body.height / 2, sharp: sharp ? tip : nil)
         grow(to: growth.value)
         growth.animate(to: 1, duration: Settings.shared.motionUI.pinHoverDuration)
     }
@@ -220,8 +175,8 @@ final class PinHoverCard: NSView {
         name.stringValue = words.name
         time.stringValue = words.time ?? ""
         firstLine.stringValue = words.firstLine
-        replies.stringValue = words.replies ?? ""
-        replies.isHidden = words.replies == nil
+        replies.stringValue = words.footnote ?? ""
+        replies.isHidden = words.footnote == nil
         avatar.frame = CGRect(x: inset, y: inset, width: side, height: side)
         avatar.layer?.cornerRadius = side / 2
         Self.paint(avatar, as: maker)
@@ -234,7 +189,7 @@ final class PinHoverCard: NSView {
         let topLine = max(avatar.frame.maxY, name.frame.maxY)
         firstLine.frame = CGRect(x: inset, y: topLine + ui.pinWordsGap, width: column, height: firstLine.fittingSize.height)
         var bottom = firstLine.frame.maxY
-        if words.replies != nil {
+        if words.footnote != nil {
             replies.frame = CGRect(x: inset, y: bottom + Self.rowGap, width: column, height: replies.fittingSize.height)
             bottom = replies.frame.maxY
         }

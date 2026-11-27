@@ -5,7 +5,8 @@ import Foundation
 /// Where the editor draws each pin's teardrop, at one size on screen whatever the zoom, and which
 /// pins it draws together as clusters. Two pins cluster when their bodies overlap by more than
 /// `PinStyle.clusterOverlap` of their width at the zoom on screen, and a cluster takes in every pin that overlaps one
-/// of its pins. A pin kept apart, such as the open or a selected one, never joins a cluster.
+/// of its pins. A pin kept apart, such as the open or a selected one, never joins a cluster, and a
+/// resolved pin clusters only with resolved pins, so a cluster is all grey or all in colour.
 struct PinPlacement: Equatable {
     /// A pin drawn on its own.
     struct Drop: Equatable {
@@ -13,6 +14,7 @@ struct PinPlacement: Equatable {
         /// 0 for a pin before its first comment, which shows no number.
         let number: Int
         let maker: PinMaker
+        let resolved: Bool
         let answeringAgent: PinMaker?
         let tip: CGPoint
         let orientation: PinTeardrop.Orientation
@@ -28,6 +30,7 @@ struct PinPlacement: Equatable {
         let pins: [Pin.ID]
         let label: String
         let maker: PinMaker
+        let resolved: Bool
         /// The tip of its lowest-numbered pin.
         let tip: CGPoint
         let orientation: PinTeardrop.Orientation
@@ -51,7 +54,8 @@ struct PinPlacement: Equatable {
         let drops = pins.map { pin -> Drop in
             let orientation = PinTeardrop.facing(tip: pin.tip, side: fitSide, edge: edge, in: drawing.pixels, avoiding: drawing.pieceNumbers,
                                                  area: pin.area, leftward: pin.leansLeft)
-            return Drop(id: pin.id, number: pin.number, maker: pin.maker, answeringAgent: pin.answeringAgent, tip: pin.tip, orientation: orientation,
+            return Drop(id: pin.id, number: pin.number, maker: pin.maker, resolved: pin.isResolved, answeringAgent: pin.answeringAgent, tip: pin.tip,
+                        orientation: orientation,
                         square: PinTeardrop.square(tip: pin.tip, orientation: orientation, side: side))
         }
         let reach = side * (1 - min(max(style.clusterOverlap, 0), 1))
@@ -65,7 +69,7 @@ struct PinPlacement: Equatable {
         for (n, i) in joinable.enumerated() {
             for j in joinable[(n + 1)...] {
                 let a = drops[i].square, b = drops[j].square
-                guard hypot(a.midX - b.midX, a.midY - b.midY) < reach else { continue }
+                guard drops[i].resolved == drops[j].resolved, hypot(a.midX - b.midX, a.midY - b.midY) < reach else { continue }
                 group[root(j)] = root(i)
             }
         }
@@ -83,7 +87,8 @@ struct PinPlacement: Equatable {
             let up = first.orientation == .upLeft || first.orientation == .upRight
             let right = leftward ? first.tip.x - width - edge < 0 : first.tip.x + width + edge <= CGFloat(drawing.pixels.width)
             let frame = CGRect(x: right ? first.tip.x : first.tip.x - width, y: up ? first.tip.y - side : first.tip.y, width: width, height: side)
-            return Cluster(pins: chosen.map(\.id), label: label, maker: PinMaker(cluster: chosen.map(\.maker)), tip: first.tip, orientation: PinTeardrop.orientation(up: up, right: right),
+            return Cluster(pins: chosen.map(\.id), label: label, maker: PinMaker(cluster: chosen.map(\.maker)), resolved: first.resolved, tip: first.tip,
+                           orientation: PinTeardrop.orientation(up: up, right: right),
                            frame: frame)
         }.sorted { $0.label < $1.label }
     }

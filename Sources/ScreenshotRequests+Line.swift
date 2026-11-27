@@ -83,11 +83,11 @@ extension ScreenshotRequests {
             return card.path.rangeOfCharacter(from: .controlCharacters) == nil ? .wordsAlone : .drawing
         }
 
-        /// The drawing to render for this press. Words alone keep the card's own picture, without
-        /// the agent's marks or pins, as the one a drawn answer goes on: what the clone of a PNG card
-        /// holds too.
+        /// The drawing to render for this press, without its resolved pins. Words alone keep the card's
+        /// own picture, without the agent's marks or pins, as the one a drawn answer goes on: what the
+        /// clone of a PNG card holds too.
         func rendering(_ drawing: Drawing) -> Drawing {
-            guard self == .wordsAlone else { return drawing }
+            guard self == .wordsAlone else { return drawing.handedOver }
             var picture = drawing
             picture.marks = []
             picture.pins = []

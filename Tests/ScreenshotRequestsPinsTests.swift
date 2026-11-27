@@ -113,4 +113,27 @@ final class ScreenshotRequestsPinsTests: XCTestCase {
         XCTAssertEqual(withImage.errorCode, ReplyProtocol.Refusal.badPayload.rawValue)
         XCTAssertTrue(presented.isEmpty)
     }
+
+    func testAReplyResolvesThePinsItsResolveNamesAmongThoseItAnswers() throws {
+        let ticket = try send(base: try png(1))
+        let comments = try ReplyCommand.loadComments(#"{"1": "Loosened it", "2": "Moved it"}"#, resolving: "2", ticket: ticket)
+        XCTAssertEqual(comments.map(\.resolve), [nil, true])
+        XCTAssertThrowsError(try ReplyCommand.loadComments(#"{"1": "Loosened it"}"#, resolving: "2", ticket: ticket)) {
+            XCTAssertTrue("\($0)".contains("--resolve names 2, which has no answer"), "\($0)")
+        }
+        XCTAssertThrowsError(try ReplyCommand.loadComments(#"{"1": "Loosened it"}"#, resolving: "1, 7", ticket: ticket)) {
+            XCTAssertTrue("\($0)".contains("--resolve names 7, which is not a pin the user sent"), "\($0)")
+        }
+
+        XCTAssertEqual(try reply(ticket, comments: comments).acceptance, .accepted)
+        let cardPins = try XCTUnwrap(installed.first)
+        XCTAssertEqual(cardPins.map(\.isResolved), [false, true])
+        XCTAssertEqual(cardPins[1].resolved?.resolver, .agent("claude"))
+        let card = try XCTUnwrap(presented.first)
+        let drawing = Drawing(key: card.path, pixels: PixelSize(width: 40, height: 30), pointScale: 1, marks: [], pins: cardPins, nextPin: 3)
+        let report = try XCTUnwrap(PinCommentsReport.object(file: card, drawing: drawing, records: [])["pins"] as? [[String: Any]])
+        XCTAssertNil(report[0]["resolved"])
+        XCTAssertEqual((report[1]["resolved"] as? [String: Any])?["resolver"] as? String, "agent")
+        XCTAssertEqual((report[1]["resolved"] as? [String: Any])?["agentName"] as? String, "claude")
+    }
 }
