@@ -218,7 +218,7 @@ final class PinHoverCard: NSView {
         case (.agent, .letter(let first)):
             avatar.image = letter(first, on: style.agentColor, in: style.wordColor)
         case (.agent(let agent), _):
-            let colors = Agent.oneColourAvatar(agent) ?? (fill: style.agentColor, ink: style.wordColor)
+            let colors = Agent.oneColourAvatar(maker) ?? (fill: style.agentColor, ink: style.wordColor)
             avatar.image = logo(agent, on: colors.fill, in: colors.ink, filling: style.pin.logoSize)
         }
     }

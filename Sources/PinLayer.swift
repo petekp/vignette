@@ -203,7 +203,7 @@ final class PinLayer {
         dot.isHidden = answer == nil
         if let answer {
             let agentShading = PinShading(answer.agent, pointScale: pointScale, markStyle: markStyle)
-            let avatar: (fill: SRGB, ink: SRGB)? = if case .agent(let name) = answer.agent { Agent.oneColourAvatar(name) } else { nil }
+            let avatar = Agent.oneColourAvatar(answer.agent)
             dot.path = CGPath(ellipseIn: answer.circle, transform: nil)
             dot.fillColor = avatar?.fill.cgColor ?? agentShading.top
             dot.strokeColor = shading.rimColor
