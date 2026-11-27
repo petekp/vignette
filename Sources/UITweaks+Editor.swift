@@ -54,8 +54,10 @@ extension UITweaks {
         var pinWordsGap = 4.0            // between that line and the comment's words
         var pinHoverWidth = 240.0        // the card a pin grows into under the pointer
         var pinHoverDuration = 0.25      // seconds it takes to grow
-        var pinGelBevel = 3.0            // the gel's bevel round a pin's top in the editor, screen pt
+        var pinGelBevel = 4.0            // the gel's bevel round a pin's top in the editor, screen pt
         var pinGelDome = 1.0             // the dome on a pin's top, a share of half its side
+        var pinGelShade = 0.7            // how much the dome shades a pin's face away from the light, 0 to 1
+        var pinGelEdge = 1.0             // a pin's edge's opacity over dark content, 0 to 1
         var pinGelDeep = 0.85            // the share of a pin's colour its deep edge keeps over light content
         var pinGelRod = 4.5              // an area's outline, screen pt
         var pinGelRim = 2.0              // the rim of a pin's hover card and popover, screen pt

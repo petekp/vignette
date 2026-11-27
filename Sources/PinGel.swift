@@ -202,7 +202,8 @@ final class PinGel: CALayer, GelLayer {
         }
         guard let vertices, let targets, let drawable = gel.nextDrawable(), let commands = metal.queue.makeCommandBuffer() else { return nil }
         var uniforms = InkGel.uniforms(ui, size: size, scale: scale, time: time, override: nil, deepness: 0)
-        uniforms.headMore = SIMD4(0, Float(max(ui.pinGelBevel, 0.1) * scale), 0, 0)
+        uniforms.headMore = SIMD4(0, Float(max(ui.pinGelBevel, 0.1) * scale), Float(min(max(ui.pinGelShade, 0), 1)),
+                                  Float(min(max(ui.pinGelEdge, 0), 1)))
         if let place = onScreen() {
             let mouse = LiveInkTap.pointer
             uniforms.pointer = SIMD4(Float((mouse.x - place.minX) * scale), Float((StateReport.primaryHeight - mouse.y - place.minY) * scale),

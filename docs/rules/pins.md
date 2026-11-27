@@ -166,7 +166,10 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   each shape carrying its own colour, so many pins cost one drawing a frame. What it wears is drawn over it (`PinLayer` without its body) and casts
   `ui.pinGelFaceShadow`. Its top rises from a `ui.pinGelBevel` bevel into a dome `ui.pinGelDome` of
   half its side across, and the pointer's light glints only on the bevel. A flat top lit from right
-  above turned white and hid the number, and a glint on the dome crossed it. Over light content its edge turns to its own colour at
+  above turned white and hid the number, and a glint on the dome crossed it. The dome shades the
+  face, darker away from the light, by `ui.pinGelShade`, so the pin reads as round, and its edge is
+  `ui.pinGelEdge` opaque over dark content, where live ink's translucent edge left the pin soft and
+  let the content show through. Over light content its edge turns to its own colour at
   `ui.pinGelDeep`, chosen from the picture's brightness under it (`EditorPins.backdrop`). It draws
   on live ink's clock (`InkClock`), so it is lit from the pointer, and drifts and comes to rest as
   live ink does. An area's outline is a gel rod `ui.pinGelRod` wide in its pin's colour, one shape

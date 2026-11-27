@@ -37,7 +37,8 @@ struct GelUniforms {
     float4 lightPlace; // the shimmer's wavelength in pt and its speed, the light's angle in radians and its height
     float4 head[4];    // the head's corners, px, two to a float4, already moved in by its rounding
     float4 headShape;  // the corner count, the rounding, how far it is shrunk, px along the line at it
-    float4 headMore;   // x: the line's half width where it meets the head, px; y: a rounded box's bevel, px
+    float4 headMore;   // x: the line's half width where it meets the head, px; y: a rounded box's bevel, px; z: how much a
+                       // domed box's face is shaded by its dome; w: a domed box's edge opacity
     float4 pointer;    // the pointer's place in px of the layer, its light's height over the screen in px, and how much of the light it gives
 };
 
@@ -233,8 +234,16 @@ fragment float4 gelLight(FieldVaryings in [[stage_in]], texture2d<float, access:
     // colour stands out from nothing, and a light middle in a dark sheath stands out from anything.
     float sheath = smoothstep(1.12 - uni.behind.w * lightBehind, 1.28 - uni.behind.w * lightBehind, across);
     float3 colour = mix(ice, deep, sheath);
+    // A pin's face is shaded by its dome, lighter toward the light, so it reads as round.
+    // Its slope read wider, so the crease toward the square tip stays soft.
+    if (domed) {
+        float3 round = normalize(float3(glowSide * tilt, sqrt(max(1 - tilt * tilt, 0.0))));
+        colour *= mix(1.0, 0.45 + 0.75 * max(dot(round, L), 0.0), uni.headMore.z);
+    }
     float edge = clamp(0.5 - sd, 0.0, 1.0);
-    float alpha = mix(uni.material.w + (1 - uni.material.w) * core, 0.95, sheath) * edge;
+    // A pin's edge has its own opacity, so it stays crisp over dark content where live ink's fades.
+    float edgeOpacity = domed ? uni.headMore.w : uni.material.w;
+    float alpha = mix(edgeOpacity + (1 - edgeOpacity) * core, 0.95, sheath) * edge;
     float4 body = float4(clamp(colour, 0.0, 1.0) * alpha, alpha);
     return body + halo * (1 - body.a);
 }
