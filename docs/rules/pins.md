@@ -17,7 +17,10 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   look (`PinShading`): a gradient, a white hairline and a soft shadow, the same in the editor, on a
   card and in flight. A rendering keeps the marks' white edge. `MarkLayers` clusters them as
   `PinPlacement` does at the drawing's own size. A card's teardrops scale with its picture, as a
-  rendering's do, and a flight shows the card's clusters.
+  rendering's do, and a flight shows the card's clusters. A flight between a card and the editor
+  scales each pin about its tip on every frame (`MarkLayers.PinGrowth`), so its size on screen
+  moves from the card's to the editor's `ui.pinSize` as the picture's zoom does, and lands at the
+  editor's size. The way home shrinks it back the same way.
 - A PNG rendering draws pins as `Drawing.renderedTeardrops` places them, since its reader cannot
   hover. It outlines every area in its pin's colour. A body that would overlap an earlier pin's
   body or a piece number tries its other orientations, then moves clear, and a line in the pin's

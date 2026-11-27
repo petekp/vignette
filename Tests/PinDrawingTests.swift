@@ -99,6 +99,16 @@ final class PinDrawingTests: XCTestCase {
         XCTAssertFalse(isRed(editor, at: CGPoint(x: 250, y: 50)))
     }
 
+    func testAFlightsPinsGrowFromTheCardsSizeToTheEditorsAndMeetEachEndExactly() {
+        let growth = MarkLayers.PinGrowth(from: .init(zoom: 0.1, editor: false), to: .init(zoom: 0.4, editor: true))
+        XCTAssertEqual(growth.growth(atZoom: 0.1, pointScale: 2), 1, accuracy: 0.0001)
+        XCTAssertEqual(growth.growth(atZoom: 0.4, pointScale: 2) * 2 * 0.4, 1, accuracy: 0.0001)
+        let halfway = growth.growth(atZoom: 0.25, pointScale: 2) * 2 * 0.25
+        XCTAssertEqual(halfway, (0.2 + 1) / 2, accuracy: 0.0001)
+        let home = MarkLayers.PinGrowth(from: growth.to, to: growth.from)
+        XCTAssertEqual(home.growth(atZoom: 0.25, pointScale: 2), growth.growth(atZoom: 0.25, pointScale: 2), accuracy: 0.0001)
+    }
+
     func testADrawingHoldingOnlyPinsFollowsARename() throws {
         let (shot, drawing) = try pinned()
         drawings.write(drawing, reason: "saved")

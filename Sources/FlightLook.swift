@@ -44,8 +44,28 @@ extension TransitionLayer {
             let imageAspect = image.size.width / image.size.height
             return fillsWidth ? min(imageAspect, frameAspect) : imageAspect
         }
+        /// Screen pt per image px of a picture of `pixels` drawn in `frame` at an end with this look, as
+        /// `MarksView` places the marks on it.
+        func zoom(of image: NSImage, in frame: NSRect, pixels: PixelSize) -> CGFloat {
+            let aspect = aspect(of: image, in: frame)
+            guard aspect > 0, pixels.width > 0 else { return 0 }
+            return aspect * max(frame.width / aspect, frame.height) / CGFloat(pixels.width)
+        }
         /// A capture where it was taken: the screen's own pixels, with no corners, shadow, ring or
         /// matte, so the flight's first frame shows nothing the screen did not.
         static let screen = Look(corner: 0, shadowOpacity: 0, shadowRadius: 0, shadowY: 0, ring: 0, matte: 0)
+    }
+}
+
+extension MarkLayers {
+    /// A flight's pins change size on screen from one end's to the other's, when one end is the
+    /// editor. A flight between two cards leaves them as they were, so one that was flying home and
+    /// leaves with the column instead keeps the size it had.
+    func growPins(image: NSImage, from: (frame: NSRect, look: TransitionLayer.Look), to: (frame: NSRect, look: TransitionLayer.Look)) {
+        guard from.look.fillsWidth != to.look.fillsWidth else { return }
+        func end(_ end: (frame: NSRect, look: TransitionLayer.Look)) -> PinGrowth.End {
+            PinGrowth.End(zoom: end.look.zoom(of: image, in: end.frame, pixels: pixels), editor: end.look.fillsWidth)
+        }
+        pinGrowth = PinGrowth(from: end(from), to: end(to))
     }
 }

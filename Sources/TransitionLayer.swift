@@ -9,34 +9,6 @@ import SwiftUI
 /// it takes clear pixels too.
 @MainActor
 final class TransitionLayer {
-    struct Flight: Identifiable {
-        let id: UUID
-        var image: NSImage
-        /// The drawing's marks over the image, or nil when it has none.
-        var marks: MarkLayers?
-        var frame: CGRect      // top-left origin, in the layer's own coordinates
-        var look: Look
-        /// The shape the picture is drawn in, width over height, filling the frame: the image's own,
-        /// or no wider than the frame where the look fills its width. Animated with the frame.
-        var aspect: CGFloat
-        var opacity: Double = 1
-        var caption: Caption?
-        /// Leaving the annotator, which still draws the title: the flight shows its caption from
-        /// `annotatorStoppedDrawing`.
-        var leavingAnnotator = false
-        /// The path this flight is on, and the one it was on before it was aimed again.
-        var path = Path()
-        var previousPath = Path()
-        /// 0 the moment a flight is aimed down a new path, 1 once it has settled there. In between
-        /// the bow comes from both paths, so a retarget bends instead of stepping sideways.
-        var blend: CGFloat = 1
-        var generation = 0
-        /// Runs when `end(id:)` or `endAll()` removes this flight before it arrived, so whatever it
-        /// was covering can take over. Aiming the flight again replaces it; arriving clears it. The
-        /// annotator's outbound flight and each of `converge`'s pieces set it.
-        var dropped: (() -> Void)?
-    }
-
     /// A rect that swallows every press for a while, whatever is under it.
     struct SwallowRect: Identifiable {
         let id = UUID()
@@ -201,6 +173,7 @@ final class TransitionLayer {
         let fade = min(ui.agentTitleFade, duration / 2)
         let gen = start(id: id, image: image, marks: marks, caption: fade > 0 ? caption : nil, leavingAnnotator: leavingAnnotator,
                         from: from, to: to, look: lookFrom, ui: ui, dropped: dropped)
+        marks?.growPins(image: image, from: (from, lookFrom), to: (to, lookTo))
         let travel = max(abs(to.minX - from.minX), abs(to.minY - from.minY),
                          abs(to.width - from.width), abs(to.height - from.height))
         let settleTime = timing.settles(duration, distance: travel, within: Self.arrivalTolerance)
