@@ -59,8 +59,7 @@ extension TransitionLayer {
 
 extension MarkLayers {
     /// A flight's pins change size on screen from one end's to the other's, when one end is the
-    /// editor. A flight between two cards leaves them as they were, so one that was flying home and
-    /// leaves with the column instead keeps the size it had.
+    /// editor. A flight between two cards leaves them as they were.
     func growPins(image: NSImage, from: (frame: NSRect, look: TransitionLayer.Look), to: (frame: NSRect, look: TransitionLayer.Look)) {
         guard from.look.fillsWidth != to.look.fillsWidth else { return }
         func end(_ end: (frame: NSRect, look: TransitionLayer.Look)) -> PinGrowth.End {

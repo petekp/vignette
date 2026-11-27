@@ -35,8 +35,8 @@ extension EditorView {
 
     private static var commentCursors: [String: NSCursor] = [:]
 
-    /// The crosshair with its hot spot at the cross, and up and to its right a pin 10 pt across, its
-    /// tip on the crosshair's arm, so the pointer says a click places a pin.
+    /// The crosshair with its hot spot at the cross, and up and to its right a pin 10 pt across, so
+    /// the pointer says a click places a pin.
     private static func commentCursor(_ color: SRGB) -> NSCursor {
         if let cursor = commentCursors[color.hex] { return cursor }
         let spot = CGPoint(x: 8, y: 16)

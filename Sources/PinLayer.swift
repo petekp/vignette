@@ -185,7 +185,7 @@ final class PinLayer {
         shown = nil
         if teardrop.tip != tip {
             tip = teardrop.tip
-            placeGrowth()
+            if growth != 1 { placeGrowth() }
         }
     }
 

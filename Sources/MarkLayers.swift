@@ -68,7 +68,9 @@ final class MarkLayers {
             // A pin's side on screen at an end, in multiples of `PinStyle.side`.
             func side(_ end: End) -> CGFloat { end.editor ? 1 : pointScale * end.zoom }
             let span = to.zoom - from.zoom
-            let progress = abs(span) > 0.0001 ? (zoom - from.zoom) / span : 1
+            // Clamped, so a spring passing its target, or ends whose zooms nearly match, never
+            // carries a pin past either end's size.
+            let progress = abs(span) > 0.0001 ? min(max((zoom - from.zoom) / span, 0), 1) : 1
             let drawn = pointScale * zoom
             guard drawn > 0 else { return 1 }
             return max(side(from) + (side(to) - side(from)) * progress, 0) / drawn

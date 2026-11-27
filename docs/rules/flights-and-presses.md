@@ -67,8 +67,8 @@
   arrived (`AnnotationController.fitBeforeHide`). A flight's pins change size with it, from the
   card's to the editor's, on the flight's own frames (`MarkLayers.PinGrowth`, `docs/rules/pins.md`),
   so they meet the editor's at the hand-over and need no animation of their own.
-  `docs/shadow-2026-09-17.md` and
-  `docs/handover-2026-09-18.md` have the frames and what each moment cost.
+  `docs/shadow-2026-09-17.md` and `docs/handover-2026-09-18.md` have the frames and what each
+  moment cost.
 
   The way home is the same handover the other way round. The flight starts at the editor's frame,
   the editor's frame is hidden in the commit that starts the flight moving, and its window is ordered

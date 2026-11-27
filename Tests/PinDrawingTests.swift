@@ -107,6 +107,7 @@ final class PinDrawingTests: XCTestCase {
         XCTAssertEqual(halfway, (0.2 + 1) / 2, accuracy: 0.0001)
         let home = MarkLayers.PinGrowth(from: growth.to, to: growth.from)
         XCTAssertEqual(home.growth(atZoom: 0.25, pointScale: 2), growth.growth(atZoom: 0.25, pointScale: 2), accuracy: 0.0001)
+        XCTAssertEqual(growth.growth(atZoom: 0.41, pointScale: 2) * 2 * 0.41, 1, accuracy: 0.0001)
     }
 
     func testADrawingHoldingOnlyPinsFollowsARename() throws {
