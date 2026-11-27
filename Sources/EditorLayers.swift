@@ -82,7 +82,7 @@ final class EditorPicture {
     func open(_ image: CGImage?, pixels: PixelSize) {
         marks.park()
         marks.layer.removeFromSuperlayer()
-        marks = MarkLayers(pixels: pixels, queue: MarkLayers.textQueue)
+        marks = MarkLayers(pixels: pixels, queue: MarkLayers.textQueue, drawsPins: false)
         marks.setScale(contentsScale)
         marks.onTextDrawn = { [weak self] id in self?.onTextDrawn?(id) }
         layer.addSublayer(marks.layer)
@@ -113,9 +113,6 @@ final class EditorPicture {
     /// `hiding` is a text something else shows for now, whose bitmap is drawn but kept hidden.
     func show(_ drawing: Drawing, typing: Mark.ID?, covered: Mark.ID?, hiding: Mark.ID? = nil, geometry: EditorGeometry,
               resolution: Resolution, gesture: Bool) {
-        // The editor draws its pins at one size on screen (`EditorPins`).
-        var drawing = drawing
-        drawing.pins = []
         let state = State(drawing: drawing, geometry: geometry, resolution: resolution, gesture: gesture, typing: typing, covered: covered,
                           hiding: hiding)
         marks.show(drawing, markStyle: geometry.markStyle, layout: { geometry.layout($0, of: $1) }) { record, mark, text in

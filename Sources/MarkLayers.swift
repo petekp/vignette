@@ -30,9 +30,12 @@ final class MarkLayers {
     /// A text's bitmap has just arrived and shows the text as it is. Called inside the transaction
     /// that put it on its layer, so whatever covered the text can go in the same frame.
     var onTextDrawn: ((Mark.ID) -> Void)?
-    /// What is shown, as of the last `show`.
+    /// The drawing of the last `show`, with its pins even where `drawsPins` leaves them undrawn.
     private(set) var drawing: Drawing?
     let queue: DispatchQueue
+    /// False for the editor's, which draws its pins itself (`EditorPins`). Its drawing keeps them,
+    /// so a flight made from it carries them.
+    let drawsPins: Bool
     private var shapes: [Mark.ID: ShapeMarkLayer] = [:]
     var texts: [Mark.ID: Text] = [:]
     private var pins: [Pin.ID: PinLayer] = [:]
@@ -87,10 +90,11 @@ final class MarkLayers {
     }
 
 
-    /// Marks on an image of `pixels`, whose texts are drawn on `queue`.
-    init(pixels: PixelSize, queue: DispatchQueue) {
+    /// Marks on an image of `pixels`, whose texts are drawn on `queue`, and its pins unless `drawsPins` is false.
+    init(pixels: PixelSize, queue: DispatchQueue, drawsPins: Bool = true) {
         self.pixels = pixels
         self.queue = queue
+        self.drawsPins = drawsPins
         layer.anchorPoint = .zero
         layer.position = .zero
         layer.bounds = pixels.bounds
@@ -182,11 +186,13 @@ final class MarkLayers {
             }
         }
         let pointScale = drawing.pointScale
-        let placement = PinPlacement(drawing, side: markStyle.pin.side * pointScale, edge: markStyle.edgeWidth * pointScale, apart: [],
+        var shownPins = drawing
+        if !drawsPins { shownPins.pins = [] }
+        let placement = PinPlacement(shownPins, side: markStyle.pin.side * pointScale, edge: markStyle.edgeWidth * pointScale, apart: [],
                                      style: markStyle.pin)
         let alone = Set(placement.drops.map(\.id))
         pins = pins.filter { alone.contains($0.key) }
-        for pin in drawing.pins where alone.contains(pin.id) {
+        for pin in shownPins.pins where alone.contains(pin.id) {
             let record = pins[pin.id] ?? PinLayer(scale: contentsScale)
             record.show(pin, on: drawing, markStyle: markStyle)
             pins[pin.id] = record
