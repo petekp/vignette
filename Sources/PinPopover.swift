@@ -15,6 +15,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     private let comments = NSStackView()
     private let field = ComposerField()
     private let post = NSButton()
+    private let rim = PinGelRim()
     private let send: (EditorCore.ComposerInput) -> Void
     private var shown: (comments: [Pin.Comment], editing: Int?)?
     private var anchor = CGRect.null
@@ -79,6 +80,9 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         list.addArrangedSubview(composerRow(postSize: size, gap: ui.pinPopoverSpacing))
         list.widthAnchor.constraint(equalToConstant: Self.width).isActive = true
         controller.view = list
+        // The content view is the popover's body, so the rim goes round the body and not its arrow.
+        list.addSubview(rim)
+        rim.wear(PinShading.color(of: pin.maker, markStyle: ui.markStyle), radius: RimLight.cornerRadius, sharp: nil)
         popover.contentViewController = controller
         popover.behavior = .applicationDefined
         popover.delegate = self

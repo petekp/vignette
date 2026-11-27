@@ -324,7 +324,7 @@ final class EditorCorePinsTests: XCTestCase {
         core.drag(from: (300, 200), to: (100, 100))
         let id = try XCTUnwrap(core.composer?.pin)
         XCTAssertEqual(core.drawing.pins.first?.place, .area(CGRect(x: 100, y: 100, width: 200, height: 100), tip: .topLeft))
-        XCTAssertEqual(core.marchingPins, [id])
+        XCTAssertEqual(core.activePins, [id])
         core.drag(from: (300, 200), to: (340, 230))
         XCTAssertEqual(core.composer?.pin, id)
         XCTAssertEqual(core.drawing.pins.first?.place, .area(CGRect(x: 100, y: 100, width: 240, height: 130), tip: .topLeft))

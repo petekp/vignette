@@ -66,6 +66,7 @@ final class PinHoverCard: NSView {
     private let clip = FlippedView()
     private let glass = NSVisualEffectView()
     private let content = FlippedView()
+    private let rim = PinGelRim()
     private let avatar = NSImageView()
     private let name = NSTextField(labelWithString: ""), time = NSTextField(labelWithString: "")
     private let firstLine = NSTextField(labelWithString: ""), replies = NSTextField(labelWithString: "")
@@ -109,6 +110,7 @@ final class PinHoverCard: NSView {
         glass.autoresizingMask = [.width, .height]
         clip.addSubview(glass)
         clip.addSubview(content)
+        addSubview(rim)
         content.addSubview(avatar)
         avatar.imageScaling = .scaleProportionallyUpOrDown
         avatar.wantsLayer = true
@@ -168,6 +170,8 @@ final class PinHoverCard: NSView {
         shown = (words, pin.maker, body, card, room)
         content.frame.size = card.size
         glass.maskImage = Self.mask(radius: body.height / 2, sharp: sharp ? tipCorner : nil)
+        let tip = PinGel.Corner(right: tipCorner.right, bottom: tipCorner.bottom)
+        self.rim.wear(PinShading.color(of: pin.maker, markStyle: ui.markStyle), radius: body.height / 2, sharp: sharp ? tip : nil)
         grow(to: growth.value)
         growth.animate(to: 1, duration: Settings.shared.motionUI.pinHoverDuration)
     }
@@ -311,6 +315,7 @@ final class PinHoverCard: NSView {
         frame = CGRect(x: mix(shown.start.minX, shown.card.minX) - shown.room.minX, y: mix(shown.start.minY, shown.card.minY) - shown.room.minY,
                        width: mix(shown.start.width, shown.card.width), height: mix(shown.start.height, shown.card.height))
         clip.frame = bounds
+        rim.frame = bounds
         content.frame.origin = CGPoint(x: tipCorner.right ? bounds.width - shown.card.width : 0,
                                        y: tipCorner.bottom ? bounds.height - shown.card.height : 0)
         panel.alphaValue = min(1, p * 2)

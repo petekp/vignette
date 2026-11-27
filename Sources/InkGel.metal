@@ -17,7 +17,10 @@ struct GelVertex {
     packed_float2 b;    // its end
     float ra, rb;       // its half width at each end, px
     float s;            // px along the line at its start
-    float kind;         // 0 a segment, 1 the head
+    float kind;         // 0 a segment, 1 the head, 2 a rounded box (a comment's pin, area or rim)
+    // A rounded box's a is its centre and b its half size, px; ra its corners' radius, px; rb its tint
+    // (`boxTint`); s a rod's half width along its edge, px, or for the box itself its dome's radius,
+    // px, negated.
 };
 
 struct GelUniforms {
@@ -34,20 +37,43 @@ struct GelUniforms {
     float4 lightPlace; // the shimmer's wavelength in pt and its speed, the light's angle in radians and its height
     float4 head[4];    // the head's corners, px, two to a float4, already moved in by its rounding
     float4 headShape;  // the corner count, the rounding, how far it is shrunk, px along the line at it
-    float4 headMore;   // x: the line's half width where it meets the head, px
+    float4 headMore;   // x: the line's half width where it meets the head, px; y: a rounded box's bevel, px
     float4 pointer;    // the pointer's place in px of the layer, its light's height over the screen in px, and how much of the light it gives
 };
 
 struct FieldVaryings {
     float4 position [[position]];
-    float2 pixel, a, b;
-    float ra, rb, s, kind;
+    float2 pixel;
+    // The same at every vertex of a piece.
+    float2 a [[flat]];
+    float2 b [[flat]];
+    float ra [[flat]];
+    float rb [[flat]];
+    float s [[flat]];
+    float kind [[flat]];
 };
 
 struct FieldOut {
-    float4 field [[color(0)]];  // the signed distance to the edge in px, the half width there, the shimmer's phase
+    // The signed distance to the edge in px, the half width there (a box's dome radius), the shimmer's
+    // phase, and a rounded box's `fieldTint` (0 for live ink).
+    float4 field [[color(0)]];
     float depth [[depth(any)]];
 };
+
+// A rounded box's tint in its vertices' rb, a whole number: its square corner plus 1 (0 for none) in
+// bits 0-2, its colour's place in the light pass's palette in bits 3-5, and how deep its edge is, 0
+// to 63, from bit 6. The field keeps it for the light pass as 1, plus 1 for a box rather than a rod,
+// plus the palette place times 2, plus the depth times 16: whole numbers a half float holds exactly.
+struct BoxTint {
+    int sharp;
+    int colour;
+    int depth;
+};
+
+static BoxTint boxTint(float rb) {
+    int code = int(rb + 0.5);
+    return BoxTint{(code & 7) - 1, (code >> 3) & 7, code >> 6};
+}
 
 vertex FieldVaryings gelFieldVertex(uint id [[vertex_id]], const device GelVertex *vertices [[buffer(0)]],
                                     constant GelUniforms &uni [[buffer(1)]]) {
@@ -57,7 +83,8 @@ vertex FieldVaryings gelFieldVertex(uint id [[vertex_id]], const device GelVerte
     float2 pos = float2(v.pos) - shift;
     out.position = float4(pos.x / uni.size.x * 2 - 1, 1 - pos.y / uni.size.y * 2, 0, 1);
     out.pixel = pos;
-    out.a = float2(v.a) - shift; out.b = float2(v.b) - shift;
+    // A rounded box's b is its half size, which no shift moves.
+    out.a = float2(v.a) - shift; out.b = v.kind > 1.5 ? float2(v.b) : float2(v.b) - shift;
     out.ra = v.ra; out.rb = v.rb; out.s = v.s; out.kind = v.kind;
     return out;
 }
@@ -80,8 +107,16 @@ static float polygon(float2 p, constant GelUniforms &uni, float2 shift) {
     return inside * sqrt(d);
 }
 
+/// The signed distance from `p` to a box of half size `extent` round the origin, each corner rounded
+/// by its own radius: top left, top right, bottom right, bottom left, with y down.
+static float roundedBox(float2 p, float2 extent, float4 radii) {
+    float r = p.x > 0 ? (p.y > 0 ? radii.z : radii.y) : (p.y > 0 ? radii.w : radii.x);
+    float2 q = abs(p) - extent + r;
+    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+}
+
 fragment FieldOut gelField(FieldVaryings in [[stage_in]], constant GelUniforms &uni [[buffer(1)]]) {
-    float sd, r, s;
+    float sd, r, s, fieldTint = 0;
     if (in.kind < 0.5) {
         // A capsule whose half width runs from `ra` to `rb`.
         float2 ba = in.b - in.a;
@@ -89,16 +124,29 @@ fragment FieldOut gelField(FieldVaryings in [[stage_in]], constant GelUniforms &
         r = mix(in.ra, in.rb, t);
         sd = length(in.pixel - in.a - ba * t) - r;
         s = in.s + t * length(ba);
-    } else {
+    } else if (in.kind < 1.5) {
         // The head, its corners rounded, shrunk toward its middle while it comes in.
         sd = polygon(in.pixel, uni, uni.offset.xy) - uni.headShape.y + uni.headShape.z;
         r = uni.headMore.x;
         s = uni.headShape.w;
+    } else {
+        // A rounded box round a: its half size b, its corners ra round but the one rb names, which is
+        // square, none when rb is negative. With s, a rod s px either side of its edge; without, the box
+        // itself, bevelled and domed.
+        BoxTint tint = boxTint(in.rb);
+        float4 radii = float4(in.ra);
+        if (tint.sharp >= 0) radii[tint.sharp] = 0;
+        float box = roundedBox(in.pixel - in.a, in.b, radii);
+        bool rod = in.s > 0;
+        sd = rod ? abs(box) - in.s : box;
+        r = rod ? in.s : -in.s;
+        fieldTint = 1 + (rod ? 0 : 1) + tint.colour * 2 + tint.depth * 16;
+        s = in.pixel.x + in.pixel.y;
     }
     // The shimmer only needs the phase, and a half float keeps a phase where it could not keep a length.
     float period = 2 * M_PI_F * max(uni.lightPlace.x, 1.0) * uni.scale;
     FieldOut out;
-    out.field = float4(sd, r, fmod(s, period), 0);
+    out.field = float4(sd, r, fmod(s, period), fieldTint);
     out.depth = clamp((sd + 1024) / 4096, 0.0, 1.0);
     return out;
 }
@@ -120,7 +168,7 @@ static float2 slope(texture2d<float, access::read> field, uint2 at, float sd, in
 // The light pass draws the field pass's triangles again, so it shades only the pixels near the mark.
 // Where they overlap, each draws the same colour from the same field.
 fragment float4 gelLight(FieldVaryings in [[stage_in]], texture2d<float, access::read> field [[texture(0)]],
-                         constant GelUniforms &uni [[buffer(1)]]) {
+                         constant GelUniforms &uni [[buffer(1)]], constant float4 *palette [[buffer(2)]]) {
     uint2 at = uint2(in.position.xy);
     float4 here = field.read(at);
     float sd = here.x;
@@ -132,7 +180,14 @@ fragment float4 gelLight(FieldVaryings in [[stage_in]], texture2d<float, access:
     float2 side = slope(field, at, sd, 2);
     side = length(side) > 1e-4 ? normalize(side) : float2(0);
     float2 glowSide = slope(field, at, sd, 8);
-    float r = max(here.y, 0.5);
+    // A rounded box takes its colour and its edge's depth from the palette, and a box (not a rod) is
+    // bevelled by the uniforms and domed by its field.
+    int tint = int(here.w + 0.5) - 1;
+    bool tinted = tint >= 0, domed = tinted && (tint & 1) == 1;
+    float r = max(domed ? uni.headMore.y : here.y, 0.5);
+    float3 hue = tinted ? palette[((tint >> 1) & 7) * 2].rgb : uni.light.rgb;
+    float3 deepHue = tinted ? palette[((tint >> 1) & 7) * 2 + 1].rgb : uni.deep.rgb;
+    float lightBehind = tinted ? float(tint >> 4) / 63.0 : uni.behind.x;
 
     // The light: from the light angle, drifting, and from a lamp over the pointer, so each pixel is
     // lit from where the pointer is.
@@ -144,10 +199,12 @@ fragment float4 gelLight(FieldVaryings in [[stage_in]], texture2d<float, access:
     // its half width, as inside the head, the shape is flat on top.
     float across = clamp(1 + sd / r, 0.0, 1.0);
     float h = sqrt(max(1 - across * across, 0.0));
-    float3 n = normalize(float3(side * across, h));
+    // A pin's top is a dome as wide as the pin, so a lamp right over it makes a glint rather than
+    // lighting the whole flat top, which hid the pin's number.
+    float dome = domed ? here.y : 0;
+    float tilt = dome > 0 ? clamp(1 + sd / dome, 0.0, 1.0) : across;
+    float3 n = normalize(float3(side * tilt, sqrt(max(1 - tilt * tilt, 0.0))));
     float facing = abs(dot(glowSide, normalize(L.xy)));
-    float lightBehind = uni.behind.x;
-    float3 hue = uni.light.rgb;
     float shimmer = 1 + 0.25 * uni.more.z * sin(here.z / (max(uni.lightPlace.x, 1.0) * uni.scale) - uni.time * uni.lightPlace.y);
 
     // The glow in the ice's colour, brightest where the edge faces the light, and the shadow, which
@@ -163,13 +220,15 @@ fragment float4 gelLight(FieldVaryings in [[stage_in]], texture2d<float, access:
 
     float3 H = normalize(L + float3(0, 0, 1));
     float nh = max(dot(n, H), 0.0);
-    float spec = pow(nh, max(uni.material.x, 1.0)) * uni.more.w;
+    // On a pin the glint stays on the bevel, off the number or logo on its face.
+    float onBevel = domed ? smoothstep(-r - 1, -r + 1, sd) : 1.0;
+    float spec = pow(nh, max(uni.material.x, 1.0)) * uni.more.w * onBevel;
     float soft = pow(nh, 12.0) * shimmer;
     float core = pow(h, 3.0);
     // The ice: a white middle falling to its hue at the edge, its highlight running with the light.
     float3 ice = mix(hue * 0.8, float3(1.0), uni.light.a * core) + spec + 0.08 * soft * hue;
     // The deep blue: darker at the edge, with a paler highlight.
-    float3 deep = mix(uni.deep.rgb * uni.material.z, uni.deep.rgb, core) + spec * 1.5;
+    float3 deep = mix(deepHue * uni.material.z, deepHue, core) + spec * 1.5;
     // Between the two, the deep sheath grows in from the edge rather than the colours mixing: a mid
     // colour stands out from nothing, and a light middle in a dark sheath stands out from anything.
     float sheath = smoothstep(1.12 - uni.behind.w * lightBehind, 1.28 - uni.behind.w * lightBehind, across);
