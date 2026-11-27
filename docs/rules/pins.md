@@ -177,8 +177,8 @@ an agent session as it is posted (`PinCommentDeliveries.swift`, `PinCommentRules
   on live ink's clock (`InkClock`), so it is lit from the pointer, and drifts and comes to rest as
   live ink does. An area's outline is a gel rod `ui.pinGelRod` wide in its pin's colour, one shape
   with its pin, or on its own while the pin is in a cluster. It shows only while its pin is hovered,
-  selected, being placed or open (`EditorCore.outlinedPins`), and a closed area pin draws none at
-  rest. A lone selected area pin's corner handles are squares of its gel, `ui.pinGelHandle` wide and
+  selected, being placed or open (`EditorCore.outlinedPins`), or its card shows.
+  A lone selected area pin's corner handles are squares of its gel, `ui.pinGelHandle` wide and
   joined to the rod, with a white square `ui.pinGelHandleCore` wide in the middle, so they still read
   as a rectangle's handles over dark content (`EditorCore.areaPinCorners`). The corner under the
   teardrop has no white square, since the tip takes the press there. A selected pin has a ring of
