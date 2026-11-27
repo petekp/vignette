@@ -5,7 +5,7 @@ This file maps how a pin comment reaches an agent session as it is posted. Its r
 
 ### A delivery (implicit)
 
-Owner: `PinCommentDeliveries.swift` (`CommentDeliveries`: `add`, `release`, `finish`, `record`, `lookAgain`, `lookedAtQueue`, `watchTurn`, `releaseHeld`, `renamed`, `fileRemoved`); `PinCommentRules.swift` (`HeldChanges`, `CommentTurnWatch`). Tests: `CommentDeliveryTests`.
+Owner: `PinCommentDeliveries.swift` (`CommentDeliveries`: `add`, `release`, `finish`, `record`, `watchQueue`, `lookAgain`, `lookedAtQueue`, `watchTurn`, `releaseHeld`, `renamed`, `fileRemoved`, `load`); `PinCommentRules.swift` (`HeldChanges`, `CommentTurnWatch`). Tests: `CommentDeliveryTests`.
 
 One line of comment changes for one screenshot and one session, from its first change to its last answer.
 
@@ -21,11 +21,12 @@ One line of comment changes for one screenshot and one session, from its first c
 | held | the timer fires, or quit (`releaseHeld`) | sending | the delivery is stored; `submit` runs off the main thread |
 | held | the file leaves the folder | none | `[comments] cancelled` |
 | sending | `accepted` | sent | stored; the turn watch starts 0.5 s later |
-| sending | `queued` with a line | queued | the queue watch starts (`QueueWatch.nextLook`) |
+| sending | `queued` with a line | queued | the line is stored; the queue watch starts (`QueueWatch.nextLook`) |
 | sending | `uncertain` | uncertain | the reason stored |
 | sending | `notSubmitted` or `destinationChanged` | failed | the reason stored |
 | sending | the app quits without an answer | uncertain, at the next launch | the store's load turns it |
-| queued | `taken` | sent | the turn watch starts |
+| queued | the app quits | queued, at the next launch | the store's load starts the queue watch again for a delivery with its line, paced by the line's age |
+| queued | `taken` | sent | the turn watch starts, unless the app relaunched since the line went |
 | queued | `removed` | failed | `CommentDeliveries.removedReason` |
 | queued | `threadGone` | failed | `ScreenshotRequests.threadGoneReason` |
 | sent | the turn reads busy | sent and working | `[comments] working`; the popover shows the working row |

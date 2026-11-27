@@ -4,7 +4,7 @@ import Foundation
 /// holds it until an engine that has the thread open starts it as a turn, which it does only once
 /// the thread is idle and its last turn ended normally. After a stopped turn the line waits for the
 /// person's next message there, with no time limit (docs/codex-queued-sends-2026-11-16.md).
-struct QueuedLine: Equatable, Sendable {
+struct QueuedLine: Equatable, Sendable, Codable {
     let id: String
     let thread: String
 

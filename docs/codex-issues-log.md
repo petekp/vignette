@@ -2,6 +2,13 @@
 
 The progress on the issues in `docs/codex-issues.md`, newest first.
 
+## 2026-11-27, live comments: a queued comment after a relaunch
+
+- Fixed finding 1 of the nightly review in petekp/vignette#10: a pin comment queued for Codex said
+  "Queued for Codex" for good after Vignette restarted. Its delivery now keeps the queued line, and
+  each launch watches the queue again until the thread takes the line or loses it. A unit test
+  covers a queued delivery read back at launch that the thread has taken.
+
 ## 2026-11-25, C9 and C10: Don't send and the queue watch
 
 - Fixed C9 from the nightly review in petekp/vignette#4: Don't send no longer takes earlier sends'

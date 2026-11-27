@@ -175,6 +175,40 @@ final class CommentDeliveryTests: XCTestCase {
         deliveries.fileRemoved(ScreenshotKey(asGiven: "Total.png"))
         XCTAssertNil(CommentDeliveries(store: store, connections: [:]).shown(comment: comment, on: ScreenshotKey(asGiven: "Total.png")))
     }
+
+    func testALineCodexStillHeldIsWatchedAgainAfterARelaunchUntilTheThreadTakesIt() throws {
+        let store = FileManager.default.temporaryDirectory.appendingPathComponent("comment-deliveries-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: store) }
+        let file = ScreenshotKey(asGiven: "Checkout.png")
+        let comment = UUID()
+        let queued = CommentDeliveries.Delivery(id: "q", file: file.path, client: .codex, session: "thread", sessionName: "vignette",
+                                                comments: [comment], pins: [UUID()], at: Date(), status: .queued,
+                                                reason: QueuedLine.Hold.stopped.reason, line: QueuedLine(id: "line-1", thread: "thread"))
+        try JSONEncoder().encode([queued]).write(to: store)
+        let thread = Taker()
+        let deliveries = CommentDeliveries(store: store, connections: [.codex: thread], now: { 0 }, schedule: { _, work in work() })
+        let settled = expectation(description: "the queue's answer reached the delivery")
+        deliveries.changed = { _ in settled.fulfill() }
+        wait(for: [settled], timeout: 10)
+        XCTAssertEqual(thread.looked, ["line-1"])
+        XCTAssertEqual(deliveries.shown(comment: comment, on: file), CommentDeliveries.Shown(state: .sent, client: .codex, reason: nil))
+        XCTAssertEqual(CommentDeliveries(store: store, connections: [:]).shown(comment: comment, on: file)?.state, .sent)
+    }
+}
+
+private final class Taker: AgentConnection, @unchecked Sendable {
+    let client = AgentClient.codex
+    private let lock = NSLock()
+    private var lines: [String] = []
+
+    var looked: [String] { lock.lock(); defer { lock.unlock() }; return lines }
+    func destinations() -> [AgentDestination] { [] }
+    func submit(_ line: String, to destination: AgentDestination) -> SubmissionOutcome { .accepted(detail: "") }
+
+    func look(at line: QueuedLine, carrying text: String?) -> QueuedLine.State? {
+        lock.lock(); lines.append(line.id); lock.unlock()
+        return .taken
+    }
 }
 
 private final class Catcher: AgentConnection, @unchecked Sendable {
