@@ -13,9 +13,9 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   orientation is worked out each time from the picture at the drawing's own size and is never
   stored, so every drawer agrees (`PinTeardrop.facing`). A body that would cover a stitch's piece
   number turns away from it (`Drawing.pieceNumbers`). `MarkLayers` shows pins with `PinLayer`
-  and `MarkRendering` draws them with `Pin.draw`, from the same paths. On screen a pin has its own
-  look (`PinShading`): a gradient, a white hairline and a soft shadow, the same in the editor, on a
-  card and in flight. A rendering keeps the marks' white edge. `MarkLayers` clusters them as
+  and `MarkRendering` draws them with `Pin.draw`, from the same paths. On a card and in flight a
+  pin has its own look (`PinShading`): a gradient, a white hairline and a soft shadow. In the
+  editor it is gel (below). A rendering keeps the marks' white edge. `MarkLayers` clusters them as
   `PinPlacement` does at the drawing's own size. A card's teardrops scale with its picture, as a
   rendering's do, and a flight shows the card's clusters. A flight between a card and the editor
   scales each pin about its tip on every frame (`MarkLayers.PinGrowth`), so its size on screen
@@ -53,7 +53,9 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   tool. A Shift- or Cmd-click adds the pin to the selection or takes it out without opening it, a
   drag moves it, and a double-click opens it with any tool. Over the picture
   the Comment tool's pointer is the crosshair with a small pin in the person's colour up and to its
-  right (`Cursor.comment`), so it is not taken for a shape tool's. A drag that sizes an area keeps
+  right (`Cursor.comment`), so it is not taken for a shape tool's. The toolbar's Comment tool shows
+  the teardrop's outline, a template image as wide and heavy as the symbols beside it
+  (`AnnotatorToolbarView.commentIcon`). A drag that sizes an area keeps
   the plain crosshair.
 - A cluster and the toolbar's Pins button open one list, an `NSMenu` a turn later, under the
   capsule or the button (`EditorView.showPinList`, `pinListItem`). A pick, a turn later again, goes through `openFromList`: `EditorPinUI.onReveal` pans to its teardrop and area, or `onZoom(.fit)`
@@ -146,8 +148,19 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   toolbar's level, above the stack's column. So it reaches past the picture's frame over whatever is
   beside the editor, as the popover does. It grows the way the teardrop faces and turns back on an axis
   only where the screen's visible frame has no room that way. The glass blurs what is behind the panel.
-- In the editor an area's outline is dashed in its pin's colour inside a white edge, one width on
-  screen at every zoom (`AreaOutline`). It shows only while its pin is hovered, selected, being
-  placed or open (`EditorCore.outlinedPins`), and a closed area pin draws none at rest. Its dashes march while the pin is being placed or is open
-  (`EditorCore.marchingPins`), at `ui.pinAreaSpeed` times the motion setting, so Reduce Motion
-  stills them. A rendering draws the area as a solid rectangle mark.
+- In the editor a pin is live ink's gel in its colour, the person's red or the agent's brand
+  (`PinGel`, `InkGel.metal`). What it wears is drawn over it (`PinLayer` without its body) and casts
+  `ui.pinGelFaceShadow`. Its top rises from a `ui.pinGelBevel` bevel into a dome `ui.pinGelDome` of
+  half its side across, so the pointer's light makes a glint on it. A flat top lit from right above
+  turned white and hid the number. Over light content its edge turns to its own colour at
+  `ui.pinGelDeep`, chosen from the picture's brightness under it (`EditorPins.backdrop`). It draws
+  on live ink's clock (`InkClock`), so it is lit from the pointer, and drifts and comes to rest as
+  live ink does. An area's outline is a gel rod `ui.pinGelRod` wide in its pin's colour, one shape
+  with its pin, or on its own while the pin is in a cluster. It shows only while its pin is hovered,
+  selected, being placed or open (`EditorCore.outlinedPins`), and a closed area pin draws none at
+  rest. The pin being placed and the open one keep their gel drifting (`EditorCore.activePins`)
+  at the motion setting, so Reduce Motion stills it. The hover card and the popover have a gel rim
+  `ui.pinGelRim` wide in the pin's colour (`PinGelRim`). The popover's runs round its body only,
+  since its content view is the body. Cards, flights, Copy, Send and Stitch keep the flat pin, so
+  a pin changes material as it lands in the editor and as it leaves. A rendering draws the area as
+  a solid rectangle mark.

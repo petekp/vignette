@@ -67,7 +67,7 @@ final class PinDrawingTests: XCTestCase {
         XCTAssertFalse(isRed(image, at: CGPoint(x: 250, y: 50)))
     }
 
-    func testAtZoomOneOnADrawingOfPointScaleOneTheEditorDrawsATeardropOnThePixelsTheRenderingDraws() throws {
+    func testAtZoomOneOnADrawingOfPointScaleOneTheEditorDrawsAPinsNumberOnThePixelsTheRenderingDraws() throws {
         let (shot, drawing) = try pinned()
         let rendering = try XCTUnwrap(NSBitmapImageRep(data: Rendering.png(of: drawing, imageAt: shot, style: .standard, markStyle: .standard)))
         var core = EditorCore()
@@ -76,27 +76,31 @@ final class PinDrawingTests: XCTestCase {
         _ = core.reduce(.zoomChanged(1))
         let pins = EditorPins()
         pins.setScale(1)
-        pins.show(EditorPins.Shown(placement: core.pinPlacement, outlined: [], marching: [], selected: [], markStyle: .standard,
-                                   outlineWidth: 1, marchSpeed: 0, transform: .identity))
+        pins.show(EditorPins.Shown(placement: core.pinPlacement, outlined: [], drifting: [], selected: [], markStyle: .standard,
+                                   outlineWidth: 1, transform: .identity))
         let context = try XCTUnwrap(CGContext(data: nil, width: 300, height: 200, bitsPerComponent: 8, bytesPerRow: 0,
                                               space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)),
                                               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: 300, height: 200))
         context.translateBy(x: 0, y: 200)
         context.scaleBy(x: 1, y: -1)
         pins.layer.render(in: context)
         let editor = NSBitmapImageRep(cgImage: try XCTUnwrap(context.makeImage()))
         let square = PinTeardrop(try XCTUnwrap(drawing.pins.first), in: drawing.pixels, pointScale: 1, markStyle: MarkStyle.standard).square
-        let points = stride(from: square.minX - 4, through: square.maxX + 4, by: 2).flatMap { x in
-            stride(from: square.minY - 4, through: square.maxY + 4, by: 2).map { CGPoint(x: x, y: $0) }
+        let inside = square.insetBy(dx: 4, dy: 4)
+        let points = stride(from: inside.minX, through: inside.maxX, by: 1).flatMap { x in
+            stride(from: inside.minY, through: inside.maxY, by: 1).map { CGPoint(x: x, y: $0) }
         }
-        let redInRendering = points.filter { isRed(rendering, at: $0) }
-        XCTAssertGreaterThan(redInRendering.count, 20)
-        let redInEither = points.filter { isRed(rendering, at: $0) || isRed(editor, at: $0) }
-        let redInBoth = redInEither.filter { isRed(rendering, at: $0) && isRed(editor, at: $0) }
-        XCTAssertGreaterThan(Double(redInBoth.count) / Double(redInEither.count), 0.9)
-        XCTAssertFalse(isRed(editor, at: CGPoint(x: 250, y: 50)))
+        func isLight(_ image: NSBitmapImageRep, at point: CGPoint) -> Bool {
+            guard let color = image.colorAt(x: Int(point.x), y: Int(point.y))?.usingColorSpace(.sRGB) else { return false }
+            return min(color.redComponent, color.greenComponent, color.blueComponent) > 0.8
+        }
+        let lightInEither = points.filter { isLight(rendering, at: $0) || isLight(editor, at: $0) }
+        let lightInBoth = lightInEither.filter { isLight(rendering, at: $0) && isLight(editor, at: $0) }
+        XCTAssertGreaterThan(lightInBoth.count, 5)
+        XCTAssertGreaterThan(Double(lightInBoth.count) / Double(lightInEither.count), 0.7)
+        XCTAssertFalse(isLight(editor, at: CGPoint(x: 250, y: 50)))
     }
 
     func testAFlightsPinsGrowFromTheCardsSizeToTheEditorsAndMeetEachEndExactly() {

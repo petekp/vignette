@@ -55,12 +55,14 @@ extension TweakCatalog {
                 .number("pinHoverWidth", "Hover card width", \.pinHoverWidth, 160...400, step: 4, unit: "pt", safe: 80...2000),
                 .number("pinHoverDuration", "Hover card grows", \.pinHoverDuration, 0...1, step: 0.05, unit: "s", safe: 0...60),
             ], caption: { _ in "In screen points. The popover by a pin has its width, its inset from the edge, the spacing between comments, its post button's size, and how many lines the field grows to before it scrolls. Each comment starts with a line holding its writer's avatar, name and time, the name gap after the avatar and after the name, and its words follow the words gap below it. The card a pin grows into under the pointer has its own width and takes the grow time, with the popover's inset. The menus a cluster and the toolbar's Pins button open show each pin at the list's pin size, and cut its first comment at the text width." }),
-            TweakGroup("Area outline", [
-                .number("pinAreaWidth", "Line width", \.pinAreaWidth, 0.5...4, step: 0.25, unit: "pt", safe: 0.1...100),
-                .number("pinAreaDash", "Dash", \.pinAreaDash, 1...16, step: 0.5, unit: "pt", safe: 0.5...200),
-                .number("pinAreaGap", "Gap", \.pinAreaGap, 1...16, step: 0.5, unit: "pt", safe: 0.5...200),
-                .number("pinAreaSpeed", "March speed", \.pinAreaSpeed, 0...60, step: 1, unit: "pt/s", safe: 0...1000),
-            ], caption: { _ in "In screen points at every zoom. In the editor an area's outline is dashed, and its dashes march at this speed while the pin is being placed or is open. The motion setting slows them, and Reduce Motion stops them." }),
+            TweakGroup("Gel in the editor", [
+                .number("pinGelBevel", "Bevel", \.pinGelBevel, 0.5...12, step: 0.25, unit: "pt", safe: 0.1...100),
+                .number("pinGelDome", "Dome", \.pinGelDome, 0...2, step: 0.05, safe: 0...10),
+                .number("pinGelDeep", "Deep edge", \.pinGelDeep, 0...1, step: 0.01, safe: 0...1),
+                .number("pinGelRod", "Area outline", \.pinGelRod, 1...10, step: 0.1, unit: "pt", safe: 0.1...100),
+                .number("pinGelRim", "Card rim", \.pinGelRim, 0.5...6, step: 0.25, unit: "pt", safe: 0.1...100),
+                .number("pinGelFaceShadow", "Number shadow", \.pinGelFaceShadow, 0...1, step: 0.05, safe: 0...1),
+            ], caption: { _ in "In screen points at every zoom. In the editor a pin, its area's outline and the rims of its hover card and popover are live ink's gel in the pin's colour, lit from the pointer. A pin's top rises from its bevel into a dome as wide as the dome share of half its side, so the light makes a glint on it. Over light content its edge turns to its own colour at the deep edge share. The number or logo casts a shadow of this darkness. Cards, flights, Copy, Send and Stitch keep the flat pin." }),
             TweakGroup("Renderings", [
                 .number("pinFarthestMove", "Farthest move", \.pinFarthestMove, 0...12, step: 0.5, safe: 0...24),
                 .number("commentListNarrowest", "Narrowest list", \.commentListNarrowest, 4...40, step: 0.5, safe: 1...1000),

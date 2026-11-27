@@ -13,7 +13,7 @@ struct PinShading {
 
     /// A pin `maker` made, in its colour, on a drawing of `pointScale`.
     init(_ maker: PinMaker, pointScale: CGFloat, markStyle: MarkStyle) {
-        let base = maker.isAgent ? markStyle.painting(maker).agentColor : markStyle.personColor, style = markStyle.pin
+        let base = Self.color(of: maker, markStyle: markStyle), style = markStyle.pin
         top = Self.mix(base, toward: 1, style.gradient)
         bottom = Self.mix(base, toward: 0, style.bottomShade)
         rim = style.rimWidth * pointScale
@@ -21,6 +21,11 @@ struct PinShading {
         shadowRadius = style.shadowRadius * pointScale
         shadowOffset = style.shadowOffset * pointScale
         shadowOpacity = Float(min(1, max(0, style.shadowOpacity * markStyle.shadowOpacity)))
+    }
+
+    /// The colour of a pin `maker` made: the person's, or the agent's brand.
+    static func color(of maker: PinMaker, markStyle: MarkStyle) -> SRGB {
+        maker.isAgent ? markStyle.painting(maker).agentColor : markStyle.personColor
     }
 
     /// `color` taken `share` of the way to the grey `level`: 1 is white and 0 black.
@@ -91,6 +96,8 @@ extension PinTeardrop {
 
 /// A pin's layers, in its look on screen (`PinShading`): the hairline, which casts the shadow, the
 /// teardrop's fill over it, and what it wears (`PinFace`), then the dot of an agent that answered it.
+/// Without its body it draws only what the pin wears and the dot, casting `PinStyle.gelFaceShadow`, for
+/// the editor, whose gel draws the body (`PinGel`).
 @MainActor
 final class PinLayer {
     let root = CALayer()
@@ -109,7 +116,10 @@ final class PinLayer {
         didSet { if growth != oldValue { placeGrowth() } }
     }
 
-    init(scale: CGFloat) {
+    private let drawsBody: Bool
+
+    init(scale: CGFloat, body: Bool = true) {
+        drawsBody = body
         for layer in [root, rim, fill, fillShape, number, logo, logoShape, dot, dotLogo, dotLogoShape] { layer.anchorPoint = .zero }
         fill.mask = fillShape
         logo.mask = logoShape
@@ -122,6 +132,13 @@ final class PinLayer {
         rim.shadowColor = CGColor(gray: 0, alpha: 1)
         rim.lineJoin = .round
         for layer in [rim, fill, number, logo, dot, dotLogo] { root.addSublayer(layer) }
+        rim.isHidden = !body
+        fill.isHidden = !body
+        if !body {
+            root.shadowColor = CGColor(gray: 0, alpha: 1)
+            root.shadowOffset = .zero
+            root.shadowRadius = 1.5
+        }
         setScale(scale)
     }
 
@@ -160,6 +177,7 @@ final class PinLayer {
         fill.frame = box
         fill.colors = [shading.top, shading.bottom]
         fillShape.path = teardrop.body.copy(using: &toBox)
+        if !drawsBody { root.shadowOpacity = Float(min(max(markStyle.pin.gelFaceShadow, 0), 1)) }
         let words = markStyle.wordColor.cgColor, logoImage = face.logo.flatMap(AgentLogos.shared.image(for:))
         number.path = logoImage == nil ? teardrop.lettering(face, style: markStyle.pin) : nil
         number.fillColor = words

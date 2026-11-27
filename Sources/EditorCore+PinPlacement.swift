@@ -18,13 +18,13 @@ extension EditorCore {
 
     /// The pins an area's outline shows for: hovered, selected, being placed or open.
     var outlinedPins: Set<Pin.ID> {
-        var ids = Set(drawing.pins.map(\.id)).intersection(selection).union(marchingPins)
+        var ids = Set(drawing.pins.map(\.id)).intersection(selection).union(activePins)
         if case .pin(let id)? = hover { ids.insert(id) }
         return ids
     }
 
-    /// The pins whose area's dashes march: the one being placed and the open one.
-    var marchingPins: Set<Pin.ID> {
+    /// The pin being placed and the open one, whose area's outline keeps its gel drifting.
+    var activePins: Set<Pin.ID> {
         var ids = Set<Pin.ID>()
         if case .placing(let id)? = gesture?.phase { ids.insert(id) }
         if let composer { ids.insert(composer.pin) }

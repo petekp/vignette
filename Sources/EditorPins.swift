@@ -2,29 +2,41 @@ import AppKit
 import QuartzCore
 
 /// The pins as the editor shows them, in the editor's coordinates, at one size on screen whatever the
-/// zoom (`PinPlacement`): the dashed outline of each area that is hovered, selected, being placed or
-/// open, then a selection ring round each selected teardrop, then the teardrops and the clusters.
+/// zoom (`PinPlacement`): a selection ring round each selected teardrop, then each teardrop and
+/// cluster in gel (`PinGel`) under what it wears (`PinLayer`). The outline of each area that is
+/// hovered, selected, being placed or open is a gel rod joined to its pin, or on its own when its pin
+/// is in a cluster, under the rest.
 @MainActor
 final class EditorPins {
     /// The owner puts this between the picture and the overlay.
     let layer = CALayer()
-    private var drops: [Pin.ID: PinLayer] = [:]
-    private var clusters: [[Pin.ID]: PinLayer] = [:]
-    private var areas: [Pin.ID: AreaOutline] = [:]
+    /// The editor, whose window the gel is lit in.
+    weak var host: NSView?
+    /// The picture's brightness, in image px, which decides whether a pin's gel takes its deep edge.
+    var backdrop: LivePacket.Luminance? {
+        didSet { shown = nil }
+    }
+    private var drops: [Pin.ID: Pinned] = [:]
+    private var clusters: [[Pin.ID]: Pinned] = [:]
+    private var areas: [Pin.ID: PinGel] = [:]
     private let selectionEdge = CAShapeLayer(), selectionLine = CAShapeLayer()
     private var scale: CGFloat = 2
     private var shown: Shown?
 
+    /// A teardrop's gel and what it wears over it.
+    private struct Pinned {
+        let gel: PinGel
+        let face: PinLayer
+    }
+
     struct Shown: Equatable {
         let placement: PinPlacement
-        /// The pins whose area's outline shows, and those whose dashes march.
+        /// The pins whose area's outline shows, and those whose gel keeps drifting, as an open pin's does.
         let outlined: [Pin]
-        let marching: Set<Pin.ID>
+        let drifting: Set<Pin.ID>
         let selected: Set<Pin.ID>
         let markStyle: MarkStyle
         let outlineWidth: CGFloat
-        /// How fast the dashes march, in screen pt a second, with the motion setting applied: 0 keeps them still.
-        let marchSpeed: CGFloat
         let transform: CGAffineTransform
     }
 
@@ -42,7 +54,10 @@ final class EditorPins {
     func setScale(_ scale: CGFloat) {
         self.scale = scale
         for outline in [selectionEdge, selectionLine] { outline.contentsScale = scale }
-        for drop in Array(drops.values) + Array(clusters.values) { drop.setScale(scale) }
+        for pinned in Array(drops.values) + Array(clusters.values) {
+            pinned.face.setScale(scale)
+            pinned.gel.setScale(scale)
+        }
         for area in areas.values { area.setScale(scale) }
     }
 
@@ -50,115 +65,90 @@ final class EditorPins {
     func show(_ what: Shown) {
         guard what != shown else { return }
         shown = what
-        let transform = what.transform, zoom = transform.a
-        var layers: [CALayer] = []
+        let transform = what.transform, zoom = transform.a, style = what.markStyle.pin
+        let toImage = transform.inverted()
 
-        let outlined = Set(what.outlined.map(\.id))
-        areas = areas.filter { outlined.contains($0.key) }
+        var outlines: [Pin.ID: PinGel.Shape] = [:]
         for pin in what.outlined {
             guard case .area(let frame, _) = pin.place else { continue }
-            let record = areas[pin.id] ?? AreaOutline(scale: scale)
-            record.show(frame.applying(transform), color: what.markStyle.painting(pin.maker).color(pin.color), style: what.markStyle.pin,
-                        edge: what.markStyle.pin.rimWidth, speed: what.marching.contains(pin.id) ? what.marchSpeed : 0)
-            areas[pin.id] = record
-            layers.append(record.root)
+            outlines[pin.id] = .outline(frame.applying(transform), width: style.gelRod)
         }
+        let makers = Dictionary(what.outlined.map { ($0.id, $0.maker) }, uniquingKeysWith: { first, _ in first })
 
         let rings = CGMutablePath()
         let teardrops = what.placement.drops.map { drop in
             (drop, PinTeardrop(number: drop.number, agent: drop.agent, tip: drop.tip.applying(transform), orientation: drop.orientation,
-                               side: what.placement.side * zoom, style: what.markStyle.pin))
+                               side: what.placement.side * zoom, style: style))
         }
-        let reach = 2 * (what.markStyle.pin.rimWidth + what.outlineWidth / 2)
+        let reach = 2 * (style.rimWidth + what.outlineWidth / 2)
         for (drop, teardrop) in teardrops where what.selected.contains(drop.id) {
             rings.addPath(teardrop.body.copy(strokingWithWidth: reach, lineCap: .round, lineJoin: .round, miterLimit: 1).union(teardrop.body))
         }
         selectionEdge.lineWidth = what.outlineWidth
         selectionEdge.path = rings
         selectionLine.path = rings
-        layers += [selectionEdge, selectionLine]
 
+        var pinLayers: [CALayer] = []
         let kept = Set(teardrops.map(\.0.id))
         drops = drops.filter { kept.contains($0.key) }
         for (drop, teardrop) in teardrops {
-            let record = drops[drop.id] ?? PinLayer(scale: scale)
-            record.show(teardrop, maker: drop.maker, face: PinFace(drop.maker), answeringAgent: drop.answeringAgent, pointScale: 1,
-                        markStyle: what.markStyle)
-            drops[drop.id] = record
-            layers.append(record.root)
+            let pinned = drops[drop.id] ?? made()
+            var shapes = [PinGel.Shape.body(of: teardrop)]
+            if let outline = outlines.removeValue(forKey: drop.id) { shapes.append(outline) }
+            pinned.gel.show(shapes, look: look(drop.maker, over: teardrop.square, toImage: toImage, side: teardrop.square.height,
+                                                drifting: what.drifting.contains(drop.id), markStyle: what.markStyle))
+            pinned.face.show(teardrop, maker: drop.maker, face: PinFace(drop.maker), answeringAgent: drop.answeringAgent, pointScale: 1,
+                             markStyle: what.markStyle)
+            drops[drop.id] = pinned
+            pinLayers += [pinned.gel, pinned.face.root]
         }
 
         let grouped = Set(what.placement.clusters.map(\.pins))
         clusters = clusters.filter { grouped.contains($0.key) }
         for cluster in what.placement.clusters {
-            let record = clusters[cluster.pins] ?? PinLayer(scale: scale)
-            record.show(PinTeardrop(label: cluster.label, agent: cluster.agent, orientation: cluster.orientation,
-                                    frame: cluster.frame.applying(transform), style: what.markStyle.pin),
-                        maker: cluster.maker, pointScale: 1, markStyle: what.markStyle)
-            clusters[cluster.pins] = record
-            layers.append(record.root)
+            let pinned = clusters[cluster.pins] ?? made()
+            let teardrop = PinTeardrop(label: cluster.label, agent: cluster.agent, orientation: cluster.orientation,
+                                       frame: cluster.frame.applying(transform), style: style)
+            pinned.gel.show([.body(of: teardrop)], look: look(cluster.maker, over: teardrop.square, toImage: toImage,
+                                                              side: teardrop.square.height, drifting: false, markStyle: what.markStyle))
+            pinned.face.show(teardrop, maker: cluster.maker, pointScale: 1, markStyle: what.markStyle)
+            clusters[cluster.pins] = pinned
+            pinLayers += [pinned.gel, pinned.face.root]
         }
+
+        // The outlines whose pin is in a cluster stand on their own.
+        areas = areas.filter { outlines.keys.contains($0.key) }
+        var areaLayers: [CALayer] = []
+        for id in what.outlined.map(\.id) {
+            guard let outline = outlines[id] else { continue }
+            let gel = areas[id] ?? PinGel(scale: scale)
+            gel.host = host
+            gel.show([outline], look: look(makers[id] ?? .person, over: outline.rect, toImage: toImage, side: 0,
+                                           drifting: what.drifting.contains(id), markStyle: what.markStyle))
+            areas[id] = gel
+            areaLayers.append(gel)
+        }
+        let layers = areaLayers + [selectionEdge, selectionLine] + pinLayers
         if (layer.sublayers ?? []).map(ObjectIdentifier.init) != layers.map(ObjectIdentifier.init) { layer.sublayers = layers }
     }
-}
 
-/// An area's outline in the editor: dashes in the pin's colour inside a white edge as wide as the
-/// teardrop's hairline, one width on screen at every zoom. Their phase moves at `speed`, a constant
-/// pace that has no target for a spring to settle on.
-@MainActor
-private final class AreaOutline {
-    let root = CALayer()
-    private let edge = CAShapeLayer(), line = CAShapeLayer()
-    private var march: (speed: CGFloat, period: CGFloat, edge: CGFloat, edgeDashed: Bool) = (0, 0, 0, false)
-
-    init(scale: CGFloat) {
-        root.anchorPoint = .zero
-        for shape in [edge, line] {
-            shape.anchorPoint = .zero
-            shape.fillColor = nil
-            shape.lineCap = .butt
-            shape.lineJoin = .miter
-            root.addSublayer(shape)
-        }
-        edge.strokeColor = EditorStyle.lightEdge.cgColor
-        setScale(scale)
+    private func made() -> Pinned {
+        let gel = PinGel(scale: scale)
+        gel.host = host
+        return Pinned(gel: gel, face: PinLayer(scale: scale, body: false))
     }
 
-    func setScale(_ scale: CGFloat) {
-        for shape in [edge, line] { shape.contentsScale = scale }
-    }
-
-    func show(_ frame: CGRect, color: CGColor, style: PinStyle, edge width: CGFloat, speed: CGFloat) {
-        let path = CGPath(rect: frame, transform: nil)
-        let dashes = [max(style.areaDash, 0.5), max(style.areaGap, 0.5)]
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        // The edge's dashes reach `width` past each end of the line's, so a gap narrower than both ends leaves it solid.
-        let edgeGap = dashes[1] - 2 * width
-        edge.path = path
-        line.path = path
-        line.lineDashPattern = dashes.map { NSNumber(value: Double($0)) }
-        edge.lineDashPattern = edgeGap > 0 ? [dashes[0] + 2 * width, edgeGap].map { NSNumber(value: Double($0)) } : nil
-        line.lineDashPhase = 0
-        edge.lineDashPhase = width
-        edge.lineWidth = style.areaWidth + 2 * width
-        line.lineWidth = style.areaWidth
-        line.strokeColor = color
-        CATransaction.commit()
-        let period = dashes[0] + dashes[1]
-        let edgeDashed = edgeGap > 0
-        guard speed != march.speed || period != march.period || width != march.edge || edgeDashed != march.edgeDashed else { return }
-        march = (speed, period, width, edgeDashed)
-        for (shape, phase) in [(line, 0), (edge, width)] {
-            shape.removeAnimation(forKey: "march")
-            guard speed > 0, shape.lineDashPattern != nil else { continue }
-            let move = CABasicAnimation(keyPath: "lineDashPhase")
-            move.fromValue = phase
-            move.toValue = phase - period
-            move.duration = period / speed
-            move.repeatCount = .infinity
-            move.timingFunction = CAMediaTimingFunction(name: .linear)
-            shape.add(move, forKey: "march")
+    /// How the gel of a pin `maker` made looks over `rect` of the editor: in the pin's colour, with its
+    /// deep edge where that stands out more from the picture there, and domed across `side`.
+    private func look(_ maker: PinMaker, over rect: CGRect, toImage: CGAffineTransform, side: CGFloat, drifting: Bool,
+                      markStyle: MarkStyle) -> PinGel.Look {
+        let color = PinShading.color(of: maker, markStyle: markStyle)
+        var deepness: CGFloat = 0
+        if let brightness = backdrop?.mean(in: rect.applying(toImage)) {
+            let share = markStyle.pin.gelDeep
+            let deep = CGColor(srgbRed: color.red * share, green: color.green * share, blue: color.blue * share, alpha: 1)
+            deepness = InkContrast(ice: color.cgColor, deep: deep).deepWins(behind: brightness) ? 1 : 0
         }
+        return PinGel.Look(color: color, deepness: deepness, dome: side / 2 * markStyle.pin.gelDome, drifting: drifting)
     }
 }

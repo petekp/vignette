@@ -89,7 +89,7 @@ final class EditorView: NSView {
     let pinUI = EditorPinUI()
     let picture = EditorPicture()
     let overlay = EditorOverlayLayers()
-    private var placedPicture = CGRect.zero
+    private(set) var placedPicture = CGRect.zero
     private var screenshotName = ""
     private(set) var typingField: TypingField?
     private var revealPending = false
@@ -121,6 +121,7 @@ final class EditorView: NSView {
         addSubview(canvas)
         canvas.host.addSublayer(picture.layer)
         canvas.host.addSublayer(pinUI.pins.layer)
+        pinUI.pins.host = self
         canvas.host.addSublayer(overlay.layer)
         picture.onTextDrawn = { [weak self] id in
             if self?.lingering?.id == id { self?.settleLingering() }
@@ -150,6 +151,7 @@ final class EditorView: NSView {
         CATransaction.setDisableActions(true)
         self.picture.open(image, pixels: drawing.pixels)
         CATransaction.commit()
+        pinUI.pins.backdrop = image.flatMap { LivePacket.Luminance($0, frame: drawing.pixels.bounds) }
         placedPicture = picture
         handle(.open(drawing, style: style, metrics: metrics, markStyle: markStyle, selectsNewest: selectsNewest, message: message, history: history))
         dropLingering()
@@ -187,6 +189,8 @@ final class EditorView: NSView {
         CATransaction.setDisableActions(true)
         picture.setImage(image)
         CATransaction.commit()
+        pinUI.pins.backdrop = LivePacket.Luminance(image, frame: core.drawing.pixels.bounds)
+        refresh()
     }
 
     /// Frees the screenshot and every mark's layers once the parked view is out of sight. The next
@@ -245,25 +249,6 @@ final class EditorView: NSView {
             }
         }
         refresh()
-    }
-
-    // MARK: Coordinates
-
-    /// Screen pt per image px.
-    var zoom: CGFloat {
-        let width = CGFloat(core.drawing.pixels.width)
-        return width > 0 ? placedPicture.width / width : 0
-    }
-
-    var toView: CGAffineTransform {
-        CGAffineTransform(a: zoom, b: 0, c: 0, d: zoom, tx: placedPicture.minX, ty: placedPicture.minY)
-    }
-
-    func viewPoint(forImagePoint point: CGPoint) -> CGPoint { point.applying(toView) }
-
-    func imagePoint(forViewPoint point: CGPoint) -> CGPoint {
-        guard zoom > 0 else { return point }
-        return CGPoint(x: (point.x - placedPicture.minX) / zoom, y: (point.y - placedPicture.minY) / zoom)
     }
 
     // MARK: Running the core

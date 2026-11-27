@@ -142,8 +142,7 @@
   an answer's buttons (`LiveAnswerActions`), the note's target and return key moving to their row
   (`LiveNoteContent.layOut`), the toolbar's words giving way (`AnnotatorToolbar.words`,
   `nameSwap`), a mark's draw-on (`MarkLayers.drawOn`), the menu bar intro, the menu bar icon's
-  crossfade when the update dot comes or goes (`setIcon`), an area pin's dashes marching at a
-  constant speed while it is placed or open (`AreaOutline`), and the card slide-in's eased choices
+  crossfade when the update dot comes or goes (`setIcon`), and the card slide-in's eased choices
   for `ui.slideInCurve` (`Anim.swiftUI`). `scripts/check-animations.py`, run by
   `build.sh --test`, counts each `CAMediaTimingFunction(` and each eased or linear SwiftUI curve in
   `Sources/`, and fails a file whose count differs from its entry in `ALLOWED`. Each entry says why
