@@ -23,7 +23,7 @@ final class AgentMarksTests: XCTestCase {
         let at = Date(timeIntervalSince1970: 1_795_000_000)
         let list = try AgentPin.parse(#"[{"x":0.5,"y":0.5,"w":0.2,"h":0.2,"text":"new"},{"pin":4,"text":"Fixed"},{"x":0.1,"y":0.1,"text":"no room"},"#
                                       + #"{"pin":"\#(mine.id.uuidString)","text":"And here"},{"pin":9,"text":"gone"}]"#)
-        let joined = AgentPin.join(list, from: "claude", at: at, onto: drawing)
+        let joined = AgentPin.join(list, by: AgentAuthor(agent: "claude", at: at), onto: drawing)
 
         XCTAssertEqual(joined.dropped, [3, 5])
         XCTAssertEqual(joined.pins.map(\.number), [108, 4])

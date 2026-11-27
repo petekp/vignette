@@ -50,10 +50,11 @@ extension AppDelegate {
         var call = ThumbnailController.ShowCall(shots: shots, shown: shown, agent: request.agent, tag: request.tag, asked: asked)
         func bringUp() {
             thumbnail.show(call)
-            if shown != nil, from.name == nil, let session { nameSender(of: session, asked: asked) }
+            if shown != nil, from.name == nil, let session { nameSender(of: session, commentsOn: agentPins.isEmpty ? nil : first.key, asked: asked) }
         }
         guard let agent, !agentMarks.isEmpty || !agentPins.isEmpty else { return bringUp() }
-        let additions = AgentAdditions(marks: agentMarks, pins: agentPins, agent: agent), ui = settings.data.ui
+        let additions = AgentAdditions(marks: agentMarks, pins: agentPins, agent: agent, session: session, sessionName: from.name)
+        let ui = settings.data.ui
         guard first.kind == .image, let joining = drawings.joining(additions, to: first.key, style: ui.textStyle,
                                                                  newScreen: Self.newDrawingScreen, rule: ui.markScaleRule) else {
             Commands.error(cmd, agentMarks.isEmpty ? .invalidPins : .invalidMarks, "\(name): it is not an image its marks or pins can go on"); return
@@ -75,13 +76,16 @@ extension AppDelegate {
     }
 
     /// The session's name, for a `show` that did not give one with `from=`: the cards come up at
-    /// once and say "From Claude" until the session list answers, then its name in place.
-    private func nameSender(of session: AgentAddress, asked: CFTimeInterval) {
+    /// once and say "From Claude" until the session list answers, then its name in place. The
+    /// comments its pins left on the screenshot `commentsOn` take the name too.
+    private func nameSender(of session: AgentAddress, commentsOn key: ScreenshotKey?, asked: CFTimeInterval) {
         sessions.senderName(of: session) { [weak self] sender in
             let after = "after=\(Int((CACurrentMediaTime() - asked) * 1000))ms"
             guard let sender = Agent.cleanSender(sender).name else { Log.write("[show] sender not found session=\(session.id) \(after)"); return }
             Log.write("[show] sender found session=\(session.id) \(after)")
-            self?.thumbnail.named(sender, of: session)
+            guard let self else { return }
+            thumbnail.named(sender, of: session)
+            if let key { drawings.name(sender, of: session, on: key, style: settings.data.ui.textStyle) }
         }
     }
 }

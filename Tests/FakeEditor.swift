@@ -14,10 +14,17 @@ final class FakeEditor: OpenDrawing {
         if drawing.key == old.path { drawing.key = new.path }
     }
 
-    func join(_ marks: [Mark], pins: [AgentPin], from agent: String?, at: Date) -> Drawing? {
+    func join(_ marks: [Mark], pins: [AgentPin], by author: AgentAuthor) -> Drawing? {
         guard !marks.isEmpty || !pins.isEmpty else { return nil }
         drawing.marks += marks
-        drawing = drawing.taking(AgentPin.join(pins, from: agent, at: at, onto: drawing).pins)
+        drawing = drawing.taking(AgentPin.join(pins, by: author, onto: drawing).pins)
+        return drawing
+    }
+
+    func name(_ sender: String, of session: AgentAddress) -> Drawing? {
+        let named = drawing.naming(session, sender)
+        guard named != drawing else { return nil }
+        drawing = named
         return drawing
     }
 }

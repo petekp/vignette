@@ -111,7 +111,12 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   as its marks come with `marks=`: new pins, or answers added to the person's pins as the agent's
   comments. `AgentPin.join` turns them into the pins as they will be: new ones placed in px inside
   the image and numbered from `nextPin`, answers found by number or `id` among the numbered pins.
-  Each comment holds the time of the call (`Pin.Comment.at`). `AgentPin.problem` refuses a list
+  Each comment holds the time of the call (`Pin.Comment.at`), and the session `session=` names and
+  its name, `from=` (`Pin.Comment.session` and `sessionName`, from `AgentAuthor`). A name the
+  session list gives after the comments joined is given to every comment of that session that has
+  none, in the stored drawing, in the editor's when it is open there, and in their undo and redo
+  steps (`Drawings.name`, `EditorCore.name`), as no step of its own. A person's edit of an agent's
+  comment makes it theirs, without a session. `AgentPin.problem` refuses a list
   that names a pin the drawing lacks or overflows 99, before anything is shown or written. With
   `show` as with `add`, they join the drawing at once, as one undo step with the marks.
 - Who wrote a pin's first comment is its maker (`Pin.maker`, `PinMaker`), and decides its colour

@@ -36,8 +36,14 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
   `text`, at most 2,000 characters, and `agent` and `agentName` as a mark has them, left out for
   a person's. It also has `at`, when it was written, in ISO 8601 in UTC to the second, such as
   `2026-11-25T18:04:05Z`. An edit gives it a new `at`. A comment without `at`, as every one written
-  before times were kept, or with one that does not read, has no time and is kept. A file holds at
-  most 99 pins.
+  before times were kept, or with one that does not read, has no time and is kept. An agent's
+  comment also has `session`, the id of the agent session that wrote it: a Claude Code session id
+  or a Codex thread id, a UUID in lower case. Its client is the one `agentName` names, `claude` or
+  `codex` in any case, and a `session` beside any other `agentName` is not read. `sessionName` is
+  that session's name as the person knows it, its Herdr tab's label or its own name, one line of
+  at most 40 characters. Both are left out when unknown. A comment without them, as every one
+  written before they were kept, or with a `session` that is not a UUID, reads without them and is
+  kept. Neither raises the version. A file holds at most 99 pins.
 - `pieceNumbers` is a stitch's: where each piece wears its number, as `[x, y, w, h]` in px, so a
   teardrop turns away from it. It is left out when there are none, and does not raise the version.
 - `nextPin` is the number the next pin gets, and is left out at 1. It never goes down while the

@@ -26,7 +26,7 @@ extension Drawings {
         if let open, let before = open.drawing(of: key) {
             let made = marks(additions.marks, from: agent, in: before.pixels, pointScale: before.pointScale, style: style, rule: rule, name: name)
             pins(additions, onto: before, name: name)
-            guard let joined = open.join(made, pins: additions.pins, from: agent, at: additions.at) else { return Joined() }
+            guard let joined = open.join(made, pins: additions.pins, by: additions.author) else { return Joined() }
             guard write(joined, history: open.history(of: key) ?? EditorHistory(), reason: "saved") else {
                 throw Failure(code: .writeFailed, description: "the drawing for \(name) could not be written")
             }
@@ -56,11 +56,26 @@ extension Drawings {
         return joined
     }
 
+    /// The session list named `session` after its comments joined the drawing of the screenshot `key`:
+    /// each comment `session` wrote that has no session name takes `sender`, in the drawing and in its
+    /// history, the editor's when it is open there. Writes nothing when no comment changed.
+    func name(_ sender: String, of session: AgentAddress, on key: ScreenshotKey, style: TextStyle) {
+        if let open, open.drawing(of: key) != nil {
+            guard let named = open.name(sender, of: session) else { return }
+            write(named, history: open.history(of: key) ?? EditorHistory(), reason: "named")
+            return
+        }
+        guard keys.contains(key), let pixels = PixelSize(imageAt: key.url), let drawing = read(key, pixels: pixels, style: style) else { return }
+        let named = drawing.naming(session, sender)
+        guard named != drawing else { return }
+        write(named, history: history(of: key, pixels: pixels, drawing: drawing).naming(session, sender), reason: "named")
+    }
+
     /// `AgentPin.join` of `additions`' pins onto `drawing`, with one line for those left out.
     @discardableResult
     private func pins(_ additions: AgentAdditions, onto drawing: Drawing, name: String) -> [Pin] {
         guard !additions.pins.isEmpty else { return [] }
-        let joined = AgentPin.join(additions.pins, from: additions.agent, at: additions.at, onto: drawing)
+        let joined = AgentPin.join(additions.pins, by: additions.author, onto: drawing)
         if !joined.dropped.isEmpty {
             Log.write("[pins] dropped pin=\(joined.dropped.map(String.init).joined(separator: ",")) for \(name): its pin is gone, or the screenshot holds \(Pin.maxCount) pins")
         }

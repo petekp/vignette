@@ -88,11 +88,11 @@ extension ReplyProtocol {
 }
 
 extension Pin {
-    /// This pin with `comments`' answer to it added as `agent`'s comment, written `at`.
-    func answered(by comments: [ReplyProtocol.Comment], from agent: String?, at: Date?) -> Pin {
+    /// This pin with `comments`' answer to it added as `author`'s comment.
+    func answered(by comments: [ReplyProtocol.Comment], as author: AgentAuthor) -> Pin {
         var pin = self
         for answer in comments where answer.pin == id {
-            pin.comments.append(Comment(text: answer.text, agent: true, agentName: agent, at: at))
+            pin.comments.append(author.comment(answer.text))
         }
         return pin
     }

@@ -66,8 +66,10 @@ struct EditorCore {
         /// What the clipboard held when `readClipboard` asked, or what was dropped on the editor.
         case paste(PasteContent)
         /// Agents' marks joining the open drawing, already in px and kept inside the image, and their
-        /// pins, new or answering one, from `agent` and written `at`.
-        case agentMarks([Mark], pins: [AgentPin] = [], from: String? = nil, at: Date = Date())
+        /// pins, new or answering one, with comments by `author`.
+        case agentMarks([Mark], pins: [AgentPin] = [], by: AgentAuthor = AgentAuthor())
+        /// The session list named `session` after its comments joined (`EditorCore.name`).
+        case sessionNamed(String, of: AgentAddress)
         /// Done in the toolbar.
         case done
         /// Send in the toolbar, to the destination it chose.
@@ -339,7 +341,8 @@ struct EditorCore {
         case .messageTypingEnded: typingMessage = false
         case .timerFired: timerFired()
         case .paste(let content): paste(content)
-        case .agentMarks(let marks, let pins, let agent, let at): join(marks, pins: pins, from: agent, at: at)
+        case .agentMarks(let marks, let pins, let author): join(marks, pins: pins, by: author)
+        case .sessionNamed(let name, let session): self.name(name, of: session)
         case .done: finish(.done)
         case .send(let destination): finish(.send, to: destination)
         case .park: park()
@@ -430,6 +433,19 @@ struct EditorCore {
     mutating func handOver() {
         emit(.handOver(drawingForHost))
         unsaved = false
+    }
+
+    /// Gives `sender` as the session's name to every comment `session` wrote that has none: in the
+    /// drawing, in the pins an edit under way began with, and in every undo and redo step, so undoing
+    /// and redoing keep the name. It is no step of its own, since nothing the person sees changes.
+    mutating func name(_ sender: String, of session: AgentAddress) {
+        let named = drawing.naming(session, sender)
+        guard named != drawing else { return }
+        drawing = named
+        if let start = edit?.startPins { edit?.take(start.map { $0.naming(session, sender) }) }
+        undoSteps = undoSteps.map { $0.naming(session, sender) }
+        redoSteps = redoSteps.map { $0.naming(session, sender) }
+        handOver()
     }
 
     /// The drawing as the host stores it: without what a held button is still drawing, and without a
@@ -801,17 +817,6 @@ struct EditorCore {
         }
     }
 
-    /// `point` under the turn and scale about `pivot` that takes `from` to `to`.
-    static func turned(_ point: CGPoint, about pivot: CGPoint, from: CGPoint, to: CGPoint) -> CGPoint {
-        let a = CGPoint(x: from.x - pivot.x, y: from.y - pivot.y), b = CGPoint(x: to.x - pivot.x, y: to.y - pivot.y)
-        let squared = a.x * a.x + a.y * a.y
-        guard squared > 0 else { return point }
-        // b / a as complex numbers: the rotation and scale in one.
-        let cos = (b.x * a.x + b.y * a.y) / squared, sin = (b.y * a.x - b.x * a.y) / squared
-        let p = CGPoint(x: point.x - pivot.x, y: point.y - pivot.y)
-        return CGPoint(x: pivot.x + p.x * cos - p.y * sin, y: pivot.y + p.x * sin + p.y * cos)
-    }
-
     /// Moves the selection by `delta`, or copies of it with Option while the originals stay put. The
     /// marks stop together at the image's edges, and Shift locks the move to its longer axis.
     private mutating func move(originals: [Mark.ID], copies: [Mark.ID], by delta: CGVector) {
@@ -1145,22 +1150,6 @@ struct EditorCore {
         }
         if let mark = mark(typing.id), Self.isBlank(mark) { remove(typing.id) }
         commitEdit(named: .typing)
-    }
-
-    static func isBlank(_ mark: Mark) -> Bool {
-        guard case .text(let text) = mark.geometry else { return false }
-        return text.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    /// `text` cut to what a drawing file may hold: `MarkFields`' characters and bytes.
-    static func capped(_ text: String) -> String {
-        var capped = "", bytes = 0
-        for character in text.prefix(MarkFields.maxTextLength) {
-            bytes += character.utf8.count
-            guard bytes <= MarkFields.maxTextBytes else { break }
-            capped.append(character)
-        }
-        return capped
     }
 
     // MARK: Keys

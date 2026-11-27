@@ -52,6 +52,13 @@ struct EditStep {
         return EditStep(name: name, changes: changes, selectionBefore: selectionBefore, selectionAfter: later.selectionAfter, pins: pins)
     }
 
+    /// This step with `name` given to each comment `session` wrote that has no session name yet.
+    func naming(_ session: AgentAddress, _ name: String) -> EditStep {
+        var named = self
+        named.pins = pins.map { EditStep.PinChange(id: $0.id, before: $0.before?.naming(session, name), after: $0.after?.naming(session, name)) }
+        return named
+    }
+
     /// `drawing` as it was before this step (`forward` false) or after it (true), for the marks and the
     /// pins it touched; everything else is left alone.
     func applied(to drawing: Drawing, forward: Bool) -> Drawing {
@@ -137,6 +144,12 @@ enum HistoryStep {
         return "\(agent)'s Marks"
     }
 
+    /// This step with `name` given to each comment `session` wrote that has no session name yet.
+    func naming(_ session: AgentAddress, _ name: String) -> HistoryStep {
+        guard case .drawing(let step) = self else { return self }
+        return .drawing(step.naming(session, name))
+    }
+
     /// The Edit menu's item for `step`, the one Undo (or with `redo`, Redo) would take: "Undo Arrow", or
     /// "Undo" with nothing to undo.
     static func menuTitle(_ step: HistoryStep?, redo: Bool) -> String {
@@ -154,6 +167,11 @@ struct EditorHistory {
     var redo: [HistoryStep] = []
 
     var isEmpty: Bool { undo.isEmpty && redo.isEmpty }
+
+    /// This history with `name` given to each comment `session` wrote that has no session name yet.
+    func naming(_ session: AgentAddress, _ name: String) -> EditorHistory {
+        EditorHistory(undo: undo.map { $0.naming(session, name) }, redo: redo.map { $0.naming(session, name) })
+    }
 
     /// Adds `step` as the newest undo step, which ends what could be redone, as in the editor.
     mutating func record(_ step: HistoryStep) {

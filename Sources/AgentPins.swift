@@ -82,27 +82,53 @@ struct AgentPin: Equatable {
 }
 
 /// What one call of an agent's brings to a screenshot's drawing: its marks and its pins, the agent
-/// that `agent=` names, and when it came, which the pins' comments keep.
+/// that `agent=` names, the session that `session=` names and its name, and when it came, which the
+/// pins' comments keep.
 struct AgentAdditions {
     var marks: [AgentMark]
     var pins: [AgentPin] = []
     var agent: String?
+    var session: AgentAddress?
+    var sessionName: String?
     var at = Date()
 
     var isEmpty: Bool { marks.isEmpty && pins.isEmpty }
+
+    var author: AgentAuthor { AgentAuthor(agent: agent, session: session, sessionName: sessionName, at: at) }
+}
+
+/// Who wrote an agent's comments, which each of them keeps: the agent `agent=` names, the session
+/// that wrote them and that session's name, and when.
+struct AgentAuthor {
+    var agent: String?
+    var session: AgentAddress?
+    var sessionName: String?
+    var at: Date?
+
+    init(agent: String? = nil, session: AgentAddress? = nil, sessionName: String? = nil, at: Date? = Date()) {
+        self.agent = agent
+        self.session = session
+        self.sessionName = sessionName
+        self.at = at
+    }
+
+    /// `text` as this author's comment.
+    func comment(_ text: String) -> Pin.Comment {
+        let name = Agent.clean(agent).flatMap { $0.isEmpty ? nil : $0 }
+        return Pin.Comment(text: text, agent: true, agentName: name, session: session, sessionName: sessionName, at: at)
+    }
 }
 
 extension AgentPin {
     /// What `list` changes on `drawing`, the pins in their state after: each new pin placed in px inside
     /// the image and numbered from `nextPin` in the order given, and each pin an answer names with the
-    /// answer added. Every comment is the agent's, written `at`. `dropped` numbers from 1, as `pins=`
+    /// answer added. Every comment is `author`'s. `dropped` numbers from 1, as `pins=`
     /// counts them, the answers whose pin the drawing does not hold and the new pins past `Pin.maxCount`.
-    static func join(_ list: [AgentPin], from agent: String?, at: Date, onto drawing: Drawing) -> (pins: [Pin], dropped: [Int]) {
-        let name = Agent.clean(agent).flatMap { $0.isEmpty ? nil : $0 }
+    static func join(_ list: [AgentPin], by author: AgentAuthor, onto drawing: Drawing) -> (pins: [Pin], dropped: [Int]) {
         var changed: [Pin] = [], dropped: [Int] = []
         var next = drawing.nextPin, count = drawing.pins.filter { $0.number > 0 }.count
         for (index, item) in list.enumerated() {
-            let comment = Pin.Comment(text: item.text, agent: true, agentName: name, at: at)
+            let comment = author.comment(item.text)
             let place: Pin.Place
             switch item.target {
             case .number, .id:
@@ -147,7 +173,7 @@ extension AgentPin {
     /// hold, or more new pins than it has room for. Nil when every one joins.
     static func problem(_ list: [AgentPin], on drawing: Drawing?, name: String) -> String? {
         let empty = Drawing(key: "", pixels: drawing?.pixels ?? PixelSize(width: 1, height: 1), pointScale: 1, marks: [])
-        let dropped = join(list, from: nil, at: Date(), onto: drawing ?? empty).dropped
+        let dropped = join(list, by: AgentAuthor(), onto: drawing ?? empty).dropped
         guard let first = dropped.first else { return nil }
         switch list[first - 1].target {
         case .number(let number): return "pin \(first): \(name) has no pin \(number)"
@@ -158,6 +184,13 @@ extension AgentPin {
 }
 
 extension Drawing {
+    /// The drawing with `name` given to each comment `session` wrote that has no session name yet.
+    func naming(_ session: AgentAddress, _ name: String) -> Drawing {
+        var drawing = self
+        drawing.pins = pins.map { $0.naming(session, name) }
+        return drawing
+    }
+
     /// The drawing with `pins` in place of the pins of the same `id`, and those it lacks added, kept in
     /// number order, with `nextPin` past every number.
     func taking(_ pins: [Pin]) -> Drawing {

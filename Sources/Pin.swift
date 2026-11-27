@@ -59,15 +59,33 @@ struct Pin: Equatable, Identifiable {
         var agent: Bool
         /// Which agent wrote it, as a mark's `agentName`. Nil for a person's comment.
         var agentName: String?
+        /// The agent session that wrote it. The file keeps only its id and names its client by
+        /// `agentName`, so it is kept only when `agentName` is its client's name. Nil for a person's
+        /// comment, and for an agent's that named no session.
+        var session: AgentAddress?
+        /// That session's name as the person knows it, a Herdr tab's label or the session's own name,
+        /// as `Agent.cleanSender` keeps it. Nil until the session list answers, and for a session with no name.
+        var sessionName: String?
         /// When its words were written, to the second, as the file keeps it. Nil for a comment from a
         /// file written before comments kept a time.
         var at: Date?
 
-        init(text: String, agent: Bool = false, agentName: String? = nil, at: Date? = nil) {
+        init(text: String, agent: Bool = false, agentName: String? = nil, session: AgentAddress? = nil,
+             sessionName: String? = nil, at: Date? = nil) {
             self.text = text
             self.agent = agent
             self.agentName = agent ? agentName : nil
+            self.session = agent && session?.client == AgentClient(rawValue: (agentName ?? "").lowercased()) ? session : nil
+            self.sessionName = agent ? Agent.cleanSender(sessionName).name : nil
             self.at = at.map { Date(timeIntervalSince1970: $0.timeIntervalSince1970.rounded(.down)) }
+        }
+
+        /// This comment with `name` as its session's name, when `session` wrote it and it has none yet.
+        func naming(_ session: AgentAddress, _ name: String) -> Comment {
+            guard self.session == session, sessionName == nil else { return self }
+            var named = self
+            named.sessionName = Agent.cleanSender(name).name
+            return named
         }
 
         /// How a file writes `at`: ISO 8601 in UTC, to the second, as `2026-11-25T18:04:09Z`.
@@ -104,6 +122,13 @@ struct Pin: Equatable, Identifiable {
 
     /// Who made the pin, the writer of its first comment, which its colour says.
     var color: MarkColor { comments.first?.agent == true ? .agent : .person }
+
+    /// The pin with `name` given to each comment `session` wrote that has no session name yet.
+    func naming(_ session: AgentAddress, _ name: String) -> Pin {
+        var named = self
+        named.comments = comments.map { $0.naming(session, name) }
+        return named
+    }
 
     /// The pin with its place moved by `delta`, in px.
     func moved(by delta: CGVector) -> Pin {
@@ -227,21 +252,31 @@ extension Pin.Comment {
     init(validating raw: Any) throws {
         guard let item = raw as? [String: Any] else { throw MarkProblem("not an object") }
         let fields = MarkFields(item: item, unit: .px)
-        // A time that does not read is left out rather than costing the comment its words.
-        self.init(text: try fields.text(), agent: try fields.flag("agent"), agentName: try fields.agentName(), at: Pin.Comment.time(item["at"]))
+        // A time or a session that does not read is left out rather than costing the comment its words.
+        let agentName = try fields.agentName()
+        var session: AgentAddress?
+        if let client = AgentClient(rawValue: (agentName ?? "").lowercased()), let id = Agent.cleanSession(item["session"] as? String) {
+            session = AgentAddress(client: client, id: id)
+        }
+        self.init(text: try fields.text(), agent: try fields.flag("agent"), agentName: agentName, session: session,
+                  sessionName: item["sessionName"] as? String, at: Pin.Comment.time(item["at"]))
     }
 }
 
 // MARK: - The file's encoding
 
 /// A pin as a drawing file writes it: `x` and `y` are a point, or an area's top-left corner; `w`, `h`
-/// and `corner`, the corner its teardrop's tip sits on, only for an area; and a comment's `agent` and
-/// `agentName` only for an agent's. A file from before `corner` has the tip at the top-left.
+/// and `corner`, the corner its teardrop's tip sits on, only for an area; and a comment's `agent`,
+/// `agentName`, `session` and `sessionName` only for an agent's. A file from before `corner` has the
+/// tip at the top-left.
 struct PinRecord: Encodable {
     struct CommentRecord: Encodable {
         let text: String
         var agent: Bool?
         var agentName: String?
+        /// The session's id. Its client is the one `agentName` names.
+        var session: String?
+        var sessionName: String?
         var at: String?
     }
 
@@ -265,7 +300,8 @@ struct PinRecord: Encodable {
             corner = tip.rawValue
         }
         comments = pin.comments.map {
-            CommentRecord(text: $0.text, agent: $0.agent ? true : nil, agentName: $0.agentName, at: $0.at.map(Pin.Comment.written))
+            CommentRecord(text: $0.text, agent: $0.agent ? true : nil, agentName: $0.agentName, session: $0.session?.id,
+                          sessionName: $0.sessionName, at: $0.at.map(Pin.Comment.written))
         }
     }
 }

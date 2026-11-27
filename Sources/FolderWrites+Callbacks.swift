@@ -15,6 +15,8 @@ extension FolderWrites {
         /// The name the session list gives a session, on the main thread, nil when it has none
         /// (`SessionListing.senderName`).
         var senderName: (AgentAddress, @escaping @MainActor (String?) -> Void) -> Void = { _, answer in answer(nil) }
+        /// The session list named a session after its comments joined the screenshot's drawing (`Drawings.name`).
+        var nameComments: (_ sender: String, AgentAddress, ScreenshotKey) -> Void = { _, _, _ in }
         /// The file's sender was recorded or removed, after its card may have been made.
         var senderRecorded: (Screenshot) -> Void = { _ in }
         /// A screenshot's drawing as the editor would open it.

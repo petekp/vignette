@@ -13,14 +13,15 @@ extension ScreenshotRequests {
         return onPins ? base : directory.appendingPathComponent("image.png")
     }
 
-    /// The person's pins a reply drawn on `base.png` holds, each with the reply's answer to it added.
+    /// The person's pins a reply drawn on `base.png` holds, each with the reply's answer to it added,
+    /// written by the session the request went to, under the name the send's card gave it.
     /// None for a reply on any other picture.
     func cardPins(of reply: Reply, on picture: URL, at destination: URL) -> [Pin] {
         let directory = ReplyProtocol.requestDirectory(root: root, requestID: reply.requestID)
         guard picture == ReplyProtocol.baseImageURL(in: directory), let pixels = PixelSize(imageAt: destination) else { return [] }
-        let agent = requests[reply.requestID]?.address.client.rawValue
-        return ReplyProtocol.requestPins(in: directory, image: pixels).map {
-            $0.answered(by: reply.comments ?? [], from: agent, at: reply.accepted)
-        }
+        let request = requests[reply.requestID]
+        let author = AgentAuthor(agent: request?.address.client.rawValue, session: request?.address, sessionName: request?.sent.title,
+                                 at: reply.accepted)
+        return ReplyProtocol.requestPins(in: directory, image: pixels).map { $0.answered(by: reply.comments ?? [], as: author) }
     }
 }
