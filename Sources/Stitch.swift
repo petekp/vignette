@@ -253,13 +253,17 @@ enum Stitch {
     }
 
     /// The piece's number, in its top-left corner, inset by a quarter of the badge: white on a dark
-    /// rounded square, so it reads as the piece's label and never as one of the pins' red teardrops.
+    /// rounded square, so it reads as the piece's label and never as one of the pins' red teardrops,
+    /// inside a white hairline, as a pin has, so the square holds its shape on a dark screenshot.
     private static func drawBadge(number: Int, on piece: CGRect, side: CGFloat, in ctx: CGContext) {
         let inset = side / 4
         let square = CGRect(x: piece.minX + inset, y: piece.maxY - inset - side, width: side, height: side)
+        let rounded = CGPath(roundedRect: square, cornerWidth: side * 0.22, cornerHeight: side * 0.22, transform: nil)
+        ctx.addPath(rounded)
+        ctx.setLineWidth(max(side * 0.08, 2))
+        ctx.setStrokeColor(CGColor(gray: 1, alpha: 1))
         ctx.setFillColor(CGColor(red: 0.15, green: 0.15, blue: 0.16, alpha: 1))
-        ctx.addPath(CGPath(roundedRect: square, cornerWidth: side * 0.22, cornerHeight: side * 0.22, transform: nil))
-        ctx.fillPath()
+        ctx.drawPath(using: .fillStroke)
         let text = NSAttributedString(string: "\(number)", attributes: [
             .font: NSFont.systemFont(ofSize: side * 0.6, weight: .bold), .foregroundColor: NSColor.white])
         let size = text.size()
