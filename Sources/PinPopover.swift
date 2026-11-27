@@ -18,6 +18,8 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     private let send: (EditorCore.ComposerInput) -> Void
     private var shown: (comments: [Pin.Comment], editing: Int?)?
     private var anchor = CGRect.null
+    /// When the popover opened: each comment's time is said as of then, and holds still while it is open.
+    private let opened = Date()
     /// Closed by the core, so the popover's own close says nothing back.
     private var closing = false
     /// The window that keeps the keys while the popover the editor opened on its own comes up.
@@ -163,9 +165,9 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         popover.close()
     }
 
-    /// A comment: the writer's avatar, as the pin's hover card shows it, then their name, "You" or the
-    /// agent's as "Claude", and under it their words, all in the system's face. Pressing it edits it, and
-    /// its Delete, which shows while the pointer is on it, deletes it.
+    /// A comment: a line with the writer's avatar, as the pin's hover card shows it, their name, "You" or
+    /// the agent's as "Claude", and how long ago they wrote, and under it their words, all in the system's
+    /// face. Pressing it edits it, and its Delete, which shows while the pointer is on it, deletes it.
     private func row(_ comment: Pin.Comment, index: Int) -> NSView {
         let ui = Settings.shared.data.ui
         let author = PinHoverCard.Words.writer(comment, capitalized: true)
@@ -180,17 +182,22 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         name.font = .systemFont(ofSize: small.pointSize, weight: .semibold)
         name.textColor = .labelColor
         name.lineBreakMode = .byTruncatingTail
+        let ago = PinHoverCard.Words.ago(comment, now: opened)
+        let time = NSTextField(labelWithString: ago ?? "")
+        time.font = small
+        time.textColor = .secondaryLabelColor
+        time.lineBreakMode = .byTruncatingTail
         let words = NSTextField(wrappingLabelWithString: comment.text)
         words.font = .preferredFont(forTextStyle: .body)
         words.textColor = .labelColor
         words.isSelectable = false
-        words.preferredMaxLayoutWidth = Self.width - 2 * Self.inset - ui.pinAvatarSize - ui.pinDeleteSize - 2 * ui.pinPopoverSpacing
-        let row = CommentRow(avatar: avatar, name: name, words: words, avatarSize: ui.pinAvatarSize, deleteSize: ui.pinDeleteSize,
-                             gap: ui.pinPopoverSpacing)
+        words.preferredMaxLayoutWidth = Self.width - 2 * Self.inset
+        let row = CommentRow(avatar: avatar, name: name, time: time, words: words, avatarSize: ui.pinAvatarSize, deleteSize: ui.pinDeleteSize,
+                             gaps: (name: ui.pinNameGap, words: ui.pinWordsGap, trash: ui.pinPopoverSpacing))
         row.widthAnchor.constraint(equalToConstant: Self.width - 2 * Self.inset).isActive = true
         row.press = { [weak self] in self?.send(.edit(index)) }
         row.delete = { [weak self] in self?.send(.delete(index)) }
-        row.setAccessibilityLabel("\(author): \(comment.text)")
+        row.setAccessibilityLabel([author, ago].compactMap { $0 }.joined(separator: ", ") + ": \(comment.text)")
         return row
     }
 
@@ -249,7 +256,10 @@ private final class CommentRow: NSView {
     var delete: (() -> Void)?
     private let trash = NSButton()
 
-    init(avatar: NSImageView, name: NSTextField, words: NSTextField, avatarSize: CGFloat, deleteSize: CGFloat, gap: CGFloat) {
+    /// The avatar, the name, the time and the trash button share the top line, and the words start
+    /// under the avatar's left edge.
+    init(avatar: NSImageView, name: NSTextField, time: NSTextField, words: NSTextField, avatarSize: CGFloat, deleteSize: CGFloat,
+         gaps: (name: CGFloat, words: CGFloat, trash: CGFloat)) {
         super.init(frame: .zero)
         trash.isBordered = false
         trash.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "Delete comment")?
@@ -262,20 +272,23 @@ private final class CommentRow: NSView {
         // The row takes Delete from the keyboard itself, so Tab never stops on a button that is not shown.
         trash.refusesFirstResponder = true
         trash.alphaValue = 0
-        for view in [avatar, name, words, trash] as [NSView] {
+        for view in [avatar, name, time, words, trash] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
         name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        time.setContentCompressionResistancePriority(.defaultLow - 1, for: .horizontal)
         for constraint in [avatar.leadingAnchor.constraint(equalTo: leadingAnchor), avatar.topAnchor.constraint(equalTo: topAnchor),
                            avatar.widthAnchor.constraint(equalToConstant: avatarSize), avatar.heightAnchor.constraint(equalToConstant: avatarSize),
                            avatar.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor),
-                           name.leadingAnchor.constraint(equalTo: avatar.trailingAnchor, constant: gap),
+                           name.leadingAnchor.constraint(equalTo: avatar.trailingAnchor, constant: gaps.name),
                            name.centerYAnchor.constraint(equalTo: avatar.centerYAnchor),
-                           name.trailingAnchor.constraint(lessThanOrEqualTo: trash.leadingAnchor, constant: -gap),
-                           words.leadingAnchor.constraint(equalTo: name.leadingAnchor),
-                           words.topAnchor.constraint(equalTo: avatar.bottomAnchor, constant: 2),
-                           words.trailingAnchor.constraint(equalTo: trash.leadingAnchor, constant: -gap),
+                           time.leadingAnchor.constraint(equalTo: name.trailingAnchor, constant: gaps.name),
+                           time.firstBaselineAnchor.constraint(equalTo: name.firstBaselineAnchor),
+                           time.trailingAnchor.constraint(lessThanOrEqualTo: trash.leadingAnchor, constant: -gaps.trash),
+                           words.leadingAnchor.constraint(equalTo: avatar.leadingAnchor),
+                           words.topAnchor.constraint(equalTo: avatar.bottomAnchor, constant: gaps.words),
+                           words.trailingAnchor.constraint(equalTo: trailingAnchor),
                            words.bottomAnchor.constraint(equalTo: bottomAnchor),
                            trash.trailingAnchor.constraint(equalTo: trailingAnchor), trash.centerYAnchor.constraint(equalTo: avatar.centerYAnchor),
                            trash.widthAnchor.constraint(equalToConstant: deleteSize), trash.heightAnchor.constraint(equalToConstant: deleteSize)] {

@@ -61,9 +61,15 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   Return does, and works only while the field holds words. A press on a handle of the open pin's
   area resizes it with the popover open (`keepsComposer`); the resize is its own undo step, the
   composer's edit begins again after it (`resumeComposerEdit`), and the field takes the keys back.
-- The popover's comments are in the system's face, an agent's as a person's. Each shows its writer's
-  avatar, the one the hover card shows (`PinHoverCard.paint`, `Pin.Comment.writer`), then their name
-  in the label colour, "You" or the agent's capitalized, and under it the words. The popover is
+- The popover's comments are in the system's face, an agent's as a person's. Each starts with a line
+  holding its writer's avatar, the one the hover card shows (`PinHoverCard.paint`, `Pin.Comment.writer`),
+  their name in the label colour, "You" or the agent's capitalized, and how long ago they wrote in the
+  secondary label colour. The time is said as of when the popover opened and holds still while it is
+  open; a comment with no time (`Pin.Comment.at`) shows none. The words start under the avatar's
+  left edge, and the trash button sits at the end of the top line. The person's avatar is their macOS
+  account picture (`CBIdentity`), or their initial on `ui.personColor` when the account has none.
+  An agent's is its logo in black on white, or the letter its pin wears (`PinFace`) on its pin's
+  colour, or `Agent.fallbackSymbol` on white when it gave no name. The popover is
   macOS's own, with nothing behind its content: a view of our own under the content is not clipped
   to the popover's shape, so its arrow and body part ways. The field's placeholder is in the field's
   font and the secondary label colour. The post button is centred on the field's last line

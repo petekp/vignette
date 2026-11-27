@@ -1,4 +1,5 @@
 import AppKit
+import Collaboration
 
 /// The card a pin grows into in the editor while the pointer rests on it: the avatar of whoever wrote
 /// its first comment where the teardrop's body was, and beside it their name, the pin's number, how
@@ -21,7 +22,7 @@ final class PinHoverCard: NSView {
         init(_ pin: Pin, now: Date) {
             let first = pin.comments.first
             name = Self.writer(first, capitalized: true)
-            let ago = first?.at.map { Self.ago.localizedString(for: min($0, now), relativeTo: now) }
+            let ago = first.flatMap { Self.ago($0, now: now) }
             detail = ["Pin \(pin.number)", ago].compactMap { $0 }.joined(separator: " · ")
             firstLine = first?.text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
             let later = pin.comments.dropFirst()
@@ -39,7 +40,13 @@ final class PinHoverCard: NSView {
             return letter.uppercased() + name.dropFirst()
         }
 
-        private static let ago: RelativeDateTimeFormatter = {
+        /// How long before `now` `comment` was written, as "1 min. ago". Nil for a comment from a file that
+        /// kept no time.
+        static func ago(_ comment: Pin.Comment, now: Date) -> String? {
+            comment.at.map { formatter.localizedString(for: min($0, now), relativeTo: now) }
+        }
+
+        private static let formatter: RelativeDateTimeFormatter = {
             let formatter = RelativeDateTimeFormatter()
             formatter.unitsStyle = .abbreviated
             formatter.dateTimeStyle = .named
@@ -171,18 +178,46 @@ final class PinHoverCard: NSView {
         Self.paint(avatar, as: maker)
     }
 
-    /// A writer's avatar: the person's silhouette, or the agent's logo in black on white. `avatar` is
-    /// layer-backed and round. The pin's popover shows the same beside each comment.
+    /// A writer's avatar. The person's is their macOS account picture, or their initial on their pins'
+    /// colour when the account has none. An agent's is its logo in black on white, or the letter its pin
+    /// wears (`PinFace`) on its pins' colour. `avatar` is layer-backed and round. The pin's popover
+    /// shows the same beside each comment.
     static func paint(_ avatar: NSImageView, as maker: PinMaker) {
-        switch maker {
-        case .person:
-            avatar.image = NSImage(systemSymbolName: "person.crop.circle.fill", accessibilityDescription: nil)
-            avatar.contentTintColor = .secondaryLabelColor
-            avatar.layer?.backgroundColor = nil
-        case .agent(let agent):
+        let style = Settings.shared.data.ui.markStyle.painting(maker)
+        avatar.contentTintColor = nil
+        avatar.layer?.backgroundColor = nil
+        switch (maker, PinFace(maker)) {
+        case (.person, _):
+            avatar.image = accountPicture ?? letter(accountInitial, on: style.personColor, in: style.wordColor)
+        case (.agent, .letter(let first)):
+            avatar.image = letter(first, on: style.agentColor, in: style.wordColor)
+        case (.agent(let agent), _):
             avatar.image = Agent.logo(for: agent) ?? NSImage(systemSymbolName: Agent.fallbackSymbol, accessibilityDescription: nil)
             avatar.contentTintColor = .black
             avatar.layer?.backgroundColor = NSColor.white.cgColor
+        }
+    }
+
+    /// The picture of the macOS account the app runs in, as Users & Groups shows it.
+    private static let accountPicture = CBIdentity(name: NSUserName(), authority: .default())?.image
+
+    private static let accountInitial: String = {
+        let name = NSFullUserName().isEmpty ? NSUserName() : NSFullUserName()
+        return name.first.map { String($0).uppercased() } ?? "?"
+    }()
+
+    /// `letter` centred on a square of `fill`, which the avatar's round layer clips to a coin.
+    private static func letter(_ letter: String, on fill: SRGB, in color: SRGB) -> NSImage {
+        NSImage(size: NSSize(width: 64, height: 64), flipped: false) { rect in
+            NSColor(srgbRed: fill.red, green: fill.green, blue: fill.blue, alpha: 1).setFill()
+            rect.fill()
+            let words = NSAttributedString(string: letter, attributes: [
+                .font: NSFont.systemFont(ofSize: rect.height * 0.55, weight: .semibold),
+                .foregroundColor: NSColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: 1),
+            ])
+            let size = words.size()
+            words.draw(at: CGPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
+            return true
         }
     }
 
