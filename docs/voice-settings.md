@@ -9,6 +9,7 @@ to turn it on.
 | --- | --- | --- |
 | Claude Code may open sent drawings (`ClaudeReadRule`), in the Agents tab | Let Claude Code open drawings without asking | Otherwise Claude Code stops to ask you in its terminal each time you send one. This adds a permission to Claude Code's settings for these drawings only. |
 | Under setup's agents while Claude Code is on (`ClaudeReadRule.setupNote`) | | Claude Code will open the drawings you send without asking you first. You can change this in Settings. |
+| Naming the apps a screenshot shows (`sendCaptureApps`), in the Agents tab | Tell agents which app a screenshot shows | Send names the apps in screenshots you take from now on, such as Safari or Xcode. Vignette keeps the names with each screenshot, never a window's title. |
 | Live ink (`liveInk`), in the Live Ink tab | Live ink | Hold *pair* to draw anywhere on your screen. You can also share your drawings with an agent session. (`LiveInkSettings.switchLine`) |
 | Speaking while drawing (`liveInkSpeech`), under Live ink | Speak while you draw | What you say goes into the note beside your ink. Your voice stays on this Mac. |
 | When the ask goes (`liveInkSendWhenQuiet`), an experiment | Ask when you let go | |

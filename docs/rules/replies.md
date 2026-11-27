@@ -41,7 +41,8 @@
   these rules came from, with how it was verified.
 - A `vignette://` URL has no authenticated sender, so a reply is authorized by a per-request bearer
   secret in the request's own directory. The request line names only the image
-  (`ScreenshotRequests.requestLine`, "From Vignette: …", then `sendInstructions` from settings.json),
+  (`ScreenshotRequests.requestLine`, "From Vignette: …", then "The screenshot shows Safari and Xcode." when
+  `sendCaptureApps` is on and the file keeps app names (`docs/rules/capture.md`), then `sendInstructions` from settings.json),
   and the skill tells the agent that the
   ticket is `ticket.json` beside it and the helper is the skill's own `scripts/reply`, so an agent
   without the skill can read the drawing but not answer with one. Words alone on the agent's own

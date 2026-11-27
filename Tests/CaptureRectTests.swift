@@ -137,4 +137,13 @@ final class CaptureRectTests: XCTestCase {
         XCTAssertEqual(CaptureRect.owners(of: shadowed, kind: .window, windows: [codex, herdr]),
                        [CaptureRect.Owner(app: "dev.herdr.app", share: 1)], "with Apple's shadow")
     }
+
+    func testTheAppNamesKeptOnAFileReadBackInOrder() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        try Data([0]).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        XCTAssertEqual(CaptureApps.read(file), [])
+        try CaptureApps.write(["Safari", "Xcode"], to: file)
+        XCTAssertEqual(CaptureApps.read(file), ["Safari", "Xcode"])
+    }
 }

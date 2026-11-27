@@ -48,6 +48,15 @@
   `herdr=unread:<reason with its spaces as hyphens>`, with no session listing. A test launch reads no Herdr unless
   `VIGNETTE_HERDR_APP` and `VIGNETTE_HC` name one, so it logs `herdr=unread:no-herdr-app-or-hc`. The line comes after
   the `[origin]` line, once Herdr answers. An agent's file, a Stitch, a drawing's output and a recording log none.
+  With `sendCaptureApps` on (off by default), the same capture keeps the names of those three apps on its
+  file, the largest first, as the extended attribute `<bundle id>.capture-apps`, a JSON list of
+  strings (`CaptureApps`, `[capture] apps kept <file> <names>`). A name is the running app's
+  localized name, such as Safari, never a window's title. The attribute is on the file because Send
+  can come any time after the capture, after a relaunch or a rename: it follows the file and goes
+  when the file is deleted. Writing it changes neither the file's bytes nor its modification date,
+  so the watcher's index does not see a change. Send reads it while the switch is on and the line
+  names the apps (`docs/rules/replies.md`). A capture taken while the switch was off keeps nothing,
+  and the files taken while it was on keep their names after it is turned off.
 - The status item has an autosave name and a seeded preferred position. AppKit keeps the position
   in the app's standard defaults under that name, so a test launch whose data moved uses
   `<bundle id>.test-launch` (`Identity.statusItemAutosaveName`) and never moves the person's own icon. Without it, a crowded
