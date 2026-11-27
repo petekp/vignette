@@ -50,7 +50,7 @@ final class EditorCorePinsTests: XCTestCase {
         XCTAssertEqual(core.undoTitle, "Undo Comment")
     }
 
-    func testACommentToolClickOnAPinOpensItsPopoverAndTheSelectToolOnlySelects() {
+    func testAClickOnAPinOpensItsPopoverWithAnyToolAndAShiftClickOnlySelects() {
         let first = pin(1, 500, 300)
         var core = core(pins: [first], nextPin: 2)
         core.click(512, 288)
@@ -66,6 +66,12 @@ final class EditorCorePinsTests: XCTestCase {
         XCTAssertNil(core.composer)
         _ = core.reduce(.setTool(.select))
         core.click(512, 288)
+        XCTAssertEqual(core.composer, Core.Composer(pin: first.id, editing: nil, draft: ""))
+        XCTAssertEqual(core.selection, [first.id])
+        core.click(512, 288)
+        XCTAssertNil(core.composer)
+        core.click(100, 100)
+        core.click(512, 288, .shift)
         XCTAssertNil(core.composer)
         XCTAssertEqual(core.selection, [first.id])
     }

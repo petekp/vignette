@@ -47,9 +47,11 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   bodies overlap past `ui.clusterOverlap` of their width draw as one cluster, except the selected,
   the open and a new one. The core needs the visible rect for Shift+Return, and the view sends it
   (`viewChanged`) before each `zoomChanged`. A pin is
-  selected, moved, nudged and deleted with the marks, by its `id` in `selection`. With the Comment
-  tool a click on a pin opens its popover, and a click on the open pin closes it; with Select a
-  click selects it, and a double-click opens it with either tool (`Click.open`). Over the picture
+  selected, moved, nudged and deleted with the marks, by its `id` in `selection`. A plain click on
+  a pin with a number opens its popover and selects it, with any tool, and a click on the open pin
+  closes it (`pinPress`, `Click.open`). A new pin, numbered 0, opens so only with the Comment
+  tool. A Shift- or Cmd-click adds the pin to the selection or takes it out without opening it, a
+  drag moves it, and a double-click opens it with any tool. Over the picture
   the Comment tool's pointer is the crosshair with a small pin in the person's colour up and to its
   right (`Cursor.comment`), so it is not taken for a shape tool's. A drag that sizes an area keeps
   the plain crosshair.
@@ -81,8 +83,9 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   open; a comment with no time (`Pin.Comment.at`) shows none. The words start under the avatar's
   left edge, and the trash button sits at the end of the top line. The person's avatar is their macOS
   account picture (`CBIdentity`), or their initial on `ui.personColor` when the account has none.
-  An agent's is its logo in black on white, or the letter its pin wears (`PinFace`) on its pin's
-  colour, or `Agent.fallbackSymbol` on white when it gave no name. The popover is
+  An agent's is what its pin wears (`PinFace`) on its pin's colour: its logo, the first letter of its
+  name, or `Agent.fallbackSymbol` when it gave no name, in the words' colour and at the pin's
+  `ui.pinLogoSize`. Claude's is its white logo on its orange. The popover is
   macOS's own, with nothing behind its content: a view of our own under the content is not clipped
   to the popover's shape, so its arrow and body part ways. The field's placeholder is in the field's
   font and the secondary label colour. The post button is centred on the field's last line
@@ -128,8 +131,21 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   radius. Its top line is laid out as a comment's top line in the popover: the first writer's
   avatar, their name and how long ago, muted. Under it are the first comment's first line and the
   replies. A selected pin's ring is left off while its card shows, since the card covers the teardrop
-  the ring goes round. It takes no clicks, and VoiceOver reads the pin instead. Its width is `ui.pinHoverWidth`
-  and it grows over `ui.pinHoverDuration`, which the motion setting scales.
+  the ring goes round. A press on the card is a press on its pin's teardrop, which the card
+  covers: a click opens the popover with any tool and a drag moves the pin. The card's panel takes
+  the presses on the pixels it draws and hands them to the editor through `EditorView.take`
+  (`PinCardRoom`, `EditorView.relay`), and a press on the card's shadow lands where it is. The second
+  press of a double-click on the card is dropped, so it does not land on what was under the card.
+  A press, an open popover or a parked editor takes the card away at once; during a press the panel
+  stays, clear, until the release. The card stays while the pointer is on the pin or on the card,
+  and goes back into its teardrop when it leaves both. A pin that was clicked grows no card again
+  until the pointer has left it (`EditorPinUI.pressedPin`), so closing its popover does not bring the
+  card straight back. VoiceOver reads the pin instead of the card. The card's width is `ui.pinHoverWidth`
+  and it grows over `ui.pinHoverDuration`, which the motion setting scales. The card draws in a
+  borderless panel of its own, a child of the editor's window at the
+  toolbar's level, above the stack's column. So it reaches past the picture's frame over whatever is
+  beside the editor, as the popover does. It grows the way the teardrop faces and turns back on an axis
+  only where the screen's visible frame has no room that way. The glass blurs what is behind the panel.
 - In the editor an area's outline is dashed in its pin's colour inside a white edge, one width on
   screen at every zoom (`AreaOutline`). It shows only while its pin is hovered, selected, being
   placed or open (`EditorCore.outlinedPins`), and a closed area pin draws none at rest. Its dashes march while the pin is being placed or is open

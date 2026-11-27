@@ -5,7 +5,10 @@ import Collaboration
 /// widened into a card whose tip stays its square corner unless the card turned away from an edge. Its
 /// top line holds the avatar of whoever wrote the first comment, their name and how long ago, as a
 /// comment's top line in the popover does. Under it are the comment's first line and how many replies
-/// it has. It goes back into the teardrop when the pointer leaves. It takes no clicks: a click on the pin opens its popover. VoiceOver reads the pin itself.
+/// it has. It goes back into the teardrop when the pointer leaves the pin and the card. A press on it is a
+/// press on its pin, so a click opens the pin's popover. VoiceOver reads the pin itself.
+/// It draws in a borderless panel of its own, a child of the editor's window, so it reaches past the
+/// picture's frame over whatever is beside the editor, as the pin's popover does.
 @MainActor
 final class PinHoverCard: NSView {
     /// What the card says.
@@ -54,14 +57,21 @@ final class PinHoverCard: NSView {
     }
 
     let pin: Pin.ID
+    /// The window the card draws in, as large as the card's whole growth and its shadow.
+    private let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+    private let room = PinCardRoom()
+    /// A close that came while a press on the panel was down: the card is hidden, and the panel stays
+    /// until the release so the rest of the press still reaches it.
+    private var closesAfterPress = false
     private let clip = FlippedView()
     private let glass = NSVisualEffectView()
     private let content = FlippedView()
     private let avatar = NSImageView()
     private let name = NSTextField(labelWithString: ""), time = NSTextField(labelWithString: "")
     private let firstLine = NSTextField(labelWithString: ""), replies = NSTextField(labelWithString: "")
-    /// `start` is the teardrop's square widened by its rim, which the card grows from.
-    private var shown: (words: Words, maker: PinMaker, start: CGRect, card: CGRect)?
+    /// `start` is the teardrop's square widened by its rim, which the card grows from, and `room` the
+    /// panel's rect. All three are in the editor's coordinates.
+    private var shown: (words: Words, maker: PinMaker, start: CGRect, card: CGRect, room: CGRect)?
     /// The card's corner at the teardrop's tip: on its right, at its bottom. It is drawn square unless
     /// the card turned away from an edge of the view.
     private var tipCorner = (right: false, bottom: true), sharp = true
@@ -70,6 +80,21 @@ final class PinHoverCard: NSView {
     init(pin: Pin.ID) {
         self.pin = pin
         super.init(frame: .zero)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        // `ignoresMouseEvents` is never set: once set either way, the panel takes or passes every press
+        // over its whole rect, whatever its pixels.
+        // Above the stack's column (`.statusBar`), as the toolbar is, so a card reaching past the frame
+        // is not under the stack's cards.
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        panel.animationBehavior = .none
+        panel.isReleasedWhenClosed = false
+        panel.setAccessibilityElement(false)
+        room.card = self
+        panel.contentView = room
+        room.addSubview(self)
         wantsLayer = true
         layer?.shadowColor = NSColor.black.cgColor
         layer?.shadowOpacity = 0.18
@@ -79,7 +104,7 @@ final class PinHoverCard: NSView {
         clip.autoresizingMask = [.width, .height]
         addSubview(clip)
         glass.material = .popover
-        glass.blendingMode = .withinWindow
+        glass.blendingMode = .behindWindow
         glass.state = .active
         glass.autoresizingMask = [.width, .height]
         clip.addSubview(glass)
@@ -108,10 +133,16 @@ final class PinHoverCard: NSView {
     override func isAccessibilityElement() -> Bool { false }
     override func accessibilityChildren() -> [Any]? { [] }
 
-    /// Shows `pin` growing out of its teardrop, whose square is `body` in the superview's coordinates,
-    /// facing `orientation`. The card covers the teardrop and its rim and reaches the way the body faces
-    /// from the tip, or the other way on an axis where that would leave `bounds` and the other way would not.
-    func show(_ pin: Pin, body square: CGRect, orientation: PinTeardrop.Orientation, inside bounds: CGRect) {
+    /// Shows `pin` growing out of its teardrop, whose square is `body` in `editor`'s coordinates, facing
+    /// `orientation`. The card covers the teardrop and its rim and reaches the way the body faces from the
+    /// tip, past the editor's frame if need be, or the other way on an axis where that would leave the
+    /// screen's visible frame and the other way would not.
+    func show(_ pin: Pin, body square: CGRect, orientation: PinTeardrop.Orientation, in editor: NSView) {
+        guard let window = editor.window else { return }
+        closesAfterPress = false
+        let onScreen = window.convertToScreen(editor.convert(square, to: nil))
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(CGPoint(x: onScreen.midX, y: onScreen.midY)) }) ?? window.screen else { return }
+        let bounds = editor.convert(window.convertFromScreen(screen.visibleFrame), from: nil)
         let words = Words(pin, now: Date()), ui = Settings.shared.data.ui, style = ui.markStyle.pin
         let rim = style.side > 0 ? square.height * style.rimWidth / style.side : 0
         let body = square.insetBy(dx: -(rim + Self.pastRim), dy: -(rim + Self.pastRim))
@@ -124,22 +155,58 @@ final class PinHoverCard: NSView {
         else if !up, body.minY + size.height > bounds.maxY, body.maxY - size.height >= bounds.minY { up = true }
         let card = CGRect(x: right ? body.minX : body.maxX - size.width, y: up ? body.maxY - size.height : body.minY,
                           width: size.width, height: size.height)
+        let room = body.union(card).insetBy(dx: -Self.shadowRoom, dy: -Self.shadowRoom)
+        let panelFrame = window.convertToScreen(editor.convert(room, to: nil))
+        if panel.frame != panelFrame { panel.setFrame(panelFrame, display: false) }
+        if panel.parent !== window { window.addChildWindow(panel, ordered: .above) }
         guard shown.map({ $0.words != words || $0.maker != pin.maker || $0.start != body || $0.card != card }) ?? true else {
             growth.animate(to: 1, duration: Settings.shared.motionUI.pinHoverDuration)
             return
         }
         tipCorner = (right: !right, bottom: up)
         sharp = right == facesRight && up == facesUp
-        shown = (words, pin.maker, body, card)
+        shown = (words, pin.maker, body, card, room)
         content.frame.size = card.size
         glass.maskImage = Self.mask(radius: body.height / 2, sharp: sharp ? tipCorner : nil)
         grow(to: growth.value)
         growth.animate(to: 1, duration: Settings.shared.motionUI.pinHoverDuration)
     }
 
-    /// Goes back into the teardrop, then out of the view.
+    /// A press on the panel, on screen, and whether it began on the card.
+    var onPress: ((FlightPress.Event, _ onCard: Bool) -> Void)? {
+        get { room.onPress }
+        set { room.onPress = newValue }
+    }
+
+    /// The teardrop's square widened by its rim, in the editor's coordinates.
+    var teardrop: CGRect? { shown?.start }
+
+    /// Whether `point`, in the editor's coordinates, is on the card as it is drawn now, growing or going.
+    func covers(_ point: CGPoint) -> Bool {
+        guard panel.isVisible, panel.alphaValue > 0, let shown else { return false }
+        return frame.offsetBy(dx: shown.room.minX, dy: shown.room.minY).contains(point)
+    }
+
+    /// Goes back into the teardrop, then off the screen.
     func leave() {
-        growth.animate(to: 0, duration: Settings.shared.motionUI.pinHoverDuration) { [weak self] in self?.removeFromSuperview() }
+        growth.animate(to: 0, duration: Settings.shared.motionUI.pinHoverDuration) { [weak self] in self?.close() }
+    }
+
+    /// Goes off the screen at once.
+    func close() {
+        growth.stop()
+        if room.pressing {
+            panel.alphaValue = 0
+            closesAfterPress = true
+            return
+        }
+        panel.parent?.removeChildWindow(panel)
+        panel.orderOut(nil)
+        removeFromSuperview()
+    }
+
+    func pressEnded() {
+        if closesAfterPress { close() }
     }
 
     /// Sets the words and the avatar, lays them out across a card `width` wide, and answers the card's
@@ -174,24 +241,22 @@ final class PinHoverCard: NSView {
     /// How far the card reaches past the teardrop's rim, so the rim's soft outer edge stays under the
     /// card instead of showing as a white hairline along it.
     private static let pastRim: CGFloat = 1
+    /// How far the panel reaches past the card on every side, so the card's shadow is not cut off.
+    private static let shadowRoom: CGFloat = 24
 
     /// A writer's avatar. The person's is their macOS account picture, or their initial on their pins'
-    /// colour when the account has none. An agent's is its logo in black on white, or the letter its pin
-    /// wears (`PinFace`) on its pins' colour. `avatar` is layer-backed and round. The pin's popover
-    /// shows the same beside each comment.
+    /// colour when the account has none. An agent's is what its pin wears (`PinFace`) on its pins'
+    /// colour: its logo, or the first letter of its name, in the words' colour. `avatar` is layer-backed
+    /// and round. The pin's popover shows the same beside each comment.
     static func paint(_ avatar: NSImageView, as maker: PinMaker) {
         let style = Settings.shared.data.ui.markStyle.painting(maker)
-        avatar.contentTintColor = nil
-        avatar.layer?.backgroundColor = nil
         switch (maker, PinFace(maker)) {
         case (.person, _):
             avatar.image = accountPicture ?? letter(accountInitial, on: style.personColor, in: style.wordColor)
         case (.agent, .letter(let first)):
             avatar.image = letter(first, on: style.agentColor, in: style.wordColor)
         case (.agent(let agent), _):
-            avatar.image = Agent.logo(for: agent) ?? NSImage(systemSymbolName: Agent.fallbackSymbol, accessibilityDescription: nil)
-            avatar.contentTintColor = .black
-            avatar.layer?.backgroundColor = NSColor.white.cgColor
+            avatar.image = logo(agent, on: style.agentColor, in: style.wordColor, filling: style.pin.logoSize)
         }
     }
 
@@ -218,17 +283,37 @@ final class PinHoverCard: NSView {
         }
     }
 
+    /// The logo of the agent named `name` (`AgentLogos`, the fallback symbol for one without a name) in
+    /// `color`, `fraction` of the side across as on its pin, centred on a square of `fill`, which the
+    /// avatar's round layer clips to a coin.
+    private static func logo(_ name: String, on fill: SRGB, in color: SRGB, filling fraction: CGFloat) -> NSImage {
+        NSImage(size: NSSize(width: 64, height: 64), flipped: false) { rect in
+            NSColor(srgbRed: fill.red, green: fill.green, blue: fill.blue, alpha: 1).setFill()
+            rect.fill()
+            guard let shape = AgentLogos.shared.image(for: name), let ctx = NSGraphicsContext.current?.cgContext else { return true }
+            let side = rect.width * fraction
+            let box = CGRect(x: rect.midX - side / 2, y: rect.midY - side / 2, width: side, height: side)
+            ctx.beginTransparencyLayer(auxiliaryInfo: nil)
+            ctx.draw(shape, in: box)
+            ctx.setBlendMode(.sourceIn)
+            ctx.setFillColor(NSColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: 1).cgColor)
+            ctx.fill(box)
+            ctx.endTransparencyLayer()
+            return true
+        }
+    }
+
     /// The card `progress` of the way from the teardrop to its whole size, the avatar and words fading in.
     private func grow(to progress: CGFloat) {
         guard let shown else { return }
         let p = min(max(progress, 0), 1)
         func mix(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * p }
-        frame = CGRect(x: mix(shown.start.minX, shown.card.minX), y: mix(shown.start.minY, shown.card.minY),
+        frame = CGRect(x: mix(shown.start.minX, shown.card.minX) - shown.room.minX, y: mix(shown.start.minY, shown.card.minY) - shown.room.minY,
                        width: mix(shown.start.width, shown.card.width), height: mix(shown.start.height, shown.card.height))
         clip.frame = bounds
         content.frame.origin = CGPoint(x: tipCorner.right ? bounds.width - shown.card.width : 0,
                                        y: tipCorner.bottom ? bounds.height - shown.card.height : 0)
-        alphaValue = min(1, p * 2)
+        panel.alphaValue = min(1, p * 2)
         content.alphaValue = p
         layer?.shadowPath = Self.outline(of: CGRect(origin: .zero, size: bounds.size), radius: shown.start.height / 2, sharp: nil)
     }

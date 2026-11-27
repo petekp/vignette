@@ -8,6 +8,16 @@ final class EditorPinUI: NSObject {
     var composer: PinPopover?
     /// The card the pin under the pointer grows into.
     var hoverCard: PinHoverCard?
+    /// The last card shown, while it is still on screen going back into its teardrop.
+    weak var lastCard: PinHoverCard?
+    /// The pin a press landed on, which grows no card until the pointer has left it.
+    var pressedPin: Pin.ID?
+    /// A press on a card's panel, held to its release: the card, where the press began on screen, and the
+    /// centre of the card's teardrop on screen when it began on the card.
+    var cardPress: (card: PinHoverCard, origin: CGPoint, pin: CGPoint?)?
+    /// Where the last press on a card was, in the window, so the second press of a double-click there
+    /// does not land on what was under the card.
+    var cardClick: CGRect?
     /// A drag runs with the popover open: a resize of its pin's area, which took the keys from its field.
     var resizingOpenPin = false
     /// The menu of pins a cluster or the toolbar's Pins button opened, from its asking until it closes.
@@ -55,25 +65,74 @@ extension EditorView {
     /// The hovered pin with a number, drawn on its own, while no popover, menu or drag is under way:
     /// the one that grows into its card.
     private func hoverCardPin(_ placement: PinPlacement) -> Pin.ID? {
+        let hovered: Pin.ID? = if let card = pinUI.hoverCard, pointerIsOn(card) { card.pin }
+            else if case .pin(let id)? = core.hover { id } else { nil }
+        if pinUI.pressedPin != hovered { pinUI.pressedPin = nil }
         let quiet = core.composer == nil && core.gesture == nil && pinUI.list == nil
-        guard quiet, case .pin(let id)? = core.hover, let pin = core.pin(id), pin.number > 0,
+        guard quiet, let id = hovered, id != pinUI.pressedPin, let pin = core.pin(id), pin.number > 0,
               placement.drops.contains(where: { $0.id == id }) else { return nil }
         return id
     }
 
     private func showHoverCard(_ carded: Pin.ID?, _ placement: PinPlacement) {
         guard let id = carded, let pin = core.pin(id), let drop = placement.drops.first(where: { $0.id == id }) else {
-            pinUI.hoverCard?.leave()
+            // The card goes back into its teardrop when the pointer leaves the pin. A press, an open popover
+            // or a parked editor takes it away at once, so it never lingers over the popover or the flight.
+            if core.isOpen, core.composer == nil, core.gesture == nil { pinUI.hoverCard?.leave() } else { pinUI.lastCard?.close() }
             pinUI.hoverCard = nil
             return
         }
         if pinUI.hoverCard?.pin != id {
             pinUI.hoverCard?.leave()
             let card = PinHoverCard(pin: id)
-            addSubview(card)
+            card.onPress = { [weak self, weak card] event, onCard in
+                guard let self, let card else { return }
+                self.relay(event, onCard: onCard, from: card)
+            }
             pinUI.hoverCard = card
+            pinUI.lastCard = card
         }
-        pinUI.hoverCard?.show(pin, body: drop.square.applying(toView), orientation: drop.orientation, inside: visibleRect)
+        pinUI.hoverCard?.show(pin, body: drop.square.applying(toView), orientation: drop.orientation, in: self)
+    }
+
+    /// A press on the editor. A pressed pin grows no card until the pointer has left it.
+    func press(_ event: NSEvent) {
+        let doubleClickOnCard = event.clickCount > 1 && pinUI.cardClick?.contains(event.locationInWindow) == true
+        pinUI.cardClick = nil
+        if doubleClickOnCard { return }
+        handle(.pointerPressed(pointer(event), clickCount: event.clickCount), event: event)
+        if case .pin(let id)? = core.hover { pinUI.pressedPin = id }
+    }
+
+    /// A press on a pin's card is a press on its teardrop, which the card covers: a click opens the pin's
+    /// popover with any tool, and a drag moves the pin. A press on the card's shadow lands where it is.
+    private func relay(_ event: FlightPress.Event, onCard: Bool, from card: PinHoverCard) {
+        if case .pressed = event.phase {
+            let teardrop = onCard ? card.teardrop.map { convert(CGPoint(x: $0.midX, y: $0.midY), to: nil) } : nil
+            pinUI.cardPress = (card, event.screen, teardrop.flatMap { window?.convertPoint(toScreen: $0) })
+        }
+        guard let press = pinUI.cardPress else { return }
+        var relayed = event
+        if let pin = press.pin {
+            relayed.screen = CGPoint(x: pin.x + event.screen.x - press.origin.x, y: pin.y + event.screen.y - press.origin.y)
+        }
+        take(relayed)
+        switch event.phase {
+        case .pressed:
+            if press.pin != nil {
+                pinUI.pressedPin = card.pin
+                pinUI.cardClick = window.map { NSRect(origin: $0.convertPoint(fromScreen: event.screen), size: .zero).insetBy(dx: -4, dy: -4) }
+            }
+        case .dragged:
+            pinUI.cardClick = nil
+        case .released:
+            pinUI.cardPress = nil
+        }
+    }
+
+    private func pointerIsOn(_ card: PinHoverCard) -> Bool {
+        guard let window else { return false }
+        return card.covers(convert(window.mouseLocationOutsideOfEventStream, from: nil))
     }
 
     /// The rect in the view a popover on pin `id` hangs from: its teardrop, or its cluster's capsule.

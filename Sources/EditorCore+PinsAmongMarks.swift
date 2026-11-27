@@ -13,7 +13,7 @@ extension EditorCore {
             return nil
         }
         let plain = modifiers.isDisjoint(with: [.shift, .command])
-        if tool == .comment, plain, !wasOpen {
+        if plain, !wasOpen, tool == .comment || (pin(id)?.number ?? 0) > 0 {
             // A drag from one of several selected pins moves them all, as from a mark.
             if !selection.contains(id) { selection = [id] }
             return .open
