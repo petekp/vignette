@@ -69,6 +69,7 @@ final class ScreenshotRequestsPinsTests: XCTestCase {
         let base = try png(1)
         let ticket = try send(base: base)
         XCTAssertEqual(try record(of: ticket).message, "Fix the pins")
+        XCTAssertEqual(try record(of: ticket).pins, pins.map { .init(id: $0.id, comments: $0.comments.map(\.id)) })
         let comments = try ReplyCommand.loadComments(#"{"2": "Moved the date under the title"}"#, ticket: ticket)
         XCTAssertEqual(comments, [ReplyProtocol.Comment(pin: pins[1].id, text: "Moved the date under the title")])
 

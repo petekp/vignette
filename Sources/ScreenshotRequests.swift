@@ -31,10 +31,10 @@ final class ScreenshotRequests {
 
     let root: URL
     private(set) var requests: [String: Record] = [:]
-    private var replies: [String: Reply] = [:]
+    private(set) var replies: [String: Reply] = [:]
     /// Accepted replies not yet published, imported serially in arrival order within a launch.
     /// A relaunch rebuilds the order from the store.
-    private var pendingImports: [String] = []
+    private(set) var pendingImports: [String] = []
     private var importing = false
     private var publishedAt: [String: TimeInterval] = [:]
     private var publicationReady = false
@@ -229,7 +229,8 @@ final class ScreenshotRequests {
                             destinationName: destination.name, address: address,
                             addressGuard: address.guardTier, source: source.url.lastPathComponent,
                             sourceKey: source.path, status: .prepared, detail: "", start: destination.start,
-                            unchanged: picture.isUnchanged ? true : nil, cardTitle: cardTitle, message: message)
+                            unchanged: picture.isUnchanged ? true : nil, cardTitle: cardTitle, message: message,
+                            pins: Record.SentPin.carried(by: picture.pins))
         let ticket = ReplyProtocol.Ticket(requestID: id, secret: ReplyProtocol.newSecret(),
                                           requestDirectory: directory.path, app: Bundle.main.bundlePath)
         do {
@@ -813,32 +814,6 @@ final class ScreenshotRequests {
             catch { Log.write("[requests] error cleanup-state \(id): \(error.localizedDescription)") }
         }
         clearedFolders.removePayloads(of: id)
-    }
-
-    // MARK: The state report
-
-    var stateJSON: [String: Any] {
-        [
-            "directory": root.path,
-            "requests": requests.values.sorted { $0.created < $1.created }.map { record -> [String: Any] in
-                var json: [String: Any] = ["id": record.id, "status": record.status.rawValue, "destination": record.destinationName,
-                                           "address": record.address.description, "guard": record.addressGuard.rawValue, "source": record.source]
-                if record.unchanged == true { json["unchanged"] = true }
-                if let grace = self.grace(of: record.id) { json["graceMs"] = Int(max(0, grace.deadline - self.now()) * 1000) }
-                if let watch = self.queueWatches[record.id] {
-                    json["queuedLine"] = watch.line.id
-                    if let shown = watch.shown { json["queuedReason"] = shown }
-                }
-                return json
-            },
-            "replies": replies.values.sorted { $0.id < $1.id }.map { reply -> [String: Any] in
-                var json: [String: Any] = ["id": reply.id, "request": reply.requestID, "stage": reply.stage.rawValue,
-                                           "file": reply.fileName, "marks": reply.marks.count, "deleted": reply.deleted]
-                if let code = reply.errorCode { json["error"] = code }
-                return json
-            },
-            "pendingImports": pendingImports,
-        ]
     }
 
     // MARK: Files
