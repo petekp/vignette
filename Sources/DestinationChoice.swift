@@ -26,8 +26,6 @@ enum DestinationChoice {
         case byHand(AgentDestination?)
     }
 
-    /// A session the person picked by hand in Send's menu and then sent to. Send starts on it, before
-    /// every other rule, until `lasts` passes with no send to it.
     /// The session the image last exchanged with (`CommentTarget.last`). `showedIt` is true when it
     /// pointed the person at this image with `vignette://show`, for the opening that ended its shown state.
     struct LastSession: Equatable {
@@ -35,6 +33,8 @@ enum DestinationChoice {
         let showedIt: Bool
     }
 
+    /// A session the person picked by hand in Send's menu and then sent to. Send starts on it, before
+    /// every rule but the image's last session, until `lasts` passes with no send to it.
     struct KeptPick: Equatable {
         static let lasts: TimeInterval = 10 * 60
         let session: AgentDestination

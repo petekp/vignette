@@ -37,8 +37,8 @@ extension AppDelegate {
                 stays += 1
                 continue
             }
-            let delivered = commentDeliveries.delivered(on: shot.key, to: destination.address)
-            guard CommentTarget.knows(destination.address, change, pin: was ?? pin, delivered: delivered) else { continue }
+            let known = commentDeliveries.known(on: shot.key, to: destination.address)
+            guard CommentTarget.knows(destination.address, change, pin: was ?? pin, delivered: known) else { continue }
             let item = HeldChanges.Item(change: change, number: pin.number,
                                         x: Double(pin.extent.minX) / width, y: Double(pin.extent.minY) / height)
             commentDeliveries.add(item, on: shot.key, to: destination, grace: settings.data.ui.sendGraceSeconds)

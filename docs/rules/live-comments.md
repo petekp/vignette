@@ -19,9 +19,10 @@ pins themselves, `send.md` how a line reaches a session, and ADR 0035 why it wor
   (`DestinationChoice.Answer.list`, a row with no `start`). Nothing starts a session for a
   comment. With no running session it stays on the pin, and the log says
   `[comments] stay <name> changes=<n>: <session> is not running`.
-- A post always goes. An edit or delete goes only to a session that got that comment or wrote it,
-  and a Resolve or Reopen only to a session that knows a comment on the pin
-  (`CommentTarget.knows`). A session never hears about a comment it never saw.
+- A post always goes. An edit or delete goes only to a session that got that comment, has it
+  waiting or wrote it. A Resolve or Reopen goes only to a session that knows a comment on the pin
+  (`CommentTarget.knows`, `CommentDeliveries.known`). A session never hears about a comment it
+  never saw. A failed delivery does not count.
 - Changes wait `ui.sendGraceSeconds`, Send's grace, from the first one, held per screenshot and
   session (`CommentDeliveries.add`, `HeldChanges`). The wait does not restart. During it, an edit
   of a held post changes the post's words, a delete of a held post takes both out, a delete

@@ -56,7 +56,7 @@ enum CommentChange: Equatable {
             if !old.isResolved, let resolution = pin.resolved, !resolution.agent { changes.append(.resolved(pin: pin.id)) }
             if reopenedByPost && !postedHere { changes.append(.reopened(pin: pin.id)) }
         }
-        for pin in before {
+        for pin in before.sorted(by: { $0.number < $1.number }) {
             for comment in pin.comments where !kept.contains(comment.id) {
                 changes.append(.deleted(pin: pin.id, comment: comment.id, text: comment.text))
             }

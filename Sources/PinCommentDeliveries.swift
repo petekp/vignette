@@ -24,7 +24,6 @@ final class CommentDeliveries {
         var reason: String?
 
         var address: AgentAddress { AgentAddress(client: client, id: session) }
-        var reached: Bool { status == .sent || status == .queued || status == .uncertain }
     }
 
     enum Status: String, Codable {
@@ -110,9 +109,12 @@ final class CommentDeliveries {
         schedule(grace) { [weak self] in self?.release(id) }
     }
 
-    /// The comment ids on `file` that reached `session`, or may have.
-    func delivered(on file: ScreenshotKey, to session: AgentAddress) -> Set<UUID> {
-        Set(deliveries.filter { $0.file == file.path && $0.address == session && $0.reached }.flatMap(\.comments))
+    /// The comment ids on `file` that `session` has, may have, or gets when its wait ends: every
+    /// delivery to it but a failed one, and its held changes.
+    func known(on file: ScreenshotKey, to session: AgentAddress) -> Set<UUID> {
+        let sent = deliveries.filter { $0.file == file.path && $0.address == session && $0.status != .failed }.flatMap(\.comments)
+        let held = holds.values.filter { $0.file == file && $0.destination.address == session }.flatMap(\.changes.comments)
+        return Set(sent + held)
     }
 
     // MARK: Handing the line over
@@ -207,12 +209,24 @@ final class CommentDeliveries {
         if moved { save() }
     }
 
-    /// The screenshot left the folder: its held changes go nowhere.
+    /// The screenshot left the folder: its held changes go nowhere, and its deliveries and their
+    /// watches go.
     func fileRemoved(_ file: ScreenshotKey) {
         for (id, hold) in holds where hold.file == file {
             holds[id] = nil
             Log.write("[comments] cancelled \(id) \(file.name): the file left the folder")
         }
+        let gone = Set(deliveries.filter { $0.file == file.path }.map(\.id))
+        guard !gone.isEmpty else { return }
+        deliveries.removeAll { gone.contains($0.id) }
+        for id in gone { forget(id) }
+        save()
+    }
+
+    private func forget(_ id: String) {
+        turns[id] = nil
+        queues[id] = nil
+        destinations[id] = nil
     }
 
     // MARK: What the popover and the comments command read
@@ -362,7 +376,11 @@ final class CommentDeliveries {
     }
 
     private func save() {
-        if deliveries.count > Self.kept { deliveries.removeFirst(deliveries.count - Self.kept) }
+        if deliveries.count > Self.kept {
+            let pruned = deliveries.prefix(deliveries.count - Self.kept).map(\.id)
+            deliveries.removeFirst(pruned.count)
+            pruned.forEach(forget)
+        }
         guard let store else { return }
         do {
             try FileManager.default.createDirectory(at: store.deletingLastPathComponent(), withIntermediateDirectories: true)

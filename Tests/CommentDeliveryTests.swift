@@ -132,6 +132,8 @@ final class CommentDeliveryTests: XCTestCase {
                        on: file, to: destination, grace: 3)
         deliveries.add(.init(change: .posted(pin: pinID, comment: dropped, text: "Oops", reopens: false), number: 1, x: 0, y: 0),
                        on: file, to: destination, grace: 3)
+        let deletion = CommentChange.deleted(pin: pinID, comment: dropped, text: "Oops")
+        XCTAssertTrue(CommentTarget.knows(claude, deletion, pin: nil, delivered: deliveries.known(on: file, to: claude)))
         deliveries.add(.init(change: .deleted(pin: pinID, comment: dropped, text: "Oops"), number: 1, x: 0, y: 0),
                        on: file, to: destination, grace: 3)
         XCTAssertEqual(deliveries.shown(comment: kept, on: file)?.state, .sending)
@@ -142,7 +144,7 @@ final class CommentDeliveryTests: XCTestCase {
         XCTAssertEqual(connection.lines.count, 1)
         XCTAssertTrue(connection.lines[0].hasPrefix("Pin 1: Move it. [From Vignette"))
         XCTAssertEqual(deliveries.shown(comment: kept, on: file), CommentDeliveries.Shown(state: .sent, client: .claude, reason: nil))
-        XCTAssertEqual(deliveries.delivered(on: file, to: claude), [kept])
+        XCTAssertEqual(deliveries.known(on: file, to: claude), [kept])
     }
 
     func testALineTheSessionRefusedSaysWhyOnTheComment() {
@@ -155,10 +157,10 @@ final class CommentDeliveryTests: XCTestCase {
         runTheMainQueue()
         XCTAssertEqual(deliveries.shown(comment: comment, on: file),
                        CommentDeliveries.Shown(state: .failed, client: .claude, reason: ClaudeCodeConnection.closed))
-        XCTAssertTrue(deliveries.delivered(on: file, to: claude).isEmpty)
+        XCTAssertTrue(deliveries.known(on: file, to: claude).isEmpty)
     }
 
-    func testDeliveriesAreReadBackAfterARelaunchAndOneStillGoingMayHaveReached() throws {
+    func testDeliveriesAreReadBackAfterARelaunchFollowARenameAndGoWithTheFile() throws {
         let store = FileManager.default.temporaryDirectory.appendingPathComponent("comment-deliveries-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: store) }
         let file = ScreenshotKey(asGiven: "Checkout.png")
@@ -170,6 +172,8 @@ final class CommentDeliveryTests: XCTestCase {
         XCTAssertEqual(deliveries.shown(comment: comment, on: file)?.state, .uncertain)
         deliveries.renamed([(from: file, to: ScreenshotKey(asGiven: "Total.png"))])
         XCTAssertEqual(CommentDeliveries(store: store, connections: [:]).shown(comment: comment, on: ScreenshotKey(asGiven: "Total.png"))?.state, .uncertain)
+        deliveries.fileRemoved(ScreenshotKey(asGiven: "Total.png"))
+        XCTAssertNil(CommentDeliveries(store: store, connections: [:]).shown(comment: comment, on: ScreenshotKey(asGiven: "Total.png")))
     }
 }
 
