@@ -32,6 +32,9 @@ extension ScreenshotRequests {
         /// What the card called the session at Send (`SessionMenu.cardTitle`). Nil in a record from
         /// before this field.
         var cardTitle: String? = nil
+        /// The person's message, as the line carried it. Nil for a send without one, and in a record
+        /// from before this field. The log never holds it.
+        var message: String? = nil
 
         enum Status: String, Codable {
             /// Stored and not yet handed to the client: in its grace, or about to be.

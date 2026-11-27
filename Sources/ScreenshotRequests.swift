@@ -229,7 +229,7 @@ final class ScreenshotRequests {
                             destinationName: destination.name, address: address,
                             addressGuard: address.guardTier, source: source.url.lastPathComponent,
                             sourceKey: source.path, status: .prepared, detail: "", start: destination.start,
-                            unchanged: picture.isUnchanged ? true : nil, cardTitle: cardTitle)
+                            unchanged: picture.isUnchanged ? true : nil, cardTitle: cardTitle, message: message)
         let ticket = ReplyProtocol.Ticket(requestID: id, secret: ReplyProtocol.newSecret(),
                                           requestDirectory: directory.path, app: Bundle.main.bundlePath)
         do {
@@ -269,8 +269,7 @@ final class ScreenshotRequests {
         prune()
         Log.write("[send] prepared \(id) to \(destination.name) (\(address.description)) \(picture.logged)")
         if grace > 0 { Log.write("[send] waiting \(Int(grace * 1000))ms request=\(id)") }
-        // The message travels in the line only: it is the person's words, so neither the record
-        // nor the log keeps it.
+        // The log never holds the message: it is the person's words.
         let line = Self.requestLine(record: record, root: root, message: message, instructions: instructions, title: picture.title,
                                     pins: picture.pins)
         if watchingTurn { watchedTurns.insert(id) }

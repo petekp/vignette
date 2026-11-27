@@ -45,9 +45,16 @@ final class ScreenshotRequestsPinsTests: XCTestCase {
     private func send(base: Data) throws -> ReplyProtocol.Ticket {
         let record = try requests.send(.drawing(png: try png(0), pins: pins, base: base),
                                        source: folder.appendingPathComponent("Screenshot.png").screenshotKey,
-                                       to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")))
+                                       to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")), message: "Fix the pins")
         let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
         return try ReplyCommand.loadTicket(directory.appendingPathComponent("ticket.json").path)
+    }
+
+    private func record(of ticket: ReplyProtocol.Ticket) throws -> ScreenshotRequests.Record {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let directory = ReplyProtocol.requestDirectory(root: root, requestID: ticket.requestID)
+        return try decoder.decode(ScreenshotRequests.Record.self, from: Data(contentsOf: directory.appendingPathComponent(ScreenshotRequests.recordFileName)))
     }
 
     private func reply(_ ticket: ReplyProtocol.Ticket, comments: [ReplyProtocol.Comment], image: Data? = nil) throws -> ReplyProtocol.Receipt {
@@ -61,6 +68,7 @@ final class ScreenshotRequestsPinsTests: XCTestCase {
     func testAnAnswerByNumberJoinsThePersonsPinsOnTheirPictureWithoutNumbers() throws {
         let base = try png(1)
         let ticket = try send(base: base)
+        XCTAssertEqual(try record(of: ticket).message, "Fix the pins")
         let comments = try ReplyCommand.loadComments(#"{"2": "Moved the date under the title"}"#, ticket: ticket)
         XCTAssertEqual(comments, [ReplyProtocol.Comment(pin: pins[1].id, text: "Moved the date under the title")])
 
