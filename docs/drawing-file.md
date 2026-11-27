@@ -47,7 +47,10 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
   that session's name as the person knows it, its Herdr tab's label or its own name, one line of
   at most 40 characters. Both are left out when unknown. A comment without them, as every one
   written before they were kept, or with a `session` that is not a UUID, reads without them and is
-  kept. Neither raises the version. A file holds at most 99 pins.
+  kept. Neither raises the version. A pin whose ask is done has `resolved`, saying who resolved it
+  and when: `agent` and `agentName` as a comment has them, left out for the person, and `at` as a
+  comment has it. A pin without `resolved` is open. Any value reads as resolved, and a field in it
+  that does not read is left out. A file holds at most 99 pins.
 - `pieceNumbers` is a stitch's: where each piece wears its number, as `[x, y, w, h]` in px, so a
   teardrop turns away from it. It is left out when there are none, and does not raise the version.
 - `nextPin` is the number the next pin gets, and is left out at 1. It never goes down while the
@@ -75,9 +78,11 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
   keeps it. At most 100 steps and about 256 KB, as written, are kept: the oldest undo steps go first, then the
   farthest redo steps. A file without `history`, as every file written before it was kept, opens
   with an empty history.
-- `version` is 2 when the file holds pins, a `nextPin`, or a history step that changed pins, and
-  1 otherwise, so a build from before pins still reads every file without them. A build from before
-  pins leaves a version 2 file alone, as below.
+- `version` is 3 when the file or a step of its history holds a resolved pin, 2 when it holds pins,
+  a `nextPin`, or a history step that changed pins, and 1 otherwise. A build from before pins still
+  reads every file without them, and a build from before resolved pins every file without one. Such
+  a build leaves a newer file alone, as below, rather than writing over what it cannot keep. Copied
+  items (`CopiedItems`) take their version the same way.
 - A file with no marks, no pins and no message is removed, with its history, whatever its
   `nextPin`.
 - Builds from different worktrees share this folder. A file whose `version` is newer than the build

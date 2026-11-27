@@ -130,6 +130,8 @@ and "Redo" when there is nothing to take.
 | A cut, on the image or in the field | Cut |
 | Agents' marks joining the open drawing | *Agent*'s Marks, as in "Claude's Marks"; "Agent's Marks" without one name |
 | A comment posted on a pin; an edited one is Typing, an emptied one Delete | Comment |
+| A pin resolved, with Resolve or Reply and Resolve | Resolve |
+| A resolved pin reopened | Reopen |
 
 ### Undo and Redo in the stack and the annotator (`UndoTimeline.Name`)
 
@@ -293,6 +295,14 @@ Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
 | The card a pin grows into under the pointer, its writer (`PinHoverCard.Words`) | You; Claude, the agent's name capitalized; An agent |
 | Beside the writer | Pin 3 · 1 min. ago, in `RelativeDateTimeFormatter`'s abbreviated style; Pin 3 for a comment that kept no time |
 | Under the first comment's first line, on a pin with replies | 1 reply from Claude; 2 replies from you; 3 replies, from more than one writer |
+| After the replies, on a resolved pin | Resolved by Claude; Resolved by you |
+| The popover's button under an open pin's field | Resolve; Reply and Resolve while the field holds words |
+| Over a resolved pin's comments (`PinResolveControls`) | Resolved by Claude, 1 min. ago, and Reopen |
+| A resolved pin's field, empty | Reply to reopen |
+| A pin resolved or reopened, to VoiceOver, and its actions | Pin *n* resolved; Pin *n* reopened; Resolve; Reopen |
+| A resolved pin, to VoiceOver | Pin 3, area, 2 comments, resolved |
+| The Pins menu's heading over resolved pins | Resolved |
+| The toolbar's button with every pin resolved, to VoiceOver | A checkmark for the badge; Pins, 0 open, 3 resolved |
 
 ### An agent showing a screenshot (`ShownOverlay`, `Shown`)
 

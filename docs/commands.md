@@ -124,7 +124,10 @@ An object with `x` and `y` alone is a new point pin. One that adds `w` and `h` i
 over that rectangle, its teardrop at the corner `corner` names (`topLeft`, `topRight`,
 `bottomLeft` or `bottomRight`, the default). An object with `pin` answers a pin the screenshot
 holds: `pin` is its number, as Send's line calls it ("Pin 2"), or its `id` from a request's
-`pins.json`. An answer takes no `x`, `y`, `w`, `h` or `corner`. Each `text` is at most 2,000
+`pins.json`. An answer takes no `x`, `y`, `w`, `h` or `corner`. An answer may add `"resolve": true`
+to say its pin's ask is done: the pin turns grey, resolved by the agent, and Copy and Send leave it
+out until someone reopens it. An answer without it reopens a resolved pin, and a new pin with it
+is refused. Each `text` is at most 2,000
 characters. One call takes at most 99 comments and 256 KB, and a screenshot holds at most 99 pins.
 
 New pins are numbered after the screenshot's last, in the order given, and drawn in the agent
@@ -145,7 +148,8 @@ hold. The file holds `file`, the card's path, and `pins`, in number order. Each 
 `number`, and `x`, `y`, and for an area `w`, `h` and `corner`, in the fractions `pins=` takes.
 Each pin's `comments`, oldest first, have `id`, `text`, `writer` (`person` or `agent`),
 `agentName`, `session` and `sessionName` for an agent's, `at`, and `sentIn`, the ids of the sends
-that carried that comment. An edit keeps a comment's `id`, and makes its words the person's.
+that carried that comment. A resolved pin has `resolved`, with `resolver` (`person` or `agent`),
+`agentName` for an agent's, and `at`. An edit keeps a comment's `id`, and makes its words the person's.
 `sends` lists the card's sends whose line reached the client, or may have (`status` `uncertain`),
 oldest first, each with its `id`, `at`, `status`, `to` (the session's title on the card), `agent`,
 `session` and `message`. `message` is the newest send's message, left out when it had none. A

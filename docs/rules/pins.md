@@ -67,6 +67,9 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   when they are larger than `EditorCore.visible`, then the composer opens. The controller closes the
   list when another image opens or the editor leaves (`closePinList`). The bar shows the button while
   `Model.pinCount`, which `EditorPinUI.onCount` sets, is above 0, and Tab reaches it after the tools.
+  Its badge counts the open pins (`Model.openPinCount`), and is a checkmark when every pin is
+  resolved. The list puts the resolved pins after the open ones, under a Resolved heading, their
+  titles in the secondary label colour.
 - A new pin has number 0 and is left out of every hand-over (`drawingForHost`) until its first
   comment gives it `nextPin`. The editor opens with the file's `nextPin` and `pieceNumbers` even
   when the file reads as no drawing (`AnnotationController.storedNumbering`), so a number a
@@ -105,9 +108,9 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   contextual menu, the Delete key on the comment when Full Keyboard Access focuses it, and a
   VoiceOver action (`CommentRow`). It sends `ComposerInput.delete`, which empties the comment as an
   edit would, so it is one "Delete" undo step and the pin goes with its only comment.
-- When the editor lands on a screenshot with numbered pins, the lowest-numbered pin's popover opens
-  (`ComposerInput.openFirst`, from `AnnotationController.landed`), unless a popover, a drag or
-  typing is under way. It does not select the pin, and it opens without the keys
+- When the editor lands on a screenshot with numbered pins, the lowest-numbered open pin's popover
+  opens (`ComposerInput.openFirst`, from `AnnotationController.landed`), unless a popover, a drag or
+  typing is under way, or every pin is resolved. It does not select the pin, and it opens without the keys
   (`Composer.takesKeys` false; `PinPopover.show` gives the key back to the editor's window). So
   the tool letters, Delete and the arrows act on the drawing as they would with no popover. None of
   its views takes the focus (`PinPopover.holdNoFocus`), so with Full Keyboard Access on no comment
@@ -175,3 +178,24 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   since its content view is the body. Cards, flights, Copy, Send and Stitch keep the flat pin, so
   a pin changes material as it lands in the editor and as it leaves. A rendering draws the area as
   a solid rectangle mark.
+- A resolved pin's ask is done (`Pin.resolved`, `Pin.Resolution`). It keeps its number, place and
+  comments, and is grey, the system grey `#8e8e93` (`PinShading.resolvedColor`): in the editor's
+  gel, on cards and in flights, in its popover's and hover card's rims, and in menus. It clusters
+  only with resolved pins, so a cluster is all grey or all in colour (`PinPlacement`). Under an
+  open pin's field the popover has Resolve, which says Reply and Resolve while the field holds
+  words. Either is one "Resolve" undo step, the words posted in it (`ComposerInput.resolve`). A
+  resolved pin's popover opens on "Resolved by Claude, 1 min. ago" with Reopen
+  (`PinResolveControls`), its comments in the secondary label colour, its field's placeholder
+  "Reply to reopen". Reopen is one "Reopen" step, after any draft is posted. A new comment reopens
+  the pin in its own step, since it asks again. The hover card adds "Resolved by …" after the
+  replies. VoiceOver says "resolved" after a resolved pin's name, and offers Resolve or Reopen as an
+  action on the pin. The canvas has no contextual menu, so neither is in one.
+- Copy (Done, Cmd+C), Copy Drawing, a drag, a stitch's first copy and Send leave resolved pins out
+  (`Drawing.handedOver`). A rendering, the clipboard's words, Send's line and `pins.json` then hold
+  only open pins, and a drawing with no marks whose pins are all resolved copies the screenshot
+  itself. Copied items pasted inside Vignette (`CopiedItems`) and a stitch's drawing keep resolved
+  pins resolved.
+- An agent resolves a pin with `"resolve": true` on an answer in `pins=`, or with `--resolve` on a
+  reply, naming pins its `--comments` answer. The pin is then resolved by that agent, at the time of
+  its comment (`AgentAuthor.resolution`, `Pin.answered`). An answer without it reopens a resolved
+  pin. A new pin takes no `resolve`.
