@@ -66,7 +66,8 @@
   whatever the zoom was: `hide` springs the level back to 1 first and comes down once that has
   arrived (`AnnotationController.fitBeforeHide`). A flight's pins change size with it, from the
   card's to the editor's, on the flight's own frames (`MarkLayers.PinGrowth`, `docs/rules/pins.md`),
-  so they meet the editor's at the hand-over and need no animation of their own.
+  so they meet the editor's at the hand-over and need no animation of their own. Their bodies turn
+  from flat to gel on the same frames (`MarkLayers+Gel.swift`), so they meet the editor's gel too.
   `docs/shadow-2026-09-17.md` and `docs/handover-2026-09-18.md` have the frames and what each
   moment cost.
 

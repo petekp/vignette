@@ -120,6 +120,18 @@ final class PinLayer {
         didSet { if growth != oldValue { placeGrowth() } }
     }
 
+    /// How much of the body shows: a flight's fades as its gel comes in (`MarkLayers+Gel.swift`).
+    var bodyOpacity: Float = 1 {
+        didSet {
+            guard bodyOpacity != oldValue else { return }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            rim.opacity = bodyOpacity
+            fill.opacity = bodyOpacity
+            CATransaction.commit()
+        }
+    }
+
     private let drawsBody: Bool
 
     init(scale: CGFloat, body: Bool = true) {

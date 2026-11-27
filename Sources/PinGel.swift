@@ -69,6 +69,19 @@ final class PinGel: CALayer, GelLayer {
         var deepness: CGFloat
         /// The deep edge's colour, when it is not `ui.pinGelDeep` of `color`.
         var deep: SRGB? = nil
+
+        /// The gel of a pin `maker` made over `rect` of the picture, in image px: in the pin's colour,
+        /// or grey once `resolved`, with its deep edge where that stands out more from `backdrop` there.
+        static func pin(_ maker: PinMaker, resolved: Bool, over rect: CGRect, backdrop: LivePacket.Luminance?, markStyle: MarkStyle) -> Tint {
+            let color = PinShading.color(of: maker, resolved: resolved, markStyle: markStyle)
+            var deepness: CGFloat = 0
+            if let brightness = backdrop?.mean(in: rect) {
+                let share = markStyle.pin.gelDeep
+                let deep = CGColor(srgbRed: color.red * share, green: color.green * share, blue: color.blue * share, alpha: 1)
+                deepness = InkContrast(ice: color.cgColor, deep: deep).deepWins(behind: brightness) ? 1 : 0
+            }
+            return Tint(color: color, deepness: deepness)
+        }
     }
 
     /// The most colours one layer draws; a shape in a colour past them takes the last one's.

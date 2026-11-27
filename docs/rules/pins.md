@@ -13,14 +13,15 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   orientation is worked out each time from the picture at the drawing's own size and is never
   stored, so every drawer agrees (`PinTeardrop.facing`). A body that would cover a stitch's piece
   number turns away from it (`Drawing.pieceNumbers`). `MarkLayers` shows pins with `PinLayer`
-  and `MarkRendering` draws them with `Pin.draw`, from the same paths. On a card and in flight a
-  pin has its own look (`PinShading`): a gradient, a white hairline and a soft shadow. In the
-  editor it is gel (below). A rendering keeps the marks' white edge. `MarkLayers` clusters them as
+  and `MarkRendering` draws them with `Pin.draw`, from the same paths. On a card a pin has its
+  own look (`PinShading`): a gradient, a white hairline and a soft shadow. In the editor it is gel
+  (below). A rendering keeps the marks' white edge. `MarkLayers` clusters them as
   `PinPlacement` does at the drawing's own size. A card's teardrops scale with its picture, as a
   rendering's do, and a flight shows the card's clusters. A flight between a card and the editor
   scales each pin about its tip on every frame (`MarkLayers.PinGrowth`), so its size on screen
   moves from the card's to the editor's `ui.pinSize` as the picture's zoom does, and lands at the
-  editor's size. The way home shrinks it back the same way.
+  editor's size. The way home shrinks it back the same way. On the way the flat body crossfades
+  into the editor's gel (`MarkLayers+Gel.swift`). A flight between two cards stays flat.
 - A PNG rendering draws pins as `Drawing.renderedTeardrops` places them, since its reader cannot
   hover. It outlines every area in its pin's colour. A body that would overlap an earlier pin's
   body or a piece number tries its other orientations, then moves clear, and a line in the pin's
@@ -187,9 +188,8 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   its arrow included: the rim covers the popover's frame and reads the outline from the shape layer
   AppKit draws the popover's glass with, and moves when that path changes (`PinGelRim.Edge.popover`).
   Before macOS 26 AppKit draws no such layer, and the popover has no rim, since a box round the body
-  alone did not match the popover's shape. Cards, flights, Copy, Send and Stitch keep the flat pin, so
-  a pin changes material as it lands in the editor and as it leaves. A rendering draws the area as
-  a solid rectangle mark.
+  alone did not match the popover's shape. Cards, Copy, Send and Stitch keep the flat pin. A
+  rendering draws the area as a solid rectangle mark.
 - A resolved pin's ask is done (`Pin.resolved`, `Pin.Resolution`). It keeps its number, place and
   comments, and is grey, the system grey `#8e8e93` (`PinShading.resolvedColor`): in the editor's
   gel, on cards and in flights, in its popover's and hover card's rims, and in menus. It clusters

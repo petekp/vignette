@@ -62,6 +62,9 @@ extension MarkLayers {
     /// editor. A flight between two cards leaves them as they were.
     func growPins(image: NSImage, from: (frame: NSRect, look: TransitionLayer.Look), to: (frame: NSRect, look: TransitionLayer.Look)) {
         guard from.look.fillsWidth != to.look.fillsWidth else { return }
+        if backdrop == nil, !pinBodies.isEmpty, let picture = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            backdrop = LivePacket.Luminance(picture, frame: pixels.bounds)
+        }
         func end(_ end: (frame: NSRect, look: TransitionLayer.Look)) -> PinGrowth.End {
             PinGrowth.End(zoom: end.look.zoom(of: image, in: end.frame, pixels: pixels), editor: end.look.fillsWidth)
         }

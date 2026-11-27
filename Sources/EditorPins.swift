@@ -151,13 +151,6 @@ final class EditorPins {
     /// The gel of a pin `maker` made over `rect` of the editor: in the pin's colour, or grey once
     /// `resolved`, with its deep edge where that stands out more from the picture there.
     private func tint(_ maker: PinMaker, resolved: Bool, over rect: CGRect, toImage: CGAffineTransform, markStyle: MarkStyle) -> PinGel.Tint {
-        let color = PinShading.color(of: maker, resolved: resolved, markStyle: markStyle)
-        var deepness: CGFloat = 0
-        if let brightness = backdrop?.mean(in: rect.applying(toImage)) {
-            let share = markStyle.pin.gelDeep
-            let deep = CGColor(srgbRed: color.red * share, green: color.green * share, blue: color.blue * share, alpha: 1)
-            deepness = InkContrast(ice: color.cgColor, deep: deep).deepWins(behind: brightness) ? 1 : 0
-        }
-        return PinGel.Tint(color: color, deepness: deepness)
+        .pin(maker, resolved: resolved, over: rect.applying(toImage), backdrop: backdrop, markStyle: markStyle)
     }
 }
