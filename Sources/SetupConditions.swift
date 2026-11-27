@@ -10,6 +10,14 @@ enum FolderAccess {
     case refused
 }
 
+/// Why the watch folder can't be read, when macOS has not refused it.
+enum FolderReadFailure: Equatable {
+    /// The folder isn't there: a volume that is not mounted, or a folder moved or deleted.
+    case notFound
+    /// Opening or listing it fails, as when macOS's sandbox daemon does not answer.
+    case failed
+}
+
 /// What the setup window reacts to, read together each time it looks: the permissions, the watch
 /// folder and macOS's own screenshot settings. Setup reads them from this Mac, and the Setup Lab
 /// sets them.
@@ -24,6 +32,9 @@ struct SetupConditions: Equatable {
     /// ask, which leaves the welcome page without a folder row.
     var protectedArea: String?
     var folder: FolderAccess
+    /// Why the folder has failed to read for longer than `ui.unreadableFolderSeconds`, other than
+    /// a refusal, which `folder` says. Nil while it reads.
+    var folderReadFailure: FolderReadFailure? = nil
     var hasScreenshots: Bool
     /// ⌘⇧5's Save to: `file`, or where else macOS sends screenshots (`AppleScreencapture.target`).
     var saveTarget: String

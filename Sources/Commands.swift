@@ -31,6 +31,9 @@ enum CommandError: String, CaseIterable {
     case nothingToUnsend = "nothing-to-unsend"
     /// `show` named more files than the corner's column keeps (`recentCount`).
     case tooManyFiles = "too-many-files"
+    /// The watch folder can't be read: macOS refused it, it isn't there, or opening it fails. The
+    /// detail says which.
+    case unreadableFolder = "unreadable-folder"
     /// `pins=` did not parse, or names a pin the screenshot does not hold, or more pins than it has room for.
     case invalidPins = "invalid-pins"
 }

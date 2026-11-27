@@ -220,6 +220,31 @@ moves the script on only while its line shows on the shortcut page.
 *file* and *folder* are the settings file and its folder, written with `~`. A failed write can follow
 a launch that set a bad file aside, and then both warnings show, Settings not saved first.
 
+### The menu bar menu's warnings, when the screenshots folder can't be read
+
+The menu lists these first, with a warning sign, among the things it can fix. A folder that fails to
+read for a reason other than a refusal shows after `ui.unreadableFolderSeconds`. It is greyed,
+since there is nothing to click. The line under the title shows on macOS 14.4 and later.
+
+| When | Menu item | Line under it | The intro's popover, alone |
+| --- | --- | --- | --- |
+| macOS refused the folder | Allow Access to Your Screenshots… | | Vignette can't open your screenshots folder. Click the icon to allow it. |
+| The folder isn't there | Can't Find Your Screenshots Folder | Vignette keeps looking for *folder*. | Vignette can't find your screenshots folder. It keeps looking. |
+| Opening or listing it fails | Can't Read Your Screenshots Folder Yet | macOS isn't letting Vignette read it. Vignette keeps trying. | macOS isn't letting Vignette read your screenshots folder yet. Vignette keeps trying. |
+
+*folder* is the watch folder, written with `~`. With other things missing too, the popover lists
+them under "Click the icon to:", where these two read "See why Vignette can't find your screenshots
+folder" and "See why Vignette can't read your screenshots yet".
+
+The shortcut, pressed when the folder is why there is nothing to show, opens the intro's popover
+under the icon with these (`foundNothing`):
+
+| When | Popover title | Line under it |
+| --- | --- | --- |
+| macOS refused the folder | Vignette can't open your screenshots folder | Click the icon to allow it. |
+| The folder isn't there | Vignette can't find your screenshots folder | Vignette keeps looking for *folder*. |
+| Opening or listing it fails | Vignette can't read your screenshots folder yet | macOS isn't letting Vignette read it. Vignette keeps trying. |
+
 ### The menu bar menu's shortcuts (`HotKeySpec.glyphs`, `HotKeySpec.holdLabel`)
 
 | Item | With a double tap | With a key combination |

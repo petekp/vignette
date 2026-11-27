@@ -33,24 +33,31 @@ extension AppDelegate {
         return image
     }
 
-    /// A dot at the icon's top right while an update waits, in the accent colour so it reads as
-    /// news rather than as part of the icon. An outline in the icon's own colour keeps it visible on
-    /// any menu bar, and a clear gap cut into the icon keeps it off the glyph's stroke. They appear
-    /// and leave together.
-    func showUpdateDot() {
-        let wanted = updater?.waiting != nil
-        guard let button = statusItem?.button, let icon = NSImage(named: "MenuBarIcon") else { updateDot = nil; dotExit = nil; return }
+    /// A dot at the icon's top right while the screenshots folder can't be read, in yellow, or while
+    /// an update waits, in the accent colour, so it reads as news rather than as part of the icon. The
+    /// folder wins when both hold, since Vignette shows nothing until it reads; the menu lists both.
+    /// An outline in the icon's own colour keeps it visible on any menu bar, and a clear gap cut into
+    /// the icon keeps it off the glyph's stroke. They appear and leave together.
+    func showStatusDot() {
+        let wanted = folderUnreadable || updater?.waiting != nil
+        let color = folderUnreadable ? NSColor.systemYellow : NSColor.controlAccentColor
+        guard let button = statusItem?.button, let icon = NSImage(named: "MenuBarIcon") else {
+            statusDot.badge = nil
+            statusDot.exit = nil
+            return
+        }
+        defer { if wanted { statusDot.fill?.layer?.backgroundColor = color.cgColor } }
         let duration = 0.3 * settings.motionScale
         let dotSize: CGFloat = 4, outline: CGFloat = 1, gap: CGFloat = 1
         let size = dotSize + outline * 2
         let bounds = button.bounds
         let frame = NSRect(x: bounds.maxX - 1 - size, y: button.isFlipped ? 0 : bounds.height - size, width: size, height: size)
-        if wanted, updateDot == nil, let leaving = dotExit?.badge {
-            dotExit = nil
-            updateDot = leaving
+        if wanted, statusDot.badge == nil, let leaving = statusDot.exit?.badge {
+            statusDot.exit = nil
+            statusDot.badge = leaving
             setIcon(Self.icon(icon, clearedAround: frame.insetBy(dx: -gap, dy: -gap), in: button), on: button, fading: duration)
             springDot(leaving, appearing: true, duration: duration)
-        } else if wanted, updateDot == nil {
+        } else if wanted, statusDot.badge == nil {
             let badge = NSView(frame: frame)
             badge.autoresizingMask = [.minXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
             badge.wantsLayer = true
@@ -62,20 +69,20 @@ extension AppDelegate {
             badge.addSubview(ring)
             let dot = NSView(frame: badge.bounds.insetBy(dx: outline, dy: outline))
             dot.wantsLayer = true
-            dot.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
             dot.layer?.cornerRadius = dotSize / 2
             badge.addSubview(dot)
+            statusDot.fill = dot
             setIcon(Self.icon(icon, clearedAround: frame.insetBy(dx: -gap, dy: -gap), in: button), on: button, fading: duration)
             button.addSubview(badge)
-            updateDot = badge
+            statusDot.badge = badge
             guard duration > 0, let layer = badge.layer else { return }
             layer.opacity = 0
             layer.transform = CATransform3D.scale(0.3, about: CGPoint(x: size / 2, y: size / 2))
             springDot(badge, appearing: true, duration: duration)
-        } else if !wanted, let badge = updateDot {
-            updateDot = nil
+        } else if !wanted, let badge = statusDot.badge {
+            statusDot.badge = nil
             let exit = DotExit(badge)
-            dotExit = exit
+            statusDot.exit = exit
             icon.isTemplate = true
             setIcon(icon, on: button, fading: duration)
             springDot(badge, appearing: false, duration: duration, exit: exit)
@@ -84,7 +91,7 @@ extension AppDelegate {
 
     /// Springs the dot in or out from wherever it is drawn now, so a dot wanted again mid-exit
     /// reverses with its motion kept. A dot that left is removed once its exit finishes, unless
-    /// it is wanted again in the meantime, which clears `dotExit`.
+    /// it is wanted again in the meantime, which clears `statusDot.exit`.
     private func springDot(_ badge: NSView, appearing: Bool, duration: Double, exit: DotExit? = nil) {
         guard let layer = badge.layer else { return }
         let shown = layer.presentation() ?? layer
@@ -98,8 +105,8 @@ extension AppDelegate {
         CATransaction.setDisableActions(true)
         if let exit {
             CATransaction.setCompletionBlock { [weak self] in
-                guard let self, self.dotExit === exit else { return }
-                self.dotExit = nil
+                guard let self, self.statusDot.exit === exit else { return }
+                self.statusDot.exit = nil
                 exit.badge.removeFromSuperview()
             }
         }
@@ -136,7 +143,19 @@ extension AppDelegate {
     }
 }
 
-/// A dot on its way out. Replacing or clearing `AppDelegate.dotExit` cancels the removal.
+/// The dot on the status item (`showStatusDot`), and the timer that wakes it when a folder's
+/// failure outlasts its grace (`folderReadChanged`).
+@MainActor
+final class StatusDot {
+    var badge: NSView?
+    /// The disc inside the outline, coloured for what the dot says.
+    var fill: NSView?
+    /// Replacing or clearing it cancels the removal of the dot on its way out.
+    var exit: DotExit?
+    var graceEnds: Timer?
+}
+
+/// A dot on its way out.
 final class DotExit {
     let badge: NSView
     init(_ badge: NSView) { self.badge = badge }

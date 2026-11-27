@@ -81,7 +81,8 @@
   that and says to click the icon. All of it is timed from one moment
   on the media clock (`MenuBarIntro.keyframes`), and `ui.introDuration` sets the flight's length.
   The popover draws the shortcut as a key and goes after 5 s, when the shortcut fires, or at a click
-  on the icon; a second intro, from the Intro Lab, closes the first one's. The picture is the window as the window
+  on the icon; a second intro, from the Intro Lab, closes the first one's. The shortcut opens the same
+  popover, without the flight, to say the screenshots folder can't be read (`MenuBarIntro.say`). The picture is the window as the window
   server draws it, captured with ScreenCaptureKit's `SCShareableContent.currentProcess`, which lets an
   app capture its own windows without Screen Recording permission (macOS 14.4). The window's views
   drawn with `cacheDisplay` lack the wallpaper's tint, and the picture went flat at the handover;
@@ -116,7 +117,8 @@
   scheduled check finds waits as a gentle reminder, Sparkle's name for one that does not take the
   focus (`supportsGentleScheduledUpdateReminders`): a dot on the status item, with a clear ring cut
   into the icon around it, and an "Update Available…" item in its menu, above the screenshot items,
-  in place of "Check for Updates…". With the menu bar icon hidden there is nowhere to show the
+  in place of "Check for Updates…". The same dot is yellow while the screenshots folder can't be
+  read (`docs/rules/capture.md`), and the yellow wins while both hold. With the menu bar icon hidden there is nowhere to show the
   reminder, so Sparkle shows its window, without activating the app. `[update]` lines log what each check found, and `[state] app.update` says what is waiting.
   The dot springs in (scaling up from 0.3 with a little bounce) and springs out the same way
   without the bounce. The icon swaps with Core Animation's own fade (`CATransition`), which does not spring. All of it

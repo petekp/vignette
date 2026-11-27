@@ -18,6 +18,8 @@ may read that folder. The welcome page asks for it, with Allow…, and says why.
 Don't Allow, the row says so, and its Allow… opens Privacy & Security → Files and Folders. Switch
 Vignette on there, and it starts watching the folder without a relaunch. Settings → Screenshots
 says so too, under Save to, and the menu bar menu offers Allow Access to Your Screenshots….
+If the folder can't be read for another reason, such as a disk that isn't connected or macOS not
+answering, the menu says so at the top, and Vignette keeps trying.
 
 Vignette watches the folder macOS saves screenshots to. Pick another in the Options menu of
 Cmd+Shift+5, or with Save to in Settings → Screenshots, and both change to it. If Cmd+Shift+5 is

@@ -12,6 +12,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
     let folder: URL
     private let onNew: (ScreenshotKey) -> Void
     private let onRemoved: ([ScreenshotKey], Inventory) -> Void
+    private let onReadState: () -> Void
     private let onRenamed: ([(from: ScreenshotKey, to: ScreenshotKey)], Inventory) -> Void
     private let onInventory: (Inventory) -> Void
     private var source: DispatchSourceFileSystemObject?
@@ -22,6 +23,14 @@ final class ScreenshotWatcher: @unchecked Sendable {
     /// retry every `retryDelay` logs a change rather than every attempt, and whether one is due.
     private var openError: Int32?
     private var retryDue = false
+    private let openFolder: FolderOpen
+
+    /// Opens a folder for its events: a descriptor, or the error the open failed with.
+    typealias FolderOpen = @Sendable (String) -> Result<Int32, POSIXError>
+    static let openForEvents: FolderOpen = { path in
+        let fd = open(path, O_EVTONLY)
+        return fd >= 0 ? .success(fd) : .failure(POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO))
+    }
 
     enum Availability: Equatable {
         case available, missing, refused, unavailable
@@ -96,6 +105,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
         var indexed = false               // a successful listing or a missing-folder capture cutoff exists
         var denied = false                // macOS refused this app the folder
         var missingSince: Date?           // when a listing first found no folder, until one finds it
+        var unreadableSince: Date?        // when an open or a listing first failed, until a listing works
         var availability = Availability.unavailable
         var generation = 0
         var pending: [String: Arrival] = [:]
@@ -114,11 +124,14 @@ final class ScreenshotWatcher: @unchecked Sendable {
 
     init(folder: URL, onNew: @escaping (ScreenshotKey) -> Void,
          onRemoved: @escaping ([ScreenshotKey], Inventory) -> Void, onInventory: @escaping (Inventory) -> Void = { _ in },
-         onRenamed: @escaping ([(from: ScreenshotKey, to: ScreenshotKey)], Inventory) -> Void = { _, _ in }) {
+         onRenamed: @escaping ([(from: ScreenshotKey, to: ScreenshotKey)], Inventory) -> Void = { _, _ in },
+         onReadState: @escaping () -> Void = {}, openFolder: @escaping FolderOpen = ScreenshotWatcher.openForEvents) {
         self.folder = folder
+        self.openFolder = openFolder
         self.onNew = onNew
         self.onRemoved = onRemoved
         self.onRenamed = onRenamed
+        self.onReadState = onReadState
         self.onInventory = onInventory
         // macOS holds the first read of a folder it protects (the Desktop, Documents, Downloads)
         // until the user answers its prompt, so that read runs on the queue. An ordinary folder
@@ -141,46 +154,37 @@ final class ScreenshotWatcher: @unchecked Sendable {
     var isReadable: Bool { availability == .available }
     var availability: Availability { state.withLock { $0.availability } }
 
-    /// The folder macOS asks about before an app may read a folder inside it, or nil for a folder
-    /// it doesn't protect. Named as the setup window says it: "your Desktop". Besides the three
-    /// home folders, macOS asks for iCloud Drive, a cloud provider's folder under
-    /// `~/Library/CloudStorage`, and another volume. Taking a folder as protected when macOS does
-    /// not ask costs one Allow… that answers at once; missing one puts macOS's prompt up at launch
-    /// with nothing saying why.
-    static func protectedArea(of folder: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> String? {
-        let path = folder.standardizedFileURL.resolvingSymlinksInPath().path
-        func inside(_ area: String) -> Bool { path == area || path.hasPrefix(area + "/") }
-        func homePath(_ name: String) -> String { home.appendingPathComponent(name).standardizedFileURL.path }
-        for (name, spoken) in [("Desktop", "your Desktop"), ("Documents", "your Documents folder"),
-                               ("Downloads", "your Downloads folder"), ("Library/Mobile Documents", "your iCloud Drive")] {
-            if inside(homePath(name)) { return spoken }
+    /// Why the folder can't be read, once every open or listing since `grace` ago has failed: nil
+    /// while it reads, before anything has tried, and for a failure younger than `grace`, which a
+    /// slow first read or a volume still mounting can be.
+    func unreadable(at now: Date = Date(), after grace: TimeInterval) -> Availability? {
+        state.withLock { s in
+            guard let since = s.unreadableSince, now.timeIntervalSince(since) >= grace else { return nil }
+            return s.availability
         }
-        let cloud = homePath("Library/CloudStorage")
-        if path.hasPrefix(cloud + "/") {
-            // `Dropbox`, or `GoogleDrive-name@example.com`: the provider is the part before the account.
-            let provider = path.dropFirst(cloud.count + 1).split(separator: "/").first?.split(separator: "-").first
-            return provider.map { "your \($0) folder" } ?? "that folder"
-        }
-        if path.hasPrefix("/Volumes/") { return "that disk" }
-        return nil
     }
 
-    private func start() {
-        let fd = open(folder.path, O_EVTONLY)
-        guard fd >= 0 else {
-            let error = errno
+    /// When every open or listing began failing, or nil while the folder reads. `onReadState` runs
+    /// on the main thread when this starts, ends, or its reason changes.
+    var unreadableSince: Date? { state.withLock { $0.unreadableSince } }
+
+    /// Opens the folder and watches it. Nil once it is watched, else the error the open failed with.
+    private func start() -> Int32? {
+        let fd: Int32
+        switch openFolder(folder.path) {
+        case .success(let opened):
+            fd = opened
+        case .failure(let failure):
+            let error = failure.code.rawValue
             if error != openError {
                 Log.write("[watcher] error cannot open \(folder.path): \(String(cString: strerror(error)))")
                 openError = error
             }
-            state.withLock { $0.denied = error == EPERM || error == EACCES }
             retryLater()
-            return
+            return error
         }
-        if openError != nil {
-            Log.write("[watcher] watching \(folder.path) after an error")
-            openError = nil
-        }
+        Log.write("[watcher] watching \(folder.path)\(openError == nil ? "" : " after an error")")
+        openError = nil
         let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete, .revoke], queue: queue)
         src.setEventHandler { [weak self] in self?.scan() }
         src.setCancelHandler { close(fd) }
@@ -189,6 +193,29 @@ final class ScreenshotWatcher: @unchecked Sendable {
         directoryID = DirectoryID(descriptor: fd)
         generation += 1
         state.withLock { $0.watching = true; $0.denied = false; $0.generation = generation }
+        return nil
+    }
+
+    private static let sharedWithListing: [Int32: Availability] = [
+        EINTR: .unavailable, ENOENT: .missing, EPERM: .refused, EACCES: .refused,
+    ]
+
+    /// A scan that could not read the folder. A missing folder counts as indexed and empty from
+    /// `now`, so the files dated before it are taken in silently when it comes back.
+    private func failed(_ availability: Availability, at now: Date) {
+        let changed = state.withLock { s in
+            let changed = s.unreadableSince == nil || s.availability != availability
+            s.availability = availability
+            s.denied = availability == .refused
+            s.unreadableSince = s.unreadableSince ?? now
+            if availability == .missing {
+                s.missingSince = s.missingSince ?? now
+                s.indexed = true
+            }
+            return changed
+        }
+        if changed { DispatchQueue.main.async { [weak self] in self?.onReadState() } }
+        retryLater()
     }
 
     /// A folder that cannot be opened now may open later: a volume mounts, or the user allows the
@@ -248,27 +275,21 @@ final class ScreenshotWatcher: @unchecked Sendable {
             // A rename paired in the directory that was replaced is not one in this directory.
             state.withLock { $0.watching = false; $0.generation = generation; $0.held = HeldRenames() }
         }
-        if source == nil { start() }
+        // After these a listing meets the same refusal or absence, or waits on the same daemon that
+        // did not answer the open, which doubled each failing scan (about 5.4 s each). After any
+        // other, such as a volume that can't be watched for events, the folder may still list.
+        if source == nil, let error = start(), let failure = Self.sharedWithListing[error] { return failed(failure, at: Date()) }
         let listing = Self.read(folder)
         let now = Date()
-        guard case .available(let inventory) = listing else {
-            state.withLock { s in
-                s.availability = listing.availability
-                s.denied = listing.availability == .refused
-                if listing.availability == .missing {
-                    s.missingSince = s.missingSince ?? now
-                    s.indexed = true
-                }
-            }
-            retryLater()
-            return
-        }
+        guard case .available(let inventory) = listing else { return failed(listing.availability, at: now) }
+        let recovered = state.withLock { $0.unreadableSince != nil }
         let (arrivals, scanNumber, base) = state.withLock { s -> ([(String, Arrival)], Int, (names: Set<String>, scan: Int)) in
             s.scans += 1
             let scanNumber = s.scans
             let base = (names: s.present, scan: s.presentScan)
             s.availability = .available
             s.denied = false
+            s.unreadableSince = nil
             let undelivered = Set(s.pending.keys)
             for (name, arrival) in s.pending where arrival.generation != generation {
                 s.files[name] = nil
@@ -305,6 +326,7 @@ final class ScreenshotWatcher: @unchecked Sendable {
                 return (name, arrival)
             }, scanNumber, base)
         }
+        if recovered { DispatchQueue.main.async { [weak self] in self?.onReadState() } }
         let started = generation, left = Self.left(base.names, for: inventory.names)
         DispatchQueue.main.async {
             let began = ProcessInfo.processInfo.systemUptime
@@ -377,27 +399,6 @@ final class ScreenshotWatcher: @unchecked Sendable {
         if released && rescan { self.rescan(reason: "retry undelivered arrival") }
     }
 
-    /// Sorted names that appeared and disappeared since the last scan.
-    static func diff(known: Set<String>, current: Set<String>) -> (added: [String], removed: [String]) {
-        (current.subtracting(known).sorted(), known.subtracting(current).sorted())
-    }
-
-    /// Names that disappeared paired with names that appeared in the same listing, when the file's
-    /// identity is the same. A pair counts only when the match is one to one: two removed files with
-    /// one identity (a hard link) leave every name in it a removal or an arrival.
-    static func renames(removed: Set<String>, added: Set<String>, before: [String: FileIdentity],
-                        after: [String: FileIdentity]) -> [(from: String, to: String)] {
-        var gone: [FileIdentity: [String]] = [:]
-        for name in removed.sorted() { before[name].map { gone[$0, default: []].append(name) } }
-        var arrived: [FileIdentity: [String]] = [:]
-        for name in added.sorted() { after[name].map { arrived[$0, default: []].append(name) } }
-        return gone.compactMap { identity, from in
-            guard from.count == 1, let to = arrived[identity], to.count == 1 else { return nil }
-            return (from: from[0], to: to[0])
-        }
-        .sorted { $0.from < $1.from }
-    }
-
     /// screencapture writes the file in one go, but Dropbox and other syncers stream it in. Wait
     /// until the size holds across two polls and the file reads whole, for up to ten seconds.
     private func waitUntilComplete(_ url: URL, arrival: Arrival, attempts: Int = 100, last: Int = -1,
@@ -413,28 +414,6 @@ final class ScreenshotWatcher: @unchecked Sendable {
         queue.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             self?.waitUntilComplete(url, arrival: arrival, attempts: attempts - 1, last: size, done: done)
         }
-    }
-
-    /// True when ImageIO can decode the file. A file still being written fails to decode; ImageIO's
-    /// status calls do not tell the two apart (measured: both report complete), so this decodes once.
-    /// An image ImageIO can decode, or a recording AVFoundation finds a video track in. The second
-    /// also stores the recording's size, so the card made for it next does not read it again.
-    static func isComplete(_ url: URL) -> Bool {
-        Screenshot.Kind(of: url) == .recording ? Thumbnailer.pointSize(of: url) != nil : isCompleteImage(url)
-    }
-
-    static func isCompleteImage(_ url: URL) -> Bool {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
-        return CGImageSourceCreateImageAtIndex(source, 0, nil) != nil
-    }
-
-    /// The formats screencapture can write that the app can show. Outputs of the annotator are not candidates.
-    static let candidateExtensions: Set<String> = Set(["png", "jpg", "jpeg", "heic"]).union(Screenshot.recordingExtensions)
-
-    static func isCandidate(_ name: String) -> Bool {
-        let lower = name.lowercased()
-        guard !lower.hasPrefix("."), !lower.contains(Config.annotatedSuffix) else { return false }
-        return candidateExtensions.contains((lower as NSString).pathExtension)
     }
 
     private enum Listing {
@@ -478,42 +457,5 @@ final class ScreenshotWatcher: @unchecked Sendable {
         guard let before, before == DirectoryID(folder.path) else { return .unavailable(.unavailable) }
         return .available(Inventory(folder: folder, names: Set(urls.map(\.lastPathComponent)), dates: files,
                                     observedAt: observedAt, directoryID: before, identities: identities))
-    }
-
-    private static func identity(from values: URLResourceValues?) -> FileIdentity? {
-        guard let date = values?.contentModificationDate, let file = values?.fileIdentifier,
-              let size = values?.fileSize else { return nil }
-        return FileIdentity(file: file, size: size, modified: date)
-    }
-
-    static func identity(of url: URL) -> FileIdentity? {
-        identity(from: try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileIdentifierKey, .fileSizeKey]))
-    }
-
-    static func modificationDate(of url: URL) -> Date? {
-        try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-    }
-
-    /// The newest `limit` of `files` that `include` takes, newest first, plus the count of `files`.
-    /// Ties fall to the name, which carries the capture time for a screenshot. Only the files it
-    /// reaches are made keys, since making one costs about 3 µs and a folder can hold thousands.
-    static func recent(from files: [String: Date], in folder: URL, limit: Int,
-                       include: (ScreenshotKey) -> Bool = { _ in true }) -> (recent: [ScreenshotKey], files: Int) {
-        guard limit > 0 else { return ([], files.count) }
-        func newer(_ a: (key: String, value: Date), _ b: (key: String, value: Date)) -> Bool {
-            a.value != b.value ? a.value > b.value : a.key > b.key
-        }
-        if limit == 1, let newest = files.max(by: { newer($1, $0) }) {
-            let key = ScreenshotKey(folder: folder, name: newest.key)
-            if include(key) { return ([key], files.count) }
-        }
-        var recent: [ScreenshotKey] = []
-        for file in files.sorted(by: newer) {
-            let key = ScreenshotKey(folder: folder, name: file.key)
-            guard include(key) else { continue }
-            recent.append(key)
-            if recent.count == limit { break }
-        }
-        return (recent, files.count)
     }
 }

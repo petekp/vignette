@@ -29,6 +29,8 @@ final class MenuBarIntro {
     private var monitors: [Any] = []
     private var timeout: Timer?
     private var shortcutFired: NSObjectProtocol?
+    /// From a shortcut press that closed the popover until that press's own handling has run.
+    private var pressClosedPopover = false
     private var finished: (() -> Void)?
     /// From `play` until the popover has gone.
     var isPlaying: Bool { finished != nil }
@@ -163,6 +165,21 @@ final class MenuBarIntro {
         shortcutFired = nil
         popover?.close()
         popover = nil
+    }
+
+    /// Says `title` and `text` in the popover under `button`, without the flight, and it goes as
+    /// the intro's does. Nothing while the intro plays, which names what is missing itself, or for a
+    /// press that just closed a popover.
+    func say(_ title: String, _ text: String, on button: NSStatusBarButton) {
+        guard !isPlaying, !pressClosedPopover else { return }
+        showPopover(.text(text), titled: title, on: button)
+    }
+
+    /// The shortcut closed the popover. That press opens no popover of its own (`say`).
+    private func closedByPress() {
+        pressClosedPopover = true
+        DispatchQueue.main.async { [weak self] in self?.pressClosedPopover = false }
+        dismiss()
     }
 
     /// Closes the popover and ends the intro.
@@ -499,14 +516,15 @@ final class MenuBarIntro {
 
     // MARK: The popover
 
-    private func showPopover(_ note: Note, on button: NSStatusBarButton) {
+    private func showPopover(_ note: Note, titled title: String = "\(Identity.name) is in your menu bar",
+                             on button: NSStatusBarButton) {
         closePopover()
         let popover = NSPopover()
         // Closed here rather than by AppKit: setup hands the focus back to the person's app as it
         // closes, and a transient popover in an app that is not active would not stay.
         popover.behavior = .applicationDefined
         popover.animates = Settings.shared.motionScale > 0
-        popover.contentViewController = NSHostingController(rootView: MenuBarIntroNote(note: note))
+        popover.contentViewController = NSHostingController(rootView: MenuBarIntroNote(title: title, note: note))
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         self.popover = popover
         let close: () -> Void = { [weak self] in MainActor.assumeIsolated { self?.dismiss() } }
@@ -517,68 +535,10 @@ final class MenuBarIntro {
             return event
         }].compactMap { $0 }
         // The shortcut doing what the popover describes is the person having read it.
-        shortcutFired = NotificationCenter.default.addObserver(forName: .hotKeyFired, object: nil, queue: .main) { _ in close() }
+        shortcutFired = NotificationCenter.default.addObserver(forName: .hotKeyFired, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.closedByPress() }
+        }
         timeout = Timer.scheduledTimer(withTimeInterval: Self.popoverSeconds, repeats: false) { _ in close() }
-    }
-}
-
-private struct MenuBarIntroNote: View {
-    let note: MenuBarIntro.Note
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("\(Identity.name) is in your menu bar").font(.headline)
-            switch note {
-            case let .shortcut(spec):
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 5) {
-                        if let key = spec.doubleTapKey {
-                            Text("Tap")
-                            Keycap(symbol: key.glyph, label: key.label)
-                            Text("twice")
-                        } else {
-                            Text("Press")
-                            Keycap(symbol: nil, label: spec.glyphs)
-                        }
-                    }
-                    Text("to see your recent screenshots.")
-                }
-                .foregroundStyle(.secondary)
-            case let .text(text):
-                Text(text).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            case let .list(lead, items):
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(lead)
-                    ForEach(items, id: \.self) { item in
-                        Text("• \(item)").fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .foregroundStyle(.secondary)
-            }
-        }
-        .padding(14)
-        .frame(width: 250, alignment: .leading)
-    }
-}
-
-/// A key as it looks on the keyboard, inline in a sentence: its symbol beside its name.
-private struct Keycap: View {
-    let symbol: String?
-    let label: String
-
-    var body: some View {
-        HStack(spacing: 3) {
-            if let symbol { Text(symbol) }
-            Text(label)
-        }
-        .font(.callout.weight(.medium))
-        .foregroundStyle(.primary)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.08)))
-        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.primary.opacity(0.22), lineWidth: 0.5))
-        // The key's lower edge, as on a keycap.
-        .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.18)).offset(y: 1))
     }
 }
 

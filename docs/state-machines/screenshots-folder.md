@@ -124,13 +124,13 @@ Owner: `ScreenshotWatcher.swift`. Tests: `ScreenshotWatcherTests.testAHeldRename
 
 Watches the screenshots folder and reports arrivals, removals, renames and inventories to the app. Confined state (`source`, `directoryID`, `generation`, `openError`, `retryDue`) lives on `queue`; the rest is in `State` under `state`.
 
-**States**: `Availability`: `available`, `missing`, `refused`, `unavailable`. Each `scan` sets it from `read(folder)`; `start()` also sets denied from the open errno. Beside it: `scans` (scan number), `pending[name]` (an `Arrival{id, generation}`), `present`, `held` (`HeldRenames`), `missingSince`.
+**States**: `Availability`: `available`, `missing`, `refused`, `unavailable`. Each `scan` sets it from `read(folder)`; `start()` also sets denied from the open errno. Beside it: `scans` (scan number), `pending[name]` (an `Arrival{id, generation}`), `present`, `held` (`HeldRenames`), `missingSince`, `unreadableSince` (first failure, cleared by a listing that works).
 
 **Transitions**: one scan, in order.
 
 | Step | Event | Next state | Effects |
 |---|---|---|---|
-| 1 `scan` (queue) | directory source event, `rescan(reason:)`, 2 s `retryLater` timer, launch | directory ID changed: source replaced, `held` reset | read a listing; on failure set availability, `missingSince`, retry |
+| 1 `scan` (queue) | directory source event, `rescan(reason:)`, 2 s `retryLater` timer, launch | directory ID changed: source replaced, `held` reset | read a listing; on failure set availability, `missingSince`, `unreadableSince`, retry; `onReadState` on the main queue when a failure starts, ends or changes reason |
 | 2 under the lock | listing read | `scans` bumped; pending arrivals of another generation dropped; `pending` keeps names still present | first listing only indexes; renames paired by `held.hold(..., undelivered:)`; `added` minus rename targets |
 | 3 main queue | delivery | generation changed: dropped; directory ID or access changed: dropped, rescan asked; else `held.deliver(through: scanNumber, ...)` and `present = inventory.names` | `onRenamed`, `onInventory`, `onRemoved`, in that order |
 | 4 arrivals | each added name gets an `Arrival` | `waitUntilComplete` polls every 0.1 s up to 100 times; then `onNew` on the main queue if generation, `pending[name] == arrival` and directory ID still match | else `retryArrival`; never stable: logged `never-stable`, forgotten from the index, found again by the next event or stack open |
