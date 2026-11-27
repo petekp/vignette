@@ -214,22 +214,18 @@ final class PinHoverCard: NSView {
     private static let shadowRoom: CGFloat = 24
 
     /// A writer's avatar. The person's is their macOS account picture, or their initial on their pins'
-    /// colour when the account has none. An agent's is its logo in black on white, or the letter its pin
-    /// wears (`PinFace`) on its pins' colour. `avatar` is layer-backed and round. The pin's popover
-    /// shows the same beside each comment.
+    /// colour when the account has none. An agent's is what its pin wears (`PinFace`) on its pins'
+    /// colour: its logo, or the first letter of its name, in the words' colour. `avatar` is layer-backed
+    /// and round. The pin's popover shows the same beside each comment.
     static func paint(_ avatar: NSImageView, as maker: PinMaker) {
         let style = Settings.shared.data.ui.markStyle.painting(maker)
-        avatar.contentTintColor = nil
-        avatar.layer?.backgroundColor = nil
         switch (maker, PinFace(maker)) {
         case (.person, _):
             avatar.image = accountPicture ?? letter(accountInitial, on: style.personColor, in: style.wordColor)
         case (.agent, .letter(let first)):
             avatar.image = letter(first, on: style.agentColor, in: style.wordColor)
         case (.agent(let agent), _):
-            avatar.image = Agent.logo(for: agent) ?? NSImage(systemSymbolName: Agent.fallbackSymbol, accessibilityDescription: nil)
-            avatar.contentTintColor = .black
-            avatar.layer?.backgroundColor = NSColor.white.cgColor
+            avatar.image = logo(agent, on: style.agentColor, in: style.wordColor, filling: style.pin.logoSize)
         }
     }
 
@@ -252,6 +248,26 @@ final class PinHoverCard: NSView {
             ])
             let size = words.size()
             words.draw(at: CGPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
+            return true
+        }
+    }
+
+    /// The logo of the agent named `name` (`AgentLogos`, the fallback symbol for one without a name) in
+    /// `color`, `fraction` of the side across as on its pin, centred on a square of `fill`, which the
+    /// avatar's round layer clips to a coin.
+    private static func logo(_ name: String, on fill: SRGB, in color: SRGB, filling fraction: CGFloat) -> NSImage {
+        NSImage(size: NSSize(width: 64, height: 64), flipped: false) { rect in
+            NSColor(srgbRed: fill.red, green: fill.green, blue: fill.blue, alpha: 1).setFill()
+            rect.fill()
+            guard let shape = AgentLogos.shared.image(for: name), let ctx = NSGraphicsContext.current?.cgContext else { return true }
+            let side = rect.width * fraction
+            let box = CGRect(x: rect.midX - side / 2, y: rect.midY - side / 2, width: side, height: side)
+            ctx.beginTransparencyLayer(auxiliaryInfo: nil)
+            ctx.draw(shape, in: box)
+            ctx.setBlendMode(.sourceIn)
+            ctx.setFillColor(NSColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: 1).cgColor)
+            ctx.fill(box)
+            ctx.endTransparencyLayer()
             return true
         }
     }

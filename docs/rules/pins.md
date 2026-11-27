@@ -81,8 +81,9 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   open; a comment with no time (`Pin.Comment.at`) shows none. The words start under the avatar's
   left edge, and the trash button sits at the end of the top line. The person's avatar is their macOS
   account picture (`CBIdentity`), or their initial on `ui.personColor` when the account has none.
-  An agent's is its logo in black on white, or the letter its pin wears (`PinFace`) on its pin's
-  colour, or `Agent.fallbackSymbol` on white when it gave no name. The popover is
+  An agent's is what its pin wears (`PinFace`) on its pin's colour: its logo, the first letter of its
+  name, or `Agent.fallbackSymbol` when it gave no name, in the words' colour and at the pin's
+  `ui.pinLogoSize`. Claude's is its white logo on its orange. The popover is
   macOS's own, with nothing behind its content: a view of our own under the content is not clipped
   to the popover's shape, so its arrow and body part ways. The field's placeholder is in the field's
   font and the secondary label colour. The post button is centred on the field's last line
