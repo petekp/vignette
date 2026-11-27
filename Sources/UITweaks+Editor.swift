@@ -41,6 +41,7 @@ extension UITweaks {
         var pinShadowOpacity = 0.35
         var pinLogoSize = 0.56           // an agent's logo on its pin, a share of the pin's size
         var pinAnswerSize = 0.5          // the dot on a pin an agent answered
+        var pinOneColourLogoSize = 0.7   // a one-colour logo on its white circle, the avatar and the answer dot, a share of the circle
         var pinPopoverWidth = 280.0      // screen pt
         var pinPopoverInset = 12.0
         var pinPopoverSpacing = 10.0
