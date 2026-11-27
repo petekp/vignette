@@ -57,6 +57,7 @@ final class EditorCoreResolvedPinsTests: XCTestCase {
         let reopened = core.reduce(.composer(.reopen))
         XCTAssertNil(core.drawing.pins.first?.resolved)
         XCTAssertTrue(reopened.contains(.announce("Pin 1 reopened")))
+        XCTAssertTrue(reopened.contains(.composer(core.composer)), "the open popover hears of the pin it shows")
         XCTAssertEqual(core.undoTitle, "Undo Reopen")
         XCTAssertTrue(core.reduce(.composer(.reopen)).isEmpty, "an open pin has nothing to reopen")
         XCTAssertEqual(core.undoSteps.map(\.name), [.reopen])

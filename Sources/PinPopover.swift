@@ -200,6 +200,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
             if let window = field.window, window.isKeyWindow, field.currentEditor() == nil { window.makeFirstResponder(field) }
         }
         if field.stringValue != composer.draft { field.stringValue = composer.draft }
+        showPlaceholder(resolved: pin.isResolved)
         showPostable()
         fit()
     }
@@ -212,14 +213,21 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         resolveControls.showReplying(post.isEnabled)
     }
 
-    /// Whether the pin is resolved, and by whom: the line over its comments, its rim's colour, the
-    /// field's placeholder, and Resolve, which a new pin and a resolved one go without.
+    /// Whether the pin is resolved, and by whom: the line over its comments, its rim's colour, and
+    /// Resolve, which a new pin and a resolved one go without.
     private func showState(of pin: Pin) {
         shownState = (pin.resolved, pin.number)
         let ui = Settings.shared.data.ui
         resolveControls.show(pin, now: opened)
         rim.wear(PinShading.color(of: pin.maker, resolved: pin.isResolved, markStyle: ui.markStyle), radius: RimLight.cornerRadius, sharp: nil)
-        let placeholder = pin.isResolved ? "Reply to reopen" : "Add a comment"
+    }
+
+    /// Reply to reopen on a resolved pin. The field editor takes a new placeholder only while the
+    /// field is empty, so a pin resolved or reopened while the field holds words changes it once
+    /// the field is empty again.
+    private func showPlaceholder(resolved: Bool) {
+        let placeholder = resolved ? "Reply to reopen" : "Add a comment"
+        guard field.stringValue.isEmpty, field.placeholderAttributedString?.string != placeholder else { return }
         field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
             .font: field.font ?? NSFont.preferredFont(forTextStyle: .body), .foregroundColor: NSColor.secondaryLabelColor,
         ])

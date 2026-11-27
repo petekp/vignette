@@ -215,7 +215,7 @@ struct EditorCore {
     /// The pin whose popover is open.
     var composer: Composer?
     var composerSelectionBefore: Set<Mark.ID>?
-    var reportedComposer: Composer?
+    var reportedPopover: Popover?
     /// The changes an open gesture or typing session has made so far.
     var edit: MarkEdit?
     private(set) var pointer: CGPoint?

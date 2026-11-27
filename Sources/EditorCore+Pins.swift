@@ -253,10 +253,23 @@ extension EditorCore {
 
     /// Posts what was typed and closes the popover. The pin stays selected; a new one with nothing
     /// posted goes, and took no number.
-    /// Tells the view when the pin popover opens, changes or closes.
+    /// What the pin popover shows: the composer, and its pin's number, comments and resolution.
+    struct Popover: Equatable {
+        let composer: Composer
+        let number: Int?
+        let comments: [Pin.Comment]?
+        let resolved: Pin.Resolution?
+    }
+
+    /// Tells the view when the pin popover opens, closes, or changes, which a change to its pin
+    /// alone does too, such as Reopen with nothing typed or an agent's answer.
     mutating func reportComposer() {
-        guard composer != reportedComposer else { return }
-        reportedComposer = composer
+        let popover = composer.map { open in
+            let pin = pin(open.pin)
+            return Popover(composer: open, number: pin?.number, comments: pin?.comments, resolved: pin?.resolved)
+        }
+        guard popover != reportedPopover else { return }
+        reportedPopover = popover
         emit(.composer(composer))
     }
 
