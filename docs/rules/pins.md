@@ -42,8 +42,8 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
 - The editor draws pins itself, above the marks, in view coordinates (`EditorPins`), so a teardrop
   is `ui.pinSize` screen pt across at every zoom and on a screenshot of any size, as easy to see
   and to hit on a 5K capture as on a small crop (`EditorCore.pinSide`). Copy, Send and Stitch keep
-  the drawing's size, `ui.pinSize` drawing pt. `EditorPicture` leaves them out of
-  `MarkLayers`. The core places them (`EditorCore.pinPlacement`, `PinPlacement`): pins whose
+  the drawing's size, `ui.pinSize` drawing pt. The editor's `MarkLayers` keeps them in its drawing
+  but draws none (`drawsPins`), so a flight made from the editor's marks carries them. The core places them (`EditorCore.pinPlacement`, `PinPlacement`): pins whose
   bodies overlap past `ui.clusterOverlap` of their width draw as one cluster, except the selected,
   the open and a new one. The core needs the visible rect for Shift+Return, and the view sends it
   (`viewChanged`) before each `zoomChanged`. A pin is
