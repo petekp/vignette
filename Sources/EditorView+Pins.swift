@@ -45,8 +45,10 @@ extension EditorView {
     }
 
     func showPins() {
-        let placement = core.pinPlacement, outlined = core.outlinedPins
+        let placement = core.pinPlacement
         let carded = hoverCardPin(placement)
+        // The card's panel takes the pointer from the editor, so the core no longer sees its pin hovered.
+        let outlined = core.outlinedPins.union(carded.map { [$0] } ?? [])
         // The card covers its teardrop, so the teardrop's selection ring would show at its corner.
         let ringed = core.selection.subtracting(carded.map { [$0] } ?? [])
         pinUI.pins.show(EditorPins.Shown(placement: placement, outlined: core.drawing.pins.filter { outlined.contains($0.id) },
