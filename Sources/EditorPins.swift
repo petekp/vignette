@@ -40,15 +40,12 @@ final class EditorPins {
     init() {
         handleCores.fillColor = CGColor(gray: 1, alpha: 1)
         handleCores.shadowColor = CGColor(gray: 0, alpha: 1)
-        handleCores.shadowOpacity = Float(Self.coreShadowOpacity)
         handleCores.shadowRadius = Self.coreShadowRadius
         handleCores.shadowOffset = .zero
     }
 
-    /// A corner handle's rounding, and its core's, as a share of its side.
-    private static let handleRounding: CGFloat = 0.3
-    /// The shadow that lifts a handle's white core off its gel.
-    private static let coreShadowOpacity: CGFloat = 0.35, coreShadowRadius: CGFloat = 0.75
+    /// The blur of the shadow that lifts a handle's white core off its gel.
+    private static let coreShadowRadius: CGFloat = 0.75
     /// A selected pin's ring: white over dark content, graphite over light content, so it stands apart
     /// from every pin's colour on both.
     private static let ringLight = SRGB(red: 1, green: 1, blue: 1)
@@ -118,19 +115,20 @@ final class EditorPins {
         if let handles = what.handles, case .area(let frame, _) = handles.pin.place {
             let tint = tint(handles.pin.maker, resolved: handles.pin.isResolved, over: frame.applying(transform), toImage: toImage,
                             markStyle: what.markStyle)
-            let side = style.gelHandle, core = style.gelHandleCore
+            let side = style.gelHandle, core = style.gelHandleCore, rounding = min(max(style.gelHandleRounding, 0), 0.5)
             let squares = teardrops.map(\.1.square)
             for corner in handles.corners.map({ $0.applying(transform) }) {
                 let square = CGRect(x: corner.x - side / 2, y: corner.y - side / 2, width: side, height: side)
-                shapes.append(PinGel.Shape(rect: square, radius: side * Self.handleRounding, sharp: nil, rod: nil,
+                shapes.append(PinGel.Shape(rect: square, radius: side * rounding, sharp: nil, rod: nil,
                                            dome: side / 2 * style.gelDome, tint: tint))
                 // The corner under the pin's teardrop is the pin's tip, which takes the press.
                 guard core > 0, !squares.contains(where: { $0.insetBy(dx: -1, dy: -1).contains(corner) }) else { continue }
                 let middle = CGRect(x: corner.x - core / 2, y: corner.y - core / 2, width: core, height: core)
-                cores.addRoundedRect(in: middle, cornerWidth: core * Self.handleRounding, cornerHeight: core * Self.handleRounding)
+                cores.addRoundedRect(in: middle, cornerWidth: core * rounding, cornerHeight: core * rounding)
             }
         }
         handleCores.path = cores
+        handleCores.shadowOpacity = Float(min(max(style.gelHandleCoreShadow, 0), 1))
 
         let drifting = !what.drifting.isEmpty
         gel.show(shapes, drifting: drifting, within: host?.bounds)

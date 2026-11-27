@@ -16,13 +16,20 @@ extension MarkLayers {
 
     /// Puts the gel under the pins once the flight has an editor's end.
     func wearGel() {
-        guard drawsPins, pinGrowth != nil, gel == nil, !pinBodies.isEmpty else { return }
+        guard let gel = makeGel() else { return }
+        // The pins' layers are the last ones `show` puts in.
+        layer.insertSublayer(gel, at: UInt32(max(0, (layer.sublayers?.count ?? 0) - pinBodies.count)))
+    }
+
+    /// The gel, made now if the flight has an editor's end and pins, and has none yet; nil when it has
+    /// one already or wants none.
+    func makeGel() -> PinGel? {
+        guard drawsPins, pinGrowth != nil, gel == nil, !pinBodies.isEmpty else { return nil }
         let gel = PinGel(scale: contentsScale)
         gel.host = host
         gel.opacity = 0
         self.gel = gel
-        // The pins' layers are the last ones `show` puts in.
-        layer.insertSublayer(gel, at: UInt32(max(0, (layer.sublayers?.count ?? 0) - pinBodies.count)))
+        return gel
     }
 
     /// How much of the gel shows when the flight is `share` of the way to the editor.
@@ -56,7 +63,7 @@ extension MarkLayers {
             shape.dome = shape.rect.height / 2 * style.gelDome
             return shape
         }
-        gel.show(shapes, drifting: false)
+        gel.show(shapes, drifting: false, within: pixels.bounds.applying(CGAffineTransform(scaleX: editor.zoom, y: editor.zoom)))
     }
 
     private static func scaling(about point: CGPoint, by scale: CGFloat) -> CGAffineTransform {

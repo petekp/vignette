@@ -18,7 +18,9 @@ final class PinGelRim: NSView {
     private let gel = PinGel(scale: 2)
     private var wearing: (color: SRGB, edge: Edge)?
     /// The popover's outline, watched for its changes.
-    private weak var outline: CAShapeLayer?
+    private weak var outline: CAShapeLayer? {
+        didSet { if outline == nil { outlineWatch = nil } }
+    }
     private var outlineWatch: NSKeyValueObservation?
 
     override var isFlipped: Bool { true }

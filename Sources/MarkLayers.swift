@@ -145,6 +145,7 @@ final class MarkLayers {
         clusters = [:]
         gel = nil
         pinBodies = []
+        backdrop = nil
     }
 
     /// Marks shown at one scale over a part of the image, a card's or a flight's, shown again in a
@@ -227,8 +228,8 @@ final class MarkLayers {
                                      style: markStyle.pin)
         let alone = Set(placement.drops.map(\.id))
         pins = pins.filter { alone.contains($0.key) }
+        let gelAt = layers.count
         pinBodies = []
-        if let gel { layers.append(gel) }
         for pin in shownPins.pins where alone.contains(pin.id) {
             pinBodies.append(PinBody(teardrop: PinTeardrop(pin, in: drawing.pixels, pointScale: pointScale, markStyle: markStyle,
                                                            pieceNumbers: drawing.pieceNumbers),
@@ -249,6 +250,7 @@ final class MarkLayers {
             clusters[cluster.pins] = record
             layers.append(record.root)
         }
+        if let gel = gel ?? makeGel() { layers.insert(gel, at: gelAt) }
         for id in shapes.keys where !seen.contains(id) {
             shapes[id]?.root.removeFromSuperlayer()
             shapes[id] = nil

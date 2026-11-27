@@ -62,6 +62,8 @@ extension UITweaks {
         var pinGelRod = 4.5              // an area's outline, screen pt
         var pinGelHandle = 12.0          // the gel square on each corner of a selected area pin's area, screen pt
         var pinGelHandleCore = 5.0       // the white square in its middle, screen pt
+        var pinGelHandleRounding = 0.3   // the rounding of the square and its core, a share of its side
+        var pinGelHandleCoreShadow = 0.35 // the shadow that lifts the core off the gel, 0 to 1
         var pinGelRing = 4.0             // the gel ring round a selected pin, screen pt
         var pinGelRingGap = 2.0          // between the ring and the pin, screen pt
         var pinGelRim = 2.0              // the rim of a pin's hover card and popover, screen pt
