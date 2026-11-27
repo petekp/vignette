@@ -57,7 +57,7 @@ extension UITweaks {
         var pinGelBevel = 3.0            // the gel's bevel round a pin's top in the editor, screen pt
         var pinGelDome = 1.0             // the dome on a pin's top, a share of half its side
         var pinGelDeep = 0.85            // the share of a pin's colour its deep edge keeps over light content
-        var pinGelRod = 3.2              // an area's outline, screen pt
+        var pinGelRod = 4.5              // an area's outline, screen pt
         var pinGelRim = 2.0              // the rim of a pin's hover card and popover, screen pt
         var pinGelFaceShadow = 0.5       // the shadow under a gel pin's number or logo
         // Marks (`MarkStyle`, `TextStyle`, `docs/mark-style-settings-2026-09-29.md`)
