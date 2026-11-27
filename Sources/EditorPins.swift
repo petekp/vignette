@@ -69,7 +69,7 @@ final class EditorPins {
         for pin in what.outlined {
             guard case .area(let frame, _) = pin.place else { continue }
             let rect = frame.applying(transform)
-            shapes.append(.outline(rect, width: style.gelRod, tint: tint(pin.maker, resolved: pin.isResolved, over: rect, toImage: toImage,
+            shapes.append(.outline(rect, width: style.gelRod, tint: .pin(pin.maker, resolved: pin.isResolved, over: frame, backdrop: backdrop,
                                                                          markStyle: what.markStyle)))
         }
 
@@ -90,7 +90,8 @@ final class EditorPins {
         for (drop, teardrop) in teardrops {
             let face = drops[drop.id] ?? PinLayer(scale: scale, body: false)
             shapes.append(.body(of: teardrop, dome: teardrop.square.height / 2 * style.gelDome,
-                                tint: tint(drop.maker, resolved: drop.resolved, over: teardrop.square, toImage: toImage, markStyle: what.markStyle)))
+                                tint: .pin(drop.maker, resolved: drop.resolved, over: teardrop.square.applying(toImage), backdrop: backdrop,
+                                           markStyle: what.markStyle)))
             face.show(teardrop, maker: drop.maker, resolved: drop.resolved, face: PinFace(drop.maker), answeringAgent: drop.answeringAgent,
                       pointScale: 1, markStyle: what.markStyle)
             drops[drop.id] = face
@@ -104,7 +105,7 @@ final class EditorPins {
             let teardrop = PinTeardrop(label: cluster.label, agent: cluster.agent, orientation: cluster.orientation,
                                        frame: cluster.frame.applying(transform), style: style)
             shapes.append(.body(of: teardrop, dome: teardrop.square.height / 2 * style.gelDome,
-                                tint: tint(cluster.maker, resolved: cluster.resolved, over: teardrop.square, toImage: toImage,
+                                tint: .pin(cluster.maker, resolved: cluster.resolved, over: teardrop.square.applying(toImage), backdrop: backdrop,
                                            markStyle: what.markStyle)))
             face.show(teardrop, maker: cluster.maker, resolved: cluster.resolved, pointScale: 1, markStyle: what.markStyle)
             clusters[cluster.pins] = face
@@ -113,16 +114,15 @@ final class EditorPins {
 
         let cores = CGMutablePath()
         if let handles = what.handles, case .area(let frame, _) = handles.pin.place {
-            let tint = tint(handles.pin.maker, resolved: handles.pin.isResolved, over: frame.applying(transform), toImage: toImage,
-                            markStyle: what.markStyle)
+            let tint = PinGel.Tint.pin(handles.pin.maker, resolved: handles.pin.isResolved, over: frame, backdrop: backdrop, markStyle: what.markStyle)
             let side = style.gelHandle, core = style.gelHandleCore, rounding = min(max(style.gelHandleRounding, 0), 0.5)
-            let squares = teardrops.map(\.1.square)
+            let underTeardrops = teardrops.map { $0.1.square.insetBy(dx: -1, dy: -1) }
             for corner in handles.corners.map({ $0.applying(transform) }) {
                 let square = CGRect(x: corner.x - side / 2, y: corner.y - side / 2, width: side, height: side)
                 shapes.append(PinGel.Shape(rect: square, radius: side * rounding, sharp: nil, rod: nil,
                                            dome: side / 2 * style.gelDome, tint: tint))
                 // The corner under the pin's teardrop is the pin's tip, which takes the press.
-                guard core > 0, !squares.contains(where: { $0.insetBy(dx: -1, dy: -1).contains(corner) }) else { continue }
+                guard core > 0, !underTeardrops.contains(where: { $0.contains(corner) }) else { continue }
                 let middle = CGRect(x: corner.x - core / 2, y: corner.y - core / 2, width: core, height: core)
                 cores.addRoundedRect(in: middle, cornerWidth: core * rounding, cornerHeight: core * rounding)
             }
@@ -139,16 +139,7 @@ final class EditorPins {
     /// A selected pin's ring over `rect` of the editor: graphite where that stands out more from the
     /// picture there, white elsewhere.
     private func ringTint(over rect: CGRect, toImage: CGAffineTransform) -> PinGel.Tint {
-        var deepness: CGFloat = 0
-        if let brightness = backdrop?.mean(in: rect.applying(toImage)) {
-            deepness = InkContrast(ice: Self.ringLight.cgColor, deep: Self.ringDeep.cgColor).deepWins(behind: brightness) ? 1 : 0
-        }
+        let deepness = PinGel.Tint.deepness(of: Self.ringLight, deep: Self.ringDeep, over: rect.applying(toImage), backdrop: backdrop)
         return PinGel.Tint(color: Self.ringLight, deepness: deepness, deep: Self.ringDeep)
-    }
-
-    /// The gel of a pin `maker` made over `rect` of the editor: in the pin's colour, or grey once
-    /// `resolved`, with its deep edge where that stands out more from the picture there.
-    private func tint(_ maker: PinMaker, resolved: Bool, over rect: CGRect, toImage: CGAffineTransform, markStyle: MarkStyle) -> PinGel.Tint {
-        .pin(maker, resolved: resolved, over: rect.applying(toImage), backdrop: backdrop, markStyle: markStyle)
     }
 }

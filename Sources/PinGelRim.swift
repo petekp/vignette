@@ -53,7 +53,8 @@ final class PinGelRim: NSView {
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        place()
+        // A popover's rim sets its own frame in `place`, which goes on from there.
+        if wearing?.edge != .popover { place() }
     }
 
     override func resize(withOldSuperviewSize oldSize: NSSize) {

@@ -74,13 +74,16 @@ final class PinGel: CALayer, GelLayer {
         /// or grey once `resolved`, with its deep edge where that stands out more from `backdrop` there.
         static func pin(_ maker: PinMaker, resolved: Bool, over rect: CGRect, backdrop: LivePacket.Luminance?, markStyle: MarkStyle) -> Tint {
             let color = PinShading.color(of: maker, resolved: resolved, markStyle: markStyle)
-            var deepness: CGFloat = 0
-            if let brightness = backdrop?.mean(in: rect) {
-                let share = markStyle.pin.gelDeep
-                let deep = CGColor(srgbRed: color.red * share, green: color.green * share, blue: color.blue * share, alpha: 1)
-                deepness = InkContrast(ice: color.cgColor, deep: deep).deepWins(behind: brightness) ? 1 : 0
-            }
-            return Tint(color: color, deepness: deepness)
+            let share = markStyle.pin.gelDeep
+            let deep = SRGB(red: color.red * share, green: color.green * share, blue: color.blue * share)
+            return Tint(color: color, deepness: deepness(of: color, deep: deep, over: rect, backdrop: backdrop))
+        }
+
+        /// 1 where `deep` stands out more than `color` from `backdrop` under `rect`, in image px, and 0
+        /// elsewhere or with no backdrop.
+        static func deepness(of color: SRGB, deep: SRGB, over rect: CGRect, backdrop: LivePacket.Luminance?) -> CGFloat {
+            guard let brightness = backdrop?.mean(in: rect) else { return 0 }
+            return InkContrast(ice: color.cgColor, deep: deep.cgColor).deepWins(behind: brightness) ? 1 : 0
         }
     }
 
