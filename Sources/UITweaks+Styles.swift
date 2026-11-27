@@ -56,9 +56,9 @@ extension UITweaks {
                  listParagraphSpacing: self.commentListParagraphSpacing, gradient: self.pinGradient, bottomShade: self.pinBottomShade, rimWidth: self.pinRimWidth,
                  shadowRadius: self.pinShadowRadius, shadowOffset: self.pinShadowOffset, shadowOpacity: self.pinShadowOpacity,
                  logoSize: self.pinLogoSize, answerSize: self.pinAnswerSize,
-                 gelBevel: self.pinGelBevel, gelDome: self.pinGelDome, gelDeep: self.pinGelDeep, gelRod: self.pinGelRod,
+                 gelDome: self.pinGelDome, gelDeep: self.pinGelDeep, gelRod: self.pinGelRod,
                  gelHandle: self.pinGelHandle, gelHandleCore: self.pinGelHandleCore,
                  gelHandleRounding: self.pinGelHandleRounding, gelHandleCoreShadow: self.pinGelHandleCoreShadow,
-                 gelRing: self.pinGelRing, gelRingGap: self.pinGelRingGap, gelRim: self.pinGelRim, gelFaceShadow: self.pinGelFaceShadow)
+                 gelRing: self.pinGelRing, gelRingGap: self.pinGelRingGap, gelFaceShadow: self.pinGelFaceShadow)
     }
 }

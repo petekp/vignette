@@ -22,6 +22,8 @@ final class CommentDeliveries {
         var status: Status
         /// What the comment says under its words: why it did not go, or why Codex still holds it.
         var reason: String?
+        /// The line a Codex thread's queue holds, which the next launch watches again.
+        var line: QueuedLine?
 
         var address: AgentAddress { AgentAddress(client: client, id: session) }
     }
@@ -139,9 +141,8 @@ final class CommentDeliveries {
         switch outcome {
         case .accepted:
             watchTurn(id)
-        case .queued(_, let reason, let line?):
-            queues[id] = QueueWatch(line: line, queued: now(), shown: reason)
-            lookAgain(id)
+        case .queued:
+            watchQueue(delivery)
         default:
             break
         }
@@ -155,7 +156,9 @@ final class CommentDeliveries {
         guard let index = deliveries.firstIndex(where: { $0.id == id }) else { return false }
         switch outcome {
         case .accepted: deliveries[index].status = .sent
-        case .queued: deliveries[index].status = .queued
+        case .queued(_, _, let line):
+            deliveries[index].status = .queued
+            deliveries[index].line = line
         case .uncertain: deliveries[index].status = .uncertain
         case .notSubmitted, .destinationChanged: deliveries[index].status = .failed
         }
@@ -295,6 +298,13 @@ final class CommentDeliveries {
         }
     }
 
+    /// Watches the queue that holds `delivery`'s line, which has waited `waited` seconds there.
+    private func watchQueue(_ delivery: Delivery, waited: TimeInterval = 0) {
+        guard let line = delivery.line else { return }
+        queues[delivery.id] = QueueWatch(line: line, queued: now() - waited, shown: delivery.reason)
+        lookAgain(delivery.id)
+    }
+
     private func lookAgain(_ id: String) {
         guard let watch = queues[id] else { return }
         schedule(watch.nextLook(at: now())) { [weak self] in
@@ -347,6 +357,7 @@ final class CommentDeliveries {
         queues[deliveries[index].id] = nil
         deliveries[index].status = status
         deliveries[index].reason = reason
+        deliveries[index].line = nil
         save()
     }
 
@@ -364,6 +375,10 @@ final class CommentDeliveries {
             var delivery = delivery
             if delivery.status == .sending { delivery.status = .uncertain }
             return delivery
+        }
+        // A line Codex still held is watched again, as often as its age calls for (`QueueWatch.nextLook`).
+        for delivery in deliveries where delivery.status == .queued {
+            watchQueue(delivery, waited: Date().timeIntervalSince(delivery.at))
         }
     }
 

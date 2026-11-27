@@ -75,13 +75,11 @@ struct PinStyle: Equatable, Sendable {
     /// size of the dot carrying the logo of an agent that answered a person's pin.
     var logoSize: CGFloat
     var answerSize: CGFloat
-    /// The gel of a pin in the editor (`PinGel`), in screen pt at every zoom: the bevel round its top,
-    /// the dome on its top as a share of half its side, and the share of its colour its deep edge keeps
-    /// over light content; the rod of its area's outline, the gel square on each corner of a selected
-    /// area pin's area and the white square in its middle, their rounding and the core's shadow, the ring round a selected pin and its gap from
-    /// the pin, the rim of its hover card and popover, and
-    /// the darkness of the shadow under its number or logo.
-    var gelBevel: CGFloat
+    /// The gel of a pin in the editor (`PinGel`), in screen pt at every zoom: the dome on its top as a
+    /// share of half its side, and the share of its colour its deep edge keeps over light content; the
+    /// rod of its area's outline, the gel square on each corner of a selected area pin's area and the
+    /// white square in its middle, their rounding and the core's shadow, the ring round a selected pin
+    /// and its gap from the pin, and the darkness of the shadow under its number or logo.
     var gelDome: CGFloat
     var gelDeep: CGFloat
     var gelRod: CGFloat
@@ -91,7 +89,6 @@ struct PinStyle: Equatable, Sendable {
     var gelHandleCoreShadow: CGFloat
     var gelRing: CGFloat
     var gelRingGap: CGFloat
-    var gelRim: CGFloat
     var gelFaceShadow: CGFloat
 }
 

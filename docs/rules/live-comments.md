@@ -38,10 +38,12 @@ pins themselves, `send.md` how a line reaches a session, and ADR 0035 why it wor
 - Each line is a delivery in its own store, `comment-deliveries.json` in the app's Application
   Support folder (`CommentDeliveries`), never in Send's request records. A delivery holds the
   screenshot's path, the session, the comments it carried, the pins it named, when, its status
-  (`sending`, `sent`, `queued`, `uncertain`, `failed`) and why. It keeps the newest 1,000.
-  A delivery still `sending` when the app starts reads `uncertain`, since its answer was lost. A
-  rename moves the screenshot's deliveries, and a file that leaves the folder drops them and its
-  holds. The log says `[comments] <status> <id> <session> comments=<n> <detail>`.
+  (`sending`, `sent`, `queued`, `uncertain`, `failed`), why, and the line a Codex queue holds.
+  It keeps the newest 1,000. A delivery still `sending` when the app starts reads `uncertain`,
+  since its answer was lost. A delivery still `queued` with its line is watched again at launch, as
+  often as the line's age calls for, until it is `sent` or `failed`. A rename moves the screenshot's
+  deliveries, and a file that leaves the folder drops them and its holds. The log says
+  `[comments] <status> <id> <session> comments=<n> <detail>`.
 - A Codex line waits in the queue until the thread takes it (`QueueWatch`, as Send's does). Taken,
   it is `sent`. Taken back out of the queue in Codex, it fails, saying so
   (`CommentDeliveries.removedReason`). A thread that is gone fails it with Send's reason.
