@@ -64,8 +64,11 @@
   not the phase. A flight can also go without arriving, and a third callback, `dropped`, runs then,
   so the window never keeps a shadow that is switched off. The window is at the fitted frame by then
   whatever the zoom was: `hide` springs the level back to 1 first and comes down once that has
-  arrived (`AnnotationController.fitBeforeHide`). `docs/shadow-2026-09-17.md` and
-  `docs/handover-2026-09-18.md` have the frames and what each moment cost.
+  arrived (`AnnotationController.fitBeforeHide`). A flight's pins change size with it, from the
+  card's to the editor's, on the flight's own frames (`MarkLayers.PinGrowth`, `docs/rules/pins.md`),
+  so they meet the editor's at the hand-over and need no animation of their own.
+  `docs/shadow-2026-09-17.md` and `docs/handover-2026-09-18.md` have the frames and what each
+  moment cost.
 
   The way home is the same handover the other way round. The flight starts at the editor's frame,
   the editor's frame is hidden in the commit that starts the flight moving, and its window is ordered

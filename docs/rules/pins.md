@@ -16,8 +16,11 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   and `MarkRendering` draws them with `Pin.draw`, from the same paths. On screen a pin has its own
   look (`PinShading`): a gradient, a white hairline and a soft shadow, the same in the editor, on a
   card and in flight. A rendering keeps the marks' white edge. `MarkLayers` clusters them as
-  `PinPlacement` does at the drawing's own size. A card's teardrops scale with its picture, so that
-  is the editor's rule at the card's size, and a flight shows the card's clusters.
+  `PinPlacement` does at the drawing's own size. A card's teardrops scale with its picture, as a
+  rendering's do, and a flight shows the card's clusters. A flight between a card and the editor
+  scales each pin about its tip on every frame (`MarkLayers.PinGrowth`), so its size on screen
+  moves from the card's to the editor's `ui.pinSize` as the picture's zoom does, and lands at the
+  editor's size. The way home shrinks it back the same way.
 - A PNG rendering draws pins as `Drawing.renderedTeardrops` places them, since its reader cannot
   hover. It outlines every area in its pin's colour. A body that would overlap an earlier pin's
   body or a piece number tries its other orientations, then moves clear, and a line in the pin's
@@ -37,12 +40,19 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   That file counts as a drawing in `Drawings.keys`, so a rename and the sweep carry it, but it
   reads as no drawing (`Drawing.isFiled`, `DrawingStore.readNumbering`).
 - The editor draws pins itself, above the marks, in view coordinates (`EditorPins`), so a teardrop
-  keeps the size it has at the fit zoom whatever the zoom; `EditorPicture` leaves them out of
+  is `ui.pinSize` screen pt across at every zoom and on a screenshot of any size, as easy to see
+  and to hit on a 5K capture as on a small crop (`EditorCore.pinSide`). Copy, Send and Stitch keep
+  the drawing's size, `ui.pinSize` drawing pt. `EditorPicture` leaves them out of
   `MarkLayers`. The core places them (`EditorCore.pinPlacement`, `PinPlacement`): pins whose
   bodies overlap past `ui.clusterOverlap` of their width draw as one cluster, except the selected,
-  the open and a new one. The core needs the fit zoom and the visible rect for that and for
-  Shift+Return, and the view sends both (`viewChanged`) before each `zoomChanged`. A pin is
-  selected, moved, nudged and deleted with the marks, by its `id` in `selection`.
+  the open and a new one. The core needs the visible rect for Shift+Return, and the view sends it
+  (`viewChanged`) before each `zoomChanged`. A pin is
+  selected, moved, nudged and deleted with the marks, by its `id` in `selection`. With the Comment
+  tool a click on a pin opens its popover, and a click on the open pin closes it; with Select a
+  click selects it, and a double-click opens it with either tool (`Click.open`). Over the picture
+  the Comment tool's pointer is the crosshair with a small pin in the person's colour up and to its
+  right (`Cursor.comment`), so it is not taken for a shape tool's. A drag that sizes an area keeps
+  the plain crosshair.
 - A cluster and the toolbar's Pins button open one list, an `NSMenu` a turn later, under the
   capsule or the button (`EditorView.showPinList`, `pinListItem`). A pick, a turn later again, goes through `openFromList`: `EditorPinUI.onReveal` pans to its teardrop and area, or `onZoom(.fit)`
   when they are larger than `EditorCore.visible`, then the composer opens. The controller closes the
@@ -57,18 +67,29 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   a window of its own and outlives the editor's unless the core closes it: every way the editor
   leaves its image parks the core, and `park` posts the draft and reports the close
   (`reportComposer`) before it stops reporting. It opens to the
-  right of the teardrop, or to its left when the screen has no room. Its post button posts as
+  right of the teardrop, or to its left when the screen has no room. An area pin with no room on the
+  right hangs it under its area, or over it when there is no room under it, from the teardrop's
+  column, so the area stays in view (`PinPopoverPlace`). That side is kept while the popover is
+  open. Its post button posts as
   Return does, and works only while the field holds words. A press on a handle of the open pin's
   area resizes it with the popover open (`keepsComposer`); the resize is its own undo step, the
-  composer's edit begins again after it (`resumeComposerEdit`), and the field takes the keys back.
-- The popover's comments are in the system's face, an agent's as a person's. Each shows its writer's
-  avatar, the one the hover card shows (`PinHoverCard.paint`, `Pin.Comment.writer`), then their name
-  in the label colour, "You" or the agent's capitalized, and under it the words. The popover is
+  composer's edit begins again after it (`resumeComposerEdit`), and the field takes the keys back with its caret or selection where it was (`PinPopover.takeKeys`).
+- The popover's comments are in the system's face, an agent's as a person's. Each starts with a line
+  holding its writer's avatar, the one the hover card shows (`PinHoverCard.paint`, `Pin.Comment.writer`),
+  their name in the label colour, "You" or the agent's capitalized, and how long ago they wrote in the
+  secondary label colour. The time is said as of when the popover opened and holds still while it is
+  open; a comment with no time (`Pin.Comment.at`) shows none. The words start under the avatar's
+  left edge, and the trash button sits at the end of the top line. The person's avatar is their macOS
+  account picture (`CBIdentity`), or their initial on `ui.personColor` when the account has none.
+  An agent's is its logo in black on white, or the letter its pin wears (`PinFace`) on its pin's
+  colour, or `Agent.fallbackSymbol` on white when it gave no name. The popover is
   macOS's own, with nothing behind its content: a view of our own under the content is not clipped
   to the popover's shape, so its arrow and body part ways. The field's placeholder is in the field's
   font and the secondary label colour. The post button is centred on the field's last line
   (`PinPopover.composerRow`), so one line of words, the placeholder and the caret sit on the
-  popover's centre line with the button.
+  popover's centre line with the button. The field grows a line at a time as its words wrap, measured
+  from the field editor's layout while it is edited, up to `ui.pinComposerLines` lines, past which
+  it scrolls (`PinPopover.wrappedHeight`).
 - Each comment in the popover has its own Delete, for the person's and an agent's alike: a trash
   button at its trailing edge, shown while the pointer is on the comment, Delete Comment in its
   contextual menu, the Delete key on the comment when Full Keyboard Access focuses it, and a
@@ -78,7 +99,9 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   (`ComposerInput.openFirst`, from `AnnotationController.landed`), unless a popover, a drag or
   typing is under way. It does not select the pin, and it opens without the keys
   (`Composer.takesKeys` false; `PinPopover.show` gives the key back to the editor's window). So
-  the tool letters, Delete and the arrows act on the drawing as they would with no popover. The
+  the tool letters, Delete and the arrows act on the drawing as they would with no popover. None of
+  its views takes the focus (`PinPopover.holdNoFocus`), so with Full Keyboard Access on no comment
+  shows a focus ring until the person moves into the popover. The
   field takes the keys when the person clicks into it. Esc closes an open popover before it closes
   the editor.
 - An agent's pins come with `pins=` on `add` and `show` (`AgentPins.swift`, format in `docs/commands.md`),
@@ -100,11 +123,13 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   Copy, Send and Stitch draw a number on every pin and no dot, so the picture matches the "Pin 3:"
   in the words beside it. A pin's row in a menu shows no dot either. A cluster keeps its numbers, in its pins' one maker's colour.
 - In the editor, the pointer resting on a pin with a number grows it into a card (`PinHoverCard`),
-  while no popover, menu or drag is under way. The card grows from the teardrop's tip, which stays
-  its square corner, with the writer's avatar where the body was. It shows the name, "Pin 3" and
-  how long ago, the first comment's first line, and the replies. It takes no clicks, and VoiceOver
-  reads the pin instead. Its width is `ui.pinHoverWidth` and it grows over
-  `ui.pinHoverDuration`, which the motion setting scales.
+  while no popover, menu or drag is under way. The card is the teardrop widened, its rim included,
+  in the popover's glass: the tip stays its square corner and the other corners keep the teardrop's
+  radius. Its top line is laid out as a comment's top line in the popover: the first writer's
+  avatar, their name and how long ago, muted. Under it are the first comment's first line and the
+  replies. A selected pin's ring is left off while its card shows, since the card covers the teardrop
+  the ring goes round. It takes no clicks, and VoiceOver reads the pin instead. Its width is `ui.pinHoverWidth`
+  and it grows over `ui.pinHoverDuration`, which the motion setting scales.
 - In the editor an area's outline is dashed in its pin's colour inside a white edge, one width on
   screen at every zoom (`AreaOutline`). It shows only while its pin is hovered, selected, being
   placed or open (`EditorCore.outlinedPins`), and a closed area pin draws none at rest. Its dashes march while the pin is being placed or is open

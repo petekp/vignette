@@ -43,6 +43,39 @@ final class MarkLayers {
     private var wholeShow: (scale: CGFloat, bound: CGRect)?
     /// After `park`, nothing changes.
     private(set) var isParked = false
+    /// A flight's: how its pins change size between its ends, and the zoom it is shown at now.
+    var pinGrowth: PinGrowth? {
+        didSet { if pinGrowth != oldValue { growPins() } }
+    }
+    private var zoom: CGFloat?
+
+    /// The two ends of a flight between a card and the editor. A card draws a pin at the drawing's
+    /// size, scaled with the picture, and the editor draws it `PinStyle.side` screen pt across at every
+    /// zoom. In between, a pin's side on screen moves from one to the other as the picture's zoom
+    /// does, so it follows the flight's spring, and a flight turned around in mid-air shrinks back
+    /// the way it grew.
+    struct PinGrowth: Equatable {
+        /// Screen pt per image px of the picture at that end, and whether the end is the editor.
+        struct End: Equatable {
+            let zoom: CGFloat
+            let editor: Bool
+        }
+
+        let from: End, to: End
+
+        /// How many times its drawn size a pin on a drawing of `pointScale` is shown at `zoom`.
+        func growth(atZoom zoom: CGFloat, pointScale: CGFloat) -> CGFloat {
+            // A pin's side on screen at an end, in multiples of `PinStyle.side`.
+            func side(_ end: End) -> CGFloat { end.editor ? 1 : pointScale * end.zoom }
+            let span = to.zoom - from.zoom
+            // Clamped, so a spring passing its target, or ends whose zooms nearly match, never
+            // carries a pin past either end's size.
+            let progress = abs(span) > 0.0001 ? min(max((zoom - from.zoom) / span, 0), 1) : 1
+            let drawn = pointScale * zoom
+            guard drawn > 0 else { return 1 }
+            return max(side(from) + (side(to) - side(from)) * progress, 0) / drawn
+        }
+    }
 
     /// Decides what a text wants drawn: sets its `wantWhole` and `wantDetail`, and whether its layers
     /// are hidden. True when the text is in view, which is drawn first.
@@ -88,6 +121,18 @@ final class MarkLayers {
     func restyle(_ style: TextStyle, markStyle: MarkStyle) {
         guard let drawing, let wholeShow else { return }
         show(drawing, scale: wholeShow.scale, bound: wholeShow.bound, style: style, markStyle: markStyle)
+    }
+
+    /// The picture under the marks is shown at `zoom` screen pt per image px, which sizes a flight's pins.
+    func setZoom(_ zoom: CGFloat) {
+        guard zoom != self.zoom else { return }
+        self.zoom = zoom
+        growPins()
+    }
+
+    private func growPins() {
+        let growth = pinGrowth.flatMap { growth in zoom.map { growth.growth(atZoom: $0, pointScale: drawing?.pointScale ?? 1) } } ?? 1
+        for record in Array(pins.values) + Array(clusters.values) { record.growth = growth }
     }
 
     /// The device pixels per point of the screen the marks are on, for the shape layers.
@@ -169,6 +214,7 @@ final class MarkLayers {
         if (layer.sublayers ?? []).map(ObjectIdentifier.init) != layers.map(ObjectIdentifier.init) {
             layer.sublayers = layers
         }
+        growPins()
         // The texts in view are drawn first.
         for record in inView + outOfView { schedule(record) }
     }

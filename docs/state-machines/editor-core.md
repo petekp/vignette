@@ -19,7 +19,7 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 - `unsaved`: the drawing changed since the last hand-over.
 - `drawing.pins` and `drawing.nextPin`: the Comment tool adds a pin with number 0; its first comment numbers it from `nextPin`, which never goes down. A pin with number 0 is in no hand-over and no undo step.
 - `composer: Composer?` (`EditorCore+Pins.swift`): the pin whose popover is open, the comment it edits or nil for a new one, and the draft. While it is open, `edit` is open on that pin. `reportedComposer` is what `settle()` last told the view.
-- `fitZoom`, `visible`: from `viewChanged`, for a teardrop's size and Shift+Return's place.
+- `visible`: from `viewChanged`, for Shift+Return's place.
 - `selection`, `hover`, `tool`, `zoom`, `style`, `metrics`, `markStyle`.
 - `finishes`: what Return and Cmd+Return do. The host sets it from the toolbar's offer.
 - `reportedTool`, `reportedCursor`, `announcedSelection`: what `settle()` last told the view.
@@ -59,7 +59,7 @@ The editor's whole logic: gestures, typing, selection, undo, the 0.3 s save time
 | `pressed` on empty space, Comment tool | release | composer open on a new pin | `placePin`: number 0, selected, `edit` opened. Beeps at 99 pins. |
 | `pressed` on empty space, Comment tool | drag past the drag distance | `placing(id)` | `placeArea` on each drag; the release keeps it as an area, or a point when smaller than the smallest rectangle, and opens the composer. Ended without a release, the edit reverts. |
 | `pressed` on a cluster | release | open | `.showCluster(ids, at:)`; a row sends `composer(.open(id))`. |
-| open | double-click a pin, `composer(.open)`, Shift or Option+Return on a lone selected pin | composer open | `openComposer` closes another open one first. |
+| open | a Comment tool click on a pin whose popover is not open, double-click a pin, `composer(.open)`, Shift or Option+Return on a lone selected pin | composer open | `openComposer` closes another open one first. |
 | composer open | `composer(.post)` | composer open, empty, or closed | A new comment is a `Comment` step, an edited one `Typing`, an emptied one `Delete`; the last comment's removal deletes the pin and closes. Return with nothing typed closes. Nothing changed, nothing is committed. |
 | composer open | `composer(.close)`, a press, a tool, Cmd+Z, `done`, `send`, `park` | composer closed | `closeComposer` posts the draft, then reverts a pin still at number 0. |
 | composer open | `composer(.finish)` | composer closed | `closeComposer`, then `finish(finishes.commandReturn)`. |

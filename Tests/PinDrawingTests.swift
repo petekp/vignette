@@ -67,17 +67,17 @@ final class PinDrawingTests: XCTestCase {
         XCTAssertFalse(isRed(image, at: CGPoint(x: 250, y: 50)))
     }
 
-    func testTheEditorDrawsATeardropOnThePixelsTheRenderingDrawsAtTheFitZoom() throws {
+    func testAtZoomOneOnADrawingOfPointScaleOneTheEditorDrawsATeardropOnThePixelsTheRenderingDraws() throws {
         let (shot, drawing) = try pinned()
         let rendering = try XCTUnwrap(NSBitmapImageRep(data: Rendering.png(of: drawing, imageAt: shot, style: .standard, markStyle: .standard)))
         var core = EditorCore()
         _ = core.reduce(.open(drawing, style: .standard, metrics: .standard, markStyle: .standard))
-        _ = core.reduce(.viewChanged(fit: 1, visible: CGRect(x: 0, y: 0, width: 300, height: 200)))
+        _ = core.reduce(.viewChanged(visible: CGRect(x: 0, y: 0, width: 300, height: 200)))
         _ = core.reduce(.zoomChanged(1))
         let pins = EditorPins()
         pins.setScale(1)
         pins.show(EditorPins.Shown(placement: core.pinPlacement, outlined: [], marching: [], selected: [], markStyle: .standard,
-                                   outlineWidth: 1, dropScale: 1, marchSpeed: 0, transform: .identity))
+                                   outlineWidth: 1, marchSpeed: 0, transform: .identity))
         let context = try XCTUnwrap(CGContext(data: nil, width: 300, height: 200, bitsPerComponent: 8, bytesPerRow: 0,
                                               space: XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB)),
                                               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
@@ -97,6 +97,17 @@ final class PinDrawingTests: XCTestCase {
         let redInBoth = redInEither.filter { isRed(rendering, at: $0) && isRed(editor, at: $0) }
         XCTAssertGreaterThan(Double(redInBoth.count) / Double(redInEither.count), 0.9)
         XCTAssertFalse(isRed(editor, at: CGPoint(x: 250, y: 50)))
+    }
+
+    func testAFlightsPinsGrowFromTheCardsSizeToTheEditorsAndMeetEachEndExactly() {
+        let growth = MarkLayers.PinGrowth(from: .init(zoom: 0.1, editor: false), to: .init(zoom: 0.4, editor: true))
+        XCTAssertEqual(growth.growth(atZoom: 0.1, pointScale: 2), 1, accuracy: 0.0001)
+        XCTAssertEqual(growth.growth(atZoom: 0.4, pointScale: 2) * 2 * 0.4, 1, accuracy: 0.0001)
+        let halfway = growth.growth(atZoom: 0.25, pointScale: 2) * 2 * 0.25
+        XCTAssertEqual(halfway, (0.2 + 1) / 2, accuracy: 0.0001)
+        let home = MarkLayers.PinGrowth(from: growth.to, to: growth.from)
+        XCTAssertEqual(home.growth(atZoom: 0.25, pointScale: 2), growth.growth(atZoom: 0.25, pointScale: 2), accuracy: 0.0001)
+        XCTAssertEqual(growth.growth(atZoom: 0.41, pointScale: 2) * 2 * 0.41, 1, accuracy: 0.0001)
     }
 
     func testADrawingHoldingOnlyPinsFollowsARename() throws {

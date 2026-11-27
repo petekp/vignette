@@ -63,7 +63,8 @@
   silence. `Stitch.compose` lays the pieces out for the model that
   will read the result: it tries every column count and keeps the one that survives a vision
   model's resize best (`readerScale`, Anthropic's standard tier: a long edge of 1568 px and 1568
-  patches of 28 px). The gap and the badges are fractions of the piece they are on,
+  patches of 28 px). A piece's number is white on a dark rounded square, so it is not read as
+  a pin's red teardrop. The gap and the badges are fractions of the piece they are on,
   `ui.stitchLongSide` caps the output, and `[stitch] ok` reports the composed size and that scale.
   Each piece carries its drawing, the editor's own for the image open in it and the stored one
   otherwise, and `Drawing.draw` draws it into the piece's pixels as Done does, off the main thread.

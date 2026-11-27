@@ -35,11 +35,10 @@ final class StitchTests: XCTestCase {
     func testTheGapAndTheBadgeFollowThePieceTheyAreOn() {
         XCTAssertEqual(Stitch.gap(for: [screenshot, CGSize(width: 300, height: 200)]), 12,
                        "the smallest piece decides, and a 4 pt gap is bounded up to 12")
-        XCTAssertEqual(Stitch.badgeDiameter(for: CGSize(width: 300, height: 200)), 32, "bounded up from 12")
-        // A badge is inset by a quarter of itself, so it needs 1.25 times its diameter to sit in.
+        XCTAssertEqual(Stitch.badgeSide(for: CGSize(width: 300, height: 200)), 32, "bounded up from 12")
         for side in [24, 30, 40, 120, 1080, 4000] {
             let piece = CGSize(width: CGFloat(side) * 1.5, height: CGFloat(side))
-            XCTAssertLessThanOrEqual(Stitch.badgeDiameter(for: piece) * 1.25, CGFloat(side),
+            XCTAssertLessThanOrEqual(Stitch.badgeSide(for: piece) * 1.25, CGFloat(side),
                                      "a \(side) pt piece wears a badge that leaves it")
         }
     }
@@ -57,11 +56,11 @@ final class StitchTests: XCTestCase {
         XCTAssertEqual(strongest(image, at: CGPoint(x: plan.frames[1].midX, y: plan.frames[1].midY)), .green,
                        "the second piece is below the first, not over it")
 
-        // Each badge, red, sits inside its own piece's top-left corner.
         for frame in plan.frames {
-            let diameter = Stitch.badgeDiameter(for: frame.size)
-            // Left of the middle, so the number itself is not what gets sampled.
-            XCTAssertEqual(strongest(image, at: CGPoint(x: frame.minX + diameter * 0.4, y: frame.minY + diameter * 0.75)), .red)
+            let side = Stitch.badgeSide(for: frame.size)
+            let pixel = try XCTUnwrap(image.colorAt(x: Int(frame.minX + side * 0.4), y: Int(frame.minY + side * 0.5)))
+            XCTAssertLessThan(max(pixel.redComponent, pixel.greenComponent, pixel.blueComponent), 0.3,
+                              "a dark badge in the piece's top-left corner, unlike a pin's red")
         }
     }
 

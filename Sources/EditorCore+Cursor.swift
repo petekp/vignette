@@ -31,7 +31,12 @@ extension EditorCore {
         case .dot?: return .openHand
         case .mark(let id)?: return clickTypes(in: id) ? .iBeam : .arrow
         case .pin?, .cluster?: return .arrow
-        case nil: return tool == .select ? .arrow : .crosshair
+        case nil:
+            switch tool {
+            case .select: return .arrow
+            case .comment: return .comment(markStyle.personColor)
+            default: return .crosshair
+            }
         }
     }
 

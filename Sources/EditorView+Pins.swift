@@ -5,9 +5,6 @@ import AppKit
 @MainActor
 final class EditorPinUI: NSObject {
     let pins = EditorPins()
-    /// The width in screen pt of the frame the whole picture fits, from the host, or 0 when it gives
-    /// none and the view's own size is the fit.
-    var fittedWidth: CGFloat = 0
     var composer: PinPopover?
     /// The card the pin under the pointer grows into.
     var hoverCard: PinHoverCard?
@@ -28,55 +25,44 @@ final class EditorPinUI: NSObject {
 }
 
 extension EditorView {
-    /// The host's fitted frame's width; see `EditorPinUI.fittedWidth`.
-    var fittedWidth: CGFloat {
-        get { pinUI.fittedWidth }
-        set {
-            guard newValue != pinUI.fittedWidth else { return }
-            pinUI.fittedWidth = newValue
-            if core.isOpen { zoomChanged() }
-        }
-    }
-
-    /// The zoom at which the picture fits the frame, in screen pt per image px.
-    private var fitZoom: CGFloat {
-        let width = CGFloat(core.drawing.pixels.width), height = CGFloat(core.drawing.pixels.height)
-        guard width > 0, height > 0 else { return 0 }
-        if pinUI.fittedWidth > 0 { return pinUI.fittedWidth / width }
-        return bounds.isEmpty ? zoom : min(bounds.width / width, bounds.height / height)
-    }
-
-    /// A zoom step: the core hears where the picture sits, then the zoom, which redraws.
+    /// A zoom step: the core hears the part of the picture in view, then the zoom, which redraws.
     func zoomChanged() {
-        message(.viewChanged(fit: fitZoom, visible: resolution.visible))
+        message(.viewChanged(visible: resolution.visible))
         handle(.zoomChanged(zoom))
     }
 
     func showPins() {
         let placement = core.pinPlacement, outlined = core.outlinedPins
+        let carded = hoverCardPin(placement)
+        // The card covers its teardrop, so the teardrop's selection ring would show at its corner.
+        let ringed = core.selection.subtracting(carded.map { [$0] } ?? [])
         pinUI.pins.show(EditorPins.Shown(placement: placement, outlined: core.drawing.pins.filter { outlined.contains($0.id) },
-                                         marching: core.marchingPins, selected: core.selection, markStyle: core.markStyle,
-                                         outlineWidth: core.metrics.selectionOutlineWidth, dropScale: core.drawing.pointScale * core.fitZoom,
+                                         marching: core.marchingPins, selected: ringed, markStyle: core.markStyle,
+                                         outlineWidth: core.metrics.selectionOutlineWidth,
                                          marchSpeed: core.markStyle.pin.areaSpeed * Settings.shared.motionScale, transform: toView))
-        pinUI.composer?.follow(anchor(of: pinUI.composer?.pin, in: placement))
+        pinUI.composer?.follow(anchor(of: pinUI.composer?.pin, in: placement), area: area(of: pinUI.composer?.pin))
         let resizing = core.composer != nil && core.gesture != nil
         if pinUI.resizingOpenPin, !resizing { pinUI.composer?.takeKeys() }
         pinUI.resizingOpenPin = resizing
         showPinElements(placement)
-        showHoverCard(placement)
+        showHoverCard(carded, placement)
         if pinUI.rotorOrder.count != pinUI.count {
             pinUI.count = pinUI.rotorOrder.count
             pinUI.onCount?(pinUI.count)
         }
     }
 
-    /// The hovered pin's card, while no popover, menu or drag is under way.
-    private func showHoverCard(_ placement: PinPlacement) {
-        var hovered: Pin.ID?
-        if case .pin(let id)? = core.hover { hovered = id }
+    /// The hovered pin with a number, drawn on its own, while no popover, menu or drag is under way:
+    /// the one that grows into its card.
+    private func hoverCardPin(_ placement: PinPlacement) -> Pin.ID? {
         let quiet = core.composer == nil && core.gesture == nil && pinUI.list == nil
-        guard quiet, let id = hovered, let pin = core.pin(id), pin.number > 0,
-              let drop = placement.drops.first(where: { $0.id == id }) else {
+        guard quiet, case .pin(let id)? = core.hover, let pin = core.pin(id), pin.number > 0,
+              placement.drops.contains(where: { $0.id == id }) else { return nil }
+        return id
+    }
+
+    private func showHoverCard(_ carded: Pin.ID?, _ placement: PinPlacement) {
+        guard let id = carded, let pin = core.pin(id), let drop = placement.drops.first(where: { $0.id == id }) else {
             pinUI.hoverCard?.leave()
             pinUI.hoverCard = nil
             return
@@ -97,6 +83,12 @@ extension EditorView {
         return placement.clusters.first { $0.pins.contains(id) }?.frame.applying(toView)
     }
 
+    /// Pin `id`'s area in the view, or nil for a point pin.
+    private func area(of id: Pin.ID?) -> CGRect? {
+        guard let id, case .area(let frame, _)? = core.pin(id)?.place else { return nil }
+        return frame.applying(toView)
+    }
+
     // MARK: The pin popover
 
     func showComposer(_ composer: EditorCore.Composer?) {
@@ -110,9 +102,10 @@ extension EditorView {
             return
         }
         pinUI.composer?.close()
-        let popover = PinPopover(pin: pin, composer: composer) { [weak self] input in self?.handle(.composer(input)) }
+        let popover = PinPopover(pin: pin, composer: composer, send: { [weak self] input in self?.handle(.composer(input)) },
+                                 zoom: { [weak self] request in self?.onZoom?(request) })
         pinUI.composer = popover
-        popover.show(from: rect, of: self, takesKeys: composer.takesKeys)
+        popover.show(from: rect, area: area(of: pin.id), of: self, takesKeys: composer.takesKeys)
     }
 
     /// The editor came up on its screenshot: the first pin's popover opens, leaving the keys here.

@@ -6,7 +6,8 @@
   picture. The zoom keys, cmd+plus/minus/0, and a double-click on empty space with the select tool
   are the core's to recognise, because it knows the tool and what is under the pointer, and it sends
   them as a `ZoomRequest` through `onZoom`. While the toolbar's message field has the keys, the
-  bar's panel reads the zoom keys by the same rule (`EditorCore.zoomRequest`, `FieldCommand`). While typing, the editor sends the caret's rect in image
+  bar's panel reads the zoom keys by the same rule (`EditorCore.zoomRequest`, `FieldCommand`), and so does the pin
+  popover's view while its field has the keys (`CommandKeyStack`), which moves with its pin (`PinPopover.follow`). While typing, the editor sends the caret's rect in image
   px through `onReveal` whenever it moves, and the zoom pans a magnified picture just far enough to
   show it with a line's room, since a text wraps at the image's edge and not the frame's. A pin
   picked from a list comes through `EditorPinUI.onReveal` with no such room (`lineRoom: false`).
