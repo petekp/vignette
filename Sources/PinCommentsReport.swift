@@ -5,9 +5,11 @@ import Foundation
 /// is done, with who resolved it and when, and each comment its
 /// `id`, words, writer, session, time and `sentIn`, the sends that carried it. `sends` lists the
 /// card's sends that reached their client (`Record.reachedClient`), oldest first, and `message` is the
-/// newest one's message.
+/// newest one's message. Each comment's `delivered` lists the lines that took it to a session as it was
+/// posted (`CommentDeliveries.report`).
 enum PinCommentsReport {
-    static func object(file: URL, drawing: Drawing?, records: [ScreenshotRequests.Record]) -> [String: Any] {
+    static func object(file: URL, drawing: Drawing?, records: [ScreenshotRequests.Record],
+                       delivered: [UUID: [[String: Any]]] = [:]) -> [String: Any] {
         let reached = records.filter { $0.reachedClient == true }
         let sent = reached.map { (record: $0, at: $0.handedOver ?? $0.created) }.sorted { $0.at < $1.at }
         func carriers(of comment: UUID) -> [String] {
@@ -36,6 +38,7 @@ enum PinCommentsReport {
                 words["session"] = comment.session?.id
                 words["sessionName"] = comment.sessionName
                 words["at"] = comment.at.map(Pin.Comment.written)
+                words["delivered"] = delivered[comment.id] ?? []
                 return words
             }
             return item

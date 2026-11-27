@@ -63,6 +63,14 @@ final class AnnotationController {
     let toolbar = AnnotatorToolbar()
     /// The session Send keeps after a send to a hand pick, kept in memory only.
     var keptPick: DestinationChoice.KeptPick?
+    /// The open image's drawing as the last change left it, which the next change's pins are compared
+    /// with. Nil at each opening.
+    var pinsBefore: (key: ScreenshotKey, drawing: Drawing)?
+    /// The person changed the open image's pins: the image, the drawing before and after
+    /// (`CommentChange.between`).
+    var onPinsChanged: ((Screenshot, Drawing, Drawing) -> Void)?
+    /// What an open pin's popover says about its comments reaching a session, for the image open now.
+    var liveComments: ((ScreenshotKey, Pin) -> PinLiveComments)?
     /// The apps whose windows the open image's capture showed, when it opened from one.
     var captured: [CaptureRect.Owner]?
     let titleView = AgentTitleView()
@@ -157,6 +165,10 @@ final class AnnotationController {
             run(.reveal(rect, image: CGSize(width: pixels.width, height: pixels.height), lineRoom: false))
         }
         editor.onChange = { [weak self] drawing in self?.drawingChanged(drawing) }
+        editor.pinUI.live = { [weak self] pin in
+            guard let self, let key = current?.key else { return PinLiveComments() }
+            return liveComments?(key, pin) ?? PinLiveComments()
+        }
         editor.onHandOver = { [weak self] drawing in self?.handOver(drawing, reason: "saved") }
         toolbar.model.onMessageChanged = { [weak self] in self?.messageChanged() }
         editor.onClose = { [weak self] in self?.cancel(via: .esc) }

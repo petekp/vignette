@@ -17,6 +17,15 @@ struct StateReport {
         NSRect(x: frame.minX, y: primaryHeight - frame.maxY, width: frame.width, height: frame.height)
     }
 
+    static func residentBytes() -> Int {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count) }
+        }
+        return result == KERN_SUCCESS ? Int(info.resident_size) : 0
+    }
+
     static var primaryHeight: CGFloat { NSScreen.screens.first?.frame.height ?? 0 }
 
     /// Every screen's frame, in global top-left points.

@@ -17,7 +17,8 @@ extension AppDelegate {
         guard FileManager.default.fileExists(atPath: key.url.path) else { Commands.error(cmd, .missingFile, key.url.path); return }
         let drawing = drawings.current(of: key, style: settings.data.ui.textStyle)
         let records = requests.requests.values.filter { requests.sourceKey(of: $0) == key }
-        let object = PinCommentsReport.object(file: key.url, drawing: drawing, records: Array(records))
+        let object = PinCommentsReport.object(file: key.url, drawing: drawing, records: Array(records),
+                                              delivered: commentDeliveries.report(on: key))
         let folder = Identity.cachesURL.appendingPathComponent("comments")
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

@@ -32,6 +32,8 @@ final class EditorPinUI: NSObject {
     var count = PinCount()
     /// Show this rect of a pin, in image px, panning a magnified picture just far enough.
     var onReveal: ((CGRect) -> Void)?
+    /// What the open pin's popover says about its comments reaching a session.
+    var live: ((Pin) -> PinLiveComments)?
     weak var view: EditorView?
 }
 
@@ -158,15 +160,22 @@ extension EditorView {
             pinUI.composer = nil
             return
         }
+        let live = pinUI.live?(pin) ?? PinLiveComments()
         if let open = pinUI.composer, open.pin == pin.id {
-            open.update(pin, composer: composer)
+            open.update(pin, composer: composer, live: live)
             return
         }
         pinUI.composer?.close()
-        let popover = PinPopover(pin: pin, composer: composer, send: { [weak self] input in self?.handle(.composer(input)) },
+        let popover = PinPopover(pin: pin, composer: composer, live: live, send: { [weak self] input in self?.handle(.composer(input)) },
                                  zoom: { [weak self] request in self?.onZoom?(request) })
         pinUI.composer = popover
         popover.show(from: rect, area: area(of: pin.id), of: self, takesKeys: composer.takesKeys)
+    }
+
+    /// A comment's delivery changed: the open popover says so.
+    func refreshLiveComments() {
+        guard pinUI.composer != nil else { return }
+        showComposer(core.composer)
     }
 
     /// The editor came up on its screenshot: the first pin's popover opens, leaving the keys here.

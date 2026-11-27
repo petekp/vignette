@@ -64,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
     static let connections: [AgentClient: any AgentConnection] = [.claude: ClaudeCodeConnection(), .codex: CodexConnection()]
     /// Sending drawings to agent sessions and taking their drawings back. See ScreenshotRequests.
     let requests = ScreenshotRequests(root: ScreenshotRequests.defaultRoot, connections: AppDelegate.connections)
+    let commentDeliveries = CommentDeliveries(store: CommentDeliveries.defaultStore, connections: AppDelegate.connections)
     /// The agent sessions Send can go to. See SessionListing.
     lazy var sessions = SessionListing(connections: AppDelegate.connections, sends: { [unowned self] in requests.sendHistory() },
                                                startable: { StartableSessions().destinations() })
@@ -202,7 +203,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         if !replaced { settings.handBackAppleThumbnail() }
         Log.write("[app] terminating pid=\(ProcessInfo.processInfo.processIdentifier)")
         // Last, and for at most 2 s: a newer launch forces this copy out after 3 s.
-        requests.releaseHeld()
+        commentDeliveries.releaseHeld(waitingUpTo: 0.5)
+        requests.releaseHeld(waitingUpTo: 1.5)
     }
 
     /// The newer launch wins: any running copy of this bundle id is asked to quit, and forced after
@@ -443,7 +445,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             currentDrawing: { [weak self] key in self?.drawings.current(of: key) { self?.storedDrawing(key) } },
             removeCards: { [weak self] in self?.thumbnail.remove($0) },
             removeDrawings: { [weak self] keys, observedAt in self?.drawings.remove(keys, observedAt: observedAt) },
-            fileRemoved: { [weak self] in self?.requests.fileRemoved($0) },
+            fileRemoved: { [weak self] in self?.requests.fileRemoved($0); self?.commentDeliveries.fileRemoved($0.key) },
             renameCards: { [weak self] renames in
                 guard let self else { return }
                 self.thumbnail.rename(renames)
@@ -456,7 +458,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
                 guard let self else { return }
                 for rename in renames { self.drawings.rename(from: rename.from, to: rename.to, style: self.settings.data.ui.textStyle) }
             },
-            renameRequests: { [weak self] in self?.requests.renamed($0) },
+            renameRequests: { [weak self] in self?.requests.renamed($0); self?.commentDeliveries.renamed($0) },
             isVisible: { [weak self] in self?.requests.isVisible($0) ?? true },
             sweepDrawings: { [weak self] in self?.drawings.sweep($0) },
             reconcileRequests: { [weak self] in self?.requests.reconcile($0) },
@@ -582,15 +584,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         }
     }
 
-    private func residentBytes() -> Int {
-        var info = mach_task_basic_info()
-        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
-        let result = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count) }
-        }
-        return result == KERN_SUCCESS ? Int(info.resident_size) : 0
-    }
-
     /// One `[state] {json}` line, written at once.
     private func dumpState(tag: String?, section: String?) {
         var report = StateReport()
@@ -615,7 +608,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         var live = liveInk.stateJSON
         live["watching"] = noteCards.watching
         report.sections["liveInk"] = live
-        report.sections["memory"] = ["rss": residentBytes(), "thumbnails": Thumbnailer.cacheBytes]
+        report.sections["memory"] = ["rss": StateReport.residentBytes(), "thumbnails": Thumbnailer.cacheBytes]
         if let section {
             let always = ["tag", "app"]
             guard let picked = report.sections[section], !always.contains(section) else {
@@ -967,6 +960,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             },
             storedDrawing: { [weak self] in self?.storedDrawing($0) })
         connectSendsToCards()
+        connectCommentDeliveries()
         requests.load(clearingUnsent: clearingUnsent)
     }
 
