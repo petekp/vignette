@@ -22,6 +22,17 @@ final class EditorCorePinsTests: XCTestCase {
         _ = core.reduce(.composer(.changed(words)))
     }
 
+    func testTheCommentToolsPointerOverThePictureIsItsOwnAndOverAPinIsTheArrow() {
+        var core = core(pins: [pin(1, 500, 300)])
+        core.move(200, 200)
+        XCTAssertEqual(core.cursor, .comment(MarkStyle.standard.personColor))
+        core.move(512, 288)
+        XCTAssertEqual(core.cursor, .arrow)
+        _ = core.reduce(.setTool(.rectangle))
+        core.move(200, 200)
+        XCTAssertEqual(core.cursor, .crosshair)
+    }
+
     func testAClickPlacesAPinWhoseFirstCommentGivesItTheNextNumber() throws {
         var core = core(nextPin: 4)
         let placed = core.click(500, 300)

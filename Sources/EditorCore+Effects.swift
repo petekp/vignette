@@ -78,6 +78,8 @@ extension EditorCore {
     enum Cursor: Equatable {
         case arrow, crosshair, iBeam, openHand, closedHand
         case resize(HandlePosition)
+        /// The Comment tool's, over the picture: the crosshair, with a small pin in a person's colour.
+        case comment(SRGB)
     }
 
     enum ZoomRequest: Equatable {

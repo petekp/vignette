@@ -46,7 +46,10 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   (`viewChanged`) before each `zoomChanged`. A pin is
   selected, moved, nudged and deleted with the marks, by its `id` in `selection`. With the Comment
   tool a click on a pin opens its popover, and a click on the open pin closes it; with Select a
-  click selects it, and a double-click opens it with either tool (`Click.open`).
+  click selects it, and a double-click opens it with either tool (`Click.open`). Over the picture
+  the Comment tool's pointer is the crosshair with a small pin in the person's colour up and to its
+  right (`Cursor.comment`), so it is not taken for a shape tool's. A drag that sizes an area keeps
+  the plain crosshair.
 - A cluster and the toolbar's Pins button open one list, an `NSMenu` a turn later, under the
   capsule or the button (`EditorView.showPinList`, `pinListItem`). A pick, a turn later again, goes through `openFromList`: `EditorPinUI.onReveal` pans to its teardrop and area, or `onZoom(.fit)`
   when they are larger than `EditorCore.visible`, then the composer opens. The controller closes the
