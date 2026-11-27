@@ -99,6 +99,7 @@ enum Commands {
         Fixed(name: "settings", summary: "open the Settings window"),
         Fixed(name: "install-skill", summary: "install the Vignette plugin, which carries the agent skill, into Claude Code and Codex; &root=<dir> installs into that one config folder, named .claude or .codex (needs \"debug\": true)"),
         Fixed(name: "reply", summary: "an agent's reply to a screenshot request: \(Identity.urlScheme)://reply?file=<attempt envelope>; the bundled reply helper writes that envelope and waits for the receipt Vignette writes back"),
+        Fixed(name: "comments", summary: "write the pins and comments of one file=<path> to a new JSON file, with each comment's id, writer, time and the sends that carried it, and the card's last send message; answers with the file's path and changes nothing"),
         Fixed(name: "requests", summary: "list the open screenshot requests; &clear=<id or all> stops one taking replies, cancels its unpublished imports, and removes the files Vignette owns"),
         Fixed(name: "restore-apple-defaults", summary: "put Apple's screencapture defaults back to what Vignette first recorded"),
         Fixed(name: "live-ink-clear", summary: "erase every live ink mark from the screen"),

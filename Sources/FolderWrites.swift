@@ -114,10 +114,13 @@ final class FolderWrites {
             Commands.ok("add", "\(name)\(inFolder ? " already in the watch folder" : "")\(detail(request, origin, titled: title.value != nil))")
             return
         }
-        callbacks.joinMarks(AgentAdditions(marks: marks, pins: pins, agent: request.agent, at: Date()), key) { [weak self] result in
+        let from = request.agent == nil ? nil : Agent.cleanSender(request.from).name
+        let additions = AgentAdditions(marks: marks, pins: pins, agent: request.agent, session: origin, sessionName: from, at: Date())
+        callbacks.joinMarks(additions, key) { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let joined):
+                if from == nil, let origin { nameJoinedComments(of: origin, on: key, at: destination) }
                 recordSentDrawing(of: key, at: destination, agentsDrawing)
                 Commands.ok("add", "\(name)\(detail(request, origin, titled: title.value != nil)) marks=\(joined.marks)\(pins.isEmpty ? "" : " pins=\(joined.pins)")")
             case .failure(let failure):

@@ -69,7 +69,8 @@
   request's `pins.json`. `ReplyProtocol.check` refuses a pin the request did not send when the
   reply is accepted. A reply without its own image goes on the request's `base.png` when it has
   one, and its card holds the request's pins, each answer added as the agent's comment and timed
-  by `Reply.accepted`, so a rebuilt card says the same. A request without `base.png` takes no
+  by `Reply.accepted`, so a rebuilt card says the same. Each answer keeps the request's session and
+  the name the send's card gave it (`Record.sent`). A request without `base.png` takes no
   comments, and its replies go on `image.png` with no pins.
 - The reply helper is the app's own binary. `AppDelegate.main` hands `<binary> reply …` to
   `ReplyCommand` before an `NSApplication` exists, and it exits, so the app never starts. The

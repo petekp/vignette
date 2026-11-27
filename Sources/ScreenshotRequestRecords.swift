@@ -32,6 +32,27 @@ extension ScreenshotRequests {
         /// What the card called the session at Send (`SessionMenu.cardTitle`). Nil in a record from
         /// before this field.
         var cardTitle: String? = nil
+        /// The person's message, as the line carried it. Nil for a send without one, and in a record
+        /// from before this field. The log never holds it.
+        var message: String? = nil
+        /// The pins the send carried, in number order, each with the ids of the comments it held then.
+        /// Nil for a send without pins, and in a record from before this field.
+        var pins: [SentPin]? = nil
+        /// True when the client took the line, or may have (`uncertain`). Nil for a send that failed, one
+        /// taken back out of the session's queue, one cleared before its client answered, and a record
+        /// from before this field.
+        var reachedClient: Bool? = nil
+
+        /// A pin a send carried: its `id`, and its comments' ids, oldest first.
+        struct SentPin: Codable, Equatable {
+            let id: UUID
+            let comments: [UUID]
+
+            /// What a record keeps of `pins`: nil when there are none.
+            static func carried(by pins: [Pin]) -> [SentPin]? {
+                pins.isEmpty ? nil : pins.map { SentPin(id: $0.id, comments: $0.comments.map(\.id)) }
+            }
+        }
 
         enum Status: String, Codable {
             /// Stored and not yet handed to the client: in its grace, or about to be.

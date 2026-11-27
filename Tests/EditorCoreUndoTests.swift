@@ -47,11 +47,15 @@ final class EditorCoreUndoTests: XCTestCase {
         XCTAssertTrue(core.key(.character("z"), [.command, .shift]).contains(.announce("Redo Claude's Marks")))
         XCTAssertEqual(core.inspection["undoTitle"] as? String, "Undo Claude's Marks")
 
-        _ = core.reduce(.agentMarks([], pins: try AgentPin.parse(#"[{"x":0.3,"y":0.5,"text":"Here"}]"#), from: "Claude"))
-        let pin = try XCTUnwrap(core.drawing.pins.first)
-        XCTAssertEqual(pin.place, .point(CGPoint(x: 300, y: 300)))
+        let session = AgentAddress.claudeSession(UUID().uuidString.lowercased())
+        _ = core.reduce(.agentMarks([], pins: try AgentPin.parse(#"[{"x":0.3,"y":0.5,"text":"Here"}]"#), by: AgentAuthor(agent: "Claude", session: session)))
         core.key(.character("z"), .command)
         XCTAssertEqual(core.drawing.pins, [])
+        _ = core.reduce(.sessionNamed("vignette", of: session))
+        core.key(.character("z"), [.command, .shift])
+        let pin = try XCTUnwrap(core.drawing.pins.first)
+        XCTAssertEqual(pin.place, .point(CGPoint(x: 300, y: 300)))
+        XCTAssertEqual(pin.comments.first?.sessionName, "vignette", "a name that comes while the comment is only in the history reaches it")
     }
 
     func testTheMessageFieldsTypingIsOneStepInOrderWithTheMarksAndUndoPutsItsWordsBack() {

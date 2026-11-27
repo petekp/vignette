@@ -31,10 +31,10 @@ final class ScreenshotRequests {
 
     let root: URL
     private(set) var requests: [String: Record] = [:]
-    private var replies: [String: Reply] = [:]
+    private(set) var replies: [String: Reply] = [:]
     /// Accepted replies not yet published, imported serially in arrival order within a launch.
     /// A relaunch rebuilds the order from the store.
-    private var pendingImports: [String] = []
+    private(set) var pendingImports: [String] = []
     private var importing = false
     private var publishedAt: [String: TimeInterval] = [:]
     private var publicationReady = false
@@ -229,7 +229,8 @@ final class ScreenshotRequests {
                             destinationName: destination.name, address: address,
                             addressGuard: address.guardTier, source: source.url.lastPathComponent,
                             sourceKey: source.path, status: .prepared, detail: "", start: destination.start,
-                            unchanged: picture.isUnchanged ? true : nil, cardTitle: cardTitle)
+                            unchanged: picture.isUnchanged ? true : nil, cardTitle: cardTitle, message: message,
+                            pins: Record.SentPin.carried(by: picture.pins))
         let ticket = ReplyProtocol.Ticket(requestID: id, secret: ReplyProtocol.newSecret(),
                                           requestDirectory: directory.path, app: Bundle.main.bundlePath)
         do {
@@ -269,8 +270,7 @@ final class ScreenshotRequests {
         prune()
         Log.write("[send] prepared \(id) to \(destination.name) (\(address.description)) \(picture.logged)")
         if grace > 0 { Log.write("[send] waiting \(Int(grace * 1000))ms request=\(id)") }
-        // The message travels in the line only: it is the person's words, so neither the record
-        // nor the log keeps it.
+        // The log never holds the message: it is the person's words.
         let line = Self.requestLine(record: record, root: root, message: message, instructions: instructions, picture: picture)
         if watchingTurn { watchedTurns.insert(id) }
         run(sendGrace.handle(.sent(request: id, line: line, grace: grace, at: now())))
@@ -361,6 +361,7 @@ final class ScreenshotRequests {
             case .uncertain: record.status = .uncertain
             case .notSubmitted, .destinationChanged: record.status = .failed
             }
+            record.reachedClient = record.status == .failed ? nil : true
             record.detail = outcome.isAccepted ? "" : outcome.detail
             requests[id] = record
             do { try write(record) }
@@ -699,34 +700,6 @@ final class ScreenshotRequests {
 
     // MARK: Clearing
 
-    /// `vignette://requests[?clear=<id|all>]`. Listing says what is open; clearing stops a request
-    /// taking new replies, cancels its unpublished imports, and removes only files Vignette owns.
-    /// Published cards are the person's and are left alone.
-    func run(clear: String?) {
-        guard let clear, !clear.isEmpty else {
-            for record in requests.values.sorted(by: { $0.created < $1.created }) {
-                let count = replies.values.filter { $0.requestID == record.id }.count
-                let why = record.detail.isEmpty ? "" : " \(record.detail)"
-                Log.write("[requests] \(record.id) \(record.status.rawValue) \(record.destinationName) \(record.address.description) source=\(record.source) replies=\(count)\(why)")
-            }
-            Commands.ok("requests", "\(requests.count) requests, \(replies.count) replies")
-            return
-        }
-        let targets = clear == "all" ? Array(requests.keys) : [clear]
-        var cleared = 0
-        var failures: [String] = []
-        for id in targets {
-            do { if try self.clear(id) { cleared += 1 } }
-            catch { failures.append("\(id): \(error.localizedDescription)") }
-        }
-        if !failures.isEmpty {
-            Commands.error("requests", .writeFailed, "cleared \(cleared); \(failures.joined(separator: "; "))")
-            return
-        }
-        guard cleared > 0 else { Commands.error("requests", .missingFile, "no request \(clear)"); return }
-        Commands.ok("requests", "cleared \(cleared)")
-    }
-
     /// Deletes the folders of requests cleared more than `clearedKept` ago, dated by `request.json`,
     /// which clearing rewrites. Published replies need current proof of absence at their recorded location.
     func prune(now: Date = Date(), inventory: ScreenshotWatcher.Inventory? = nil) {
@@ -759,7 +732,7 @@ final class ScreenshotRequests {
 
     /// Terminal state commits before any owned payload is removed.
     @discardableResult
-    func clear(_ id: String) throws -> Bool {
+    func clear(_ id: String, takenBack: Bool = false) throws -> Bool {
         // The one place a request is cleared, so a clear by URL or by admission stops a waiting send
         // too. The cards hear of it once the clear has been tried: the line is not going either way.
         let stopped = sendGrace.handle(.cleared(request: id))
@@ -771,6 +744,7 @@ final class ScreenshotRequests {
         defer { if watched { callbacks.queueChanged(record) } }
         if record.status != .cleared {
             record.status = .cleared
+            if takenBack { record.reachedClient = nil }
             try write(record)
             requests[id] = record
         }
@@ -813,32 +787,6 @@ final class ScreenshotRequests {
             catch { Log.write("[requests] error cleanup-state \(id): \(error.localizedDescription)") }
         }
         clearedFolders.removePayloads(of: id)
-    }
-
-    // MARK: The state report
-
-    var stateJSON: [String: Any] {
-        [
-            "directory": root.path,
-            "requests": requests.values.sorted { $0.created < $1.created }.map { record -> [String: Any] in
-                var json: [String: Any] = ["id": record.id, "status": record.status.rawValue, "destination": record.destinationName,
-                                           "address": record.address.description, "guard": record.addressGuard.rawValue, "source": record.source]
-                if record.unchanged == true { json["unchanged"] = true }
-                if let grace = self.grace(of: record.id) { json["graceMs"] = Int(max(0, grace.deadline - self.now()) * 1000) }
-                if let watch = self.queueWatches[record.id] {
-                    json["queuedLine"] = watch.line.id
-                    if let shown = watch.shown { json["queuedReason"] = shown }
-                }
-                return json
-            },
-            "replies": replies.values.sorted { $0.id < $1.id }.map { reply -> [String: Any] in
-                var json: [String: Any] = ["id": reply.id, "request": reply.requestID, "stage": reply.stage.rawValue,
-                                           "file": reply.fileName, "marks": reply.marks.count, "deleted": reply.deleted]
-                if let code = reply.errorCode { json["error"] = code }
-                return json
-            },
-            "pendingImports": pendingImports,
-        ]
     }
 
     // MARK: Files

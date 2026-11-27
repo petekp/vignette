@@ -146,6 +146,10 @@ extension AppDelegate {
     func connectSendsToCards() {
         thumbnail.origin = { [unowned self] in requests.origin(of: $0) }
         folderWrites.callbacks.senderName = { [weak self] address, answer in self?.sessions.senderName(of: address, answer) }
+        folderWrites.callbacks.nameComments = { [weak self] sender, session, key in
+            guard let self else { return }
+            drawings.name(sender, of: session, on: key, style: settings.data.ui.textStyle)
+        }
         folderWrites.callbacks.senderRecorded = { [weak self] shot in
             self?.thumbnail.refreshSender(of: shot)
             self?.annotator.refreshSender(of: shot)

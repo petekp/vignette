@@ -45,9 +45,16 @@ final class ScreenshotRequestsPinsTests: XCTestCase {
     private func send(base: Data) throws -> ReplyProtocol.Ticket {
         let record = try requests.send(.drawing(png: try png(0), pins: pins, base: base),
                                        source: folder.appendingPathComponent("Screenshot.png").screenshotKey,
-                                       to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")))
+                                       to: AgentDestination(id: "s", name: "A session", address: .claudeSession("session-1")), message: "Fix the pins")
         let directory = ReplyProtocol.requestDirectory(root: root, requestID: record.id)
         return try ReplyCommand.loadTicket(directory.appendingPathComponent("ticket.json").path)
+    }
+
+    private func record(of ticket: ReplyProtocol.Ticket) throws -> ScreenshotRequests.Record {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let directory = ReplyProtocol.requestDirectory(root: root, requestID: ticket.requestID)
+        return try decoder.decode(ScreenshotRequests.Record.self, from: Data(contentsOf: directory.appendingPathComponent(ScreenshotRequests.recordFileName)))
     }
 
     private func reply(_ ticket: ReplyProtocol.Ticket, comments: [ReplyProtocol.Comment], image: Data? = nil) throws -> ReplyProtocol.Receipt {
@@ -61,6 +68,8 @@ final class ScreenshotRequestsPinsTests: XCTestCase {
     func testAnAnswerByNumberJoinsThePersonsPinsOnTheirPictureWithoutNumbers() throws {
         let base = try png(1)
         let ticket = try send(base: base)
+        XCTAssertEqual(try record(of: ticket).message, "Fix the pins")
+        XCTAssertEqual(try record(of: ticket).pins, pins.map { .init(id: $0.id, comments: $0.comments.map(\.id)) })
         let comments = try ReplyCommand.loadComments(#"{"2": "Moved the date under the title"}"#, ticket: ticket)
         XCTAssertEqual(comments, [ReplyProtocol.Comment(pin: pins[1].id, text: "Moved the date under the title")])
 
@@ -73,6 +82,23 @@ final class ScreenshotRequestsPinsTests: XCTestCase {
         XCTAssertEqual(cardPins[1].comments.map(\.text), ["Wrong date", "Moved the date under the title"])
         XCTAssertEqual(cardPins[1].comments.last?.agentName, "claude")
         XCTAssertNotNil(cardPins[1].comments.last?.at)
+
+        var sent = try record(of: ticket)
+        sent.handedOver = Date(timeIntervalSince1970: 1_795_000_000)
+        sent.reachedClient = true
+        var failed = try record(of: send(base: base))
+        failed.handedOver = sent.handedOver
+        let drawing = Drawing(key: card.path, pixels: PixelSize(width: 40, height: 30), pointScale: 1, marks: [], pins: cardPins, nextPin: 3)
+        let report = PinCommentsReport.object(file: card, drawing: drawing, records: [sent, failed, try record(of: send(base: base))])
+        XCTAssertEqual(report["message"] as? String, "Fix the pins")
+        XCTAssertEqual((report["sends"] as? [[String: Any]])?.map { $0["id"] as? String }, [sent.id], "a send whose line failed or never went carried nothing")
+        let second = try XCTUnwrap((report["pins"] as? [[String: Any]])?.last)
+        XCTAssertEqual(second["w"] as? Double, 0.5)
+        let written = try XCTUnwrap(second["comments"] as? [[String: Any]])
+        XCTAssertEqual(written.map { $0["id"] as? String }, cardPins[1].comments.map(\.id.uuidString))
+        XCTAssertEqual(written.map { $0["writer"] as? String }, ["person", "agent"])
+        XCTAssertEqual(written.map { $0["sentIn"] as? [String] }, [[sent.id], []])
+        XCTAssertEqual(written.last?["session"] as? String, "session-1")
     }
 
     func testAnswersOnAPinTheRequestDidNotSendOrWithTheAgentsOwnImageAreRefused() throws {

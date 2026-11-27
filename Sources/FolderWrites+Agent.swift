@@ -30,6 +30,13 @@ extension FolderWrites {
         return title
     }
 
+    /// The session list may have named `origin` before its comments joined the drawing of `key`:
+    /// they take the name recorded on the file, when it is still `origin`'s.
+    func nameJoinedComments(of origin: AgentAddress, on key: ScreenshotKey, at url: URL) {
+        guard Agent.origin(of: url)?.address == origin, let sender = Agent.sender(of: url) else { return }
+        callbacks.nameComments(sender, origin, key)
+    }
+
     /// Records the name the session list gives `origin`, for a push that did not give one with
     /// `from=`. The card says "From Claude" until it answers, then the name in place. The answer is
     /// dropped when a later push changed the file's session or gave its own name.
@@ -39,6 +46,7 @@ extension FolderWrites {
             guard let self else { return }
             let after = "after=\(Int((now() - asked) * 1000))ms \(url.lastPathComponent)"
             guard let sender = Agent.cleanSender(sender).name else { Log.write("[add] sender not found session=\(origin.id) \(after)"); return }
+            callbacks.nameComments(sender, origin, key)
             guard Agent.origin(of: url)?.address == origin, Agent.sender(of: url) == nil else { return }
             Agent.record(sender: sender, on: url)
             Log.write("[add] sender found session=\(origin.id) \(after)")

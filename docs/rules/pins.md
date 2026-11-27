@@ -30,8 +30,13 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   followed by its pins' words (`Pin.clipboardWords`). The list's area is capped, so a rendering's
   memory stays bounded: the pins past the cap become one line saying how many did not fit. Send
   renders `.picture`, the screenshot's size, and its line carries the words.
+- Each comment has an `id` (`Pin.Comment.id`), written in the drawing file, its history and a
+  request's `pins.json`. An edit of its words keeps it. A paste, a duplicate or a stitch gives the
+  copy's comments new ones (`Pin.Comment.copied`). A comment from a file without ids reads with
+  `Pin.Comment.standInID`, made from its pin's id and its place in the list, and `EditorHistory.basis`
+  leaves comment ids out, so such a file keeps its history (`docs/drawing-file.md`).
 - A stitch makes its pieces' pins its own. They are renumbered from 1 in piece order and get new
-  ids, since each piece keeps its own (`Stitch.Composition.pins`). The stitch's drawing holds them
+  ids, and so do their comments, since each piece keeps its own (`Stitch.Composition.pins`). The stitch's drawing holds them
   and where each piece wears its number, and is written before its card appears. Its first copy
   is the rendering with the list, and the card's Copied notice waits for that rendering. A stitch
   of pieces with pins is refused when a piece could not be read or the pins number over 99, and a
@@ -113,7 +118,12 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   as its marks come with `marks=`: new pins, or answers added to the person's pins as the agent's
   comments. `AgentPin.join` turns them into the pins as they will be: new ones placed in px inside
   the image and numbered from `nextPin`, answers found by number or `id` among the numbered pins.
-  Each comment holds the time of the call (`Pin.Comment.at`). `AgentPin.problem` refuses a list
+  Each comment holds the time of the call (`Pin.Comment.at`), and the session `session=` names and
+  its name, `from=` (`Pin.Comment.session` and `sessionName`, from `AgentAuthor`). A name the
+  session list gives after the comments joined is given to every comment of that session that has
+  none, in the stored drawing, in the editor's when it is open there, and in their undo and redo
+  steps (`Drawings.name`, `EditorCore.name`), as no step of its own. A person's edit of an agent's
+  comment makes it theirs, without a session. `AgentPin.problem` refuses a list
   that names a pin the drawing lacks or overflows 99, before anything is shown or written. With
   `show` as with `add`, they join the drawing at once, as one undo step with the marks.
 - Who wrote a pin's first comment is its maker (`Pin.maker`, `PinMaker`), and decides its colour

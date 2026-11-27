@@ -159,7 +159,7 @@ enum Stitch {
         case .area(let frame, let corner):
             place = .area(CGRect(origin: moved(frame.origin), size: CGSize(width: frame.width * scale, height: frame.height * scale)), tip: corner)
         }
-        return Pin(id: UUID(), number: number, place: place, comments: pin.comments)
+        return Pin(id: UUID(), number: number, place: place, comments: pin.comments.map(\.copied))
     }
 
     /// The image's size in pixels, read from its header. Nil when the file is not an image this Mac

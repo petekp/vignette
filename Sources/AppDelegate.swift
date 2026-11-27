@@ -404,13 +404,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
         thumbnail.showCopied(shots)
     }
 
-    func copyPaths(_ shots: [Screenshot]) {
-        guard !shots.isEmpty else { Commands.error("paths", .missingFile, "nothing selected"); return }
-        Clipboard.copyText(Clipboard.pathsText(shots.map(\.url)))
-        Commands.ok("paths", shots.map(\.url.lastPathComponent).joined(separator: ", "))
-        thumbnail.showCopied(shots, label: "Copied Path")
-    }
-
     func annotate(_ shots: [Screenshot]) { annotate(shots, from: nil) }
 
     private func annotate(_ shots: [Screenshot], from origin: NSRect?) {
@@ -509,6 +502,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, Actions {
             guard let file = request.files.first else { Commands.error("reply", .missingFile, "no file given"); return }
             requests.receiveReply(envelope: file)
         case "requests": requests.run(clear: request.clear)
+        case "comments": comments(request)
         case "restore-apple-defaults": restoreAppleDefaults()
         case "live-ink-clear":
             guard liveInk.isOn else { Commands.error(cmd, .liveInkOff, "set \"liveInk\" to true in settings.json"); return }

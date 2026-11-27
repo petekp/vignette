@@ -52,6 +52,13 @@ struct EditStep {
         return EditStep(name: name, changes: changes, selectionBefore: selectionBefore, selectionAfter: later.selectionAfter, pins: pins)
     }
 
+    /// This step with `name` given to each comment `session` wrote that has no session name yet.
+    func naming(_ session: AgentAddress, _ name: String) -> EditStep {
+        var named = self
+        named.pins = pins.map { EditStep.PinChange(id: $0.id, before: $0.before?.naming(session, name), after: $0.after?.naming(session, name)) }
+        return named
+    }
+
     /// `drawing` as it was before this step (`forward` false) or after it (true), for the marks and the
     /// pins it touched; everything else is left alone.
     func applied(to drawing: Drawing, forward: Bool) -> Drawing {
@@ -137,6 +144,12 @@ enum HistoryStep {
         return "\(agent)'s Marks"
     }
 
+    /// This step with `name` given to each comment `session` wrote that has no session name yet.
+    func naming(_ session: AgentAddress, _ name: String) -> HistoryStep {
+        guard case .drawing(let step) = self else { return self }
+        return .drawing(step.naming(session, name))
+    }
+
     /// The Edit menu's item for `step`, the one Undo (or with `redo`, Redo) would take: "Undo Arrow", or
     /// "Undo" with nothing to undo.
     static func menuTitle(_ step: HistoryStep?, redo: Bool) -> String {
@@ -154,6 +167,19 @@ struct EditorHistory {
     var redo: [HistoryStep] = []
 
     var isEmpty: Bool { undo.isEmpty && redo.isEmpty }
+
+    /// Whether a step holds a comment `session` wrote that has no session name yet.
+    func needsName(of session: AgentAddress) -> Bool {
+        (undo + redo).contains { step in
+            guard case .drawing(let step) = step else { return false }
+            return step.pins.contains { [$0.before, $0.after].contains { $0?.needsName(of: session) == true } }
+        }
+    }
+
+    /// This history with `name` given to each comment `session` wrote that has no session name yet.
+    func naming(_ session: AgentAddress, _ name: String) -> EditorHistory {
+        EditorHistory(undo: undo.map { $0.naming(session, name) }, redo: redo.map { $0.naming(session, name) })
+    }
 
     /// Adds `step` as the newest undo step, which ends what could be redone, as in the editor.
     mutating func record(_ step: HistoryStep) {
@@ -175,13 +201,14 @@ extension EditorHistory {
 
     /// The marks, the pins, `nextPin` and the message a history ends at, as a hash: a file whose drawing
     /// or message no longer hash to its `basis` was written by something other than the editor, and its
-    /// history is dropped. With no pins and `nextPin` 1 it is the hash of a file from before pins.
+    /// history is dropped. With no pins and `nextPin` 1 it is the hash of a file from before pins. It leaves
+    /// out the comments' ids, which a read makes up for a file from before them, so that file's history reads.
     static func basis(marks: [Mark], pins: [Pin] = [], nextPin: Int = 1, message: String) throws -> String {
         var hasher = SHA256()
         hasher.update(data: try DrawingJSON.encode(marks.map(MarkRecord.init)))
         hasher.update(data: Data(message.utf8))
         if !pins.isEmpty || nextPin > 1 {
-            hasher.update(data: try DrawingJSON.encode(pins.map(PinRecord.init)))
+            hasher.update(data: try DrawingJSON.encode(pins.map { PinRecord($0, commentIDs: false) }))
             hasher.update(data: Data("\(nextPin)".utf8))
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()

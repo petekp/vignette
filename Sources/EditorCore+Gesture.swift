@@ -52,4 +52,15 @@ extension EditorCore {
         case draggingEnd(Mark.ID, DotKind)
         case bending(Mark.ID)
     }
+
+    /// `point` under the turn and scale about `pivot` that takes `from` to `to`.
+    static func turned(_ point: CGPoint, about pivot: CGPoint, from: CGPoint, to: CGPoint) -> CGPoint {
+        let a = CGPoint(x: from.x - pivot.x, y: from.y - pivot.y), b = CGPoint(x: to.x - pivot.x, y: to.y - pivot.y)
+        let squared = a.x * a.x + a.y * a.y
+        guard squared > 0 else { return point }
+        // b / a as complex numbers: the rotation and scale in one.
+        let cos = (b.x * a.x + b.y * a.y) / squared, sin = (b.y * a.x - b.x * a.y) / squared
+        let p = CGPoint(x: point.x - pivot.x, y: point.y - pivot.y)
+        return CGPoint(x: pivot.x + p.x * cos - p.y * sin, y: pivot.y + p.x * sin + p.y * cos)
+    }
 }

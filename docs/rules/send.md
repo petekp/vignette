@@ -137,6 +137,14 @@
   over at quit and a request cleared after its line went are recorded too. A failed or uncertain
   send writes nothing, and a send cancelled with Don't send never gets an outcome. The title is the
   request's `cardTitle`, which `send` takes from the caller at Send. A newer send replaces the record.
+- The request record keeps the person's message as `message`, as the line carried it, so the card's
+  last message can be read back after the line went. The log never holds it. It also keeps `pins`,
+  the pins the send carried in number order, each as its `id` and `comments`, the ids of the
+  comments it held then (`Record.SentPin`). The drawing file is not touched by a send, and the
+  record keeps both after a clear removes `pins.json`. `reachedClient` is true once the client took
+  the line or may have (`uncertain`), and a line taken back out of the session's queue, by Don't send
+  or in the session's app, clears it (`clear(_:takenBack:)`). The `comments` command counts a send
+  as having carried its pins only with it.
   While the line waits, the card shows `.inGrace`: a ring round the logo that empties to the
   deadline, and a Don't send button, the only part of the overlay that takes presses. The ring is
   drawn from the clock and is the one animation not scaled by the motion setting. The button
