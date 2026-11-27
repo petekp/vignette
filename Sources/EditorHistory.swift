@@ -201,13 +201,14 @@ extension EditorHistory {
 
     /// The marks, the pins, `nextPin` and the message a history ends at, as a hash: a file whose drawing
     /// or message no longer hash to its `basis` was written by something other than the editor, and its
-    /// history is dropped. With no pins and `nextPin` 1 it is the hash of a file from before pins.
+    /// history is dropped. With no pins and `nextPin` 1 it is the hash of a file from before pins. It leaves
+    /// out the comments' ids, which a read makes up for a file from before them, so that file's history reads.
     static func basis(marks: [Mark], pins: [Pin] = [], nextPin: Int = 1, message: String) throws -> String {
         var hasher = SHA256()
         hasher.update(data: try DrawingJSON.encode(marks.map(MarkRecord.init)))
         hasher.update(data: Data(message.utf8))
         if !pins.isEmpty || nextPin > 1 {
-            hasher.update(data: try DrawingJSON.encode(pins.map(PinRecord.init)))
+            hasher.update(data: try DrawingJSON.encode(pins.map { PinRecord($0, commentIDs: false) }))
             hasher.update(data: Data("\(nextPin)".utf8))
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()

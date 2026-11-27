@@ -71,7 +71,8 @@ final class PinTests: XCTestCase {
         XCTAssertEqual(comments.map { $0["sessionName"] as? String }, [nil, "vignette"])
 
         let untimed = try XCTUnwrap(written([item(1, comments: [["text": "Too tight", "at": "yesterday"]])]))
-        XCTAssertEqual(untimed.pins.first?.comments, [Pin.Comment(text: "Too tight")], "a time that does not read costs the comment nothing but its time")
+        let pin = try XCTUnwrap(untimed.pins.first)
+        XCTAssertEqual(pin.comments, [Pin.Comment(id: Pin.Comment.standInID(pin: pin.id, index: 0), text: "Too tight")], "a time that does not read costs the comment nothing but its time")
     }
 
     func testOnlyAFileHoldingPinsANextPinOrAPinStepIsVersion2() throws {

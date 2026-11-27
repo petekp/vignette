@@ -29,8 +29,10 @@ final class AgentMarksTests: XCTestCase {
         XCTAssertEqual(joined.pins.map(\.number), [108, 4])
         XCTAssertEqual(joined.pins[0].place, .area(CGRect(x: 500, y: 250, width: 200, height: 100), tip: .bottomRight))
         XCTAssertEqual(joined.pins[0].color, .agent)
-        XCTAssertEqual(joined.pins[1].comments, [Pin.Comment(text: "Too tight"), Pin.Comment(text: "Fixed", agent: true, agentName: "claude", at: at),
-                                                 Pin.Comment(text: "And here", agent: true, agentName: "claude", at: at)])
+        let answers = joined.pins[1].comments
+        XCTAssertEqual(answers, [mine.comments[0], Pin.Comment(id: answers[1].id, text: "Fixed", agent: true, agentName: "claude", at: at),
+                                 Pin.Comment(id: answers[2].id, text: "And here", agent: true, agentName: "claude", at: at)])
+        XCTAssertNotEqual(answers[1].id, answers[2].id)
         XCTAssertEqual(drawing.taking(joined.pins).nextPin, 109)
         XCTAssertEqual(AgentPin.problem(list, on: drawing, name: "a.png"), "pin 3: a.png holds at most 99 pins")
         XCTAssertEqual(AgentPin.problem([list[1]], on: nil, name: "a.png"), "pin 1: a.png has no pin 4", "a file new to the folder has no pin to answer")

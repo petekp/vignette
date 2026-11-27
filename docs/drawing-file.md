@@ -32,7 +32,11 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
   `comments`, a list of at least one, oldest first. A point pin's `x` and `y` are its point. An
   area pin adds `w` and `h`, and its `x` and `y` are the area's top-left corner. It also adds
   `corner`, the corner its teardrop's tip sits on: `topLeft`, `topRight`, `bottomLeft` or
-  `bottomRight`. A file without it reads as `topLeft`. A comment has
+  `bottomRight`. A file without it reads as `topLeft`. A comment has an `id`, a random UUID that
+  stays while its words are edited. A copy of the pin, pasted or stitched, gives each comment a new
+  one. A comment without an `id`, as every one written before ids were kept, reads with one made
+  from its pin's `id` and its place in the list, the same on every read, and the next write keeps
+  it. History's `basis` leaves comment ids out, so such a file keeps its history. A comment has
   `text`, at most 2,000 characters, and `agent` and `agentName` as a mark has them, left out for
   a person's. It also has `at`, when it was written, in ISO 8601 in UTC to the second, such as
   `2026-11-25T18:04:05Z`. An edit gives it a new `at`. A comment without `at`, as every one written

@@ -56,8 +56,8 @@ final class DrawingsHistoryTests: XCTestCase {
         drawings.name("vignette", of: session, on: shot.screenshotKey, style: .standard)
         let stored = try XCTUnwrap(drawings.read(shot.screenshotKey, pixels: pixels, style: .standard))
         XCTAssertEqual(stored.pins.map(\.number), [1, 2])
-        XCTAssertEqual(stored.pins[0].comments.last,
-                       Pin.Comment(text: "Fixed", agent: true, agentName: "claude", session: session, sessionName: "vignette", at: at),
+        let answer = try XCTUnwrap(stored.pins[0].comments.last)
+        XCTAssertEqual(answer, Pin.Comment(id: answer.id, text: "Fixed", agent: true, agentName: "claude", session: session, sessionName: "vignette", at: at),
                        "a name the session list gives after the comments joined reaches them")
         XCTAssertEqual(stored.pins[1].place, .point(CGPoint(x: 150, y: 100)))
         XCTAssertEqual(stored.nextPin, 3)
@@ -70,6 +70,22 @@ final class DrawingsHistoryTests: XCTestCase {
         XCTAssertEqual(reopened.drawing.nextPin, 3, "a number once given is not given again")
         reopened.key(.character("z"), [.command, .shift])
         XCTAssertEqual(reopened.drawing.pins, stored.pins, "redoing it brings the comments back with their session's name")
+
+        func withoutCommentIDs(_ value: Any, inComments: Bool = false) -> Any {
+            if let list = value as? [Any] { return list.map { withoutCommentIDs($0, inComments: inComments) } }
+            guard var object = value as? [String: Any] else { return value }
+            if inComments { object["id"] = nil }
+            for (key, inner) in object { object[key] = withoutCommentIDs(inner, inComments: key == "comments") }
+            return object
+        }
+        let folder = dir.appendingPathComponent("drawings")
+        let name = try XCTUnwrap(FileManager.default.subpaths(atPath: folder.path)?.first { $0.hasSuffix(".json") })
+        let url = folder.appendingPathComponent(name)
+        try JSONSerialization.data(withJSONObject: withoutCommentIDs(try JSONSerialization.jsonObject(with: Data(contentsOf: url)))).write(to: url)
+        let old = try XCTUnwrap(drawings.read(shot.screenshotKey, pixels: pixels, style: .standard))
+        XCTAssertEqual(drawings.read(shot.screenshotKey, pixels: pixels, style: .standard), old, "a file from before comment ids gives the same ids on every read")
+        XCTAssertNotEqual(old.pins[0].comments.map(\.id), stored.pins[0].comments.map(\.id))
+        XCTAssertEqual(drawings.history(of: shot.screenshotKey, pixels: pixels, drawing: old).undo.count, 1, "and keeps its history")
     }
 
     func testADrawingWrittenBackFromWhatWasSavedKeepsItsMessageAndItsHistory() throws {

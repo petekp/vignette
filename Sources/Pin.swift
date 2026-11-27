@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 
 /// A numbered place on a screenshot, a point or an area, that holds one or more comments. It belongs
 /// to a drawing beside its marks and is not a mark: it keeps its `id` in the drawing file, is drawn
@@ -54,6 +55,9 @@ struct Pin: Equatable, Identifiable {
 
     /// The words one person or one agent wrote on a pin.
     struct Comment: Equatable {
+        /// Random, and kept when the comment's words are edited. A pin pasted or stitched elsewhere gets
+        /// new ones. A comment from a file written before comments kept one gets `standInID`.
+        private(set) var id: UUID
         /// Plain text, within `MarkFields`' limits, as a note's.
         var text: String
         var agent: Bool
@@ -70,8 +74,9 @@ struct Pin: Equatable, Identifiable {
         /// file written before comments kept a time.
         var at: Date?
 
-        init(text: String, agent: Bool = false, agentName: String? = nil, session: AgentAddress? = nil,
+        init(id: UUID = UUID(), text: String, agent: Bool = false, agentName: String? = nil, session: AgentAddress? = nil,
              sessionName: String? = nil, at: Date? = nil) {
+            self.id = id
             self.text = text
             self.agent = agent
             self.agentName = agent ? agentName : nil
@@ -86,6 +91,23 @@ struct Pin: Equatable, Identifiable {
             var named = self
             named.sessionName = Agent.cleanSender(name).name
             return named
+        }
+
+        /// This comment with a new id, for a copy of its pin.
+        var copied: Comment {
+            var copy = self
+            copy.id = UUID()
+            return copy
+        }
+
+        /// The id of the comment at `index` of pin `pin`'s list in a file written before comments kept
+        /// one: made from the two, so every read of that file gives the comment the same id.
+        static func standInID(pin: UUID, index: Int) -> UUID {
+            var bytes = Array(SHA256.hash(data: Data("\(pin.uuidString) comment \(index)".utf8)).prefix(16))
+            bytes[6] = bytes[6] & 0x0f | 0x50
+            bytes[8] = bytes[8] & 0x3f | 0x80
+            return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                               bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
         }
 
         /// How a file writes `at`: ISO 8601 in UTC, to the second, as `2026-11-25T18:04:09Z`.
@@ -198,8 +220,13 @@ extension Pin {
             place = .area(CGRect(origin: origin, size: CGSize(width: try fields.size("w"), height: try fields.size("h"))), tip: corner)
         }
         guard let list = item["comments"] as? [Any], !list.isEmpty else { throw MarkProblem("comments must be a list of at least one") }
-        let comments = try list.enumerated().map { index, raw in
-            do { return try Comment(validating: raw) } catch { throw MarkProblem("comment \(index + 1): \(error)") }
+        var comments: [Comment] = []
+        for (index, raw) in list.enumerated() {
+            do {
+                comments.append(try Comment(validating: raw, standIn: Comment.standInID(pin: id, index: index), taken: Set(comments.map(\.id))))
+            } catch {
+                throw MarkProblem("comment \(index + 1): \(error)")
+            }
         }
         self.init(id: id, number: number, place: place, comments: comments)
     }
@@ -253,17 +280,19 @@ extension Pin {
 }
 
 extension Pin.Comment {
-    /// One item of a pin's `comments` list. Throws the one thing wrong with it.
-    init(validating raw: Any) throws {
+    /// One item of a pin's `comments` list, with id `standIn` when it has none or one in `taken`.
+    /// Throws the one thing wrong with it.
+    init(validating raw: Any, standIn: UUID, taken: Set<UUID> = []) throws {
         guard let item = raw as? [String: Any] else { throw MarkProblem("not an object") }
         let fields = MarkFields(item: item, unit: .px)
-        // A time or a session that does not read is left out rather than costing the comment its words.
+        // An id, a time or a session that does not read is left out rather than costing the comment its words.
         let agentName = try fields.agentName()
         var session: AgentAddress?
         if let client = AgentClient(rawValue: (agentName ?? "").lowercased()), let id = Agent.cleanSession(item["session"] as? String) {
             session = AgentAddress(client: client, id: id)
         }
-        self.init(text: try fields.text(), agent: try fields.flag("agent"), agentName: agentName, session: session,
+        let written = (item["id"] as? String).flatMap(UUID.init(uuidString:)).flatMap { taken.contains($0) ? nil : $0 }
+        self.init(id: written ?? standIn, text: try fields.text(), agent: try fields.flag("agent"), agentName: agentName, session: session,
                   sessionName: item["sessionName"] as? String, at: Pin.Comment.time(item["at"]))
     }
 }
@@ -276,6 +305,7 @@ extension Pin.Comment {
 /// tip at the top-left.
 struct PinRecord: Encodable {
     struct CommentRecord: Encodable {
+        var id: String?
         let text: String
         var agent: Bool?
         var agentName: String?
@@ -294,7 +324,10 @@ struct PinRecord: Encodable {
     var corner: String?
     let comments: [CommentRecord]
 
-    init(_ pin: Pin) {
+    init(_ pin: Pin) { self.init(pin, commentIDs: true) }
+
+    /// `commentIDs` false leaves out the comments' ids.
+    init(_ pin: Pin, commentIDs: Bool) {
         id = pin.id.uuidString
         number = pin.number
         x = pin.extent.minX
@@ -305,7 +338,7 @@ struct PinRecord: Encodable {
             corner = tip.rawValue
         }
         comments = pin.comments.map {
-            CommentRecord(text: $0.text, agent: $0.agent ? true : nil, agentName: $0.agentName, session: $0.session?.id,
+            CommentRecord(id: commentIDs ? $0.id.uuidString : nil, text: $0.text, agent: $0.agent ? true : nil, agentName: $0.agentName, session: $0.session?.id,
                           sessionName: $0.sessionName, at: $0.at.map(Pin.Comment.written))
         }
     }

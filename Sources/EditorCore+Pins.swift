@@ -157,7 +157,7 @@ extension EditorCore {
                 name = .delete
             } else if words != pin.comments[editing].text {
                 // The words are the person's now, as with an agent's note, and written now.
-                pin.comments[editing] = Pin.Comment(text: words, at: Date())
+                pin.comments[editing] = Pin.Comment(id: pin.comments[editing].id, text: words, at: Date())
                 name = .typing
             }
         } else if !words.isEmpty {
