@@ -1,19 +1,19 @@
 import AppKit
 import Collaboration
 
-/// The card a pin grows into in the editor while the pointer rests on it: the avatar of whoever wrote
-/// its first comment where the teardrop's body was, and beside it their name, the pin's number, how
-/// long ago they wrote, the comment's first line, and how many replies it has. It grows from the
-/// teardrop, its tip the card's square corner unless the card turned away from an edge, and goes
-/// back into the teardrop when the pointer leaves. It takes no clicks: a click on the pin opens its popover. VoiceOver reads the pin itself.
+/// The card a pin grows into in the editor while the pointer rests on it: the teardrop, rim and all,
+/// widened into a card whose tip stays its square corner unless the card turned away from an edge. Its
+/// top line holds the avatar of whoever wrote the first comment, their name and how long ago, as a
+/// comment's top line in the popover does. Under it are the comment's first line and how many replies
+/// it has. It goes back into the teardrop when the pointer leaves. It takes no clicks: a click on the pin opens its popover. VoiceOver reads the pin itself.
 @MainActor
 final class PinHoverCard: NSView {
     /// What the card says.
     struct Words: Equatable {
         /// "You", or the agent's name, as "Claude".
         let name: String
-        /// "Pin 3 · 1 min. ago", or "Pin 3" for a comment from a file that kept no time.
-        let detail: String
+        /// "1 min. ago", or nil for a comment from a file that kept no time.
+        let time: String?
         let firstLine: String
         /// "1 reply from Claude", "2 replies from you", or "3 replies" from more than one writer. Nil
         /// for a pin with one comment.
@@ -22,8 +22,7 @@ final class PinHoverCard: NSView {
         init(_ pin: Pin, now: Date) {
             let first = pin.comments.first
             name = Self.writer(first, capitalized: true)
-            let ago = first.flatMap { Self.ago($0, now: now) }
-            detail = ["Pin \(pin.number)", ago].compactMap { $0 }.joined(separator: " · ")
+            time = first.flatMap { Self.ago($0, now: now) }
             firstLine = first?.text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
             let later = pin.comments.dropFirst()
             guard !later.isEmpty else { replies = nil; return }
@@ -59,12 +58,13 @@ final class PinHoverCard: NSView {
     private let glass = NSVisualEffectView()
     private let content = FlippedView()
     private let avatar = NSImageView()
-    private let name = NSTextField(labelWithString: ""), detail = NSTextField(labelWithString: "")
+    private let name = NSTextField(labelWithString: ""), time = NSTextField(labelWithString: "")
     private let firstLine = NSTextField(labelWithString: ""), replies = NSTextField(labelWithString: "")
-    private var shown: (words: Words, maker: PinMaker, body: CGRect, card: CGRect)?
-    /// The card's corner the teardrop's body sits in: on its right, at its bottom. The tip is that
-    /// corner, drawn square, unless the card turned away from an edge of the view.
-    private var bodyCorner = (right: false, bottom: true), sharp = true
+    /// `start` is the teardrop's square widened by its rim, which the card grows from.
+    private var shown: (words: Words, maker: PinMaker, start: CGRect, card: CGRect)?
+    /// The card's corner at the teardrop's tip: on its right, at its bottom. It is drawn square unless
+    /// the card turned away from an edge of the view.
+    private var tipCorner = (right: false, bottom: true), sharp = true
     private lazy var growth = Tween(initial: 0) { [weak self] progress in self?.grow(to: progress) }
 
     init(pin: Pin.ID) {
@@ -88,12 +88,12 @@ final class PinHoverCard: NSView {
         avatar.imageScaling = .scaleProportionallyUpOrDown
         avatar.wantsLayer = true
         name.font = .preferredFont(forTextStyle: .headline)
-        detail.font = .preferredFont(forTextStyle: .subheadline)
-        detail.textColor = .secondaryLabelColor
+        time.font = .preferredFont(forTextStyle: .subheadline)
+        time.textColor = .secondaryLabelColor
         firstLine.font = .preferredFont(forTextStyle: .body)
         replies.font = .preferredFont(forTextStyle: .subheadline)
         replies.textColor = .secondaryLabelColor
-        for label in [name, detail, firstLine, replies] {
+        for label in [name, time, firstLine, replies] {
             label.lineBreakMode = .byTruncatingTail
             label.maximumNumberOfLines = 1
             content.addSubview(label)
@@ -109,13 +109,13 @@ final class PinHoverCard: NSView {
     override func accessibilityChildren() -> [Any]? { [] }
 
     /// Shows `pin` growing out of its teardrop, whose square is `body` in the superview's coordinates,
-    /// facing `orientation`. The card covers the body and reaches the way the body faces from the tip,
-    /// or the other way on an axis where that would leave `bounds` and the other way would not.
-    func show(_ pin: Pin, body: CGRect, orientation: PinTeardrop.Orientation, inside bounds: CGRect) {
-        let words = Words(pin, now: Date()), ui = Settings.shared.data.ui
-        let side = body.height, inset = ui.pinPopoverInset
-        let column = max(ui.pinHoverWidth - side - inset * 1.5, 0)
-        let (size, rows) = measure(words, maker: pin.maker, side: side, inset: inset, column: column)
+    /// facing `orientation`. The card covers the teardrop and its rim and reaches the way the body faces
+    /// from the tip, or the other way on an axis where that would leave `bounds` and the other way would not.
+    func show(_ pin: Pin, body square: CGRect, orientation: PinTeardrop.Orientation, inside bounds: CGRect) {
+        let words = Words(pin, now: Date()), ui = Settings.shared.data.ui, style = ui.markStyle.pin
+        let rim = style.side > 0 ? square.height * style.rimWidth / style.side : 0
+        let body = square.insetBy(dx: -(rim + Self.pastRim), dy: -(rim + Self.pastRim))
+        let size = measure(words, maker: pin.maker, width: max(ui.pinHoverWidth, body.width), least: body.height)
         let facesRight = orientation == .upRight || orientation == .downRight, facesUp = orientation == .upRight || orientation == .upLeft
         var right = facesRight, up = facesUp
         if right, body.minX + size.width > bounds.maxX, body.maxX - size.width >= bounds.minX { right = false }
@@ -124,16 +124,15 @@ final class PinHoverCard: NSView {
         else if !up, body.minY + size.height > bounds.maxY, body.maxY - size.height >= bounds.minY { up = true }
         let card = CGRect(x: right ? body.minX : body.maxX - size.width, y: up ? body.maxY - size.height : body.minY,
                           width: size.width, height: size.height)
-        guard shown.map({ $0.words != words || $0.maker != pin.maker || $0.body != body || $0.card != card }) ?? true else {
+        guard shown.map({ $0.words != words || $0.maker != pin.maker || $0.start != body || $0.card != card }) ?? true else {
             growth.animate(to: 1, duration: Settings.shared.motionUI.pinHoverDuration)
             return
         }
-        bodyCorner = (right: !right, bottom: up)
+        tipCorner = (right: !right, bottom: up)
         sharp = right == facesRight && up == facesUp
         shown = (words, pin.maker, body, card)
         content.frame.size = card.size
-        place(rows: rows, side: side, inset: inset, column: column)
-        glass.maskImage = Self.mask(radius: side / 2, sharp: sharp ? bodyCorner : nil)
+        glass.maskImage = Self.mask(radius: body.height / 2, sharp: sharp ? tipCorner : nil)
         grow(to: growth.value)
         growth.animate(to: 1, duration: Settings.shared.motionUI.pinHoverDuration)
     }
@@ -143,40 +142,38 @@ final class PinHoverCard: NSView {
         growth.animate(to: 0, duration: Settings.shared.motionUI.pinHoverDuration) { [weak self] in self?.removeFromSuperview() }
     }
 
-    /// Sets the words and the avatar, and answers the card's size and each row's height.
-    private func measure(_ words: Words, maker: PinMaker, side: CGFloat, inset: CGFloat, column: CGFloat) -> (size: CGSize, rows: [CGFloat]) {
+    /// Sets the words and the avatar, lays them out across a card `width` wide, and answers the card's
+    /// size, at least `least` tall.
+    private func measure(_ words: Words, maker: PinMaker, width: CGFloat, least: CGFloat) -> CGSize {
+        let ui = Settings.shared.data.ui, inset = ui.pinPopoverInset, gap = ui.pinNameGap, side = ui.pinAvatarSize
         name.stringValue = words.name
-        detail.stringValue = words.detail
+        time.stringValue = words.time ?? ""
         firstLine.stringValue = words.firstLine
         replies.stringValue = words.replies ?? ""
         replies.isHidden = words.replies == nil
-        showAvatar(of: maker, side: side)
-        let rows = [max(name.fittingSize.height, detail.fittingSize.height), firstLine.fittingSize.height]
-            + (words.replies == nil ? [] : [replies.fittingSize.height])
-        let height = max(side, inset + rows.reduce(0, +) + Self.rowGap * CGFloat(rows.count - 1) + inset)
-        return (CGSize(width: side + inset * 1.5 + column, height: height), rows)
-    }
-
-    /// Puts the words beside the teardrop's body, on the side away from the tip.
-    private func place(rows: [CGFloat], side: CGFloat, inset: CGFloat, column: CGFloat) {
-        let leading = bodyCorner.right ? inset : side + inset / 2
-        let nameWidth = min(name.fittingSize.width, column), detailGap: CGFloat = 6
-        var y = inset
-        name.frame = CGRect(x: leading, y: y, width: nameWidth, height: rows[0])
-        detail.frame = CGRect(x: leading + nameWidth + detailGap, y: y, width: max(column - nameWidth - detailGap, 0), height: rows[0])
-        y += rows[0] + Self.rowGap
-        firstLine.frame = CGRect(x: leading, y: y, width: column, height: rows[1])
-        if rows.count > 2 { replies.frame = CGRect(x: leading, y: y + rows[1] + Self.rowGap, width: column, height: rows[2]) }
+        avatar.frame = CGRect(x: inset, y: inset, width: side, height: side)
+        avatar.layer?.cornerRadius = side / 2
+        Self.paint(avatar, as: maker)
+        let column = max(width - 2 * inset, 0), afterAvatar = inset + side + gap
+        let nameSize = name.fittingSize, nameWidth = min(nameSize.width, max(column - side - gap, 0))
+        name.frame = CGRect(x: afterAvatar, y: avatar.frame.midY - nameSize.height / 2, width: nameWidth, height: nameSize.height)
+        let timeSize = time.fittingSize
+        let timeTop = name.frame.minY + name.firstBaselineOffsetFromTop - time.firstBaselineOffsetFromTop
+        time.frame = CGRect(x: name.frame.maxX + gap, y: timeTop, width: max(inset + column - name.frame.maxX - gap, 0), height: timeSize.height)
+        let topLine = max(avatar.frame.maxY, name.frame.maxY)
+        firstLine.frame = CGRect(x: inset, y: topLine + ui.pinWordsGap, width: column, height: firstLine.fittingSize.height)
+        var bottom = firstLine.frame.maxY
+        if words.replies != nil {
+            replies.frame = CGRect(x: inset, y: bottom + Self.rowGap, width: column, height: replies.fittingSize.height)
+            bottom = replies.frame.maxY
+        }
+        return CGSize(width: width, height: max(least, bottom + inset))
     }
 
     private static let rowGap: CGFloat = 2
-
-    private func showAvatar(of maker: PinMaker, side: CGFloat) {
-        let diameter = side * 0.8
-        avatar.frame.size = CGSize(width: diameter, height: diameter)
-        avatar.layer?.cornerRadius = diameter / 2
-        Self.paint(avatar, as: maker)
-    }
+    /// How far the card reaches past the teardrop's rim, so the rim's soft outer edge stays under the
+    /// card instead of showing as a white hairline along it.
+    private static let pastRim: CGFloat = 1
 
     /// A writer's avatar. The person's is their macOS account picture, or their initial on their pins'
     /// colour when the account has none. An agent's is its logo in black on white, or the letter its pin
@@ -221,22 +218,19 @@ final class PinHoverCard: NSView {
         }
     }
 
-    /// The card `progress` of the way from the teardrop's square to its whole size, the words fading in.
+    /// The card `progress` of the way from the teardrop to its whole size, the avatar and words fading in.
     private func grow(to progress: CGFloat) {
         guard let shown else { return }
         let p = min(max(progress, 0), 1)
         func mix(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * p }
-        frame = CGRect(x: mix(shown.body.minX, shown.card.minX), y: mix(shown.body.minY, shown.card.minY),
-                       width: mix(shown.body.width, shown.card.width), height: mix(shown.body.height, shown.card.height))
+        frame = CGRect(x: mix(shown.start.minX, shown.card.minX), y: mix(shown.start.minY, shown.card.minY),
+                       width: mix(shown.start.width, shown.card.width), height: mix(shown.start.height, shown.card.height))
         clip.frame = bounds
-        let corner = bodyCorner
-        content.frame.origin = CGPoint(x: corner.right ? bounds.width - shown.card.width : 0, y: corner.bottom ? bounds.height - shown.card.height : 0)
-        let side = shown.body.height
-        avatar.frame.origin = CGPoint(x: (corner.right ? shown.card.width - side : 0) + (side - avatar.frame.width) / 2,
-                                      y: (corner.bottom ? shown.card.height - side : 0) + (side - avatar.frame.height) / 2)
+        content.frame.origin = CGPoint(x: tipCorner.right ? bounds.width - shown.card.width : 0,
+                                       y: tipCorner.bottom ? bounds.height - shown.card.height : 0)
         alphaValue = min(1, p * 2)
-        for label in [name, detail, firstLine, replies] { label.alphaValue = p }
-        layer?.shadowPath = Self.outline(of: CGRect(origin: .zero, size: bounds.size), radius: side / 2, sharp: nil)
+        content.alphaValue = p
+        layer?.shadowPath = Self.outline(of: CGRect(origin: .zero, size: bounds.size), radius: shown.start.height / 2, sharp: nil)
     }
 
     /// The card's outline: a rounded rect whose corner `sharp`, at the tip, is square, as the teardrop's

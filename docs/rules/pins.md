@@ -106,11 +106,12 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   Copy, Send and Stitch draw a number on every pin and no dot, so the picture matches the "Pin 3:"
   in the words beside it. A pin's row in a menu shows no dot either. A cluster keeps its numbers, in its pins' one maker's colour.
 - In the editor, the pointer resting on a pin with a number grows it into a card (`PinHoverCard`),
-  while no popover, menu or drag is under way. The card grows from the teardrop's tip, which stays
-  its square corner, with the writer's avatar where the body was. It shows the name, "Pin 3" and
-  how long ago, the first comment's first line, and the replies. It takes no clicks, and VoiceOver
-  reads the pin instead. Its width is `ui.pinHoverWidth` and it grows over
-  `ui.pinHoverDuration`, which the motion setting scales.
+  while no popover, menu or drag is under way. The card is the teardrop widened, its rim included,
+  in the popover's glass: the tip stays its square corner and the other corners keep the teardrop's
+  radius. Its top line is laid out as a comment's top line in the popover: the first writer's
+  avatar, their name and how long ago, muted. Under it are the first comment's first line and the
+  replies. It takes no clicks, and VoiceOver reads the pin instead. Its width is `ui.pinHoverWidth`
+  and it grows over `ui.pinHoverDuration`, which the motion setting scales.
 - In the editor an area's outline is dashed in its pin's colour inside a white edge, one width on
   screen at every zoom (`AreaOutline`). It shows only while its pin is hovered, selected, being
   placed or open (`EditorCore.outlinedPins`), and a closed area pin draws none at rest. Its dashes march while the pin is being placed or is open
