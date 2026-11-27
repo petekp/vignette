@@ -91,4 +91,22 @@ final class EditorCoreResolvedPinsTests: XCTestCase {
         XCTAssertEqual(core.pinPlacement.clusters.map(\.resolved), [true])
         XCTAssertEqual(core.pinPlacement.drops.map(\.number), [3])
     }
+
+    func testCopiedResolvedPinsPasteBackResolvedAndLeaveTheirWordsOffTheClipboardText() throws {
+        var done = pin(1, 500, 300)
+        done.resolved = .byPerson()
+        let open = Pin(id: UUID(), number: 2, place: .point(CGPoint(x: 200, y: 300)), comments: [Pin.Comment(text: "Wrong date")])
+        var core = core(pins: [done, open], nextPin: 3)
+        _ = core.reduce(.setTool(.select))
+        core.selection = [done.id, open.id]
+        let copied = core.key(.character("c"), .command).compactMap { effect -> (CopiedItems, String?)? in
+            guard case .copyItems(let items, let text) = effect else { return nil }
+            return (items, text)
+        }.first
+        let (items, text) = try XCTUnwrap(copied)
+        XCTAssertEqual(items.pins.map(\.resolved), [done.resolved, nil])
+        XCTAssertEqual(text, "Pin 2: Wrong date.")
+        core.paste(.items(items))
+        XCTAssertEqual(core.drawing.pins.suffix(2).map(\.isResolved), [true, false])
+    }
 }

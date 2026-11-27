@@ -49,8 +49,8 @@ One file per screenshot, at `~/Library/Application Support/<bundle id>/drawings/
   written before they were kept, or with a `session` that is not a UUID, reads without them and is
   kept. Neither raises the version. A pin whose ask is done has `resolved`, saying who resolved it
   and when: `agent` and `agentName` as a comment has them, left out for the person, and `at` as a
-  comment has it. A pin without `resolved` is open. Any value reads as resolved, and a field in it
-  that does not read is left out. A file holds at most 99 pins.
+  comment has it. A pin without `resolved` is open. Any value but null reads as resolved, and a field
+  in it that does not read is left out. A file holds at most 99 pins.
 - `pieceNumbers` is a stitch's: where each piece wears its number, as `[x, y, w, h]` in px, so a
   teardrop turns away from it. It is left out when there are none, and does not raise the version.
 - `nextPin` is the number the next pin gets, and is left out at 1. It never goes down while the

@@ -127,7 +127,7 @@ holds: `pin` is its number, as Send's line calls it ("Pin 2"), or its `id` from 
 `pins.json`. An answer takes no `x`, `y`, `w`, `h` or `corner`. An answer may add `"resolve": true`
 to say its pin's ask is done: the pin turns grey, resolved by the agent, and Copy and Send leave it
 out until someone reopens it. An answer without it reopens a resolved pin, and a new pin with it
-is refused. Each `text` is at most 2,000
+is refused. When a list answers one pin twice, its last answer decides. Each `text` is at most 2,000
 characters. One call takes at most 99 comments and 256 KB, and a screenshot holds at most 99 pins.
 
 New pins are numbered after the screenshot's last, in the order given, and drawn in the agent

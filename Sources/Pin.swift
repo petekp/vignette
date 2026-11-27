@@ -253,7 +253,7 @@ extension Pin {
                 throw MarkProblem("comment \(index + 1): \(error)")
             }
         }
-        self.init(id: id, number: number, place: place, comments: comments, resolved: item["resolved"].map(Resolution.init(reading:)))
+        self.init(id: id, number: number, place: place, comments: comments, resolved: Resolution.isWritten(item["resolved"]) ? item["resolved"].map(Resolution.init(reading:)) : nil)
     }
 
     /// This pin inside `image`: a point stopped at the image's edge, and an area moved in where it fits
@@ -305,6 +305,9 @@ extension Pin {
 }
 
 extension Pin.Resolution {
+    /// Whether a pin's `resolved` in a file says it is resolved: any value but none and JSON's null.
+    static func isWritten(_ raw: Any?) -> Bool { raw != nil && !(raw is NSNull) }
+
     /// A pin's `resolved` object from a file. Any value marks the pin resolved; a field in it that does not
     /// read is left out rather than reopening the pin.
     init(reading raw: Any) {

@@ -14,7 +14,8 @@ extension EditorCore {
             guard case .text(let text)? = mark(id)?.geometry else { return nil }
             return text.text
         }
-        if !pins.isEmpty { words.append(Pin.lineWords(pins)) }
+        let openPins = pins.filter { !$0.isResolved }
+        if !openPins.isEmpty { words.append(Pin.lineWords(openPins)) }
         emit(.copyItems(CopiedItems(pointScale: drawing.pointScale, markScale: drawing.markScale, marks: marks, pins: pins),
                         text: words.isEmpty ? nil : words.joined(separator: "\n")))
     }

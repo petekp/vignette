@@ -72,7 +72,7 @@ struct Drawing: Equatable {
 
     /// Whether a file's `pins` list holds a resolved pin.
     static func mentionsResolved(_ pins: [Any]) -> Bool {
-        pins.contains { ($0 as? [String: Any])?["resolved"] != nil }
+        pins.contains { Pin.Resolution.isWritten(($0 as? [String: Any])?["resolved"] ?? nil) }
     }
 
     /// The drawing as Copy, Done, a drag, Copy Drawing's rendering and Send carry it: without its resolved

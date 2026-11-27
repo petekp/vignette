@@ -60,11 +60,12 @@ final class PinResolutionTests: XCTestCase {
     }
 
     func testAnyResolvedValueReadsAsResolvedAndAFieldThatDoesNotReadIsLeftOut() throws {
-        var flagged = item(1), named = item(2)
+        var flagged = item(1), named = item(2), null = item(3)
         flagged["resolved"] = true
         named["resolved"] = ["agent": true, "agentName": "Codex", "at": "yesterday"]
+        null["resolved"] = NSNull()
         try FileManager.default.createDirectory(at: store.url(for: key).deletingLastPathComponent(), withIntermediateDirectories: true)
-        let object: [String: Any] = ["version": 3, "key": key, "pixels": [800, 600], "pointScale": 2, "marks": [], "pins": [flagged, named, item(3)]]
+        let object: [String: Any] = ["version": 3, "key": key, "pixels": [800, 600], "pointScale": 2, "marks": [], "pins": [flagged, named, null]]
         try JSONSerialization.data(withJSONObject: object).write(to: store.url(for: key))
         let drawing = try XCTUnwrap(store.read(key: key, pixels: pixels, style: .standard))
         XCTAssertEqual(drawing.pins.map(\.resolved), [Pin.Resolution(), Pin.Resolution(agent: true, agentName: "Codex"), nil])

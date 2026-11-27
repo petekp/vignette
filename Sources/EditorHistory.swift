@@ -229,7 +229,7 @@ extension EditorHistory {
         return ["undo", "redo"].contains { field in
             ((object[field] as? [[String: Any]]) ?? []).contains { step in
                 ((step["pins"] as? [[String: Any]]) ?? []).contains { change in
-                    ["before", "after"].contains { (change[$0] as? [String: Any])?["resolved"] != nil }
+                    ["before", "after"].contains { Pin.Resolution.isWritten((change[$0] as? [String: Any])?["resolved"] ?? nil) }
                 }
             }
         }
