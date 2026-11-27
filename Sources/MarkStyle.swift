@@ -72,9 +72,12 @@ struct PinStyle: Equatable, Sendable {
     var shadowOffset: CGFloat
     var shadowOpacity: CGFloat
     /// What a pin wears on screen (`PinFace`), as shares of `side`: an agent's logo's size, and the
-    /// size of the dot carrying the logo of an agent that answered a person's pin.
+    /// size of the dot carrying the logo of an agent that answered a person's pin. A one-colour logo
+    /// on its white circle (`Agent.oneColourAvatar`), in that dot and in the agent's avatar, is
+    /// `oneColourLogoSize` of the circle across instead.
     var logoSize: CGFloat
     var answerSize: CGFloat
+    var oneColourLogoSize: CGFloat
     /// The gel of a pin in the editor (`PinGel`), in screen pt at every zoom: the dome on its top as a
     /// share of half its side, and the share of its colour its deep edge keeps over light content; the
     /// rod of its area's outline, the gel square on each corner of a selected area pin's area and the
