@@ -3,14 +3,16 @@ import Foundation
 /// A card's pins and comments as the `comments` command writes them for an agent. Each pin has its
 /// `id`, `number` and place, in fractions of the image as `pins=` takes them, and each comment its
 /// `id`, words, writer, session, time and `sentIn`, the sends that carried it. `sends` lists the
-/// card's sends whose line went to the client, oldest first, and `message` is the newest one's message.
+/// card's sends that reached their client (`Record.reachedClient`), oldest first, and `message` is the
+/// newest one's message.
 enum PinCommentsReport {
-    static func object(file: URL, drawing: Drawing?, pixels: PixelSize, records: [ScreenshotRequests.Record]) -> [String: Any] {
-        let sent = records.compactMap { record in record.handedOver.map { (record: record, at: $0) } }.sorted { $0.at < $1.at }
+    static func object(file: URL, drawing: Drawing?, records: [ScreenshotRequests.Record]) -> [String: Any] {
+        let reached = records.filter { $0.reachedClient == true }
+        let sent = reached.map { (record: $0, at: $0.handedOver ?? $0.created) }.sorted { $0.at < $1.at }
         func carriers(of comment: UUID) -> [String] {
             sent.filter { $0.record.pins?.contains { $0.comments.contains(comment) } == true }.map(\.record.id)
         }
-        let width = Double(pixels.width), height = Double(pixels.height)
+        let width = Double(drawing?.pixels.width ?? 1), height = Double(drawing?.pixels.height ?? 1)
         // A pin the editor is still placing has no number and no comment yet.
         let pins = (drawing?.pins ?? []).filter { $0.number > 0 }.map { pin -> [String: Any] in
             var item: [String: Any] = ["id": pin.id.uuidString, "number": pin.number,

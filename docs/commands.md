@@ -145,8 +145,9 @@ hold. The file holds `file`, the card's path, and `pins`, in number order. Each 
 `number`, and `x`, `y`, and for an area `w`, `h` and `corner`, in the fractions `pins=` takes.
 Each pin's `comments`, oldest first, have `id`, `text`, `writer` (`person` or `agent`),
 `agentName`, `session` and `sessionName` for an agent's, `at`, and `sentIn`, the ids of the sends
-that carried that comment. `sends` lists the card's sends whose line went to the client, oldest
-first, each with its `id`, `at`, `status`, `to` (the session's title on the card), `agent`,
+that carried that comment. An edit keeps a comment's `id`, and makes its words the person's.
+`sends` lists the card's sends whose line reached the client, or may have (`status` `uncertain`),
+oldest first, each with its `id`, `at`, `status`, `to` (the session's title on the card), `agent`,
 `session` and `message`. `message` is the newest send's message, left out when it had none. A
 send is forgotten when its request's folder is removed, 7 days after the request is cleared. With
 the card open in the editor, it reads the editor's drawing.

@@ -141,7 +141,10 @@
   last message can be read back after the line went. The log never holds it. It also keeps `pins`,
   the pins the send carried in number order, each as its `id` and `comments`, the ids of the
   comments it held then (`Record.SentPin`). The drawing file is not touched by a send, and the
-  record keeps both after a clear removes `pins.json`.
+  record keeps both after a clear removes `pins.json`. `reachedClient` is true once the client took
+  the line or may have (`uncertain`), and a line taken back out of the session's queue, by Don't send
+  or in the session's app, clears it (`clear(_:takenBack:)`). The `comments` command counts a send
+  as having carried its pins only with it.
   While the line waits, the card shows `.inGrace`: a ring round the logo that empties to the
   deadline, and a Don't send button, the only part of the overlay that takes presses. The ring is
   drawn from the clock and is the one animation not scaled by the motion setting. The button

@@ -14,14 +14,10 @@ extension AppDelegate {
         guard request.files.count == 1 else { Commands.error(cmd, .tooManyFiles, "needs 1 file, got \(request.files.count)"); return }
         let key = ScreenshotKey(naming: file, in: watchFolder)
         if let bad = fileError(key.url) { Commands.error(cmd, bad.code, bad.detail); return }
-        guard let pixels = PixelSize(imageAt: key.url) else {
-            let code: CommandError = FileManager.default.fileExists(atPath: key.url.path) ? .unreadableImage : .missingFile
-            Commands.error(cmd, code, key.url.path)
-            return
-        }
-        let drawing = drawings.open?.drawing(of: key) ?? drawings.read(key, pixels: pixels, style: settings.data.ui.textStyle)
+        guard FileManager.default.fileExists(atPath: key.url.path) else { Commands.error(cmd, .missingFile, key.url.path); return }
+        let drawing = drawings.current(of: key, style: settings.data.ui.textStyle)
         let records = requests.requests.values.filter { requests.sourceKey(of: $0) == key }
-        let object = PinCommentsReport.object(file: key.url, drawing: drawing, pixels: pixels, records: Array(records))
+        let object = PinCommentsReport.object(file: key.url, drawing: drawing, records: Array(records))
         let folder = Identity.cachesURL.appendingPathComponent("comments")
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

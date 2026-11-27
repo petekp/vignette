@@ -38,6 +38,10 @@ extension ScreenshotRequests {
         /// The pins the send carried, in number order, each with the ids of the comments it held then.
         /// Nil for a send without pins, and in a record from before this field.
         var pins: [SentPin]? = nil
+        /// True when the client took the line, or may have (`uncertain`). Nil for a send that failed, one
+        /// taken back out of the session's queue, one cleared before its client answered, and a record
+        /// from before this field.
+        var reachedClient: Bool? = nil
 
         /// A pin a send carried: its `id`, and its comments' ids, oldest first.
         struct SentPin: Codable, Equatable {

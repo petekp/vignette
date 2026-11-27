@@ -362,6 +362,7 @@ final class ScreenshotRequests {
             case .uncertain: record.status = .uncertain
             case .notSubmitted, .destinationChanged: record.status = .failed
             }
+            record.reachedClient = record.status == .failed ? nil : true
             record.detail = outcome.isAccepted ? "" : outcome.detail
             requests[id] = record
             do { try write(record) }
@@ -700,34 +701,6 @@ final class ScreenshotRequests {
 
     // MARK: Clearing
 
-    /// `vignette://requests[?clear=<id|all>]`. Listing says what is open; clearing stops a request
-    /// taking new replies, cancels its unpublished imports, and removes only files Vignette owns.
-    /// Published cards are the person's and are left alone.
-    func run(clear: String?) {
-        guard let clear, !clear.isEmpty else {
-            for record in requests.values.sorted(by: { $0.created < $1.created }) {
-                let count = replies.values.filter { $0.requestID == record.id }.count
-                let why = record.detail.isEmpty ? "" : " \(record.detail)"
-                Log.write("[requests] \(record.id) \(record.status.rawValue) \(record.destinationName) \(record.address.description) source=\(record.source) replies=\(count)\(why)")
-            }
-            Commands.ok("requests", "\(requests.count) requests, \(replies.count) replies")
-            return
-        }
-        let targets = clear == "all" ? Array(requests.keys) : [clear]
-        var cleared = 0
-        var failures: [String] = []
-        for id in targets {
-            do { if try self.clear(id) { cleared += 1 } }
-            catch { failures.append("\(id): \(error.localizedDescription)") }
-        }
-        if !failures.isEmpty {
-            Commands.error("requests", .writeFailed, "cleared \(cleared); \(failures.joined(separator: "; "))")
-            return
-        }
-        guard cleared > 0 else { Commands.error("requests", .missingFile, "no request \(clear)"); return }
-        Commands.ok("requests", "cleared \(cleared)")
-    }
-
     /// Deletes the folders of requests cleared more than `clearedKept` ago, dated by `request.json`,
     /// which clearing rewrites. Published replies need current proof of absence at their recorded location.
     func prune(now: Date = Date(), inventory: ScreenshotWatcher.Inventory? = nil) {
@@ -760,7 +733,7 @@ final class ScreenshotRequests {
 
     /// Terminal state commits before any owned payload is removed.
     @discardableResult
-    func clear(_ id: String) throws -> Bool {
+    func clear(_ id: String, takenBack: Bool = false) throws -> Bool {
         // The one place a request is cleared, so a clear by URL or by admission stops a waiting send
         // too. The cards hear of it once the clear has been tried: the line is not going either way.
         let stopped = sendGrace.handle(.cleared(request: id))
@@ -772,6 +745,7 @@ final class ScreenshotRequests {
         defer { if watched { callbacks.queueChanged(record) } }
         if record.status != .cleared {
             record.status = .cleared
+            if takenBack { record.reachedClient = nil }
             try write(record)
             requests[id] = record
         }

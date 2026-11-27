@@ -42,7 +42,7 @@ extension ScreenshotRequests {
             queueWatches[id] = nil
             Log.write("[send] removed in session \(id) line=\(line.id)")
             forgetSent(record)
-            do { _ = try clear(id) }
+            do { _ = try clear(id, takenBack: true) }
             catch { Log.write("[send] error \(CommandError.writeFailed.rawValue) could not clear \(id): \(error.localizedDescription)") }
             callbacks.queueChanged(requests[id] ?? record)
         case .threadGone(let detail):
@@ -88,7 +88,7 @@ extension ScreenshotRequests {
             queueWatches[id] = nil
             Log.write("[send] withdrawn \(id) line=\(line.id)")
             forgetSent(record)
-            do { _ = try clear(id) }
+            do { _ = try clear(id, takenBack: true) }
             catch { Log.write("[send] error \(CommandError.writeFailed.rawValue) could not clear \(id): \(error.localizedDescription)") }
         case .alreadyTaken:
             queueWatches[id] = nil

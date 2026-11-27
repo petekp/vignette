@@ -85,10 +85,13 @@ final class ScreenshotRequestsPinsTests: XCTestCase {
 
         var sent = try record(of: ticket)
         sent.handedOver = Date(timeIntervalSince1970: 1_795_000_000)
+        sent.reachedClient = true
+        var failed = try record(of: send(base: base))
+        failed.handedOver = sent.handedOver
         let drawing = Drawing(key: card.path, pixels: PixelSize(width: 40, height: 30), pointScale: 1, marks: [], pins: cardPins, nextPin: 3)
-        let report = PinCommentsReport.object(file: card, drawing: drawing, pixels: drawing.pixels, records: [sent, try record(of: send(base: base))])
+        let report = PinCommentsReport.object(file: card, drawing: drawing, records: [sent, failed, try record(of: send(base: base))])
         XCTAssertEqual(report["message"] as? String, "Fix the pins")
-        XCTAssertEqual((report["sends"] as? [[String: Any]])?.map { $0["id"] as? String }, [sent.id], "a send whose line never went carried nothing")
+        XCTAssertEqual((report["sends"] as? [[String: Any]])?.map { $0["id"] as? String }, [sent.id], "a send whose line failed or never went carried nothing")
         let second = try XCTUnwrap((report["pins"] as? [[String: Any]])?.last)
         XCTAssertEqual(second["w"] as? Double, 0.5)
         let written = try XCTUnwrap(second["comments"] as? [[String: Any]])
