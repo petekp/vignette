@@ -51,10 +51,10 @@ pins themselves, `send.md` how a line reaches a session, and ADR 0035 why it wor
   and then every second (`CommentTurnWatch`). A busy turn is the comment's, since a session takes a
   line only between turns, and logs `[comments] working`. The watch ends when that turn ends, when
   no turn starts within 10 s, or after 30 min.
-- In the popover, a comment's top line says its newest delivery after the time: "Sending to
-  Claude", "Sent to Claude", "Queued for Codex", "Not confirmed" or "Not sent"
+- In the popover, a delivered comment shows just its time. While sending, queued, unconfirmed or
+  failed, it also shows "Sending to Claude", "Queued for Codex", "Not confirmed" or "Not sent"
   (`CommentDeliveries.Shown`, `PinPopover+Delivery.swift`). For a queued, unconfirmed or failed
-  one, the reason is under its words, in the secondary label colour. While the turn it started
+  delivery, the reason is under the comment, in the secondary label colour. While the turn it started
   runs, a row under the pin's comments holds the agent's avatar, "Claude is working" and the
   system's small spinner, still at `ui.motion` 0. The row goes when the turn ends, or when the
   agent answers on the pin. The field's placeholder names where a comment would go, "Comment for

@@ -1,8 +1,5 @@
 import AppKit
 
-/// What the open pin's popover says about its comments reaching a session (ADR 0035, look A): each
-/// comment's state on its top line, a row while the turn a comment started runs, and the session a
-/// new comment goes to in the field's placeholder.
 struct PinLiveComments: Equatable {
     var shown: [UUID: CommentDeliveries.Shown] = [:]
     /// The agent whose turn, started by a comment on this pin, is running.
@@ -15,12 +12,11 @@ struct PinLiveComments: Equatable {
 }
 
 extension CommentDeliveries.Shown {
-    /// The words after the comment's time (`docs/voice.md`).
-    var words: String {
+    var words: String? {
         let agent = PinLiveComments.name(of: client)
         switch state {
         case .sending: return "Sending to \(agent)"
-        case .sent: return "Sent to \(agent)"
+        case .sent: return nil
         case .queued: return "Queued for \(agent)"
         case .uncertain: return "Not confirmed"
         case .failed: return "Not sent"

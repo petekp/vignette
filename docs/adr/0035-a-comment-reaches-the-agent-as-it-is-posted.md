@@ -13,8 +13,9 @@ carries the whole picture again, or the agent read `vignette://comments` on its 
 A comment the person posts goes to one running agent session after Send's 3 s grace. Their edits,
 deletes, Resolve and Reopen go too, to a session that already has the comment. The session is the
 pin's own, the one whose agent wrote on it, or else the screenshot's last session. A session that
-is not running gets nothing, and nothing starts one. The comment says on its top line where it
-went, and a row says while the turn it started runs. `docs/rules/live-comments.md` has the rules.
+is not running gets nothing, and nothing starts one. The comment's top line shows delivery status
+while it is sending or needs attention. A row shows when the turn it started is running.
+`docs/rules/live-comments.md` has the rules.
 
 The toolbar's Send target starts on the same session, the screenshot's last, ahead of the kept
 pick, so the bar and the popover never name two sessions for one image (`docs/rules/send-start.md`).
@@ -36,4 +37,4 @@ pick, so the bar and the popover never name two sessions for one image (`docs/ru
 - Telling a session about every comment on the screenshot. A session hears only about posts and
   about the comments it got or wrote, so it is never asked about words it never saw.
 - Showing a delivery as a toast or a card notice. Vignette has no toasts, and the card is behind
-  the editor. The comment's own top line says it, as a card says a send.
+  the editor. The comment's own top line shows its delivery status until it reaches the session.

@@ -5,7 +5,7 @@ These are the words for a pin comment that goes to an agent session as it is pos
 
 | Where | Words |
 | --- | --- |
-| After a comment's time, on its top line (`CommentDeliveries.Shown.words`) | Sending to Claude; Sent to Claude; Queued for Codex; Not confirmed; Not sent |
+| After a comment's time, while sending, queued, unconfirmed or failed (`CommentDeliveries.Shown.words`) | Sending to Claude; Queued for Codex; Not confirmed; Not sent |
 | Under a queued, unconfirmed or failed comment's words | The reason, as Send says it (`SubmissionOutcome.reason`) |
 | Under a comment taken back out of a Codex queue (`CommentDeliveries.removedReason`) | It was removed from the thread's queue in Codex. |
 | The row under a pin's comments while the turn its comment started runs | Claude is working, beside the system's small spinner |
