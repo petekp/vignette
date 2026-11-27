@@ -62,7 +62,7 @@ extension TweakCatalog {
                 .number("pinGelRod", "Area outline", \.pinGelRod, 1...10, step: 0.1, unit: "pt", safe: 0.1...100),
                 .number("pinGelRim", "Card rim", \.pinGelRim, 0.5...6, step: 0.25, unit: "pt", safe: 0.1...100),
                 .number("pinGelFaceShadow", "Number shadow", \.pinGelFaceShadow, 0...1, step: 0.05, safe: 0...1),
-            ], caption: { _ in "In screen points at every zoom. In the editor a pin, its area's outline and the rims of its hover card and popover are live ink's gel in the pin's colour, lit from the pointer. A pin's top rises from its bevel into a dome as wide as the dome share of half its side, so the light makes a glint on it. Over light content its edge turns to its own colour at the deep edge share. The number or logo casts a shadow of this darkness. Cards, flights, Copy, Send and Stitch keep the flat pin." }),
+            ], caption: { _ in "In screen points at every zoom. In the editor a pin, its area's outline and the rims of its hover card and popover are live ink's gel in the pin's colour, lit from the pointer. A pin's top rises from its bevel into a dome as wide as the dome share of half its side, and the light glints on the bevel, off the number or logo. Over light content its edge turns to its own colour at the deep edge share. The number or logo casts a shadow of this darkness. Cards, flights, Copy, Send and Stitch keep the flat pin." }),
             TweakGroup("Renderings", [
                 .number("pinFarthestMove", "Farthest move", \.pinFarthestMove, 0...12, step: 0.5, safe: 0...24),
                 .number("commentListNarrowest", "Narrowest list", \.commentListNarrowest, 4...40, step: 0.5, safe: 1...1000),

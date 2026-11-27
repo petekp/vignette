@@ -73,7 +73,7 @@ enum InkGel {
         var head: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) = (.zero, .zero, .zero, .zero)
         /// The corner count, the rounding in px, how far the head is shrunk in px, and px along the line at it.
         var headShape: SIMD4<Float> = .zero
-        /// x: the line's half width where it meets the head, px.
+        /// x: the line's half width where it meets the head; y: a pin's bevel. In px.
         var headMore: SIMD4<Float> = .zero
         /// The pointer's place in px of the layer, its light's height over the screen in px, and how
         /// much of the light it gives: 0 where the layer's place on the screen is not known.
@@ -91,9 +91,7 @@ enum InkGel {
     static let headCorners = 8
 
     /// Lays a mark's pieces out in px from `origin`, each as triangles over the pixels its distance
-    /// matters to: its edge and the glow's reach past it. A vertex is 10 floats: its place, the
-    /// segment's ends, their half widths, the length along the line at the segment's start, and its
-    /// kind, 0 a segment and 1 the head (`GelVertex`).
+    /// matters to: its edge and the glow's reach past it. A vertex is 10 floats (`GelVertex` in InkGel.metal).
     struct Builder {
         let width: CGFloat
         let origin: CGPoint
@@ -283,11 +281,10 @@ enum InkGel {
 
     /// The tweaks' values as the shader takes them. `override` is the done state's colour, which
     /// takes the ice's place and, darkened, the deep blue's.
-    /// `deepShare` is how much of an `override` colour its deep sheath keeps.
     static func uniforms(_ ui: UITweaks, size: CGSize, scale: CGFloat, time: CFTimeInterval, override: CGColor?,
-                         deepness: CGFloat, deepShare: Float = 0.45) -> Uniforms {
+                         deepness: CGFloat) -> Uniforms {
         let light = rgb(override ?? SRGB(hex: ui.inkGelLight)?.cgColor ?? defaultIce)
-        let deep = override.map { rgb($0) * deepShare } ?? rgb(SRGB(hex: ui.inkGelDeep)?.cgColor ?? defaultDeep)
+        let deep = override.map { rgb($0) * 0.45 } ?? rgb(SRGB(hex: ui.inkGelDeep)?.cgColor ?? defaultDeep)
         return Uniforms(size: SIMD2(Float(size.width), Float(size.height)), scale: Float(scale), time: Float(time),
                         light: SIMD4(light, Float(ui.inkGelCore)), deep: SIMD4(deep, 0),
                         glow: SIMD4(Float(ui.inkGelGlow), Float(ui.inkGelBloom), Float(ui.inkGelGlowRadius * scale), Float(ui.inkGelShadow)),
@@ -299,16 +296,22 @@ enum InkGel {
     }
 
     /// Encodes the field pass and the light pass of `draws`, the vertex buffers of one layer's shapes,
-    /// into `commands`, drawing into `drawable`.
+    /// into `commands`, drawing into `drawable`. `palette` holds a rounded box's light and deep colours
+    /// in pairs (`BoxTint` in InkGel.metal).
     static func encode(_ draws: [(buffer: MTLBuffer, start: Int, count: Int)], uniforms: Uniforms,
-                       targets: (field: MTLTexture, depth: MTLTexture), into drawable: CAMetalDrawable, commands: MTLCommandBuffer) -> Bool {
+                       targets: (field: MTLTexture, depth: MTLTexture), into drawable: CAMetalDrawable, commands: MTLCommandBuffer,
+                       palette: [SIMD4<Float>] = []) -> Bool {
         guard let metal else { return false }
         var uniforms = uniforms
-        let fieldPass = MTLRenderPassDescriptor()
-        fieldPass.colorAttachments[0].texture = targets.field
-        fieldPass.colorAttachments[0].loadAction = .clear
-        fieldPass.colorAttachments[0].clearColor = MTLClearColor(red: far, green: 1, blue: 0, alpha: 0)
-        fieldPass.colorAttachments[0].storeAction = .store
+        func pass(into texture: MTLTexture, clear: MTLClearColor) -> MTLRenderPassDescriptor {
+            let pass = MTLRenderPassDescriptor()
+            pass.colorAttachments[0].texture = texture
+            pass.colorAttachments[0].loadAction = .clear
+            pass.colorAttachments[0].clearColor = clear
+            pass.colorAttachments[0].storeAction = .store
+            return pass
+        }
+        let fieldPass = pass(into: targets.field, clear: MTLClearColor(red: far, green: 1, blue: 0, alpha: 0))
         fieldPass.depthAttachment.texture = targets.depth
         fieldPass.depthAttachment.loadAction = .clear
         fieldPass.depthAttachment.clearDepth = 1
@@ -324,16 +327,12 @@ enum InkGel {
         }
         field.endEncoding()
 
-        let lightPass = MTLRenderPassDescriptor()
-        lightPass.colorAttachments[0].texture = drawable.texture
-        lightPass.colorAttachments[0].loadAction = .clear
-        lightPass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
-        lightPass.colorAttachments[0].storeAction = .store
-        guard let light = commands.makeRenderCommandEncoder(descriptor: lightPass) else { return false }
+        guard let light = commands.makeRenderCommandEncoder(descriptor: pass(into: drawable.texture, clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0))) else { return false }
         light.setRenderPipelineState(metal.light)
         light.setFragmentTexture(targets.field, index: 0)
         light.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
         light.setFragmentBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
+        light.setFragmentBytes(palette + [.zero], length: (palette.count + 1) * MemoryLayout<SIMD4<Float>>.stride, index: 2)
         for draw in draws where draw.count > 0 {
             light.setVertexBuffer(draw.buffer, offset: 0, index: 0)
             light.drawPrimitives(type: .triangle, vertexStart: draw.start, vertexCount: draw.count)

@@ -149,10 +149,11 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   beside the editor, as the popover does. It grows the way the teardrop faces and turns back on an axis
   only where the screen's visible frame has no room that way. The glass blurs what is behind the panel.
 - In the editor a pin is live ink's gel in its colour, the person's red or the agent's brand
-  (`PinGel`, `InkGel.metal`). What it wears is drawn over it (`PinLayer` without its body) and casts
+  (`PinGel`, `InkGel.metal`). One gel layer holds every pin, outline and cluster of the editor,
+  each shape carrying its own colour, so many pins cost one drawing a frame. What it wears is drawn over it (`PinLayer` without its body) and casts
   `ui.pinGelFaceShadow`. Its top rises from a `ui.pinGelBevel` bevel into a dome `ui.pinGelDome` of
-  half its side across, so the pointer's light makes a glint on it. A flat top lit from right above
-  turned white and hid the number. Over light content its edge turns to its own colour at
+  half its side across, and the pointer's light glints only on the bevel. A flat top lit from right
+  above turned white and hid the number, and a glint on the dome crossed it. Over light content its edge turns to its own colour at
   `ui.pinGelDeep`, chosen from the picture's brightness under it (`EditorPins.backdrop`). It draws
   on live ink's clock (`InkClock`), so it is lit from the pointer, and drifts and comes to rest as
   live ink does. An area's outline is a gel rod `ui.pinGelRod` wide in its pin's colour, one shape
