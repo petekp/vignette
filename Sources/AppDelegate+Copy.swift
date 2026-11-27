@@ -3,6 +3,13 @@ import AppKit
 // MARK: Copy Drawing, Done and Cmd+C
 
 extension AppDelegate {
+    func copyPaths(_ shots: [Screenshot]) {
+        guard !shots.isEmpty else { Commands.error("paths", .missingFile, "nothing selected"); return }
+        Clipboard.copyText(Clipboard.pathsText(shots.map(\.url)))
+        Commands.ok("paths", shots.map(\.url.lastPathComponent).joined(separator: ", "))
+        thumbnail.showCopied(shots, label: "Copied Path")
+    }
+
     /// How a copied rendering lays out its pins' comments: below or beside the picture, at a new
     /// note's text size.
     var copiedLayout: Rendering.Layout { .withComments(textSize: settings.data.ui.newTextSize) }

@@ -3,7 +3,7 @@ name: vignette
 description: >-
   Show the user an image through Vignette, the screenshot tool on this Mac, and read back what they drew on it. Use when you want the user to see a screenshot or rendering you produced (a browser capture, screencapture, a before-and-after), when they ask to see what something looks like, or when you need their circled answer. Also use it when a message contains "From Vignette:": the user sent you a screenshot they drew on, and you can answer with a drawing. Not for images the user captured themselves; Vignette already shows those.
 metadata:
-  version: "34"
+  version: "35"
 ---
 
 # Vignette
@@ -138,6 +138,7 @@ takes a JSON file's path, or the JSON itself, in the fractions `&marks=` uses:
 - New pins take the next numbers, in the agent colour. At most 99 per call and 2,000 characters
   each. `ok` counts them as `pins=<n>`; `invalid-pins` names the comment and what is wrong.
 - Answer on the user's own screenshot with `show`.
+- `open -g "vignette://comments?file=$file"` reads a card's pins and comments back, with ids: see `references/comments.md`.
 
 ## When the user sends you a drawing
 

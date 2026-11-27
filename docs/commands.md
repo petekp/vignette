@@ -35,6 +35,7 @@ open -g vignette://help                       # list every command in the log
 open -g vignette://settings                   # open the Settings window
 open -g vignette://install-skill              # install the Vignette plugin for Claude Code and Codex; &root=<dir> installs into one .claude or .codex folder (needs "debug": true)
 open -g vignette://requests                   # list the open screenshot requests; &clear=<id or all> clears them
+open -g "vignette://comments?file=~/Dropbox/Screenshots/x.png"  # write the card's pins and comments to a JSON file: [comments] ok <name> pins=<n> comments=<n> file=<path>
 open -g "vignette://reply?file=<envelope>"    # an agent's reply to a screenshot request; only the skill's reply helper sends it
 open -g vignette://restore-apple-defaults     # put Apple's screencapture defaults back
 open -g vignette://live-ink-clear             # erase every live ink mark
@@ -134,6 +135,21 @@ naming the comment by its place in the list. A file outside the watch folder hol
 answer. With `add`, the pins join the drawing with the marks as one undo step, and `[add] ok`
 counts the comments that joined as `pins=<n>`. With `show` it is the same: the marks and pins
 join the drawing before the cards come up, and `[show] ok` counts them as `marks=<n>` and `pins=<n>`.
+
+`comments?file=<path>` reads one card's pins and comments back, and changes nothing. It writes a
+new JSON file in the app's caches folder, `Library/Caches/<bundle id>/comments`, kept for a day,
+and answers `[comments] ok <name> pins=<n> comments=<n> file=<path>`, the path running to the end
+of the line. The caller does not choose the path, since a URL has no authenticated sender (ADR
+0006). It needs no reply ticket: it reads what the drawing file and the request records already
+hold. The file holds `file`, the card's path, and `pins`, in number order. Each pin has its `id`,
+`number`, and `x`, `y`, and for an area `w`, `h` and `corner`, in the fractions `pins=` takes.
+Each pin's `comments`, oldest first, have `id`, `text`, `writer` (`person` or `agent`),
+`agentName`, `session` and `sessionName` for an agent's, `at`, and `sentIn`, the ids of the sends
+that carried that comment. `sends` lists the card's sends whose line went to the client, oldest
+first, each with its `id`, `at`, `status`, `to` (the session's title on the card), `agent`,
+`session` and `message`. `message` is the newest send's message, left out when it had none. A
+send is forgotten when its request's folder is removed, 7 days after the request is cleared. With
+the card open in the editor, it reads the editor's drawing.
 
 ## The log
 
