@@ -31,6 +31,9 @@ final class PinGel: CALayer, GelLayer {
         /// The radius of the dome on the box's top, in pt; a rod has none.
         var dome: CGFloat = 0
         var tint: Tint
+        /// The rod's centre line, closed, when the rod runs along it rather than along `rect`'s edge;
+        /// `rect` is then the line's bounds.
+        var line: [CGPoint]? = nil
 
         /// The body of `teardrop`, domed `dome` pt.
         static func body(of teardrop: PinTeardrop, dome: CGFloat, tint: Tint) -> Shape {
@@ -44,9 +47,18 @@ final class PinGel: CALayer, GelLayer {
             Shape(rect: rect, radius: 0, sharp: nil, rod: width, tint: tint)
         }
 
+        /// A rod `width` wide centred on `line`, a closed line.
+        static func rod(along line: [CGPoint], width: CGFloat, tint: Tint) -> Shape {
+            let xs = line.map(\.x), ys = line.map(\.y)
+            let minX = xs.min() ?? 0, minY = ys.min() ?? 0
+            let bounds = CGRect(x: minX, y: minY, width: (xs.max() ?? 0) - minX, height: (ys.max() ?? 0) - minY)
+            return Shape(rect: bounds, radius: 0, sharp: nil, rod: width, tint: tint, line: line)
+        }
+
         func offsetBy(dx: CGFloat, dy: CGFloat) -> Shape {
             var moved = self
             moved.rect = rect.offsetBy(dx: dx, dy: dy)
+            moved.line = line?.map { CGPoint(x: $0.x + dx, y: $0.y + dy) }
             return moved
         }
     }
@@ -222,8 +234,9 @@ final class PinGel: CALayer, GelLayer {
         return StateReport.flipped(window.convertToScreen(view.convert(inView, to: nil)))
     }
 
-    /// Lays `shapes` out in px as triangles over the pixels their light reaches: a box's whole rect, and
-    /// a rod's band along each side, each `margin` pt wider. A vertex is 10 floats (`GelVertex`): its
+    /// Lays `shapes` out in px as triangles over the pixels their light reaches: a box's whole rect, a
+    /// rod's band along each side, and a rod along a line's rect round each of its segments (kind 3), each
+    /// `margin` pt wider. A vertex is 10 floats (`GelVertex`): its
     /// place, the box's centre, its half size, its corners' radius, its tint (`BoxTint`), the rod's
     /// half width or the dome's radius negated, and kind 2. Each colour goes in the palette once, light
     /// and then deep, the deep one `ui.pinGelDeep` of the light one.
@@ -247,7 +260,7 @@ final class PinGel: CALayer, GelLayer {
             let rodOrDome = shape.rod.map { $0 / 2 * scale } ?? -max(shape.dome, 0) * scale
             let tail: [Float] = [Float(centre.x), Float(centre.y), Float(half.width), Float(half.height), Float(radius),
                                  Float(tint), Float(rodOrDome), 2]
-            func quad(_ r: CGRect) {
+            func quad(_ r: CGRect, _ tail: [Float] = tail) {
                 let r = CGRect(x: r.minX * scale, y: r.minY * scale, width: r.width * scale, height: r.height * scale)
                 for p in [CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.minY), CGPoint(x: r.minX, y: r.maxY),
                           CGPoint(x: r.maxX, y: r.minY), CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY)] {
@@ -256,6 +269,17 @@ final class PinGel: CALayer, GelLayer {
             }
             guard let width = shape.rod else {
                 quad(rect.insetBy(dx: -margin, dy: -margin))
+                continue
+            }
+            if let line = shape.line {
+                let reach = width / 2 + margin
+                for (index, a) in line.enumerated() {
+                    let b = line[(index + 1) % line.count]
+                    let piece: [Float] = [Float(a.x * scale), Float(a.y * scale), Float(b.x * scale), Float(b.y * scale),
+                                          Float(width / 2 * scale), Float(tint), 0, 3]
+                    quad(CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
+                        .insetBy(dx: -reach, dy: -reach), piece)
+                }
                 continue
             }
             // A band reaches past the rod by the margin, and in past a rounded corner's curve.
@@ -271,64 +295,5 @@ final class PinGel: CALayer, GelLayer {
         }
         vertexCount = out.count / 10
         vertices = out.isEmpty ? nil : device.makeBuffer(bytes: out, length: out.count * MemoryLayout<Float>.stride)
-    }
-}
-
-/// A rim of gel round a pin's hover card or popover, in the pin's colour: a rod `ui.pinGelRim` wide
-/// along the inside of the view's edge, whose corners are `radius` round but the one `sharp` names.
-@MainActor
-final class PinGelRim: NSView {
-    private let gel = PinGel(scale: 2)
-    private var wearing: (color: SRGB, radius: CGFloat, sharp: PinGel.Corner?)?
-
-    override var isFlipped: Bool { true }
-
-    init() {
-        super.init(frame: .zero)
-        wantsLayer = true
-        autoresizingMask = [.width, .height]
-        gel.host = self
-        layer?.addSublayer(gel)
-        setAccessibilityElement(false)
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    func wear(_ color: SRGB, radius: CGFloat, sharp: PinGel.Corner?) {
-        guard wearing.map({ $0.color != color || $0.radius != radius || $0.sharp != sharp }) ?? true else { return }
-        wearing = (color, radius, sharp)
-        place()
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        place()
-    }
-
-    override func viewDidChangeBackingProperties() {
-        super.viewDidChangeBackingProperties()
-        gel.setScale(window?.backingScaleFactor ?? 2)
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        place()
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if let window { gel.setScale(window.backingScaleFactor) }
-        place()
-    }
-
-    private func place() {
-        guard let wearing, bounds.width > 0, bounds.height > 0 else { return }
-        let width = Settings.shared.data.ui.pinGelRim
-        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        let rect = bounds.insetBy(dx: width / 2, dy: width / 2)
-        gel.show([PinGel.Shape(rect: rect, radius: max(wearing.radius - width / 2, 0), sharp: wearing.sharp, rod: width,
-                               tint: PinGel.Tint(color: wearing.color, deepness: dark ? 0 : 1))], drifting: false)
     }
 }

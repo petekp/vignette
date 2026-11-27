@@ -89,7 +89,6 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         list.addArrangedSubview(resolveControls.resolveLine)
         list.widthAnchor.constraint(equalToConstant: Self.width).isActive = true
         controller.view = list
-        // The content view is the popover's body, so the rim goes round the body and not its arrow.
         list.addSubview(rim)
         popover.contentViewController = controller
         popover.behavior = .applicationDefined
@@ -148,6 +147,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     func popoverDidShow(_ notification: Notification) {
+        rim.popoverShown()
         holdNoFocus()
         keepsKeys = nil
     }
@@ -219,7 +219,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         shownState = (pin.resolved, pin.number)
         let ui = Settings.shared.data.ui
         resolveControls.show(pin, now: opened)
-        rim.wear(PinShading.color(of: pin.maker, resolved: pin.isResolved, markStyle: ui.markStyle), radius: RimLight.cornerRadius, sharp: nil)
+        rim.wear(PinShading.color(of: pin.maker, resolved: pin.isResolved, markStyle: ui.markStyle), edge: .popover)
     }
 
     /// Reply to reopen on a resolved pin. The field editor takes a new placeholder only while the

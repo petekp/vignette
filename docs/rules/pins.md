@@ -177,8 +177,11 @@ rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
   selected, being placed or open (`EditorCore.outlinedPins`), and a closed area pin draws none at
   rest. The pin being placed and the open one keep their gel drifting (`EditorCore.activePins`)
   at the motion setting, so Reduce Motion stills it. The hover card and the popover have a gel rim
-  `ui.pinGelRim` wide in the pin's colour (`PinGelRim`). The popover's runs round its body only,
-  since its content view is the body. Cards, flights, Copy, Send and Stitch keep the flat pin, so
+  `ui.pinGelRim` wide in the pin's colour (`PinGelRim`). The popover's follows the popover's outline,
+  its arrow included: the rim covers the popover's frame and reads the outline from the shape layer
+  AppKit draws the popover's glass with, and moves when that path changes (`PinGelRim.Edge.popover`).
+  Before macOS 26 AppKit draws no such layer, and the popover has no rim, since a box round the body
+  alone did not match the popover's shape. Cards, flights, Copy, Send and Stitch keep the flat pin, so
   a pin changes material as it lands in the editor and as it leaves. A rendering draws the area as
   a solid rectangle mark.
 - A resolved pin's ask is done (`Pin.resolved`, `Pin.Resolution`). It keeps its number, place and
