@@ -207,17 +207,29 @@ final class PinHoverCard: NSView {
     /// A writer's avatar. The person's is their macOS account picture, or their initial on their pins'
     /// colour when the account has none. An agent's is what its pin wears (`PinFace`) on its pins'
     /// colour: its logo, or the first letter of its name, in the words' colour. `avatar` is layer-backed
-    /// and round. The pin's popover shows the same beside each comment.
+    /// and round, except for an agent with a one-colour logo (`Agent.oneColourLogos`), whose avatar is
+    /// that logo alone. The pin's popover shows the same beside each comment.
     static func paint(_ avatar: NSImageView, as maker: PinMaker) {
         let style = Settings.shared.data.ui.markStyle.painting(maker)
+        avatar.contentTintColor = nil
+        avatar.layer?.masksToBounds = true
         switch (maker, PinFace(maker)) {
         case (.person, _):
             avatar.image = accountPicture ?? letter(accountInitial, on: style.personColor, in: style.wordColor)
         case (.agent, .letter(let first)):
             avatar.image = letter(first, on: style.agentColor, in: style.wordColor)
+        case (.agent(let agent), _) where Agent.oneColourLogos.contains(agent.lowercased()) && Agent.logo(for: agent) != nil:
+            avatar.image = Agent.logo(for: agent)
+            avatar.contentTintColor = bareLogoColor
+            avatar.layer?.masksToBounds = false
         case (.agent(let agent), _):
             avatar.image = logo(agent, on: style.agentColor, in: style.wordColor, filling: style.pin.logoSize)
         }
+    }
+
+    /// A one-colour logo standing alone: black, and the label colour in Dark Mode, where black would vanish.
+    private static let bareLogoColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .labelColor : .black
     }
 
     /// The picture of the macOS account the app runs in, as Users & Groups shows it.

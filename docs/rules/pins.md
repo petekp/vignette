@@ -94,11 +94,12 @@ an agent session as it is posted (`PinCommentDeliveries.swift`, `PinCommentRules
   their name in the label colour, "You" or the agent's capitalized, and how long ago they wrote in the
   secondary label colour. The time is said as of when the popover opened and holds still while it is
   open; a comment with no time (`Pin.Comment.at`) shows none. The words, separators, working row and
-  field start at the name's left edge, even on a new pin (`PinPopover.wordsIndent`). The person's avatar is their macOS
+  field start at the name's left edge. The person's avatar is their macOS
   account picture (`CBIdentity`), or their initial on `ui.personColor` when the account has none.
   An agent's is what its pin wears (`PinFace`) on its pin's colour: its logo, the first letter of its
   name, or `Agent.fallbackSymbol` when it gave no name, in the words' colour and at the pin's
-  `ui.pinLogoSize`. Claude's is its white logo on its orange. The popover is
+  `ui.pinLogoSize`, as Claude's white logo on orange. Codex's is its bare black logo, label-coloured
+  in Dark Mode. The popover is
   macOS's own, with nothing behind its content: a view of our own under the content is not clipped
   to the popover's shape, so its arrow and body part ways. The field's placeholder is in the field's
   font and the secondary label colour. The post button is centred on the field's last line
@@ -147,7 +148,7 @@ an agent session as it is posted (`PinCommentDeliveries.swift`, `PinCommentRules
   while no popover, menu or drag is under way. The card is the teardrop widened, its rim included,
   in the popover's glass: the tip stays its square corner and the other corners keep the teardrop's
   radius. It is laid out as a popover comment: the first writer's
-  avatar, their name and how long ago, muted, and under the name the first comment's first line and the
+  avatar, name and how long ago, muted, then under the name the first comment's first line and
   replies. A selected pin's ring is left off while its card shows, since the card covers the teardrop
   the ring goes round. A press on the card is a press on its pin's teardrop, which the card
   covers: a click opens the popover with any tool and a drag moves the pin. The card's panel takes
