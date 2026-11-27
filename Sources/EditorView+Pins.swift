@@ -26,9 +26,10 @@ final class EditorPinUI: NSObject {
     var elements: [Pin.ID: PinElement] = [:]
     /// The order VoiceOver's Pins rotor goes through, by number.
     var rotorOrder: [Pin.ID] = []
-    /// Called with how many pins have a number, when that changes: the toolbar's Pins button shows it.
-    var onCount: ((Int) -> Void)?
-    var count = 0
+    /// Called with how many pins have a number, and how many of those are open, when that changes: the
+    /// toolbar's Pins button shows them.
+    var onCount: ((PinCount) -> Void)?
+    var count = PinCount()
     /// Show this rect of a pin, in image px, panning a magnified picture just far enough.
     var onReveal: ((CGRect) -> Void)?
     weak var view: EditorView?
@@ -55,9 +56,11 @@ extension EditorView {
         pinUI.resizingOpenPin = resizing
         showPinElements(placement)
         showHoverCard(carded, placement)
-        if pinUI.rotorOrder.count != pinUI.count {
-            pinUI.count = pinUI.rotorOrder.count
-            pinUI.onCount?(pinUI.count)
+        let numbered = core.drawing.pins.filter { $0.number > 0 }
+        let count = PinCount(all: numbered.count, open: numbered.filter { !$0.isResolved }.count)
+        if count != pinUI.count {
+            pinUI.count = count
+            pinUI.onCount?(count)
         }
     }
 
@@ -177,7 +180,8 @@ extension EditorView {
         showPinList(ids.compactMap(core.pin), under: frame.applying(toView), of: self)
     }
 
-    /// Every pin with a number, in number order, in a menu under `rect` in `view`: the toolbar's Pins button.
+    /// Every pin with a number, in a menu under `rect` in `view`: the toolbar's Pins button. The open
+    /// pins come first, then the resolved ones under a Resolved heading, each in number order.
     func showPinList(from rect: CGRect, of view: NSView) {
         let pins = core.drawing.pins.filter { $0.number > 0 }.sorted { $0.number < $1.number }
         showPinList(pins, under: rect, of: view)
@@ -212,7 +216,13 @@ extension EditorView {
         closePinList()
         let menu = NSMenu()
         menu.autoenablesItems = false
-        for pin in pins { menu.addItem(pinListItem(pin)) }
+        let open = pins.filter { !$0.isResolved }, resolved = pins.filter(\.isResolved)
+        for pin in open { menu.addItem(pinListItem(pin)) }
+        if !resolved.isEmpty {
+            if !open.isEmpty { menu.addItem(.separator()) }
+            menu.addItem(.sectionHeader(title: "Resolved"))
+            for pin in resolved { menu.addItem(pinListItem(pin)) }
+        }
         pinUI.listActions.pick = { [weak self] id in DispatchQueue.main.async { self?.openFromList(id) } }
         pinUI.list = menu
         DispatchQueue.main.async { [weak self, weak view] in
@@ -223,32 +233,35 @@ extension EditorView {
     }
 
     /// A pin's row: its teardrop as it looks on screen, then its first comment on one line, an agent's
-    /// in the system's monospaced face, as an agent's pin number is. The tooltip holds the comment whole.
+    /// in the system's monospaced face, as an agent's pin number is, and a resolved pin's in the secondary
+    /// label colour. The tooltip holds the comment whole.
     func pinListItem(_ pin: Pin) -> NSMenuItem {
         let ui = Settings.shared.data.ui, menuFont = NSFont.menuFont(ofSize: 0)
         let agent = pin.color == .agent
         let font = agent ? NSFont.monospacedSystemFont(ofSize: menuFont.pointSize, weight: .regular) : menuFont
         let first = pin.comments.first?.text.asOneLine ?? ""
         let item = NSMenuItem(title: "", action: #selector(PinListActions.picked(_:)), keyEquivalent: "")
-        item.attributedTitle = NSAttributedString(string: SessionMenu.fitted(first, width: ui.pinListTitleWidth, font: font), attributes: [.font: font])
+        item.attributedTitle = NSAttributedString(string: SessionMenu.fitted(first, width: ui.pinListTitleWidth, font: font), attributes: [
+            .font: font, .foregroundColor: pin.isResolved ? NSColor.secondaryLabelColor : NSColor.labelColor,
+        ])
         item.target = pinUI.listActions
         item.representedObject = pin.id
         item.toolTip = pin.comments.first?.text
         item.setAccessibilityLabel("\(pin.spokenName): \(first)")
-        item.image = Self.pinImage(number: pin.number, maker: pin.maker, side: ui.pinListImageSize, markStyle: core.markStyle)
+        item.image = Self.pinImage(number: pin.number, maker: pin.maker, resolved: pin.isResolved, side: ui.pinListImageSize, markStyle: core.markStyle)
         if #available(macOS 27.0, *) { item.preferredImageVisibility = .visible }
         return item
     }
 
     /// The teardrop of a pin `maker` made, `side` pt across, wearing `number` or its maker's face, drawn
-    /// flat, as a menu's row shows it.
-    static func pinImage(number: Int, maker: PinMaker, side: CGFloat, markStyle: MarkStyle) -> NSImage {
+    /// flat, grey when `resolved`, as a menu's row shows it.
+    static func pinImage(number: Int, maker: PinMaker, resolved: Bool = false, side: CGFloat, markStyle: MarkStyle) -> NSImage {
         NSImage(size: NSSize(width: side, height: side), flipped: true) { rect in
             guard let ctx = NSGraphicsContext.current?.cgContext, markStyle.pin.side > 0 else { return false }
             let pointScale = side / markStyle.pin.side, inset = markStyle.pin.rimWidth * pointScale
             let drop = PinTeardrop(number: number, agent: maker.isAgent, tip: CGPoint(x: rect.minX + inset, y: rect.maxY - inset), orientation: .upRight,
                                    side: side - 2 * inset, style: markStyle.pin)
-            drop.drawFlat(in: ctx, maker: maker, face: PinFace(maker), pointScale: pointScale, markStyle: markStyle)
+            drop.drawFlat(in: ctx, maker: maker, resolved: resolved, face: PinFace(maker), pointScale: pointScale, markStyle: markStyle)
             return true
         }
     }
@@ -269,6 +282,13 @@ extension EditorView {
             if let rect = anchor(of: pin.id, in: placement) { element.setAccessibilityFrameInParentSpace(rect) }
             let id = pin.id
             element.press = { [weak self] in self?.handle(.composer(.open(id))) }
+            // The pin's popover opens, as a press opens it, and the resolve or the reopen is its own.
+            let change: EditorCore.ComposerInput = pin.isResolved ? .reopen : .resolve
+            element.setAccessibilityCustomActions([NSAccessibilityCustomAction(name: pin.isResolved ? "Reopen" : "Resolve") { [weak self] in
+                self?.handle(.composer(.open(id)))
+                self?.handle(.composer(change))
+                return true
+            }])
             pinUI.elements[pin.id] = element
         }
     }
@@ -317,6 +337,12 @@ final class PinElement: NSAccessibilityElement {
         press?()
         return press != nil
     }
+}
+
+/// How many pins have a number, and how many of those are open.
+struct PinCount: Equatable {
+    var all = 0
+    var open = 0
 }
 
 /// The target of a pin list's items: a pick names its pin.

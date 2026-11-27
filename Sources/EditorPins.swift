@@ -64,7 +64,8 @@ final class EditorPins {
         for pin in what.outlined {
             guard case .area(let frame, _) = pin.place else { continue }
             let rect = frame.applying(transform)
-            shapes.append(.outline(rect, width: style.gelRod, tint: tint(pin.maker, over: rect, toImage: toImage, markStyle: what.markStyle)))
+            shapes.append(.outline(rect, width: style.gelRod, tint: tint(pin.maker, resolved: pin.isResolved, over: rect, toImage: toImage,
+                                                                         markStyle: what.markStyle)))
         }
 
         let rings = CGMutablePath()
@@ -86,9 +87,9 @@ final class EditorPins {
         for (drop, teardrop) in teardrops {
             let face = drops[drop.id] ?? PinLayer(scale: scale, body: false)
             shapes.append(.body(of: teardrop, dome: teardrop.square.height / 2 * style.gelDome,
-                                tint: tint(drop.maker, over: teardrop.square, toImage: toImage, markStyle: what.markStyle)))
-            face.show(teardrop, maker: drop.maker, face: PinFace(drop.maker), answeringAgent: drop.answeringAgent, pointScale: 1,
-                      markStyle: what.markStyle)
+                                tint: tint(drop.maker, resolved: drop.resolved, over: teardrop.square, toImage: toImage, markStyle: what.markStyle)))
+            face.show(teardrop, maker: drop.maker, resolved: drop.resolved, face: PinFace(drop.maker), answeringAgent: drop.answeringAgent,
+                      pointScale: 1, markStyle: what.markStyle)
             drops[drop.id] = face
             faces.append(face.root)
         }
@@ -100,8 +101,9 @@ final class EditorPins {
             let teardrop = PinTeardrop(label: cluster.label, agent: cluster.agent, orientation: cluster.orientation,
                                        frame: cluster.frame.applying(transform), style: style)
             shapes.append(.body(of: teardrop, dome: teardrop.square.height / 2 * style.gelDome,
-                                tint: tint(cluster.maker, over: teardrop.square, toImage: toImage, markStyle: what.markStyle)))
-            face.show(teardrop, maker: cluster.maker, pointScale: 1, markStyle: what.markStyle)
+                                tint: tint(cluster.maker, resolved: cluster.resolved, over: teardrop.square, toImage: toImage,
+                                           markStyle: what.markStyle)))
+            face.show(teardrop, maker: cluster.maker, resolved: cluster.resolved, pointScale: 1, markStyle: what.markStyle)
             clusters[cluster.pins] = face
             faces.append(face.root)
         }
@@ -112,10 +114,10 @@ final class EditorPins {
         if (layer.sublayers ?? []).map(ObjectIdentifier.init) != layers.map(ObjectIdentifier.init) { layer.sublayers = layers }
     }
 
-    /// The gel of a pin `maker` made over `rect` of the editor: in the pin's colour, with its deep edge
-    /// where that stands out more from the picture there.
-    private func tint(_ maker: PinMaker, over rect: CGRect, toImage: CGAffineTransform, markStyle: MarkStyle) -> PinGel.Tint {
-        let color = PinShading.color(of: maker, markStyle: markStyle)
+    /// The gel of a pin `maker` made over `rect` of the editor: in the pin's colour, or grey once
+    /// `resolved`, with its deep edge where that stands out more from the picture there.
+    private func tint(_ maker: PinMaker, resolved: Bool, over rect: CGRect, toImage: CGAffineTransform, markStyle: MarkStyle) -> PinGel.Tint {
+        let color = PinShading.color(of: maker, resolved: resolved, markStyle: markStyle)
         var deepness: CGFloat = 0
         if let brightness = backdrop?.mean(in: rect.applying(toImage)) {
             let share = markStyle.pin.gelDeep

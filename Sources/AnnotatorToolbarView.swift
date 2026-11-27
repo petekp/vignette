@@ -174,11 +174,20 @@ struct ToolbarView: View {
         .onChange(of: model.shown) { hideTip() }
     }
 
-    /// How many pins there are. A press lists them all (`EditorView.showPinList`).
+    /// What VoiceOver says of the Pins button: "3", or "2 open, 1 resolved".
+    private var pinsValue: String {
+        let resolved = model.pinCount - model.openPinCount
+        return resolved == 0 ? "\(model.pinCount)" : "\(model.openPinCount) open, \(resolved) resolved"
+    }
+
+    /// How many pins are open, or a checkmark once every one is resolved. A press lists them all
+    /// (`EditorView.showPinList`).
     private var pinsButton: some View {
         Button { onPins() } label: {
             HStack(spacing: 6) {
-                Text("\(model.pinCount)")
+                Group {
+                    if model.openPinCount > 0 { Text("\(model.openPinCount)") } else { Image(systemName: "checkmark") }
+                }
                     .monospacedDigit()
                     .padding(.horizontal, 6)
                     .frame(minWidth: 20, minHeight: 20)
@@ -194,7 +203,7 @@ struct ToolbarView: View {
         .buttonStyle(TactileButtonStyle(shape: .rounded, hitSlop: Self.toolSlop))
         .padding(Self.toolSlop.negated)
         .accessibilityLabel("Pins")
-        .accessibilityValue("\(model.pinCount)")
+        .accessibilityValue(pinsValue)
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { onPinsFrame($0) }
     }
 

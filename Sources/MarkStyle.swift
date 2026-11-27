@@ -91,6 +91,12 @@ struct PinStyle: Equatable, Sendable {
 struct SRGB: Equatable, Sendable {
     var red: CGFloat, green: CGFloat, blue: CGFloat
 
+    init(red: CGFloat, green: CGFloat, blue: CGFloat) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+    }
+
     /// `#rrggbb`, or nil for anything else.
     init?(hex: String) {
         guard hex.count == 7, hex.first == "#", hex.dropFirst().allSatisfy(\.isHexDigit),

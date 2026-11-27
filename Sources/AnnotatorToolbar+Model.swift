@@ -6,6 +6,8 @@ extension AnnotatorToolbar {
         @Published var tool: EditorCore.Tool? = nil
         /// The open image's pins that have a number. Past 0 the bar shows the Pins button.
         @Published var pinCount = 0
+        /// Those of them that are not resolved, which the Pins button counts.
+        @Published var openPinCount = 0
         @Published var shown = false     // drives the entrance and exit
         /// The answer whose sessions the target's menu lists (`DestinationChoice.replacesList`). Whether
         /// a reply's Claude Code session has closed is read from its `complete`, so the bar shows no

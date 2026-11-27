@@ -1,7 +1,9 @@
 import AppKit
 
 /// The popover beside an open pin: its comments, oldest first, each one a click away from being
-/// edited and with a Delete of its own, and under them the composer, the field a comment is written in, with its post button. Its keys are the composer's
+/// edited and with a Delete of its own, and under them the composer, the field a comment is written in, with its post button.
+/// Under the field, Resolve, or Reply and Resolve while the field holds words, says the pin's ask is
+/// done. A resolved pin's popover opens on who resolved it, with Reopen, and its comments are muted. Its keys are the composer's
 /// (`EditorCore.ComposerInput`): Return posts, Shift+Return or Option+Return breaks the line,
 /// Cmd+Return posts and finishes, and Esc posts and closes.
 @MainActor
@@ -15,6 +17,10 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     private let comments = NSStackView()
     private let field = ComposerField()
     private let post = NSButton()
+    /// Who resolved the pin, with Reopen, over its comments, and Resolve under the field.
+    private let resolveControls: PinResolveControls
+    /// The state the popover shows, set by `showState`.
+    private var shownState: (resolved: Pin.Resolution?, number: Int)?
     private let rim = PinGelRim()
     private let send: (EditorCore.ComposerInput) -> Void
     private var shown: (comments: [Pin.Comment], editing: Int?)?
@@ -36,6 +42,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
          zoom: @escaping (EditorCore.ZoomRequest) -> Void) {
         self.pin = pin.id
         self.send = send
+        resolveControls = PinResolveControls(width: Self.width - 2 * Self.inset, gap: Settings.shared.data.ui.pinPopoverSpacing, send: send)
         super.init()
         field.isBezeled = false
         field.isBordered = false
@@ -76,13 +83,14 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         post.target = self
         post.action = #selector(postPressed)
         post.toolTip = "Post comment"
+        list.addArrangedSubview(resolveControls.resolvedLine)
         list.addArrangedSubview(comments)
         list.addArrangedSubview(composerRow(postSize: size, gap: ui.pinPopoverSpacing))
+        list.addArrangedSubview(resolveControls.resolveLine)
         list.widthAnchor.constraint(equalToConstant: Self.width).isActive = true
         controller.view = list
         // The content view is the popover's body, so the rim goes round the body and not its arrow.
         list.addSubview(rim)
-        rim.wear(PinShading.color(of: pin.maker, markStyle: ui.markStyle), radius: RimLight.cornerRadius, sharp: nil)
         popover.contentViewController = controller
         popover.behavior = .applicationDefined
         popover.delegate = self
@@ -178,7 +186,9 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     func update(_ pin: Pin, composer: EditorCore.Composer) {
-        if shown?.comments != pin.comments || shown?.editing != composer.editing {
+        let stateChanged = shownState.map { $0.resolved != pin.resolved || $0.number != pin.number } ?? true
+        if stateChanged { showState(of: pin) }
+        if stateChanged || shown?.comments != pin.comments || shown?.editing != composer.editing {
             shown = (pin.comments, composer.editing)
             for row in comments.arrangedSubviews { row.removeFromSuperview() }
             for (index, comment) in pin.comments.enumerated() where index != composer.editing {
@@ -195,9 +205,24 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     }
 
     /// The post button works only when the field holds words: an empty Return is how a comment is deleted or the popover closed.
+    /// Resolve says Reply and Resolve while it does.
     private func showPostable() {
         post.isEnabled = !field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         post.contentTintColor = post.isEnabled ? .controlAccentColor : .tertiaryLabelColor
+        resolveControls.showReplying(post.isEnabled)
+    }
+
+    /// Whether the pin is resolved, and by whom: the line over its comments, its rim's colour, the
+    /// field's placeholder, and Resolve, which a new pin and a resolved one go without.
+    private func showState(of pin: Pin) {
+        shownState = (pin.resolved, pin.number)
+        let ui = Settings.shared.data.ui
+        resolveControls.show(pin, now: opened)
+        rim.wear(PinShading.color(of: pin.maker, resolved: pin.isResolved, markStyle: ui.markStyle), radius: RimLight.cornerRadius, sharp: nil)
+        let placeholder = pin.isResolved ? "Reply to reopen" : "Add a comment"
+        field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
+            .font: field.font ?? NSFont.preferredFont(forTextStyle: .body), .foregroundColor: NSColor.secondaryLabelColor,
+        ])
     }
 
     @objc private func postPressed() { send(.post) }
@@ -231,7 +256,8 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         time.lineBreakMode = .byTruncatingTail
         let words = NSTextField(wrappingLabelWithString: comment.text)
         words.font = .preferredFont(forTextStyle: .body)
-        words.textColor = .labelColor
+        // A resolved pin's comments are done with, so they step back.
+        words.textColor = shownState?.resolved == nil ? .labelColor : .secondaryLabelColor
         words.isSelectable = false
         words.preferredMaxLayoutWidth = Self.width - 2 * Self.inset
         let row = CommentRow(avatar: avatar, name: name, time: time, words: words, avatarSize: ui.pinAvatarSize, deleteSize: ui.pinDeleteSize,
