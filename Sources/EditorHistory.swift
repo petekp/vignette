@@ -168,6 +168,14 @@ struct EditorHistory {
 
     var isEmpty: Bool { undo.isEmpty && redo.isEmpty }
 
+    /// Whether a step holds a comment `session` wrote that has no session name yet.
+    func needsName(of session: AgentAddress) -> Bool {
+        (undo + redo).contains { step in
+            guard case .drawing(let step) = step else { return false }
+            return step.pins.contains { [$0.before, $0.after].contains { $0?.needsName(of: session) == true } }
+        }
+    }
+
     /// This history with `name` given to each comment `session` wrote that has no session name yet.
     func naming(_ session: AgentAddress, _ name: String) -> EditorHistory {
         EditorHistory(undo: undo.map { $0.naming(session, name) }, redo: redo.map { $0.naming(session, name) })

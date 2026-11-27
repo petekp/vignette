@@ -184,6 +184,21 @@ extension AgentPin {
 }
 
 extension Drawing {
+    /// The drawing with no session names on its comments.
+    var withoutSessionNames: Drawing {
+        var drawing = self
+        drawing.pins = pins.map { pin in
+            var unnamed = pin
+            unnamed.comments = pin.comments.map { comment in
+                var plain = comment
+                plain.sessionName = nil
+                return plain
+            }
+            return unnamed
+        }
+        return drawing
+    }
+
     /// The drawing with `name` given to each comment `session` wrote that has no session name yet.
     func naming(_ session: AgentAddress, _ name: String) -> Drawing {
         var drawing = self

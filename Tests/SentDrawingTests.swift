@@ -71,6 +71,12 @@ final class SentDrawingTests: XCTestCase {
         rescaled.pointScale = 1
         XCTAssertFalse(Agent.hasSentDrawing(rescaled, at: url))
 
+        var commented = sent
+        commented.pins = [Pin(id: UUID(), number: 1, place: .point(CGPoint(x: 1, y: 1)),
+                              comments: [Pin.Comment(text: "Here", agent: true, agentName: "claude", session: destination.address)])]
+        Agent.record(sentDrawing: commented, on: url)
+        XCTAssertTrue(Agent.hasSentDrawing(commented.naming(destination.address, "A session"), at: url))
+
         Agent.forgetSentDrawing(on: url)
         XCTAssertFalse(Agent.hasSentDrawing(sent, at: url))
     }

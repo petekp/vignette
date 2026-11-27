@@ -123,6 +123,11 @@ struct Pin: Equatable, Identifiable {
     /// Who made the pin, the writer of its first comment, which its colour says.
     var color: MarkColor { comments.first?.agent == true ? .agent : .person }
 
+    /// Whether a comment `session` wrote has no session name yet.
+    func needsName(of session: AgentAddress) -> Bool {
+        comments.contains { $0.session == session && $0.sessionName == nil }
+    }
+
     /// The pin with `name` given to each comment `session` wrote that has no session name yet.
     func naming(_ session: AgentAddress, _ name: String) -> Pin {
         var named = self

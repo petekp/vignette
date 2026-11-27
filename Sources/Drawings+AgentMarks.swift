@@ -66,9 +66,9 @@ extension Drawings {
             return
         }
         guard keys.contains(key), let pixels = PixelSize(imageAt: key.url), let drawing = read(key, pixels: pixels, style: style) else { return }
-        let named = drawing.naming(session, sender)
-        guard named != drawing else { return }
-        write(named, history: history(of: key, pixels: pixels, drawing: drawing).naming(session, sender), reason: "named")
+        let history = history(of: key, pixels: pixels, drawing: drawing)
+        guard drawing.pins.contains(where: { $0.needsName(of: session) }) || history.needsName(of: session) else { return }
+        write(drawing.naming(session, sender), history: history.naming(session, sender), reason: "named")
     }
 
     /// `AgentPin.join` of `additions`' pins onto `drawing`, with one line for those left out.

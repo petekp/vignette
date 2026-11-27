@@ -439,9 +439,9 @@ struct EditorCore {
     /// drawing, in the pins an edit under way began with, and in every undo and redo step, so undoing
     /// and redoing keep the name. It is no step of its own, since nothing the person sees changes.
     mutating func name(_ sender: String, of session: AgentAddress) {
-        let named = drawing.naming(session, sender)
-        guard named != drawing else { return }
-        drawing = named
+        let unnamed = (drawing.pins + (edit?.startPins ?? [])).contains { $0.needsName(of: session) }
+        guard unnamed || history.needsName(of: session) else { return }
+        drawing = drawing.naming(session, sender)
         if let start = edit?.startPins { edit?.take(start.map { $0.naming(session, sender) }) }
         undoSteps = undoSteps.map { $0.naming(session, sender) }
         redoSteps = redoSteps.map { $0.naming(session, sender) }
@@ -1275,15 +1275,6 @@ struct EditorCore {
     private func toolKey(_ key: Key, _ modifiers: Modifiers) -> Tool? {
         guard case .character(let character) = key, modifiers.isSubset(of: .shift) else { return nil }
         return Tool.allCases.first { $0.key == character }
-    }
-
-    static func zoomRequest(for character: Character) -> ZoomRequest? {
-        switch character {
-        case "=", "+": return .zoomIn
-        case "-": return .zoomOut
-        case "0": return .fit
-        default: return nil
-        }
     }
 
     /// Moves the selection one nudge along every arrow key held, stopping together at the image's

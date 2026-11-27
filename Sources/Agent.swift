@@ -118,12 +118,15 @@ enum Agent {
     /// SHA-256 over the drawing as its file holds it, without the screenshot's path, so a rename keeps
     /// it, and over the picture file's size and modification date, so an edit to the picture in
     /// another app is a change. A mark read back gets a new id and the file has none, so two reads of
-    /// one drawing match. An empty drawing is one value whatever the drawing's scale. Nil when the file is gone.
+    /// one drawing match. An empty drawing is one value whatever the drawing's scale. Its comments' session
+    /// names are left out. Nil when the file is gone.
     private static func fingerprint(of drawing: Drawing?, file url: URL) -> String? {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
               let size = attributes[.size] as? Int, let modified = attributes[.modificationDate] as? Date else { return nil }
         var data = Data("\(size) \(modified.timeIntervalSinceReferenceDate)\n".utf8)
-        if var drawing, !drawing.isEmpty {
+        if var drawing = drawing?.withoutSessionNames, !drawing.isEmpty {
+            // The session list can name a session after the drawing was recorded (`Drawings.name`),
+            // which is no change the person made.
             drawing.key = ""
             guard let encoded = try? drawing.encoded() else { return nil }
             data += encoded
