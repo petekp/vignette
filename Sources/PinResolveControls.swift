@@ -1,72 +1,68 @@
 import AppKit
 
-/// A pin popover's resolve controls. Over a resolved pin's comments, who resolved it and when, with
-/// Reopen. Under an open pin's field, Resolve, which says Reply and Resolve while the field holds words.
+/// The line over a resolved pin's comments: who resolved it and when, in the secondary label colour,
+/// from the writers' names' left edge (`PinPopover.wordsIndent`). The ✓ that resolves and reopens the
+/// pin ends its first comment's top line (`CommentRow`, `ResolveAction`).
 @MainActor
-final class PinResolveControls: NSObject {
-    /// "Resolved by Claude, 1 min. ago", in the secondary label colour, from the writers' names'
-    /// left edge (`PinPopover.wordsIndent`), and Reopen at its trailing edge.
+final class PinResolveControls {
+    /// "Resolved by Claude, 1 min. ago".
     let resolvedLine = NSView()
-    /// Resolve at the trailing edge.
-    let resolveLine = NSView()
     private let resolvedWords = NSTextField(labelWithString: "")
-    private let reopen = NSButton()
-    private let resolve = NSButton()
-    private let send: (EditorCore.ComposerInput) -> Void
 
-    /// Each line is `width` wide, with at least `gap` between its words and its button.
-    init(width: CGFloat, gap: CGFloat, send: @escaping (EditorCore.ComposerInput) -> Void) {
-        self.send = send
-        super.init()
+    /// The line is `width` wide.
+    init(width: CGFloat) {
         resolvedWords.font = .preferredFont(forTextStyle: .subheadline)
         resolvedWords.textColor = .secondaryLabelColor
         resolvedWords.lineBreakMode = .byTruncatingTail
         resolvedWords.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        for (button, title, action) in [(reopen, "Reopen", #selector(reopenPressed)), (resolve, "Resolve", #selector(resolvePressed))] {
-            button.title = title
-            button.bezelStyle = .push
-            button.controlSize = .small
-            button.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-            button.target = self
-            button.action = action
-        }
-        Self.lay(resolvedLine, leading: resolvedWords, trailing: reopen, width: width, gap: gap)
-        Self.lay(resolveLine, leading: nil, trailing: resolve, width: width, gap: gap)
+        resolvedWords.translatesAutoresizingMaskIntoConstraints = false
+        resolvedLine.addSubview(resolvedWords)
+        [resolvedLine.widthAnchor.constraint(equalToConstant: width),
+                                     resolvedWords.leadingAnchor.constraint(equalTo: resolvedLine.leadingAnchor, constant: PinPopover.wordsIndent),
+                                     resolvedWords.trailingAnchor.constraint(lessThanOrEqualTo: resolvedLine.trailingAnchor),
+                                     resolvedWords.topAnchor.constraint(equalTo: resolvedLine.topAnchor),
+                                     resolvedWords.bottomAnchor.constraint(equalTo: resolvedLine.bottomAnchor)].forEach { $0.isActive = true }
     }
 
-    /// Who resolved `pin`, said as of `now`, or Resolve, which a new pin goes without.
-    func show(_ pin: Pin, now: Date) {
-        if let resolution = pin.resolved {
-            let ago = PinHoverCard.Words.ago(resolution.at, now: now)
-            resolvedWords.stringValue = (["Resolved by \(PinHoverCard.Words.resolver(resolution))", ago].compactMap { $0 }).joined(separator: ", ")
+    /// Who resolved `pin`, said as of `now`, a change fading over `duration`.
+    func show(_ pin: Pin, now: Date, over duration: Double) {
+        guard let resolution = pin.resolved else { return }
+        let ago = PinHoverCard.Words.ago(resolution.at, now: now)
+        let words = (["Resolved by \(PinHoverCard.Words.resolver(resolution))", ago].compactMap { $0 }).joined(separator: ", ")
+        guard resolvedWords.stringValue != words else { return }
+        PopoverFade.change(resolvedWords, over: duration) { resolvedWords.stringValue = words }
+    }
+}
+
+/// What the ✓ on a pin's first comment does when pressed.
+enum ResolveAction: Equatable {
+    /// Resolves the open pin, posting the field's words first while it holds some.
+    case resolve(replying: Bool)
+    /// Reopens the resolved pin, posting the field's words first while it holds some.
+    case reopen
+
+    var symbol: String {
+        switch self {
+        case .resolve: "checkmark.circle"
+        case .reopen: "checkmark.circle.fill"
         }
-        resolvedLine.isHidden = pin.resolved == nil
-        resolveLine.isHidden = pin.resolved != nil || pin.number == 0
     }
 
-    /// Resolve says Reply and Resolve while the field holds words.
-    func showReplying(_ replying: Bool) {
-        let title = replying ? "Reply and Resolve" : "Resolve"
-        if resolve.title != title { resolve.title = title }
+    /// Its tooltip.
+    var help: String {
+        switch self {
+        case .resolve(replying: false): "Resolve pin. It turns grey and is left out of copies and Send."
+        case .resolve(replying: true): "Post your reply and resolve the pin"
+        case .reopen: "Reopen"
+        }
     }
 
-    @objc private func resolvePressed() { send(.resolve) }
-    @objc private func reopenPressed() { send(.reopen) }
-
-    /// `row`, `width` wide, with `leading` from the names' left edge and `trailing` on its centre line.
-    private static func lay(_ row: NSView, leading: NSView?, trailing: NSView, width: CGFloat, gap: CGFloat) {
-        for view in [leading, trailing].compactMap({ $0 }) {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            row.addSubview(view)
+    /// Its name to VoiceOver.
+    var name: String {
+        switch self {
+        case .resolve(replying: false): "Resolve pin"
+        case .resolve(replying: true): "Reply and resolve pin"
+        case .reopen: "Reopen pin"
         }
-        var constraints = [row.widthAnchor.constraint(equalToConstant: width),
-                           trailing.trailingAnchor.constraint(equalTo: row.trailingAnchor),
-                           trailing.topAnchor.constraint(equalTo: row.topAnchor), trailing.bottomAnchor.constraint(equalTo: row.bottomAnchor)]
-        if let leading {
-            constraints += [leading.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: PinPopover.wordsIndent),
-                            leading.centerYAnchor.constraint(equalTo: trailing.centerYAnchor),
-                            leading.trailingAnchor.constraint(lessThanOrEqualTo: trailing.leadingAnchor, constant: -gap)]
-        }
-        for constraint in constraints { constraint.isActive = true }
     }
 }

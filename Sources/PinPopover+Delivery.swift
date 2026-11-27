@@ -4,8 +4,6 @@ struct PinLiveComments: Equatable {
     var shown: [UUID: CommentDeliveries.Shown] = [:]
     /// The agent whose turn, started by a comment on this pin, is running.
     var working: AgentClient?
-    /// The session a comment posted now goes to, as "Claude · vignette". Nil when it stays on the pin.
-    var target: String?
 
     /// What a person calls the agent in these words.
     static func name(of client: AgentClient) -> String { client == .claude ? "Claude" : "Codex" }
@@ -65,17 +63,5 @@ extension PinPopover {
         row.setAccessibilityRole(.staticText)
         row.setAccessibilityLabel(words.stringValue)
         return row
-    }
-
-    /// A comment's words, with `note` under them in the secondary grey.
-    static func words(_ text: String, note: String?, color: NSColor) -> NSAttributedString {
-        let body = NSFont.preferredFont(forTextStyle: .body)
-        let words = NSMutableAttributedString(string: text, attributes: [.font: body, .foregroundColor: color])
-        if let note {
-            words.append(NSAttributedString(string: "\n" + note, attributes: [
-                .font: NSFont.preferredFont(forTextStyle: .subheadline), .foregroundColor: NSColor.secondaryLabelColor,
-            ]))
-        }
-        return words
     }
 }

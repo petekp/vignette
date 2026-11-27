@@ -14,7 +14,7 @@ extension UITweaks {
         u.introDuration *= scale
         u.checkSpinDuration *= scale; u.checkSpinDelay *= scale
         u.sendBadgeDelay *= scale
-        u.noteSettleDuration *= scale; u.pinHoverDuration *= scale
+        u.noteSettleDuration *= scale; u.pinHoverDuration *= scale; u.pinPopoverDuration *= scale
         u.agentTitleFade *= scale
         u.liveInkFieldFade *= scale; u.liveInkDrawOn *= scale
         u.liveInkFieldFollow *= scale

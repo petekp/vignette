@@ -57,9 +57,7 @@ pins themselves, `send.md` how a line reaches a session, and ADR 0035 why it wor
   delivery, the reason is under the comment, in the secondary label colour. While the turn it started
   runs, a row under the pin's comments holds the agent's avatar, "Claude is working" and the
   system's small spinner, still at `ui.motion` 0. The row goes when the turn ends, or when the
-  agent answers on the pin. The field's placeholder names where a comment would go, "Comment for
-  Claude · vignette" on a new pin and "Reply to Claude · vignette" on one with comments, and is
-  "Add a comment" when it would stay on the pin. A delivery's change reaches the open popover
+  agent answers on the pin. A delivery's change reaches the open popover
   (`AnnotationController.commentDeliveriesChanged`, `EditorView.refreshLiveComments`).
 - `vignette://comments` gives each comment a `delivered` list, oldest first: `agent`,
   `session`, `to` (the session's name), `at` and `status` (`PinCommentsReport`). It is empty for

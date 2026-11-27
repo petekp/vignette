@@ -15,12 +15,32 @@ the pins' rules are in `pins.md`.
   `ui.pinLogoSize`, as Claude's white logo on orange. Codex's is its black logo on a white
   circle (`Agent.oneColourAvatar`). The popover is
   macOS's own, with nothing behind its content: a view of our own under the content is not clipped
-  to the popover's shape, so its arrow and body part ways. The field's placeholder is in the field's
-  font and the secondary label colour. The post button is centred on the field's last line
+  to the popover's shape, so its arrow and body part ways. The field is a capsule with a hairline
+  edge in the tertiary label colour (`ComposerCapsule`), so it reads as a place to type, with the
+  post button inside its trailing end, `ui.pinFieldPadding` from its edge. Its placeholder is in the
+  field's font and the secondary label colour: "Reply" on a pin with comments, "Comment" on a new
+  pin, and "Reply to reopen" on a resolved one. It names no session: the toolbar's Send target and
+  the working row name the agent. The post button is centred on the field's last line
   (`PinPopover.composerRow`), so one line of words, the placeholder and the caret sit on the
-  popover's centre line with the button. The field grows a line at a time as its words wrap, measured
+  capsule's centre line with the button. The field grows a line at a time as its words wrap, measured
   from the field editor's layout while it is edited, up to `ui.pinComposerLines` lines, past which
   it scrolls (`PinPopover.wrappedHeight`).
+- Every change inside the popover moves, on springs that settle in `ui.pinPopoverDuration`, which
+  the motion setting scales (`PinPopoverColumn`). A row that comes, a comment, the working row or
+  the "Resolved by …" line, fades in where it lands. A row that goes fades out where it was. The rows
+  after them slide, and the popover's height springs to its rows', so it grows and shrinks round its
+  arrow. The field growing a line moves the same way. Words that change in place, a delivery's
+  status or note, a comment's colour on Resolve and Reopen, the "Resolved by …" words and the
+  placeholder, fade out over what replaces them (`PopoverFade`), and so do the ✓'s symbol and the
+  rim's colour. Rows are kept by what they show (`PinPopoverColumn.Row`), so a change moves only
+  what changed.
+- The pin's first comment shown ends its top line with a ✓ before its trash (`ResolveAction`).
+  On an open pin it shows with the trash, while the pointer is on that comment. It resolves the
+  pin, posting the field's words first while it holds some, and its tooltip says so. On a resolved
+  pin it is filled and always shown, and it reopens the pin. A new pin has none. The ✓ and the
+  trash fade in and out, stay in the accessibility tree while clear, and are the comment's
+  VoiceOver actions too. A popover that opens under the pointer shows the buttons of the comment
+  it is on.
 - Each comment in the popover has its own Delete, for the person's and an agent's alike: a trash
   button ending its top line, shown while the pointer is on the comment, Delete Comment in its
   contextual menu, the Delete key on the comment when Full Keyboard Access focuses it, and a

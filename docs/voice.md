@@ -130,7 +130,7 @@ and "Redo" when there is nothing to take.
 | A cut, on the image or in the field | Cut |
 | Agents' marks joining the open drawing | *Agent*'s Marks, as in "Claude's Marks"; "Agent's Marks" without one name |
 | A comment posted on a pin; an edited one is Typing, an emptied one Delete | Comment |
-| A pin resolved, with Resolve or Reply and Resolve | Resolve |
+| A pin resolved with its ✓, its draft posted with it | Resolve |
 | A resolved pin reopened | Reopen |
 
 ### Undo and Redo in the stack and the annotator (`UndoTimeline.Name`)
@@ -276,33 +276,7 @@ Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
 
 ### Pins in the editor (`PinPopover`, `Pin.spokenName`, `EditorView+Pins.swift`)
 
-| Where | Words |
-| --- | --- |
-| The popover's field, empty | Add a comment; where a comment goes is in `voice-live-comments.md` |
-| The post button beside it, its tooltip and to VoiceOver | Post comment |
-| The field, to VoiceOver | Comment on pin *n*; Comment on new pin |
-| A comment's trash button, its tooltip and to VoiceOver, and the comment's VoiceOver action | Delete comment |
-| A comment's contextual menu | Delete Comment |
-| A comment, to VoiceOver, as a hint | Edit this comment |
-| Who wrote a comment, beside their avatar and above their words (`PinHoverCard.Words.writer`) | You; Claude, the agent's name capitalized; An agent |
-| A comment's row, to VoiceOver | You: *words*, then Edit this comment |
-| A pin's first comment posted, to VoiceOver | Pin *n* added |
-| A pin, to VoiceOver | Pin 3, area, 2 comments; Pin 1, point, 1 comment; New pin |
-| A selection with pins, to VoiceOver | 2 pins; 1 mark and 2 pins |
-| The rotor and the action | Pins; Add Pin |
-| A pin's row in a cluster's or the toolbar's menu, to VoiceOver (`EditorView.pinListItem`) | Pin 3, area, 2 comments: *first comment* |
-| The toolbar's button, its tooltip, and to VoiceOver (`ToolbarView.pinsButton`) | Pins, beside a badge with the count; Pins; Pins, *n* |
-| The card a pin grows into under the pointer, its writer (`PinHoverCard.Words`) | You; Claude, the agent's name capitalized; An agent |
-| Beside the writer | Pin 3 · 1 min. ago, in `RelativeDateTimeFormatter`'s abbreviated style; Pin 3 for a comment that kept no time |
-| Under the first comment's first line, on a pin with replies | 1 reply from Claude; 2 replies from you; 3 replies, from more than one writer |
-| After the replies, on a resolved pin | Resolved by Claude; Resolved by you |
-| The popover's button under an open pin's field | Resolve; Reply and Resolve while the field holds words |
-| Over a resolved pin's comments (`PinResolveControls`) | Resolved by Claude, 1 min. ago, and Reopen |
-| A resolved pin's field, empty | Reply to reopen |
-| A pin resolved or reopened, to VoiceOver, and its actions | Pin *n* resolved; Pin *n* reopened; Resolve; Reopen |
-| A resolved pin, to VoiceOver | Pin 3, area, 2 comments, resolved |
-| The Pins menu's heading over resolved pins | Resolved |
-| The toolbar's button with every pin resolved, to VoiceOver | A checkmark for the badge; Pins, 0 open, 3 resolved |
+Their words are in [voice-pins.md](voice-pins.md).
 
 ### An agent showing a screenshot (`ShownOverlay`, `Shown`)
 

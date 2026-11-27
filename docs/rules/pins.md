@@ -144,12 +144,13 @@ The popover's comments and the hover card are in `pin-popover.md`.
 - A resolved pin's ask is done (`Pin.resolved`, `Pin.Resolution`). It keeps its number, place and
   comments, and is grey, the system grey `#8e8e93` (`PinShading.resolvedColor`): in the editor's
   gel, on cards and in flights, in its popover's and hover card's rims, and in menus. It clusters
-  only with resolved pins, so a cluster is all grey or all in colour (`PinPlacement`). Under an
-  open pin's field the popover has Resolve, which says Reply and Resolve while the field holds
-  words. Either is one "Resolve" undo step, the words posted in it (`ComposerInput.resolve`). A
-  resolved pin's popover opens on "Resolved by Claude, 1 min. ago" with Reopen
+  only with resolved pins, so a cluster is all grey or all in colour (`PinPlacement`). A ✓ on the
+  first comment's top line in the popover resolves the pin (`ResolveAction`, `pin-popover.md`).
+  It is one "Resolve" undo step, with the field's words posted in it while it holds some
+  (`ComposerInput.resolve`). A resolved pin's popover opens on "Resolved by Claude, 1 min. ago"
   (`PinResolveControls`), its comments in the secondary label colour, its field's placeholder
-  "Reply to reopen". Reopen is one "Reopen" step, after any draft is posted. A new comment reopens
+  "Reply to reopen", and its ✓ filled, which reopens it. Reopen is one "Reopen" step, after any
+  draft is posted. A new comment reopens
   the pin in its own step, since it asks again. The hover card adds "Resolved by …" after the
   replies. VoiceOver says "resolved" after a resolved pin's name, and offers Resolve or Reopen as an
   action on the pin. The canvas has no contextual menu, so neither is in one.

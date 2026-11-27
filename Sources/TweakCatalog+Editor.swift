@@ -47,6 +47,8 @@ extension TweakCatalog {
                 .number("pinListImageSize", "List pin size", \.pinListImageSize, 10...32, step: 1, unit: "pt", safe: 4...200),
                 .number("pinListTitleWidth", "List text width", \.pinListTitleWidth, 120...600, step: 10, unit: "pt", safe: 40...2000),
                 .number("pinPostSize", "Post button", \.pinPostSize, 12...32, step: 1, unit: "pt", safe: 6...200),
+                .number("pinFieldPadding", "Field padding", \.pinFieldPadding, 0...12, step: 0.5, unit: "pt", safe: 0...100),
+                .number("pinPopoverDuration", "Popover changes", \.pinPopoverDuration, 0...1, step: 0.05, unit: "s", safe: 0...60),
                 .number("pinComposerLines", "Field lines", \.pinComposerLines, 1...12, step: 1, safe: 1...100),
                 .number("pinDeleteSize", "Delete button", \.pinDeleteSize, 10...28, step: 1, unit: "pt", safe: 6...200),
                 .number("pinAvatarSize", "Comment avatar", \.pinAvatarSize, 12...32, step: 1, unit: "pt", safe: 6...200),
@@ -54,7 +56,7 @@ extension TweakCatalog {
                 .number("pinWordsGap", "Comment words gap", \.pinWordsGap, 0...16, step: 1, unit: "pt", safe: 0...200),
                 .number("pinHoverWidth", "Hover card width", \.pinHoverWidth, 160...400, step: 4, unit: "pt", safe: 80...2000),
                 .number("pinHoverDuration", "Hover card grows", \.pinHoverDuration, 0...1, step: 0.05, unit: "s", safe: 0...60),
-            ], caption: { _ in "In screen points. The popover by a pin has its width, its inset from the edge, the spacing between comments, its post button's size, and how many lines the field grows to before it scrolls. Each comment starts with a line holding its writer's avatar, name and time, the name gap after the avatar and after the name, and its words follow the words gap below it. The card a pin grows into under the pointer has its own width and takes the grow time, with the popover's inset. The menus a cluster and the toolbar's Pins button open show each pin at the list's pin size, and cut its first comment at the text width." }),
+            ], caption: { _ in "In screen points. The popover by a pin has its width, its inset from the edge, the spacing between comments, its post button's size, the field's padding round that button, the time a change inside it takes to settle, and how many lines the field grows to before it scrolls. Each comment starts with a line holding its writer's avatar, name and time, the name gap after the avatar and after the name, and its words follow the words gap below it. The card a pin grows into under the pointer has its own width and takes the grow time, with the popover's inset. The menus a cluster and the toolbar's Pins button open show each pin at the list's pin size, and cut its first comment at the text width." }),
             TweakGroup("Gel in the editor", [
                 .number("pinGelBevel", "Bevel", \.pinGelBevel, 0.5...12, step: 0.25, unit: "pt", safe: 0.1...100),
                 .number("pinGelDome", "Dome", \.pinGelDome, 0...2, step: 0.05, safe: 0...10),
