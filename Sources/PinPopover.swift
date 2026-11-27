@@ -24,6 +24,8 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     private let rim = PinGelRim()
     private let send: (EditorCore.ComposerInput) -> Void
     private var shown: (comments: [Pin.Comment], editing: Int?)?
+    /// What the comments' deliveries say (`PinLiveComments`).
+    private var live = PinLiveComments()
     private var anchor = CGRect.null
     /// When the popover opened: each comment's time is said as of then, and holds still while it is open.
     private let opened = Date()
@@ -38,7 +40,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     private weak var keepsKeys: NSView?
 
     /// `zoom` takes the editor's zoom keys while the field has the keys.
-    init(pin: Pin, composer: EditorCore.Composer, send: @escaping (EditorCore.ComposerInput) -> Void,
+    init(pin: Pin, composer: EditorCore.Composer, live: PinLiveComments, send: @escaping (EditorCore.ComposerInput) -> Void,
          zoom: @escaping (EditorCore.ZoomRequest) -> Void) {
         self.pin = pin.id
         self.send = send
@@ -94,7 +96,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         popover.contentViewController = controller
         popover.behavior = .applicationDefined
         popover.delegate = self
-        update(pin, composer: composer)
+        update(pin, composer: composer, live: live)
     }
 
     /// The field and the post button. The button is centred on the field's last line, so one line of
@@ -185,15 +187,21 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         popover.positioningRect = place.rect
     }
 
-    func update(_ pin: Pin, composer: EditorCore.Composer) {
+    func update(_ pin: Pin, composer: EditorCore.Composer, live: PinLiveComments) {
         let stateChanged = shownState.map { $0.resolved != pin.resolved || $0.number != pin.number } ?? true
         if stateChanged { showState(of: pin) }
-        if stateChanged || shown?.comments != pin.comments || shown?.editing != composer.editing {
+        if stateChanged || shown?.comments != pin.comments || shown?.editing != composer.editing || self.live != live {
             shown = (pin.comments, composer.editing)
+            self.live = live
             for row in comments.arrangedSubviews { row.removeFromSuperview() }
             for (index, comment) in pin.comments.enumerated() where index != composer.editing {
                 if !comments.arrangedSubviews.isEmpty { comments.addArrangedSubview(separator()) }
                 comments.addArrangedSubview(row(comment, index: index))
+            }
+            if let client = live.working {
+                let ui = Settings.shared.data.ui
+                if !comments.arrangedSubviews.isEmpty { comments.addArrangedSubview(separator()) }
+                comments.addArrangedSubview(Self.workingRow(client, avatarSize: ui.pinAvatarSize, gap: ui.pinNameGap))
             }
             comments.isHidden = comments.arrangedSubviews.isEmpty
             // A row pressed from the keyboard had the focus, and went with the rows.
@@ -222,14 +230,18 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         rim.wear(PinShading.color(of: pin.maker, resolved: pin.isResolved, markStyle: ui.markStyle), radius: RimLight.cornerRadius, sharp: nil)
     }
 
-    /// Reply to reopen on a resolved pin. The field editor takes a new placeholder only while the
-    /// field is empty, so a pin resolved or reopened while the field holds words changes it once
-    /// the field is empty again.
+    /// Reply to reopen on a resolved pin, and the session a comment goes to when it goes to one. The
+    /// field editor takes a new placeholder only while the field is empty, so a pin resolved or
+    /// reopened while the field holds words changes it once the field is empty again.
     private func showPlaceholder(resolved: Bool) {
-        let placeholder = resolved ? "Reply to reopen" : "Add a comment"
+        let toSession = live.target.map { (shown?.comments.isEmpty ?? true) ? "Comment for \($0)" : "Reply to \($0)" }
+        let placeholder = resolved ? "Reply to reopen" : toSession ?? "Add a comment"
         guard field.stringValue.isEmpty, field.placeholderAttributedString?.string != placeholder else { return }
+        let oneLine = NSMutableParagraphStyle()
+        oneLine.lineBreakMode = .byTruncatingTail
         field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
             .font: field.font ?? NSFont.preferredFont(forTextStyle: .body), .foregroundColor: NSColor.secondaryLabelColor,
+            .paragraphStyle: oneLine,
         ])
     }
 
@@ -257,8 +269,9 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         name.font = .systemFont(ofSize: small.pointSize, weight: .semibold)
         name.textColor = .labelColor
         name.lineBreakMode = .byTruncatingTail
-        let ago = PinHoverCard.Words.ago(comment, now: opened)
-        let time = NSTextField(labelWithString: ago ?? "")
+        let delivery = live.shown[comment.id]
+        let ago = [PinHoverCard.Words.ago(comment, now: opened), delivery?.words].compactMap { $0 }.joined(separator: " · ")
+        let time = NSTextField(labelWithString: ago)
         time.font = small
         time.textColor = .secondaryLabelColor
         time.lineBreakMode = .byTruncatingTail
@@ -266,6 +279,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         words.font = .preferredFont(forTextStyle: .body)
         // A resolved pin's comments are done with, so they step back.
         words.textColor = shownState?.resolved == nil ? .labelColor : .secondaryLabelColor
+        if let note = delivery?.note { words.attributedStringValue = Self.words(comment.text, note: note, color: words.textColor ?? .labelColor) }
         words.isSelectable = false
         words.preferredMaxLayoutWidth = Self.width - 2 * Self.inset
         let row = CommentRow(avatar: avatar, name: name, time: time, words: words, avatarSize: ui.pinAvatarSize, deleteSize: ui.pinDeleteSize,
@@ -273,7 +287,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         row.widthAnchor.constraint(equalToConstant: Self.width - 2 * Self.inset).isActive = true
         row.press = { [weak self] in self?.send(.edit(index)) }
         row.delete = { [weak self] in self?.send(.delete(index)) }
-        row.setAccessibilityLabel([author, ago].compactMap { $0 }.joined(separator: ", ") + ": \(comment.text)")
+        row.setAccessibilityLabel(([author, ago].filter { !$0.isEmpty } + [delivery?.note].compactMap { $0 }).joined(separator: ", ") + ": \(comment.text)")
         return row
     }
 

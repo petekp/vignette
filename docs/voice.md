@@ -278,7 +278,7 @@ Live ink's messages are in [voice-live-ink.md](voice-live-ink.md).
 
 | Where | Words |
 | --- | --- |
-| The popover's field, empty | Add a comment |
+| The popover's field, empty | Add a comment; where a comment goes is in `voice-live-comments.md` |
 | The post button beside it, its tooltip and to VoiceOver | Post comment |
 | The field, to VoiceOver | Comment on pin *n*; Comment on new pin |
 | A comment's trash button, its tooltip and to VoiceOver, and the comment's VoiceOver action | Delete comment |

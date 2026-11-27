@@ -1,7 +1,9 @@
 # Pins
 
 A pin is a numbered teardrop that holds comments, at a point or over an area of a screenshot. The
-rest of the editor's and the drawings' rules are in `editor-and-drawings.md`.
+rest of the editor's and the drawings' rules are in `editor-and-drawings.md`. How a comment reaches
+an agent session as it is posted (`PinCommentDeliveries.swift`, `PinCommentRules.swift`,
+`PinPopover+Delivery.swift`, `AppDelegate+CommentDelivery.swift`) is in `live-comments.md`.
 
 - A pin is drawn above every mark, as a teardrop whose tip is its point, or the corner of its area
   where the drag that made it ended (`Pin.Corner`, stored as `corner`), mirrored by a resize that

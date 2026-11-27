@@ -71,6 +71,20 @@ extension AnnotationController {
     /// (`AnnotatorToolbar.Model.nothingToReply`).
     func drawingChanged(_ drawing: Drawing) {
         toolbar.model.drawingAsSent = current.map { Agent.hasSentDrawing(drawing, at: $0.url) } ?? false
+        guard let current else { return }
+        if let before = pinsBefore, before.key == current.key, before.drawing.pins != drawing.pins {
+            onPinsChanged?(current, before.drawing, drawing)
+        }
+        pinsBefore = (current.key, drawing)
+    }
+
+    /// The sessions running now, as the image's session list last answered.
+    var runningSessions: [AgentDestination] { toolbar.model.listing.list }
+
+    /// A comment on the open image changed how it stands with its session.
+    func commentDeliveriesChanged(_ key: ScreenshotKey) {
+        guard current?.key == key else { return }
+        editor.refreshLiveComments()
     }
 
     /// Return and Cmd+Return do what the bar offers, and a message field that arrived with the

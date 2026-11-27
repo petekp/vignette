@@ -114,6 +114,7 @@ This file is the index. Each file below is under `docs/state-machines/`; the tab
 | Send bookkeeping | `ScreenshotRequests`, `AppDelegate` | [requests-and-replies](state-machines/requests-and-replies.md) |
 | Reply.Stage | `Reply` | [requests-and-replies](state-machines/requests-and-replies.md) |
 | Reply import pipeline | `ScreenshotRequests` | [requests-and-replies](state-machines/requests-and-replies.md) |
+| A comment delivery | `CommentDeliveries`, `HeldChanges`, `CommentTurnWatch` | [live-comments](state-machines/live-comments.md) |
 | Clearing and cleanup | `ScreenshotRequests` | [screenshots-folder](state-machines/screenshots-folder.md) |
 | Admission limit | `ScreenshotRequests` | [screenshots-folder](state-machines/screenshots-folder.md) |
 | FolderWrites pending adds | `FolderWrites` | [screenshots-folder](state-machines/screenshots-folder.md) |

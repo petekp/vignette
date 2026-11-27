@@ -161,7 +161,7 @@ final class ScreenshotRequests {
         replyOrigin(of: url) ?? Agent.origin(of: url)
     }
 
-    private func replyOrigin(of url: URL) -> AgentDestination? {
+    func replyOrigin(of url: URL) -> AgentDestination? {
         let url = url.standardizedFileURL
         let named = ReplyProtocol.replyID(fromFileName: url.lastPathComponent).flatMap { replies[$0] }
             .flatMap { $0.destination == nil || $0.publishedURL == url ? $0 : nil }

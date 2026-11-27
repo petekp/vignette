@@ -134,7 +134,7 @@ targets:
     sources:
       - path: Tests
       - path: Sources
-        excludes: [AppDelegate.swift, AppDelegate+Annotator.swift, AppDelegate+CaptureClues.swift, AppDelegate+Copy.swift, AppDelegate+Drawings.swift, AppDelegate+Listing.swift, AppDelegate+LiveInkOffer.swift, AppDelegate+Send.swift, AppDelegate+Show.swift, AppDelegate+Stitch.swift, AppDelegate+UndoTimeline.swift, AppDelegate+StatusIcon.swift, AppDelegate+Blockers.swift, AppDelegate+Comments.swift, Updater.swift]
+        excludes: [AppDelegate.swift, AppDelegate+Annotator.swift, AppDelegate+CaptureClues.swift, AppDelegate+Copy.swift, AppDelegate+Drawings.swift, AppDelegate+Listing.swift, AppDelegate+LiveInkOffer.swift, AppDelegate+Send.swift, AppDelegate+Show.swift, AppDelegate+Stitch.swift, AppDelegate+UndoTimeline.swift, AppDelegate+StatusIcon.swift, AppDelegate+Blockers.swift, AppDelegate+Comments.swift, AppDelegate+CommentDelivery.swift, Updater.swift]
     settings:
       base:
         SWIFT_VERSION: "5.10"

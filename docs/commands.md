@@ -175,7 +175,8 @@ answers `unsupported-type` and names `show`.
 
 Where Send starts is logged too. `[send] target <address> project=<detail> focus=<why> role=<role> [reply] [capture=<app>:<percent>,…]`
 names the session the bar's filled button sends to whenever one of these changes. `focus` is
-`showedIt` (the session that showed the image with `show`), `kept`, `app`, `pane`, `tab` or `none` (the session used last). `capture` is there when the image opened
+`showedIt` (the session that showed the image with `show`), `last` (the session the image was
+sent to, answered from or pushed from last), `kept`, `app`, `pane`, `tab` or `none` (the session used last). `capture` is there when the image opened
 from a capture whose rect Vignette saw: the apps whose windows it showed, by bundle id (or process
 name), with each one's share of the points some window covered, the largest first, three at most.
 When the app before Vignette was the Codex app and the capture showed another app more, the log
