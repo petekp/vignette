@@ -168,9 +168,8 @@ final class CommentRow: NSView {
     }
 
     /// The comment's words in `color`, its delivery's `status` after the time and its `note` under
-    /// the words, and what its ✓ does, nil on every comment but the first. A change fades over `duration`.
-    func show(words text: String, color: NSColor, status statusWords: String?, note noteWords: String?, resolve action: ResolveAction?,
-              over duration: Double) {
+    /// the words. A change fades over `duration`.
+    func show(words text: String, color: NSColor, status statusWords: String?, note noteWords: String?, over duration: Double) {
         if words.stringValue != text || words.textColor != color {
             PopoverFade.change(words, over: duration) {
                 words.stringValue = text
@@ -180,6 +179,10 @@ final class CommentRow: NSView {
         let statusText = statusWords.map { " · \($0)" } ?? ""
         if status.stringValue != statusText { PopoverFade.change(status, over: duration) { status.stringValue = statusText } }
         showNote(noteWords, over: duration)
+    }
+
+    /// What the comment's ✓ does, nil on every comment but the first. A change fades over `duration`.
+    func show(resolve action: ResolveAction?, over duration: Double) {
         if self.action != action {
             self.action = action
             check.isHidden = action == nil

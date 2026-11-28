@@ -187,8 +187,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     func showPostable(over duration: Double) {
         post.isEnabled = replying
         post.contentTintColor = post.isEnabled ? .controlAccentColor : .tertiaryLabelColor
-        firstRow?.show(words: firstRowWords.text, color: firstRowWords.color, status: firstRowWords.status, note: firstRowWords.note,
-                       resolve: resolveAction, over: duration)
+        firstRow?.show(resolve: resolveAction, over: duration)
     }
 
     private var replying: Bool { !field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }

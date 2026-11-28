@@ -40,6 +40,8 @@ final class PinPopoverColumn: CommandKeyView {
         var extent: Spring
         var alpha: Spring
         var leaving: Bool
+
+        var settled: Bool { extent.settled && alpha.settled }
     }
 
     /// A critically damped spring, stepped in closed form (`Tween.spring`).
@@ -113,7 +115,7 @@ final class PinPopoverColumn: CommandKeyView {
             places[id] = place
         }
         apply()
-        if moves, !places.values.allSatisfy({ $0.extent.settled && $0.alpha.settled }) {
+        if moves, !places.values.allSatisfy(\.settled) {
             if link == nil {
                 lastTick = nil
                 link = ScreenLink(self, #selector(tick))
@@ -169,14 +171,14 @@ final class PinPopoverColumn: CommandKeyView {
             places[id]?.alpha.step(dt, settling: duration)
         }
         apply()
-        if places.values.allSatisfy({ $0.extent.settled && $0.alpha.settled }) { stopTicking() }
+        if places.values.allSatisfy(\.settled) { stopTicking() }
     }
 
     /// Lays the slots out from their springs' heights, drops the rows that have folded away, and gives
     /// the popover its height.
     private func apply() {
         order.removeAll { id in
-            guard let place = places[id], place.leaving, place.extent.settled, place.alpha.settled else { return false }
+            guard let place = places[id], place.leaving, place.settled else { return false }
             place.slot.removeFromSuperview()
             places[id] = nil
             return true

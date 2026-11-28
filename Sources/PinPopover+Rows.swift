@@ -25,8 +25,8 @@ extension PinPopover {
             let first = rowsNow.isEmpty
             if first { firstRow = row }
             let words = rowWords(comment)
-            row.show(words: words.text, color: words.color, status: words.status, note: words.note,
-                     resolve: first ? resolveAction : nil, over: duration)
+            row.show(words: words.text, color: words.color, status: words.status, note: words.note, over: duration)
+            row.show(resolve: first ? resolveAction : nil, over: duration)
             row.setAccessibilityLabel(([author, PinHoverCard.Words.ago(comment, now: opened)].compactMap { $0 }.filter { !$0.isEmpty }
                                        + [words.status, words.note].compactMap { $0 }).joined(separator: ", ") + ": \(comment.text)")
             rowsNow[comment.id] = row
@@ -51,13 +51,6 @@ extension PinPopover {
     private func rowWords(_ comment: Pin.Comment) -> (text: String, color: NSColor, status: String?, note: String?) {
         let delivery = live.shown[comment.id]
         return (comment.text, shownState?.resolved == nil ? .labelColor : .secondaryLabelColor, delivery?.words, delivery?.note)
-    }
-
-    var firstRowWords: (text: String, color: NSColor, status: String?, note: String?) {
-        guard let firstRow, let comment = shown?.comments.first(where: { commentRows[$0.id] === firstRow }) else {
-            return ("", .labelColor, nil, nil)
-        }
-        return rowWords(comment)
     }
 
     /// A comment's row: a line with the writer's avatar, as the pin's hover card shows it, their name,
