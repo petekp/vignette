@@ -1,21 +1,17 @@
 import AppKit
 
 /// The pin popover's content: its rows, top to bottom, and the Command keys (`CommandKeyView`). Every
-/// change moves. A row that comes fades in where it lands, a row that goes fades out where it was, the
-/// rows after them slide to their places, and the height springs to the rows', which the popover
-/// follows (`onHeight`). Each place, each fade and the height is a spring of its own, so a change
-/// that comes during another keeps its velocity.
+/// change moves. A row that comes fades in where it lands, a row that goes fades out where it was,
+/// taking no presses and gone from VoiceOver, the rows after them slide to their places, and the height
+/// springs to the rows', which the popover follows (`onHeight`). Each place, each fade and the height
+/// is a spring of its own, so a change that comes during another keeps its velocity. A row is the same
+/// row from one change to the next while it is the same view.
 @MainActor
 final class PinPopoverColumn: CommandKeyView {
-    /// A row, under the key that names what it shows. A row given again with the same view stays and
-    /// moves; a new view under an old key takes the old one's place, the two crossfading.
-    struct Row {
-        let key: String
-        let view: NSView
-    }
-
     /// The popover's height, at every step of its spring.
     var onHeight: ((CGFloat) -> Void)?
+    /// Every row has come to rest, so a row that moved under a still pointer can say whether it is under it.
+    var onSettle: (() -> Void)?
     /// The view the rows go under: the popover's rim.
     weak var cover: NSView?
     private let width: CGFloat
@@ -73,10 +69,10 @@ final class PinPopoverColumn: CommandKeyView {
 
     /// Shows `rows`, top to bottom, moving to them on springs that settle in `duration`, or at once
     /// when it is 0 or the column is not on screen yet.
-    func show(_ rows: [Row], over duration: Double) {
+    func show(_ rows: [NSView], over duration: Double) {
         let moves = duration > 0 && window != nil && !NSScreen.screens.isEmpty
         self.duration = duration
-        let kept = Set(rows.map { ObjectIdentifier($0.view) })
+        let kept = Set(rows.map { ObjectIdentifier($0) })
         for (id, place) in places where !kept.contains(id) {
             if moves {
                 places[id]?.leaving = true
@@ -88,7 +84,7 @@ final class PinPopoverColumn: CommandKeyView {
         }
         var y = inset
         for row in rows {
-            let id = ObjectIdentifier(row.view)
+            let id = ObjectIdentifier(row)
             if var place = places[id] {
                 place.leaving = false
                 place.alpha.target = 1
@@ -99,9 +95,9 @@ final class PinPopoverColumn: CommandKeyView {
                 }
                 places[id] = place
             } else {
-                places[id] = add(row.view, at: y, fadingIn: moves)
+                places[id] = add(row, at: y, fadingIn: moves)
             }
-            y += row.view.fittingSize.height + spacing
+            y += row.fittingSize.height + spacing
         }
         height.target = rows.isEmpty ? 2 * inset : y - spacing + inset
         if !moves { height = Spring(height.target) }
@@ -113,6 +109,24 @@ final class PinPopoverColumn: CommandKeyView {
             }
         } else {
             stopTicking()
+        }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        var view = hit
+        while let ancestor = view, ancestor !== self {
+            if places[ObjectIdentifier(ancestor)]?.leaving == true { return self }
+            view = ancestor.superview
+        }
+        return hit
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        let leaving = places.values.filter(\.leaving).map(\.view)
+        return super.accessibilityChildren()?.filter { child in
+            guard let view = child as? NSView else { return true }
+            return !leaving.contains { view === $0 || view.isDescendant(of: $0) }
         }
     }
 
@@ -159,8 +173,10 @@ final class PinPopoverColumn: CommandKeyView {
     }
 
     private func stopTicking() {
-        link?.invalidate()
-        link = nil
+        guard let link else { return }
+        link.invalidate()
+        self.link = nil
+        onSettle?()
     }
 }
 
@@ -170,10 +186,17 @@ enum PopoverFade {
     private static var running: [ObjectIdentifier: (view: NSView, tween: Tween)] = [:]
 
     /// Fades `view` to `alpha` over `duration`, or sets it at once when that is 0 or the view is not on
-    /// screen, then calls `then`. A fade already running turns toward the new alpha.
-    static func alpha(_ view: NSView, to alpha: CGFloat, over duration: Double, then: (() -> Void)? = nil) {
+    /// screen, then calls `then`. A fade already running turns toward the new alpha, unless `start`
+    /// says where this one starts.
+    static func alpha(_ view: NSView, from start: CGFloat? = nil, to alpha: CGFloat, over duration: Double, then: (() -> Void)? = nil) {
         let key = ObjectIdentifier(view)
-        let current = running[key].flatMap { $0.view === view ? $0.tween : nil }
+        var current = running[key].flatMap { $0.view === view ? $0.tween : nil }
+        if let start {
+            current?.stop()
+            current = nil
+            running[key] = nil
+            view.alphaValue = start
+        }
         guard duration > 0, view.window != nil else {
             current?.stop()
             running[key] = nil
@@ -199,10 +222,7 @@ enum PopoverFade {
         let after = label.attributedStringValue
         guard before != after else { return }
         if before.length > 0 { fadeOut(copy(of: before, color: color, like: label), at: label.frame, in: superview, above: label, over: duration) }
-        if before.string != after.string, after.length > 0 {
-            label.alphaValue = 0
-            alpha(label, to: 1, over: duration)
-        }
+        if before.string != after.string, after.length > 0 { alpha(label, from: 0, to: 1, over: duration) }
     }
 
     /// `words` where `label` shows its own, fading out over `duration`: what a field's placeholder said.

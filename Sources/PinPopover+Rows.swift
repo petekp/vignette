@@ -5,15 +5,15 @@ extension PinPopover {
     /// line between two, and the agent at work. A row whose comment is still there stays and moves.
     func showComments(of pin: Pin, editing: Int?, over duration: Double) {
         let ui = Settings.shared.data.ui
-        var rows: [PinPopoverColumn.Row] = []
+        var rows: [NSView] = []
         var rowsNow: [UUID: CommentRow] = [:]
         var separatorsNow: [String: NSView] = [:]
         func separator(_ key: String) {
             let line = separators[key] ?? Self.separator(width: Self.rowWidth)
             separatorsNow[key] = line
-            rows.append(.init(key: key, view: line))
+            rows.append(line)
         }
-        if pin.isResolved { rows.append(.init(key: "resolved", view: resolveControls.resolvedLine)) }
+        if pin.isResolved { rows.append(resolveControls.resolvedLine) }
         firstRow = nil
         for (index, comment) in pin.comments.enumerated() where index != editing {
             if !rowsNow.isEmpty { separator("line \(comment.id)") }
@@ -30,14 +30,14 @@ extension PinPopover {
             row.setAccessibilityLabel(([author, PinHoverCard.Words.ago(comment, now: opened)].compactMap { $0 }.filter { !$0.isEmpty }
                                        + [words.status, words.note].compactMap { $0 }).joined(separator: ", ") + ": \(comment.text)")
             rowsNow[comment.id] = row
-            rows.append(.init(key: "comment \(comment.id)", view: row))
+            rows.append(row)
         }
         if let client = live.working {
             if !rowsNow.isEmpty { separator("line working") }
             let row = working.flatMap { $0.client == client ? $0.row : nil }
                 ?? Self.workingRow(client, avatarSize: ui.pinAvatarSize, gap: ui.pinNameGap)
             working = (client, row)
-            rows.append(.init(key: "working", view: row))
+            rows.append(row)
         } else {
             working = nil
         }

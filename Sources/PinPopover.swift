@@ -31,7 +31,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     /// What the comments' deliveries say (`PinLiveComments`).
     var live = PinLiveComments()
     /// The rows over the composer, and the views they reuse from one change to the next.
-    var rows: [PinPopoverColumn.Row] = []
+    var rows: [NSView] = []
     var commentRows: [UUID: CommentRow] = [:]
     var separators: [String: NSView] = [:]
     var working: (client: AgentClient, row: NSView)?
@@ -82,6 +82,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
         column.onHeight = { [weak self] height in
             self?.popover.contentSize = CGSize(width: Self.width, height: height)
         }
+        column.onSettle = { [weak self] in self?.commentRows.values.forEach { $0.readPointer() } }
         let size = ui.pinPostSize
         post.isBordered = false
         post.image = NSImage(systemSymbolName: "arrow.up.circle.fill", accessibilityDescription: "Post comment")?
@@ -227,7 +228,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     /// The rows and the composer, the field at its words' height, moving to their places over `duration`.
     func fit(over duration: Double) {
         fieldHeight?.constant = wrappedHeight
-        column.show(rows + [.init(key: "composer", view: composer)], over: duration)
+        column.show(rows + [composer], over: duration)
     }
 
     func popoverDidClose(_ notification: Notification) {

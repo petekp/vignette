@@ -78,8 +78,8 @@ final class CommentRow: NSView {
     var resolve: (() -> Void)?
     /// Who wrote the comment, as its name says: a row whose writer changed is made again.
     let author: String
-    private let trash = NSButton()
-    private let check = NSButton()
+    private let trash = RowButton()
+    private let check = RowButton()
     private let words: NSTextField
     /// Sending, queued, unconfirmed or failed, after the time.
     private let status = NSTextField(labelWithString: "")
@@ -109,8 +109,7 @@ final class CommentRow: NSView {
             button.toolTip = help
             button.target = self
             button.action = action
-            // The row takes its keys itself, so Tab never stops on a button that is not shown.
-            button.refusesFirstResponder = true
+            button.focusChanged = { [weak self] in self?.focusChanged() }
             button.alphaValue = 0
         }
         check.isHidden = true
@@ -205,8 +204,7 @@ final class CommentRow: NSView {
             } else {
                 note.stringValue = text
                 note.isHidden = false
-                note.alphaValue = 0
-                PopoverFade.alpha(note, to: 1, over: duration)
+                PopoverFade.alpha(note, from: 0, to: 1, over: duration)
             }
         } else {
             PopoverFade.fadeOut(note.attributedStringValue, like: note, over: duration)
@@ -216,11 +214,12 @@ final class CommentRow: NSView {
         noteAtBottom.isActive = !note.isHidden
     }
 
-    /// The trash, and the ✓ on an open pin, while the pointer is on the comment; the ✓ on a resolved
-    /// pin always.
+    /// The trash, and the ✓ on an open pin, while the pointer or the keyboard focus is on the comment;
+    /// the ✓ on a resolved pin always.
     private func showButtons(over duration: Double) {
-        PopoverFade.alpha(trash, to: pointerInside ? 1 : 0, over: duration)
-        let checkShown = action == .reopen || (action != nil && pointerInside)
+        let near = pointerInside || focusInside
+        PopoverFade.alpha(trash, to: near ? 1 : 0, over: duration)
+        let checkShown = action == .reopen || (action != nil && near)
         PopoverFade.alpha(check, to: checkShown ? 1 : 0, over: duration)
     }
 
@@ -238,17 +237,45 @@ final class CommentRow: NSView {
         setAccessibilityCustomActions(actions)
     }
 
+    private var focusInside: Bool {
+        guard let responder = window?.firstResponder else { return false }
+        return responder === self || responder === trash || responder === check
+    }
+
+    /// The window names its new first responder after the old one resigns and the new one takes it.
+    private func focusChanged() {
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated { self.map { $0.showButtons(over: $0.fade) } }
+        }
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let took = super.becomeFirstResponder()
+        focusChanged()
+        return took
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let gave = super.resignFirstResponder()
+        focusChanged()
+        return gave
+    }
+
+    /// Whether the pointer is on the comment, for a row that came or moved under a pointer that stood
+    /// still, which tracking areas do not report.
+    func readPointer(over duration: Double? = nil) {
+        guard let window else { return }
+        let inside = bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+        guard inside != pointerInside else { return }
+        pointerInside = inside
+        showButtons(over: duration ?? fade)
+    }
+
     /// A popover that opens under the pointer shows the buttons of the comment it is on.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         DispatchQueue.main.async { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, let window = self.window else { return }
-                let inside = self.bounds.contains(self.convert(window.mouseLocationOutsideOfEventStream, from: nil))
-                guard inside != self.pointerInside else { return }
-                self.pointerInside = inside
-                self.showButtons(over: 0)
-            }
+            MainActor.assumeIsolated { self?.readPointer(over: 0) }
         }
     }
 
@@ -292,6 +319,24 @@ final class CommentRow: NSView {
     override func accessibilityPerformPress() -> Bool {
         press?()
         return press != nil
+    }
+}
+
+/// A button on a comment's top line. Full Keyboard Access reaches it, and its comment shows its
+/// buttons while it has the focus.
+final class RowButton: NSButton {
+    var focusChanged: (() -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let took = super.becomeFirstResponder()
+        focusChanged?()
+        return took
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let gave = super.resignFirstResponder()
+        focusChanged?()
+        return gave
     }
 }
 

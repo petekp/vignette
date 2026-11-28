@@ -32,17 +32,20 @@ the pins' rules are in `pins.md`.
   arrow. The field growing a line moves the same way. Words that change in place, a delivery's
   status or note, a comment's colour on Resolve and Reopen, the "Resolved by …" words and the
   placeholder, fade out over what replaces them (`PopoverFade`), and so do the ✓'s symbol and the
-  rim's colour. Rows are kept by what they show (`PinPopoverColumn.Row`), so a change moves only
-  what changed.
+  rim's colour. A row stays the same view while it shows the same thing, a comment's row while its
+  comment is there (`PinPopover.showComments`), so a change moves only what changed. A row fading out
+  takes no presses and is gone from VoiceOver.
 - The pin's first comment shown ends its top line with a ✓ before its trash (`ResolveAction`).
-  On an open pin it shows with the trash, while the pointer is on that comment. It resolves the
+  On an open pin it shows with the trash, while the pointer or the keyboard focus is on that
+  comment or on them. It resolves the
   pin, posting the field's words first while it holds some, and its tooltip says so. On a resolved
   pin it is filled and always shown, and it reopens the pin. A new pin has none. The ✓ and the
   trash fade in and out, stay in the accessibility tree while clear, and are the comment's
-  VoiceOver actions too. A popover that opens under the pointer shows the buttons of the comment
-  it is on.
+  VoiceOver actions too. With Full Keyboard Access, Tab reaches them after their comment. A popover
+  that opens under the pointer shows the buttons of the comment it is on, and a comment that came
+  or moved under a pointer that stood still shows them once the rows come to rest.
 - Each comment in the popover has its own Delete, for the person's and an agent's alike: a trash
-  button ending its top line, shown while the pointer is on the comment, Delete Comment in its
+  button ending its top line, shown while the pointer or the keyboard focus is on the comment, Delete Comment in its
   contextual menu, the Delete key on the comment when Full Keyboard Access focuses it, and a
   VoiceOver action (`CommentRow`). It sends `ComposerInput.delete`, which empties the comment as an
   edit would, so it is one "Delete" undo step and the pin goes with its only comment.
