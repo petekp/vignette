@@ -57,14 +57,6 @@ extension AppDelegate {
             let since = Date(timeIntervalSince1970: working.since.timeIntervalSince1970.rounded(.down))
             if !pin.comments.contains(where: { $0.agent && ($0.at ?? .distantPast) >= since }) { live.working = working.client }
         }
-        let last = lastSession(of: key, pins: annotator.editor.core.drawing.pins)?.address
-        if let destination = CommentTarget.destination(for: pin, last: last, running: annotator.runningSessions) {
-            let name = destination.name.count > Self.targetNameLength ? destination.name.prefix(Self.targetNameLength - 1) + "…" : destination.name
-            live.target = "\(PinLiveComments.name(of: destination.client)) · \(name)"
-        }
         return live
     }
-
-    /// The most characters of a session's name the field's placeholder shows.
-    private static let targetNameLength = 32
 }
