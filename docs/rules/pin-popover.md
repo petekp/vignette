@@ -27,10 +27,11 @@ the pins' rules are in `pins.md`.
   from the field editor's layout while it is edited, up to `ui.pinComposerLines` lines, past which
   it scrolls (`PinPopover.wrappedHeight`).
 - Every change inside the popover moves, on springs that settle in `ui.pinPopoverDuration`, which
-  the motion setting scales (`PinPopoverColumn`). A row that comes, a comment, the working row or
-  the "Resolved by …" line, fades in where it lands. A row that goes fades out where it was. The rows
-  after them slide, and the popover's height springs to its rows', so it grows and shrinks round its
-  arrow. The field growing a line moves the same way. Words that change in place, a delivery's
+  the motion setting scales (`PinPopoverColumn`). Each row sits in a slot whose height springs, and
+  the rows are laid out from those heights, so they never overlap. A row that comes, a comment, the
+  working row or the "Resolved by …" line, opens its slot and fades in as it is uncovered. A row that
+  goes folds its slot away as it fades out. The rows after them follow, and the popover's height is
+  its slots', so it grows and shrinks round its arrow. The field growing a line moves the same way. Words that change in place, a delivery's
   status or note, a comment's colour on Resolve and Reopen, the "Resolved by …" words and the
   placeholder, fade out over what replaces them (`PopoverFade`), and so do the ✓'s symbol and the
   rim's colour. A row stays the same view while it shows the same thing, a comment's row while its

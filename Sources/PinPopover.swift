@@ -228,7 +228,7 @@ final class PinPopover: NSObject, NSPopoverDelegate, NSTextFieldDelegate {
     /// The rows and the composer, the field at its words' height, moving to their places over `duration`.
     func fit(over duration: Double) {
         fieldHeight?.constant = wrappedHeight
-        column.show(rows + [composer], over: duration)
+        column.show(rows, foot: composer, over: duration)
     }
 
     func popoverDidClose(_ notification: Notification) {

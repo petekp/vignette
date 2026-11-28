@@ -1,14 +1,16 @@
 import AppKit
 
 /// The pin popover's content: its rows, top to bottom, and the Command keys (`CommandKeyView`). Every
-/// change moves. A row that comes fades in where it lands, a row that goes fades out where it was,
-/// taking no presses and gone from VoiceOver, the rows after them slide to their places, and the height
-/// springs to the rows', which the popover follows (`onHeight`). Each place, each fade and the height
-/// is a spring of its own, so a change that comes during another keeps its velocity. A row is the same
-/// row from one change to the next while it is the same view.
+/// change moves. Each row sits in a slot whose height is a spring, and the rows are laid out from
+/// those heights at every step, so a row that comes opens its slot, fading in as it is uncovered, a
+/// row that goes folds its slot away, fading out, and the rows after them follow, never overlapping.
+/// The popover's height is the slots' (`onHeight`). The foot, the last row, stretches with its slot
+/// instead, so it grows and shrinks with the popover. A row that goes takes no presses and is gone from
+/// VoiceOver. Each slot and each fade is a spring of its own, so a change that comes during another
+/// keeps its velocity. A row is the same row from one change to the next while it is the same view.
 @MainActor
 final class PinPopoverColumn: CommandKeyView {
-    /// The popover's height, at every step of its spring.
+    /// The popover's height, at every step of its springs.
     var onHeight: ((CGFloat) -> Void)?
     /// Every row has come to rest, so a row that moved under a still pointer can say whether it is under it.
     var onSettle: (() -> Void)?
@@ -17,19 +19,25 @@ final class PinPopoverColumn: CommandKeyView {
     private let width: CGFloat
     private let inset: CGFloat
     private let spacing: CGFloat
+    /// The rows top to bottom, those fading out kept where they were.
+    private var order: [ObjectIdentifier] = []
     private var places: [ObjectIdentifier: Place] = [:]
-    private var height = Spring(0)
     private var link: ScreenLink?
-    private var lastTick: CFTimeInterval = 0
+    /// The last step's time. The springs start at the first step, so main-thread work done with the
+    /// change that started them delays their motion instead of skipping it.
+    private var lastTick: CFTimeInterval?
     private var duration: Double = 0
     private var givenHeight: CGFloat?
 
-    /// A row's spot: its top's constraint, and the springs of its top and its fade. A row that goes
-    /// keeps its spot until it has faded.
+    /// A row in its slot, which clips it while the row is taller than the slot. The slot holds the
+    /// row's height and the spacing under it.
     private struct Place {
         let view: NSView
+        let slot: NSView
         let top: NSLayoutConstraint
-        var y: Spring
+        let slotHeight: NSLayoutConstraint
+        var rowHeight: CGFloat
+        var extent: Spring
         var alpha: Spring
         var leaving: Bool
     }
@@ -67,44 +75,47 @@ final class PinPopoverColumn: CommandKeyView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// Shows `rows`, top to bottom, moving to them on springs that settle in `duration`, or at once
-    /// when it is 0 or the column is not on screen yet.
-    func show(_ rows: [NSView], over duration: Double) {
+    /// Shows `rows`, top to bottom, then `foot`, moving to them on springs that settle in `duration`,
+    /// or at once when it is 0 or the column is not on screen yet.
+    func show(_ rows: [NSView], foot: NSView, over duration: Double) {
         let moves = duration > 0 && window != nil && !NSScreen.screens.isEmpty
         self.duration = duration
-        let kept = Set(rows.map { ObjectIdentifier($0) })
-        for (id, place) in places where !kept.contains(id) {
-            if moves {
-                places[id]?.leaving = true
-                places[id]?.alpha.target = 0
-            } else {
-                place.view.removeFromSuperview()
+        let rows = rows + [foot]
+        let ids = rows.map(ObjectIdentifier.init)
+        let kept = Set(ids)
+        var merged = ids
+        for (index, id) in order.enumerated() where !kept.contains(id) {
+            guard moves, var place = places[id] else {
+                places[id]?.slot.removeFromSuperview()
                 places[id] = nil
+                continue
             }
+            place.leaving = true
+            place.extent.target = 0
+            place.alpha.target = 0
+            places[id] = place
+            let before = order[..<index].last { merged.contains($0) }
+            merged.insert(id, at: before.flatMap { merged.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
         }
-        var y = inset
+        order = merged
         for row in rows {
             let id = ObjectIdentifier(row)
-            if var place = places[id] {
-                place.leaving = false
-                place.alpha.target = 1
-                place.y.target = y
-                if !moves {
-                    place.y = Spring(y)
-                    place.alpha = Spring(1)
-                }
-                places[id] = place
-            } else {
-                places[id] = add(row, at: y, fadingIn: moves)
+            let rowHeight = row.fittingSize.height
+            var place = places[id] ?? add(row, opening: moves, stretching: row === foot)
+            place.leaving = false
+            place.rowHeight = rowHeight
+            place.extent.target = rowHeight + spacing
+            place.alpha.target = 1
+            if !moves {
+                place.extent = Spring(rowHeight + spacing)
+                place.alpha = Spring(1)
             }
-            y += row.fittingSize.height + spacing
+            places[id] = place
         }
-        height.target = rows.isEmpty ? 2 * inset : y - spacing + inset
-        if !moves { height = Spring(height.target) }
         apply()
-        if moves, !(height.settled && places.values.allSatisfy({ $0.y.settled && $0.alpha.settled })) {
+        if moves, !places.values.allSatisfy({ $0.extent.settled && $0.alpha.settled }) {
             if link == nil {
-                lastTick = CACurrentMediaTime()
+                lastTick = nil
                 link = ScreenLink(self, #selector(tick))
             }
         } else {
@@ -130,45 +141,60 @@ final class PinPopoverColumn: CommandKeyView {
         }
     }
 
-    private func add(_ view: NSView, at y: CGFloat, fadingIn: Bool) -> Place {
+    /// A slot for `view`, shut and clear when it opens on screen. A stretching view is as tall as its slot.
+    private func add(_ view: NSView, opening: Bool, stretching: Bool) -> Place {
+        let slot = NSView()
+        slot.wantsLayer = true
+        slot.translatesAutoresizingMaskIntoConstraints = false
         view.translatesAutoresizingMaskIntoConstraints = false
-        if let cover, cover.superview === self { addSubview(view, positioned: .below, relativeTo: cover) } else { addSubview(view) }
-        let top = view.topAnchor.constraint(equalTo: topAnchor, constant: y)
-        [top, view.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
-                                     view.widthAnchor.constraint(equalToConstant: width - 2 * inset)].forEach { $0.isActive = true }
-        var alpha = Spring(fadingIn ? 0 : 1)
-        alpha.target = 1
-        return Place(view: view, top: top, y: Spring(y), alpha: alpha, leaving: false)
+        slot.addSubview(view)
+        if let cover, cover.superview === self { addSubview(slot, positioned: .below, relativeTo: cover) } else { addSubview(slot) }
+        let top = slot.topAnchor.constraint(equalTo: topAnchor, constant: inset)
+        let slotHeight = slot.heightAnchor.constraint(equalToConstant: 0)
+        [top, slotHeight, slot.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
+         slot.widthAnchor.constraint(equalToConstant: width - 2 * inset),
+         view.topAnchor.constraint(equalTo: slot.topAnchor), view.leadingAnchor.constraint(equalTo: slot.leadingAnchor),
+         view.widthAnchor.constraint(equalTo: slot.widthAnchor)].forEach { $0.isActive = true }
+        if stretching { view.bottomAnchor.constraint(equalTo: slot.bottomAnchor, constant: -spacing).isActive = true }
+        return Place(view: view, slot: slot, top: top, slotHeight: slotHeight, rowHeight: 0, extent: Spring(0),
+                     alpha: Spring(opening ? 0 : 1), leaving: false)
     }
 
     @objc private func tick(_ link: CADisplayLink) {
         let now = CACurrentMediaTime()
-        let dt = now - lastTick
+        let dt = lastTick.map { now - $0 } ?? 0
         lastTick = now
-        height.step(dt, settling: duration)
-        for id in Array(places.keys) {
-            places[id]?.y.step(dt, settling: duration)
+        for id in order {
+            places[id]?.extent.step(dt, settling: duration)
             places[id]?.alpha.step(dt, settling: duration)
         }
         apply()
-        if height.settled && places.values.allSatisfy({ $0.y.settled && $0.alpha.settled }) { stopTicking() }
+        if places.values.allSatisfy({ $0.extent.settled && $0.alpha.settled }) { stopTicking() }
     }
 
-    /// Puts each row at its spring's place and fade, drops the rows that have faded out, and gives the
-    /// popover its height.
+    /// Lays the slots out from their springs' heights, drops the rows that have folded away, and gives
+    /// the popover its height.
     private func apply() {
-        for (id, place) in places {
-            if place.leaving && place.alpha.settled {
-                place.view.removeFromSuperview()
-                places[id] = nil
-                continue
-            }
-            if place.top.constant != place.y.value { place.top.constant = place.y.value }
-            if place.view.alphaValue != place.alpha.value { place.view.alphaValue = place.alpha.value }
+        order.removeAll { id in
+            guard let place = places[id], place.leaving, place.extent.settled, place.alpha.settled else { return false }
+            place.slot.removeFromSuperview()
+            places[id] = nil
+            return true
         }
-        if givenHeight != height.value {
-            givenHeight = height.value
-            onHeight?(height.value)
+        var y = inset
+        for id in order {
+            guard let place = places[id] else { continue }
+            if place.top.constant != y { place.top.constant = y }
+            if place.slotHeight.constant != place.extent.value { place.slotHeight.constant = place.extent.value }
+            if place.view.alphaValue != place.alpha.value { place.view.alphaValue = place.alpha.value }
+            let clips = place.extent.value < place.rowHeight
+            if place.slot.layer?.masksToBounds != clips { place.slot.layer?.masksToBounds = clips }
+            y += place.extent.value
+        }
+        let height = order.isEmpty ? 2 * inset : max(2 * inset, y - spacing + inset)
+        if givenHeight != height {
+            givenHeight = height
+            onHeight?(height)
         }
     }
 

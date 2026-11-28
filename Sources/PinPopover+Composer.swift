@@ -16,6 +16,8 @@ extension PinPopover {
         lineHeight = field.intrinsicContentSize.height
         let lift = max(0, (Self.capsuleHeight - lineHeight) / 2)
         let height = field.heightAnchor.constraint(equalToConstant: lineHeight)
+        // Below required, so the capsule follows its slot as the popover springs to a new line (`PinPopoverColumn`).
+        height.priority = .init(999)
         fieldHeight = height
         [row.widthAnchor.constraint(equalToConstant: Self.rowWidth),
                                      capsule.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: Self.wordsIndent),
