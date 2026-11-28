@@ -250,11 +250,12 @@ enum Agent {
     static let oneColourLogos: Set<String> = ["codex"]
 
     /// The avatar of `maker` when it is an agent whose logo is one colour: the logo in black on a white
-    /// circle, which reads on a light or dark popover and on any picture under a pin's dot. Nil for
-    /// every other agent, whose avatar is its logo on its pins' colour.
-    static func oneColourAvatar(_ maker: PinMaker) -> (fill: SRGB, ink: SRGB)? {
+    /// circle, which reads on a light or dark popover and on any picture under a pin's dot, at
+    /// `style.oneColourLogoSize` of the circle across. Nil for every other agent, whose avatar is its
+    /// logo on its pins' colour.
+    static func oneColourAvatar(_ maker: PinMaker, style: PinStyle) -> (fill: SRGB, ink: SRGB, logoSize: CGFloat)? {
         guard case .agent(let name) = maker, oneColourLogos.contains(name.lowercased()) else { return nil }
-        return (fill: SRGB(red: 1, green: 1, blue: 1), ink: SRGB(red: 0, green: 0, blue: 0))
+        return (fill: SRGB(red: 1, green: 1, blue: 1), ink: SRGB(red: 0, green: 0, blue: 0), logoSize: style.oneColourLogoSize)
     }
 
     /// The glyph for a vendor without a logo: the closest SF Symbol to the robot this wants to be.

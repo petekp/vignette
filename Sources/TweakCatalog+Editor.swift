@@ -39,7 +39,8 @@ extension TweakCatalog {
                 .number("pinShadowOpacity", "Shadow darkness", \.pinShadowOpacity, 0...1, step: 0.05, safe: 0...1),
                 .number("pinLogoSize", "Agent's logo", \.pinLogoSize, 0.2...1, step: 0.01, safe: 0.01...10),
                 .number("pinAnswerSize", "Answer dot", \.pinAnswerSize, 0.2...1, step: 0.01, safe: 0.01...10),
-            ], caption: { _ in "How a pin looks in the editor, on a card and in flight. Its top is lightened toward white and its bottom darkened toward black by those shares. The hairline and the shadow are in the drawing's points, and the marks' shadow strength multiplies the darkness. An agent's pin wears its logo, and a pin an agent answered wears a dot with that agent's logo, each a share of the pin's size. Copy, Send and Stitch keep the marks' white edge and a number on every pin." }),
+                .number("pinOneColourLogoSize", "One-colour logo", \.pinOneColourLogoSize, 0.2...1, step: 0.01, safe: 0.01...10),
+            ], caption: { _ in "How a pin looks in the editor, on a card and in flight. Its top is lightened toward white and its bottom darkened toward black by those shares. The hairline and the shadow are in the drawing's points, and the marks' shadow strength multiplies the darkness. An agent's pin wears its logo, and a pin an agent answered wears a dot with that agent's logo, each a share of the pin's size. An agent whose logo is one colour, as Codex's is, wears it in black on a white circle in its answer dot and its avatar, at the one-colour logo's share of the circle. Copy, Send and Stitch keep the marks' white edge and a number on every pin." }),
             TweakGroup("Popover and lists", [
                 .number("pinPopoverWidth", "Popover width", \.pinPopoverWidth, 200...480, step: 4, unit: "pt", safe: 100...2000),
                 .number("pinPopoverInset", "Popover inset", \.pinPopoverInset, 0...32, step: 1, unit: "pt", safe: 0...200),

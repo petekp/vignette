@@ -110,7 +110,7 @@ The popover's comments and the hover card are in `pin-popover.md`.
   `.agent`. On screen (`PinFace`), a person's pin wears its number. An agent's pin wears its logo
   in the words' colour, or the first letter of its name when the bundle has no logo for it, or
   `Agent.fallbackSymbol` when it gave no name. A person's pin an agent answered also wears a dot
-  that is that agent's avatar, its logo on its colour or Codex's black on white, on the rim across from the tip (`Pin.answeringAgent`).
+  that is that agent's avatar, its logo on its colour or Codex's black on white (`ui.pinOneColourLogoSize` of the dot across), on the rim across from the tip (`Pin.answeringAgent`).
   Copy, Send and Stitch draw a number on every pin and no dot, so the picture matches the "Pin 3:"
   in the words beside it. A pin's row in a menu shows no dot either. A cluster keeps its numbers, in its pins' one maker's colour.
 - In the editor a pin is live ink's gel in its colour, the person's red or the agent's brand

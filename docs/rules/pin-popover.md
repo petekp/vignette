@@ -13,7 +13,8 @@ the pins' rules are in `pins.md`.
   An agent's is what its pin wears (`PinFace`) on its pin's colour: its logo, the first letter of its
   name, or `Agent.fallbackSymbol` when it gave no name, in the words' colour and at the pin's
   `ui.pinLogoSize`, as Claude's white logo on orange. Codex's is its black logo on a white
-  circle (`Agent.oneColourAvatar`). The popover is
+  circle (`Agent.oneColourAvatar`), `ui.pinOneColourLogoSize` of the circle across, larger than the
+  pin's share since nothing but the logo shows on the white. The popover is
   macOS's own, with nothing behind its content: a view of our own under the content is not clipped
   to the popover's shape, so its arrow and body part ways. The field is a capsule with a hairline
   edge in the tertiary label colour (`ComposerCapsule`), so it reads as a place to type, with the
