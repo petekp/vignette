@@ -14,7 +14,7 @@ lately every 1 to 3 days.
 | --- | --- | --- |
 | List running sessions | The app's language server serves `product.v1.ConversationService` over Connect HTTP+JSON. `ListConversations` returns each conversation's id (a UUID), title or summary, project, `runState` and `updateTime`, newest first, and leaves out archived and sub-agent conversations. Called read-only on this Mac: it answered with three conversations, one `RUN_STATE_RUNNING`. Without the token it answers 401. The app's `conversation_summaries.db` (SQLite) holds the same rows with `workspace_uris`, `status` and `last_user_input_time` | shipped `conversations/SKILL.md`; changelog 2.35.0 (2026-11-23); local call |
 | Find the server | Inside the app, an agent's shell gets `ANTIGRAVITY_LS_ADDRESS` and `ANTIGRAVITY_CSRF_TOKEN`. From outside, the only place found is `~/.gemini/antigravity/daemon/hub_<port>.json`, which holds `pid`, `httpPort`, `httpsPort`, `lsVersion` and `csrfToken`. On this Mac its `pid` was the app's own `language_server`, so the file belongs to the app, not the IDE or `agy`. A file left by an earlier run would need its `pid` checked. Undocumented for outside apps. A 2.35.0 fix stopped "file tools or sandboxed commands" from reading "internal session connection files", so Google treats such files as internal | local files; shipped `conversations/SKILL.md`; changelog 2.35.0 |
-| Deliver a line mid-session | `agentapi send-message [--title=<title>] <conversation id> <text>`, "Sends a message to an existing conversation" (sidecars page). Its own help says "Send messages to another conversation or yourself" and suggests it for "async notifications", so it may arrive as a titled message from another conversation rather than as the person's words. `agentapi` is a two-line script that runs `language_server agentapi`. Google documents it for sidecars, which get it on their PATH. How it finds the server from another process is *unverified*: the server binary names `ANTIGRAVITY_LS_ADDRESS` and `ANTIGRAVITY_CSRF_TOKEN`, so Vignette would probably pass the hub file's values in those. Whether it starts a turn, and whether a message to a running conversation waits in the app's queue, are *unverified*: checking either sends a prompt. The app does queue a message typed during a turn and sends it when the turn ends (changelog 2.35.0 and earlier) | antigravity.google/docs/sidecars; `agentapi send-message --help`; changelog |
+| Deliver a line mid-session | `agentapi send-message [--title=<title>] <conversation id> <text>`, "Sends a message to an existing conversation" (sidecars page). Its own help says "Send messages to another conversation or yourself" and suggests it for "async notifications", so it may arrive as a titled message from another conversation rather than as the person's words. `agentapi` is a two-line script that runs `language_server agentapi`. Google documents it for sidecars, which get it on their PATH. From another process it reads `ANTIGRAVITY_LS_ADDRESS` and `ANTIGRAVITY_CSRF_TOKEN`, and refuses to run without the address. The live check below showed that it starts a turn and that a message sent during a turn waits for the turn to end | antigravity.google/docs/sidecars; `agentapi send-message --help`; live check 2026-11-27 |
 | Turn state | `GetConversation` returns `runState`: `RUN_STATE_IDLE`, `RUN_STATE_RUNNING` or `RUN_STATE_CANCELLING`. Plugin hooks `SessionStart`, `PreInvocation`, `PostInvocation` and `Stop` get `conversationId` | shipped `conversations/SKILL.md`; shipped `agy-customizations/docs/hooks.md` |
 | Take a queued line back | Nothing documented. The language server has `SendAllQueuedMessages` and `DeleteAgentMessage` RPCs in its binary, which are internal | `strings` on `language_server` |
 | Focus | The app registers `antigravity://`. Which conversation its window shows was not found: not in `window_state.json`, `app_storage.json` or the presence locks. Its accessibility tree was not checked | local files; Info.plist |
@@ -29,27 +29,34 @@ The Antigravity CLI (`agy`) in a terminal keeps its own data in `~/.gemini/antig
 Whether a running `agy` serves the same `ConversationService` is *unverified*: no `agy` was
 running, and its `daemon` folder was empty.
 
-## The live check, the first step and full parity
+## The live check
 
-The first step is one live check. With Pete's yes, send one test message with
-`agentapi send-message` to a throwaway conversation, and record:
+Pete approved a live check on 2026-11-27. It created one throwaway conversation through
+`CreateConversation`, on the `flash_lite` model, with the tag `vignette-live-check`. It sent short
+neutral test messages with `agentapi send-message`, run from Claude Code's shell with the hub file's
+address and token. It read the results from `GetConversation` and from the conversation's
+transcript, `~/.gemini/antigravity/conversations/<id>.db`, a SQLite file. The conversation is
+archived. No other conversation was touched.
 
-- whether it starts a turn on an idle conversation, or waits until someone opens it;
-- whether the agent and the app show it as the person's message, or as a titled message from
-  another conversation;
-- what it does when the conversation is running: queued for the turn's end, refused, or mixed in;
-- what it answers for an unknown or archived id, which decides whether the address guard is
-  runtime-enforced or needs a check just before sending;
-- whether it runs from a process the app did not start, given the hub file's address and token.
+| Question | Answer |
+| --- | --- |
+| Does it start a turn on an idle conversation? | Yes. `runState` was `RUN_STATE_RUNNING` within 0.75 seconds and idle again about 2 seconds later, with the agent's answer in the transcript |
+| Does it read as the person's words? | No. The person's prompt is step type 14. A sent message is step type 101, "[Message] … sender=system priority=MESSAGE_PRIORITY_HIGH", shown as "Message from System". Asked where it came from, the agent answered "from another conversation". It did what the message asked |
+| What happens when the conversation is running? | It waits. A message sent while a longer answer was running became the next step after that answer, and the conversation stayed running until it was answered too |
+| What happens with an unknown id? | `send-message` exits 0 and echoes the message, with no error. `GetConversation` answers HTTP 404 `not_found`, so the address guard is a check just before sending |
+| Does it run from a process the app did not start? | Yes, given `ANTIGRAVITY_LS_ADDRESS` and `ANTIGRAVITY_CSRF_TOKEN` from the hub file. Without the address it exits 1 with "ANTIGRAVITY_LS_ADDRESS is not set" |
 
-If any answer rules it out, run the same check on `agy -p --conversation <id>`.
+The `send-message` route is a go. The `agy -p --conversation <id>` route was not needed and was not
+tested.
 
-If the check passes, the build is Send, Reply and pin comments to a conversation the app has open,
-and pushes from it.
+## The first step and full parity
+
+The build is Send, Reply and pin comments to a conversation in the app, and pushes from it.
 
 - `AntigravityConnection`, a third `AgentConnection`. It reads `hub_<port>.json` and checks its
-  `pid`, lists through `ListConversations`, reads `runState` for `turn(of:)`, and submits with
-  `agentapi send-message`.
+  `pid`, lists through `ListConversations`, reads `runState` for `turn(of:)`, checks the id with
+  `GetConversation`, and submits with `agentapi send-message`. Each line says it comes from the
+  person through Vignette, since the agent sees it as a message from System.
 - A third `AgentClient` case, its label, logo, attribute name, and live ink left out of
   `allCases` loops until it is a responder.
 - The skill's push lines for `agent=antigravity`, and an install into Antigravity through
